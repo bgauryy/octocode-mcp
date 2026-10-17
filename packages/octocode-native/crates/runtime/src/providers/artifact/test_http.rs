@@ -1,5 +1,8 @@
 //! Registry and GitHub-tag doubles shared by the artifact tests.
-use super::http::{ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse};
+use super::http::{
+    ArtifactHttp, ArtifactHttpFuture, ArtifactHttpRequest, ArtifactHttpResponse, BodySink,
+    StatusFuture,
+};
 use super::release_ref::{ReleaseTags, TagFuture};
 use octocode_github::RequestBudget;
 use std::sync::Mutex;
@@ -192,6 +195,62 @@ impl ArtifactHttp for SequenceHttp {
         let call = self.calls.fetch_add(1, Ordering::Relaxed);
         let body = self.bodies[call.min(self.bodies.len() - 1)].clone();
         Box::pin(async move { Ok(ArtifactHttpResponse { status: 200, body }) })
+    }
+}
+
+/// Answers every request with `body` (status 200); a streamed read gets it
+/// in `chunk`-byte pieces. Counts the pieces streamed reads took.
+pub(crate) struct ChunkedHttp {
+    body: Vec<u8>,
+    chunk: usize,
+    fed: AtomicUsize,
+}
+
+impl ChunkedHttp {
+    pub(crate) fn new(body: Vec<u8>, chunk: usize) -> Self {
+        Self {
+            body,
+            chunk,
+            fed: AtomicUsize::new(0),
+        }
+    }
+
+    /// Pieces streamed reads took.
+    pub(crate) fn fed(&self) -> usize {
+        self.fed.load(Ordering::Relaxed)
+    }
+
+    /// Pieces the whole body is.
+    pub(crate) fn pieces(&self) -> usize {
+        self.body.len().div_ceil(self.chunk)
+    }
+}
+
+impl ArtifactHttp for ChunkedHttp {
+    fn get<'a>(
+        &'a self,
+        _req: ArtifactHttpRequest,
+        _budget: &'a RequestBudget,
+    ) -> ArtifactHttpFuture<'a> {
+        let body = self.body.clone();
+        Box::pin(async move { Ok(ArtifactHttpResponse { status: 200, body }) })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        _req: ArtifactHttpRequest,
+        _budget: &'a RequestBudget,
+        sink: BodySink<'a>,
+    ) -> StatusFuture<'a> {
+        Box::pin(async move {
+            for piece in self.body.chunks(self.chunk) {
+                self.fed.fetch_add(1, Ordering::Relaxed);
+                if sink(piece).is_break() {
+                    break;
+                }
+            }
+            Ok(200)
+        })
     }
 }
 

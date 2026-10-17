@@ -338,7 +338,7 @@ pub(super) fn scan_subtypes(
     stopped: &(dyn Fn() -> bool + Sync),
 ) -> (Vec<JsCodeSnippet>, Vec<String>) {
     let files = files.iter().collect::<Vec<_>>();
-    let workers = std::thread::available_parallelism().map_or(1, usize::from);
+    let workers = crate::tools::workers::workers(None, files.len(), None);
     let chunk = files.len().div_ceil(workers).max(1);
     let (mut found, mut unread) = std::thread::scope(|scope| {
         let handles = files

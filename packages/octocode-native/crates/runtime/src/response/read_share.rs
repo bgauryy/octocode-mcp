@@ -276,15 +276,15 @@ mod tests {
     fn non_window_routes_of_a_shortened_read_keep_the_asked_view() {
         let call = |row: Value| json!({"tool":"localFetch","query":{"queries":[row]}});
         let mut data = json!({"next":{
-            "unfiltered2": call(json!({"path":"a.txt","unit":"lines"})),
+            "unfiltered": call(json!({"path":"a.txt","unit":"lines"})),
             "nextCandidatePage": call(json!({"path":"a.txt","unit":"lines","length":40,"selection":"t"})),
             "continueWindow": call(json!({"path":"a.txt","unit":"lines","length":40,"offset":40})),
-            "unfiltered": call(json!({"path":"a.txt","ranges":["3-4"],"unit":"lines"})),
+            "unfilteredUnknown": call(json!({"path":"a.txt","ranges":["3-4"],"unit":"lines"})),
         }});
         restore_page_size(&mut data, &json!({"path":"a.txt","fullContent":true}));
         let row = |name: &str| data["next"][name]["query"]["queries"][0].clone();
         assert_eq!(
-            row("unfiltered2"),
+            row("unfiltered"),
             json!({"path":"a.txt","fullContent":true})
         );
         assert_eq!(
@@ -296,7 +296,7 @@ mod tests {
             json!({"path":"a.txt","unit":"lines","offset":40})
         );
         assert_eq!(
-            row("unfiltered"),
+            row("unfilteredUnknown"),
             json!({"path":"a.txt","ranges":["3-4"],"unit":"lines"})
         );
     }

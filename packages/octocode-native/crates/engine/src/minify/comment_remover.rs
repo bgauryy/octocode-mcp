@@ -1,3 +1,5 @@
+use super::strategies::utf8_seq_len;
+
 /// String-aware comment removal.
 /// Comment-removal strategy for supported language comment groups.
 
@@ -283,13 +285,13 @@ pub fn strip_string_aware_comments(content: &str, rules: &CommentRules) -> Strin
                     if let Some(c) = content[pos..].chars().next() {
                         result.push(c);
                     }
-                    pos += next_char_len(bytes, pos);
+                    pos += utf8_seq_len(bytes[pos]);
                 }
             }
             // ── inside single-char string ─────────────────────────────────
             QuoteState::Single { delim, escaped } => {
                 let ch = bytes[pos];
-                let ch_len = next_char_len(bytes, pos);
+                let ch_len = utf8_seq_len(bytes[pos]);
                 result.push_str(&content[pos..pos + ch_len]);
                 if *escaped {
                     *escaped = false;
@@ -375,7 +377,7 @@ pub fn strip_string_aware_comments(content: &str, rules: &CommentRules) -> Strin
                 }
 
                 // 8. Ordinary character
-                let ch_len = next_char_len(bytes, pos);
+                let ch_len = utf8_seq_len(bytes[pos]);
                 result.push_str(&content[pos..pos + ch_len]);
                 pos += ch_len;
             }
@@ -416,12 +418,12 @@ pub fn literal_ranges(content: &str, rules: &CommentRules) -> Vec<(usize, usize)
                     ranges.push((cur_start, pos));
                     qstate = QuoteState::Outside;
                 } else {
-                    pos += next_char_len(bytes, pos);
+                    pos += utf8_seq_len(bytes[pos]);
                 }
             }
             QuoteState::Single { delim, escaped } => {
                 let ch = bytes[pos];
-                let ch_len = next_char_len(bytes, pos);
+                let ch_len = utf8_seq_len(bytes[pos]);
                 if *escaped {
                     *escaped = false;
                     pos += ch_len;
@@ -477,7 +479,7 @@ pub fn literal_ranges(content: &str, rules: &CommentRules) -> Vec<(usize, usize)
                     };
                     continue;
                 }
-                pos += next_char_len(bytes, pos);
+                pos += utf8_seq_len(bytes[pos]);
             }
         }
     }
@@ -485,16 +487,6 @@ pub fn literal_ranges(content: &str, rules: &CommentRules) -> Vec<(usize, usize)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn next_char_len(bytes: &[u8], pos: usize) -> usize {
-    let b = bytes[pos];
-    match b {
-        0x00..=0x7F => 1,
-        0xC0..=0xDF => 2,
-        0xE0..=0xEF => 3,
-        _ => 4,
-    }
-}
 
 fn find_block_comment(content: &str, pos: usize, rules: &[BlockRule]) -> Option<(usize, bool)> {
     for rule in rules {
@@ -529,7 +521,7 @@ fn find_nested_block_end(content: &str, start: usize, open: &str, close: &str) -
                 return pos;
             }
         } else {
-            pos += next_char_len(content.as_bytes(), pos);
+            pos += utf8_seq_len(content.as_bytes()[pos]);
         }
     }
     content.len()
@@ -621,7 +613,7 @@ fn find_csharp_verbatim(content: &str, pos: usize) -> Option<usize> {
                 return Some(i + 1);
             }
         } else {
-            i += next_char_len(bytes, i);
+            i += utf8_seq_len(bytes[i]);
         }
     }
     Some(content.len())
@@ -689,7 +681,7 @@ fn find_regex_literal(content: &str, pos: usize) -> Option<usize> {
             // Step over the whole escaped character: one byte would land
             // inside a multibyte char and skip past the closing `/`.
             escaped = false;
-            i += next_char_len(bytes, i);
+            i += utf8_seq_len(bytes[i]);
             continue;
         }
         if c == b'\\' {
@@ -717,7 +709,7 @@ fn find_regex_literal(content: &str, pos: usize) -> Option<usize> {
         if c == b'\n' || c == b'\r' {
             return None;
         }
-        i += next_char_len(bytes, i);
+        i += utf8_seq_len(bytes[i]);
     }
     None
 }

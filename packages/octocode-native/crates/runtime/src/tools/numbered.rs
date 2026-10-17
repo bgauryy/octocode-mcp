@@ -87,12 +87,45 @@ fn number_lines_with_order(
     (index == records.len()).then_some(output)
 }
 
-/// `(start, end)` of a `... [line N not requested] ...` / `... [lines A-B not requested] ...` marker.
+/// Why a span of source lines between two shown windows is not shown.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Omitted {
+    /// The read did not ask for it (lines between ranges or match windows).
+    NotRequested,
+    /// A classified read did not select it.
+    NotSelected,
+}
+
+impl Omitted {
+    const fn words(self) -> &'static str {
+        match self {
+            Self::NotRequested => "not requested",
+            Self::NotSelected => "not selected",
+        }
+    }
+}
+
+/// The one line-omission marker between two non-adjacent windows of a read
+/// (`... [lines A-B not requested] ...`), so readers never mistake a gap for
+/// contiguous source. [`omission_span`] reads back every kind.
+pub(crate) fn omission_marker(start: usize, end: usize, why: Omitted) -> String {
+    let words = why.words();
+    if start == end {
+        format!("... [line {start} {words}] ...\n")
+    } else {
+        format!("... [lines {start}-{end} {words}] ...\n")
+    }
+}
+
+/// `(start, end)` of an [`omission_marker`] of any kind.
 fn omission_span(record: &str) -> Option<(u64, u64)> {
     let inner = record
         .trim_end_matches(['\n', '\r'])
         .strip_prefix("... [")?
-        .strip_suffix(" not requested] ...")?;
+        .strip_suffix("] ...")?;
+    let inner = [Omitted::NotRequested, Omitted::NotSelected]
+        .into_iter()
+        .find_map(|why| inner.strip_suffix(why.words())?.strip_suffix(' '))?;
     if let Some(span) = inner.strip_prefix("lines ") {
         let (start, end) = span.split_once('-')?;
         Some((start.parse().ok()?, end.parse().ok()?))
@@ -698,6 +731,31 @@ mod tests {
         let mut other = local.clone();
         number_read_rows(ToolId::LocalSearch, &mut other);
         assert_eq!(other, local);
+    }
+
+    /// Every omission marker kind reads back as its span, so a classified
+    /// read whose selected chunks are not adjacent keeps its gutter.
+    #[test]
+    fn every_omission_marker_kind_keeps_the_gutter() {
+        for why in [Omitted::NotRequested, Omitted::NotSelected] {
+            assert_eq!(omission_span(&omission_marker(4, 4, why)), Some((4, 4)));
+            assert_eq!(omission_span(&omission_marker(3, 8, why)), Some((3, 8)));
+        }
+        assert_eq!(omission_span("... [lines 3-8 not wanted] ...\n"), None);
+        let content = format!(
+            "x\n{}y\n",
+            omission_marker(1153, 2538, Omitted::NotSelected)
+        );
+        let mut response = json!({"results":[{"data":{
+            "content":content,
+            "sourceLineRanges":[{"line":1152,"endLine":1152},{"line":2539,"endLine":2539}],
+            "selection":{"status":"complete","selectedItems":2,"totalItems":3}
+        }}]});
+        number_read_rows(ToolId::LocalFetch, &mut response);
+        assert_eq!(
+            response["results"][0]["data"]["content"],
+            "1152\tx\n--\n2539\ty\n"
+        );
     }
 
     #[test]

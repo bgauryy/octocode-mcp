@@ -9,7 +9,7 @@ const CHUNK_OVERLAP: usize = 8_192;
 fn multiline_redaction_keeps_source_line_positions() {
     let regex = regex::Regex::new("BEGIN[\\s\\S]*?END").unwrap();
     let original = "before\nBEGIN\nsecret\nEND\nafter";
-    let redacted = replace_secrets(&regex, original, "[REDACTED]", |_| true);
+    let redacted = replace_secrets(&regex, original, "[REDACTED]", |_, _| true);
     assert_eq!(redacted, "before\n[REDACTED]\n\n\nafter");
     assert_eq!(redacted.lines().count(), original.lines().count());
     assert!(!redacted.contains("secret"));
@@ -316,7 +316,8 @@ fn prescan_agrees_with_reference_regex_set_on_corpus() {
     ];
     for content in &corpus {
         let reference: Vec<usize> = reference_set.matches(content).into_iter().collect();
-        let prescanned = matching_pattern_indices(content);
+        let mut prescanned = candidate_pattern_indices(content);
+        prescanned.retain(|&idx| pattern_regex(idx).is_match(content));
         assert_eq!(
             reference, prescanned,
             "prescan diverged from reference RegexSet on: {content:?}"
@@ -754,5 +755,97 @@ proptest! {
             "raw token leaked into sanitized output: {:?}",
             out.sanitized
         );
+    }
+}
+
+/// A detector its file context rules out is never compiled for that text:
+/// the Kubernetes Secret automaton (tens of milliseconds to build) and other
+/// context-gated detectors cost nothing on a call whose output never reaches
+/// them, while the same text in their context still selects them.
+#[test]
+fn context_gated_detectors_are_selected_only_where_they_apply() {
+    let index = |name: &str| {
+        PATTERNS
+            .iter()
+            .position(|pattern| pattern.name == name)
+            .expect(name)
+    };
+    let (kubernetes, wandb) = (index("kubernetesSecrets"), index("wandbApiKey"));
+    let message = "No tool is named nope; use one of localSearch, localFetch.";
+    let candidates = applicable_candidates(message, Scope::Pathless);
+    assert!(!candidates.contains(&kubernetes) && !candidates.contains(&wandb));
+    let manifest = "kind: Secret\ndata:\n  password: c2VjcmV0\n";
+    assert!(applicable_candidates(manifest, Scope::File("k8s/secret.yaml")).contains(&kubernetes));
+    assert!(!applicable_candidates(manifest, Scope::File("k8s/secret.txt")).contains(&kubernetes));
+    let detected = detect(manifest, Some("k8s/secret.yaml"));
+    assert_eq!(detected.secrets_detected, ["kubernetesSecrets"]);
+}
+
+/// A hex digest keyed by a file path is a checksum manifest entry, even when
+/// the file's name holds a credential word; the same digest under a
+/// credential key that names no file, or a non-digest value under a file key,
+/// is still redacted.
+#[test]
+fn credential_assignments_keep_digests_keyed_by_file_paths() {
+    let sha256 = "fdb33b8b86243923b54ae97ca58536e1fba694b759d1bf966fc5f5fb974484b6";
+    for (content, path) in [
+        (
+            format!("   \"packages/bench/compare/bin/with_credentials.mjs\": \"{sha256}\",\n"),
+            Some("runs/manifest.json"),
+        ),
+        (format!("{{\"with_credentials.mjs\": \"{sha256}\"}}"), None),
+        (
+            format!("  config\\credentials.yaml: \"{}\"\n", &sha256[..40]),
+            None,
+        ),
+        // The same manifest entry as unquoted YAML.
+        (
+            format!("packages/bench/compare/bin/with_credentials.mjs: {sha256}\n"),
+            None,
+        ),
+    ] {
+        let result = detect(&content, path);
+        assert_eq!(result.sanitized, content);
+        assert!(result.secrets_detected.is_empty(), "{content:?}");
+    }
+    let value = format!("c7Tvo+hBKqFY{}", fake_b64(28));
+    for (content, secret) in [
+        (format!("\"credentials\": \"{sha256}\""), sha256),
+        (format!("const apiToken = \"{sha256}\";"), sha256),
+        (format!("API_TOKEN=\"{}\"", &sha256[..32]), &sha256[..32]),
+        (
+            format!("\"bin/with_credentials.mjs\": \"{value}\""),
+            value.as_str(),
+        ),
+        (
+            format!("\"bin/with_credentials.mjs\": \"{}\"", &sha256[..50]),
+            &sha256[..50],
+        ),
+        // Vault/Consul-style path keys name a secret, not a file: a bare-hex
+        // credential (Datadog, Twilio) under them stays redacted.
+        (
+            format!(
+                "\"secret/data/prod/datadog_api_key\": \"{}\"",
+                &sha256[..32]
+            ),
+            &sha256[..32],
+        ),
+        (
+            format!("\"config/myapp/twilio_auth_token\": \"{}\"", &sha256[..40]),
+            &sha256[..40],
+        ),
+        (
+            format!("secret/data/prod/datadog_app_key: {}\n", &sha256[..40]),
+            &sha256[..40],
+        ),
+        // An unquoted YAML path key that no provider pattern knows: the
+        // credential-named key alone says "credential".
+        (
+            format!("config/app/api_token: {}\n", &sha256[..40]),
+            &sha256[..40],
+        ),
+    ] {
+        let result = detect(&content, None);
+        assert!(!result.sanitized.contains(secret), "leaked: {content:?}");
     }
 }

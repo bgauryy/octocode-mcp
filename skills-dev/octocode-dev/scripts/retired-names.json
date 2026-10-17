@@ -664,7 +664,24 @@
     {
       "name": "cursor",
       "scope": "input",
-      "slice": "flow edges"
+      "slice": "flow edges",
+      "tools": [
+        "clasify",
+        "ghSearchRepo",
+        "ghSearchCode",
+        "ghStructure",
+        "ghGetFileContent",
+        "ghSearchHistory",
+        "ghGetHistoryItem",
+        "ghCloneRepo",
+        "localSearch",
+        "structureSearch",
+        "astSearch",
+        "astTopology",
+        "astRewrite",
+        "localFetch",
+        "lspSearch"
+      ]
     },
     {
       "name": "chunkType",

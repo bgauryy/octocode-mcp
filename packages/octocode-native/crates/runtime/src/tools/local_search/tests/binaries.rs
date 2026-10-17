@@ -327,6 +327,7 @@ fn clipped_secret_guard_fails_closed_when_the_source_cannot_be_reread() {
         path: "gone.txt".into(),
         match_count: 1,
         matches: vec![octocode_engine::types::TextSearchMatch {
+            deferred: None,
             line: 1,
             column: 0,
             byte_offset: 0,
@@ -376,6 +377,7 @@ fn clipped_secret_guard_fails_closed_when_the_match_line_is_gone() {
         path: "shrunk.txt".into(),
         match_count: 1,
         matches: vec![octocode_engine::types::TextSearchMatch {
+            deferred: None,
             line: 40,
             column: 0,
             byte_offset: 0,
@@ -1115,6 +1117,7 @@ fn declaration_rows_are_marked_sparsely() {
 fn a_stored_page_is_byte_identical_to_the_page_a_rescan_cuts() {
     let root = tempfile::tempdir().expect("fixture directory");
     paged_fixture(root.path());
+    settle();
     let (policy, security) = policy_for(root.path());
     let search = |request: &LocalSearchQuery| {
         execute_local_search(
@@ -1176,22 +1179,24 @@ fn a_stored_page_is_byte_identical_to_the_page_a_rescan_cuts() {
     assert!(every_page.contains(&crate::security::key_fragment_placeholder()));
 }
 
-/// A stored page checks the read policy of every file it shows: a shown
-/// file swapped for a symlink out of the root, under its stored stamp and
-/// digest, fails the page. A swapped file the page neither reads nor shows
-/// leaves the page as it was; the page that shows it fails.
+/// A matched file swapped for a symlink out of the root, under its stored
+/// modification time and digest, drops the stored scan (its directory and
+/// its own stamp changed). The page that would show it rescans, and the
+/// rescan's walk, which follows no link, no longer finds the file: the
+/// snapshot restarts.
 #[cfg(unix)]
 #[test]
-fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
+fn a_swapped_matched_file_drops_the_stored_scan_and_restarts_its_page() {
     let root = tempfile::tempdir().expect("fixture directory");
     let outside = tempfile::tempdir().expect("outside directory");
     paged_fixture(root.path());
+    settle();
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle"}),
         None,
     );
-    let page_one = execute_local_search(
+    let snapshot = execute_local_search(
         &request,
         &policy,
         &security,
@@ -1200,17 +1205,59 @@ fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
         Some(6_000),
         None,
     )
-    .expect("page 1");
-    let snapshot = page_one.source_snapshot.clone().expect("snapshot");
+    .expect("page 1")
+    .source_snapshot
+    .expect("snapshot");
     let page = |page: u32| {
         ls_query(
             serde_json::json!({"snapshot": snapshot, "page": page}),
             Some(&request),
         )
     };
-    let run = |page: &LocalSearchQuery| {
-        execute_local_search(
-            page,
+    assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
+    let on_three = page_paths(&page(3), &policy, &security);
+    swap_for_outside_copy(&root.path().join(&on_three[0]), outside.path());
+    assert!(
+        super::manifest::get(&snapshot, &policy.identity()).is_none(),
+        "the swap drops the stored scan"
+    );
+    let failed = execute_local_search(
+        &page(3),
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        Some(6_000),
+        None,
+    )
+    .expect_err("page 3 would show the swapped file");
+    assert_eq!(failed.code, "staleSnapshot", "{}", failed.message);
+}
+
+/// A stored page checks the read policy of every file it shows, even for a
+/// swap that lands after the page took its stored scan (when the stored
+/// walk's proof still held): a shown file swapped for a symlink out of the
+/// root, under its stored stamp and digest, fails the page. A swapped file
+/// the page neither reads nor shows leaves the page as it was; the page
+/// that shows it fails.
+#[cfg(unix)]
+#[test]
+fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
+    // One settled fixture per swap: a swap drops its own stored scan.
+    let roots = [(); 3].map(|()| {
+        let root = tempfile::tempdir().expect("fixture directory");
+        paged_fixture(root.path());
+        root
+    });
+    settle();
+    let stored = |root: &std::path::Path| {
+        let (policy, security) = policy_for(root);
+        let request = ls_query(
+            serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle"}),
+            None,
+        );
+        let snapshot = execute_local_search(
+            &request,
             &policy,
             &security,
             &NeverCancel,
@@ -1218,45 +1265,69 @@ fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
             Some(6_000),
             None,
         )
+        .expect("page 1")
+        .source_snapshot
+        .expect("snapshot");
+        assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
+        let page = move |page: u32| {
+            ls_query(
+                serde_json::json!({"snapshot": snapshot, "page": page}),
+                Some(&request),
+            )
+        };
+        (policy, security, page)
     };
-    let second = serde_json::to_string(&run(&page(2)).expect("page 2")).expect("json");
+    let swapped_page = |root: &std::path::Path, file: &str, shown: u32| {
+        let (policy, security, page) = stored(root);
+        let outside = tempfile::tempdir().expect("outside directory");
+        stored_page_after(&page(shown), &policy, &security, Some(6_000), || {
+            swap_for_outside_copy(&root.join(file), outside.path());
+        })
+    };
+    let (policy, security, page) = stored(roots[0].path());
+    let second = serde_json::to_string(
+        &execute_local_search(
+            &page(2),
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            Some(6_000),
+            None,
+        )
+        .expect("page 2"),
+    )
+    .expect("json");
     let on_two = page_paths(&page(2), &policy, &security);
     let on_three = page_paths(&page(3), &policy, &security);
     let later = on_three
         .iter()
         .find(|path| !on_two.contains(path))
         .expect("a page-3 file");
-    swap_for_outside_copy(&root.path().join(later), outside.path());
-    assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
     let unchanged =
-        serde_json::to_string(&run(&page(2)).expect("page 2 neither reads nor shows it"))
-            .expect("json");
-    assert_eq!(unchanged, second);
-    let denied = run(&page(3)).expect_err("page 3 shows the swapped file");
-    assert_eq!(denied.code, "symlinkEscape", "{}", denied.message);
-    assert!(
-        denied.message.contains("denied by the active path policy"),
-        "{}",
-        denied.message
-    );
-    swap_for_outside_copy(&root.path().join(&on_two[0]), outside.path());
-    let denied = run(&page(2)).expect_err("page 2 shows the swapped file");
-    assert_eq!(denied.code, "symlinkEscape", "{}", denied.message);
-    assert!(
-        denied.message.contains("denied by the active path policy"),
-        "{}",
-        denied.message
-    );
+        swapped_page(roots[0].path(), later, 2).expect("page 2 neither reads nor shows it");
+    assert_eq!(serde_json::to_string(&unchanged).expect("json"), second);
+    for (root, file, shown) in [(&roots[1], later, 3), (&roots[2], &on_two[0], 2)] {
+        let denied =
+            swapped_page(root.path(), file, shown).expect_err("the page shows the swapped file");
+        assert_eq!(denied.code, "symlinkEscape", "{}", denied.message);
+        assert!(
+            denied.message.contains("denied by the active path policy"),
+            "{}",
+            denied.message
+        );
+    }
 }
 
 /// A key file the stored redaction scanned, rewritten in place under its
-/// stored size and time, restarts the snapshot on a page that does not even
-/// show it: the replay reads the key file again and binds it to the stored
-/// digest, as a fresh redaction does.
+/// stored size and time after the page took the stored scan, restarts a
+/// page that does not even show it: the replay reads the key file again and
+/// binds it to the stored digest, as a fresh redaction does.
 #[test]
 fn a_key_file_rewritten_under_its_stamp_restarts_a_replayed_page() {
     let root = tempfile::tempdir().expect("fixture directory");
     paged_fixture(root.path());
+    settle();
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle"}),
@@ -1285,22 +1356,59 @@ fn a_key_file_rewritten_under_its_stamp_restarts_a_replayed_page() {
     );
     let key = root.path().join("zkey.ts");
     let text = fs::read_to_string(&key).expect("key fixture");
-    rewrite_keeping_stamp(&key, &text.replace("export const pem", "export const pex"));
     assert!(
         super::manifest::get(&snapshot, &policy.identity())
             .is_some_and(|stored| stored.redaction.is_some())
     );
-    let error = execute_local_search(
-        &page_two,
-        &policy,
-        &security,
-        &NeverCancel,
+    let page = stored_page_after(&page_two, &policy, &security, Some(6_000), || {
+        rewrite_keeping_stamp(&key, &text.replace("export const pem", "export const pex"));
+    });
+    assert_eq!(page.expect_err("changed key file").code, "staleSnapshot");
+}
+
+/// The same rewrite made before a continuation takes the stored scan
+/// restarts it too. On Unix it moved the key file's change time, so the
+/// walk's proof drops the stored scan before any replay.
+#[test]
+fn a_key_file_rewritten_before_a_continuation_restarts_it() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    paged_fixture(root.path());
+    settle();
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle"}),
         None,
-        Some(6_000),
-        None,
-    )
-    .expect_err("changed key file");
-    assert_eq!(error.code, "staleSnapshot");
+    );
+    let run = |query: &LocalSearchQuery| {
+        execute_local_search(
+            query,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            Some(6_000),
+            None,
+        )
+    };
+    let snapshot = run(&request)
+        .expect("page 1")
+        .source_snapshot
+        .expect("snapshot");
+    let page_two = ls_query(
+        serde_json::json!({"snapshot": snapshot, "page": 2}),
+        Some(&request),
+    );
+    assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
+    let key = root.path().join("zkey.ts");
+    let text = fs::read_to_string(&key).expect("key fixture");
+    rewrite_keeping_stamp(&key, &text.replace("export const pem", "export const pex"));
+    if cfg!(unix) {
+        assert!(super::manifest::get(&snapshot, &policy.identity()).is_none());
+    }
+    assert_eq!(
+        run(&page_two).expect_err("changed key file").code,
+        "staleSnapshot"
+    );
 }
 
 /// Count views rank the most hits first under the default sort; equal
@@ -1459,6 +1567,80 @@ fn a_missed_identifier_leads_to_its_spelling_variants() {
     }
 }
 
+/// An identifier that matches nothing because of a typo (a swap, a
+/// missing, extra or wrong char) leads to the spellings one edit away that
+/// exist, named in the hint and searched as whole words by the lead: a
+/// longer name holding the typo's text is not one of them.
+#[test]
+fn a_typo_leads_to_the_spelling_one_edit_away() {
+    let files = [(
+        "src/run.rs",
+        "pub fn execute_local_search() {}\nfn fingerprint() {}\nlet xexecute_local_search_all = 1;\n",
+    )];
+    for (typo, found) in [
+        ("exeucte_local_search", "execute_local_search"),
+        ("fingerprnt", "fingerprint"),
+        ("fingerprints", "fingerprint"),
+        ("fingerpront", "fingerprint"),
+    ] {
+        let body = search_fixture(
+            &files,
+            ls_query(serde_json::json!({"matchString": typo}), None),
+        );
+        let hints = body["hints"].to_string();
+        assert!(
+            hints.contains(&format!("near spellings match in 1 file(s): {found}.")),
+            "{typo}: {body}"
+        );
+        let lead = &body["next"]["findSimilar"];
+        let row = lead.pointer("/query/queries/0").unwrap_or(&lead["query"]);
+        assert_eq!(row["matchString"], found, "{row}");
+        assert_eq!(row["wholeWord"], true, "{row}");
+        let run = search_fixture(&files, ls_query(row.clone(), None));
+        assert_eq!(run["files"][0]["path"], "src/run.rs", "{run}");
+        assert_eq!(
+            run["files"][0]["matches"].as_array().map(Vec::len),
+            Some(1),
+            "{run}"
+        );
+    }
+    // Two edits away, or too short to probe: no lead.
+    for miss in ["exeuctelocal_search", "fngrprint", "fnx"] {
+        let none = search_fixture(
+            &files,
+            ls_query(serde_json::json!({"matchString": miss}), None),
+        );
+        assert!(none["next"].get("findSimilar").is_none(), "{miss}: {none}");
+    }
+}
+
+/// One-edit spellings: deletions, swaps, substitutions and insertions,
+/// sorted and distinct, never the term, always identifiers.
+#[test]
+fn one_edit_spellings_cover_each_edit_once() {
+    let spellings = super::leads::one_edit_spellings("abcd").expect("identifier");
+    for expected in ["acd", "bacd", "abdd", "abxcd", "abcde", "_abcd"] {
+        assert!(
+            spellings.iter().any(|s| s == expected),
+            "{expected}: {spellings:?}"
+        );
+    }
+    assert!(!spellings.iter().any(|s| s == "abcd"));
+    assert!(
+        !spellings
+            .iter()
+            .any(|s| s.starts_with(|c: char| c.is_ascii_digit()))
+    );
+    assert!(spellings.windows(2).all(|pair| pair[0] < pair[1]));
+    // Uppercase is substituted only into a term that has some.
+    assert!(!spellings.iter().any(|s| s == "aBcd"));
+    let camel = super::leads::one_edit_spellings("abCd").expect("identifier");
+    assert!(camel.iter().any(|s| s == "aBCd"), "{camel:?}");
+    for none in ["abc", "a.bcd", "9abc", "ab-cd"] {
+        assert!(super::leads::one_edit_spellings(none).is_none(), "{none}");
+    }
+}
+
 /// Case-style variants of a compound identifier, excluding the term itself.
 #[test]
 fn identifier_variants_cover_the_common_case_styles() {
@@ -1511,4 +1693,140 @@ fn a_line_past_the_byte_page_is_read_at_the_hit_whatever_its_characters() {
     assert_eq!(wide["offset"], 18_001, "{wide}");
     let ascii = read_of("x".repeat(10_000));
     assert!(ascii.get("unit").is_none(), "{ascii}");
+}
+
+#[test]
+fn deferred_hit_before_a_large_binary_tail_remains_readable_and_binds_the_tail() {
+    use std::io::{Seek, SeekFrom, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let root = tempfile::tempdir().expect("fixture");
+    let path = root.path().join("binary-tail.txt");
+    let mut source = fs::File::create(&path).expect("create");
+    source
+        .write_all(b"needle before binary\n\0")
+        .expect("prefix");
+    let chunk = [b'x'; 64 * 1024];
+    for _ in 0..(65 * 16) {
+        source.write_all(&chunk).expect("newline-free tail");
+    }
+    drop(source);
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path":path,"matchString":"needle"}),
+        None,
+    );
+    let scan = super::super::executor::scan_query(&request, &policy, &NeverCancel, Some(1), None)
+        .expect("engine accepts the binary prefix");
+    assert_eq!(scan.parsed.files.len(), 1);
+    assert_eq!(scan.parsed.files[0].matches.len(), 1);
+    assert!(scan.parsed.files[0].matches[0].deferred.is_some());
+    assert!(
+        scan.parsed
+            .stats
+            .cap_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("binaryQuit"))
+    );
+    let original = scan.parsed.files[0].clone();
+    let expected = |_: &std::path::Path| None;
+    let scope = super::super::verify::PageScope {
+        query: &request,
+        paths: &policy,
+        output_root: root.path(),
+        expected_digest: &expected,
+        security: &security,
+        cancel: &NeverCancel,
+        walk_threads: Some(1),
+    };
+    let mut reconstructed = original.clone();
+    super::super::verify::materialize(&scope, &mut reconstructed, 0..1)
+        .expect("unchanged binary tail does not prevent reconstructing the earlier hit");
+    assert_eq!(reconstructed.matches[0].value, "needle before binary");
+
+    let result = super::super::executor::page_of(
+        &request,
+        &policy,
+        &security,
+        &NeverCancel,
+        Some(1),
+        scan,
+        None,
+    )
+    .expect("unchanged binary tail is hashed without buffering it as a line");
+    let mut owned_scan =
+        super::super::executor::scan_query(&request, &policy, &NeverCancel, Some(1), None)
+            .expect("baseline scan plan");
+    let mut options = owned_scan.search_options.clone();
+    options.defer_values = false;
+    owned_scan.parsed =
+        super::super::executor::scan(&request, &policy, options, &policy.identity(), &NeverCancel)
+            .expect("owned engine baseline")
+            .parsed;
+    assert_eq!(owned_scan.parsed.files[0].matches[0].deferred, None);
+    assert_eq!(
+        owned_scan.parsed.files[0].matches[0].value,
+        "needle before binary"
+    );
+    owned_scan.reusable = None;
+    let owned = super::super::executor::page_of(
+        &request,
+        &policy,
+        &security,
+        &NeverCancel,
+        Some(1),
+        owned_scan,
+        None,
+    )
+    .expect("owned page preserves the existing conservative secret guard");
+    assert_eq!(
+        result, owned,
+        "deferred reconstruction preserves the complete owned page, including redaction"
+    );
+
+    struct CancelDuringDrain(AtomicUsize);
+    impl crate::tools::cancel::CancellationCheck for CancelDuringDrain {
+        fn check(&self) -> Result<(), String> {
+            if self.0.fetch_add(1, Ordering::Relaxed) >= 32 {
+                Err("tail-drain-cancel".into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+    let cancel = CancelDuringDrain(AtomicUsize::new(0));
+    let expected = |_: &std::path::Path| None;
+    let scope = super::super::verify::PageScope {
+        query: &request,
+        paths: &policy,
+        output_root: root.path(),
+        expected_digest: &expected,
+        security: &security,
+        cancel: &cancel,
+        walk_threads: Some(1),
+    };
+    let error = super::super::verify::materialize(&scope, &mut original.clone(), 0..1)
+        .expect_err("digest-only drain remains cancellable");
+    assert!(format!("{error:?}").contains("tail-drain-cancel"));
+
+    let mut source = fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .expect("open tail");
+    source.seek(SeekFrom::End(-1)).expect("last byte");
+    source.write_all(b"z").expect("same-size tail edit");
+    drop(source);
+    let scope = super::super::verify::PageScope {
+        query: &request,
+        paths: &policy,
+        output_root: root.path(),
+        expected_digest: &expected,
+        security: &security,
+        cancel: &NeverCancel,
+        walk_threads: Some(1),
+    };
+    assert!(
+        super::super::verify::materialize(&scope, &mut original.clone(), 0..1).is_err(),
+        "even unshown tail bytes remain bound by the source digest"
+    );
 }

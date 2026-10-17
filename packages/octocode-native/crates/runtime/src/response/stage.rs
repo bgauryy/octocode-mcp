@@ -26,29 +26,10 @@ pub(crate) struct StageInput {
     pub auto_page_chars: usize,
     /// Encoding of the rendered text channel (`output.format`).
     pub text_format: super::render::TextFormat,
-    /// False when a replay would not reproduce the page: clasify, whose
-    /// replay would re-run inference.
+    /// False only when saved-result storage failed and the complete result
+    /// must be returned without an unusable display continuation.
     pub allow_auto_paging: bool,
     pub source_digest: Option<String>,
-}
-
-/// Turn executed rows into the public envelope. An envelope-level contract
-/// violation is returned as `Ok(Err(_))`; isolated row violations become
-/// explicit error rows and mark the outcome failed.
-pub(crate) fn finish(
-    mut input: StageInput,
-    context: &ExecutionContext,
-) -> Result<Result<ToolOutcome, ContractValidationError>, ExecutionError> {
-    let remaining = match settle(
-        input.tool,
-        &mut input.structured,
-        &input.response_query,
-        &mut input.failure,
-    ) {
-        Ok(remaining) => remaining,
-        Err(error) => return Ok(Err(error)),
-    };
-    respond(input, remaining, None, context)
 }
 
 /// The page-independent half of the stage: selection receipts, line
@@ -104,11 +85,14 @@ impl TextCache {
 
 /// The page-dependent half of the stage over a [`settle`]d envelope: text,
 /// paging and the paged shape's contract check. `text` reuses a replay's
-/// rendered text.
+/// rendered text; `keep` (a first execution's replay seed) receives the
+/// settled envelope only when the response windows, so a response that fits
+/// one page is never copied.
 pub(crate) fn respond(
     input: StageInput,
     remaining: Vec<Vec<super::pages::Remaining>>,
     text: Option<&TextCache>,
+    keep: Option<&mut Option<Value>>,
     context: &ExecutionContext,
 ) -> Result<Result<ToolOutcome, ContractValidationError>, ExecutionError> {
     let StageInput {
@@ -124,35 +108,59 @@ pub(crate) fn respond(
         source_digest,
     } = input;
     let all_failed = response_all_failed(&structured);
+    let mut keep = keep;
+    let mut kept = |structured: &Value| {
+        if let Some(slot) = keep.take() {
+            *slot = Some(structured.clone());
+        }
+    };
+    let explicit = options.explicit();
+    if explicit {
+        kept(&structured);
+    }
     // An explicitly paged text response hashes and windows the rendered
     // text, so transient telemetry must leave before rendering (row pages
     // keep per-call facts outside their snapshot; the pager handles both).
-    let stripped = options.explicit() && !options.rows_scope();
+    let stripped = explicit && !options.rows_scope();
     if stripped && let Some(envelope) = structured.as_object_mut() {
         super::pager::strip_transient_telemetry(envelope);
     }
     context.check()?;
-    let render = options.render_text.unwrap_or(mcp)
-        || failure.is_some()
-        || options.response_length.is_some()
-        || options.response_offset.is_some()
-        || options.response_snapshot.is_some();
-    let rendered_text = render.then(|| {
-        let draw = || super::render::render_tool(tool, &structured, &response_query, text_format);
-        match text {
-            Some(cache) => cache.get_or_render(stripped, draw),
-            None => draw(),
+    // Row and envelope windows carry their own JSON: only a text response
+    // draws the rendered text.
+    let render = options.render_text.unwrap_or(mcp) || failure.is_some() || explicit;
+    let draw = |windowed: bool| {
+        (render && !windowed).then(|| {
+            let draw =
+                || super::render::render_tool(tool, &structured, &response_query, text_format);
+            match text {
+                Some(cache) => cache.get_or_render(stripped, draw),
+                None => draw(),
+            }
+        })
+    };
+    let rendered_text = if allow_auto_paging && !explicit {
+        let rendered = options.auto_paginate(&structured, auto_page_chars, || draw(false));
+        if options.explicit() {
+            kept(&structured);
         }
-    });
+        rendered
+    } else {
+        draw(options.rows_scope() || options.structured_scope())
+    };
     context.check()?;
-    if allow_auto_paging {
-        options.auto_paginate(rendered_text.as_deref(), &structured, auto_page_chars);
-    }
     super::continuations::compact_input(tool.as_str(), &mut response_query);
     // Row and envelope windows reshape the rows; a text page only adds its
     // window and pagination, and an unpaged envelope leaves unchanged.
     let reshaped = options.rows_scope() || options.structured_scope();
-    let prepared = ResponsePager::new(ResponsePagerConfig::default())
+    let pager_config = if allow_auto_paging {
+        ResponsePagerConfig::default()
+    } else {
+        ResponsePagerConfig {
+            max_rendered_bytes: usize::MAX,
+        }
+    };
+    let prepared = ResponsePager::new(pager_config)
         .prepare(
             ResponseInput {
                 tool: tool.as_str().into(),
@@ -237,6 +245,26 @@ mod tests {
     use std::time::{Duration, Instant};
     use tokio_util::sync::CancellationToken;
 
+    /// Both halves of the stage over one execution, with no replay text or
+    /// seed: an envelope-level contract violation is returned as
+    /// `Ok(Err(_))`; isolated row violations become explicit error rows and
+    /// mark the outcome failed.
+    fn finish(
+        mut input: StageInput,
+        context: &ExecutionContext,
+    ) -> Result<Result<ToolOutcome, ContractValidationError>, ExecutionError> {
+        let remaining = match settle(
+            input.tool,
+            &mut input.structured,
+            &input.response_query,
+            &mut input.failure,
+        ) {
+            Ok(remaining) => remaining,
+            Err(error) => return Ok(Err(error)),
+        };
+        respond(input, remaining, None, None, context)
+    }
+
     fn context() -> ExecutionContext {
         ExecutionContext {
             cancellation: CancellationToken::new(),
@@ -292,38 +320,102 @@ mod tests {
                 "query":{"queries":[{"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","offset":1}]}}}}})
     }
 
+    /// The envelope is sized before any text is drawn: one past the
+    /// automatic page pages by rows without rendering, and only a windowed
+    /// response copies its envelope for later pages.
+    #[test]
+    fn automatic_row_pages_skip_the_text_render_and_only_windows_keep_a_copy() {
+        let respond_with = |content: String| {
+            let structured = json!({"results":[{"index":0,"data":{"path":"a.txt","content":content,"totalLines":1}}]});
+            let text = TextCache::default();
+            let mut kept = None;
+            let outcome = respond(
+                StageInput {
+                    tool: ToolId::LocalFetch,
+                    structured,
+                    response_query: json!({"path":"/tmp/a.txt"}),
+                    options: ResponsePageOptions::default(),
+                    mcp: true,
+                    failure: None,
+                    auto_page_chars: 1_000,
+                    text_format: super::super::render::TextFormat::Yaml,
+                    allow_auto_paging: true,
+                    source_digest: None,
+                },
+                Vec::new(),
+                Some(&text),
+                Some(&mut kept),
+                &context(),
+            )
+            .expect("stage runs")
+            .expect("valid envelope");
+            let rendered = text.0.lock().expect("cache").is_some();
+            (outcome, rendered, kept.is_some())
+        };
+        let (outcome, rendered, kept) = respond_with("x".repeat(5_000));
+        assert_eq!(
+            outcome.structured_content["responsePagination"]["scope"],
+            "rows"
+        );
+        assert!(!rendered, "row pages carry their own JSON");
+        assert!(kept, "a paged response keeps its envelope for later pages");
+        let (outcome, rendered, kept) = respond_with("small".into());
+        assert!(
+            outcome
+                .structured_content
+                .get("responsePagination")
+                .is_none()
+        );
+        assert!(
+            rendered && !kept,
+            "a one-page response is rendered, never copied"
+        );
+    }
+
     /// A rendered response past the 8 MiB ceiling pages (rows, else
     /// envelope windows) with an executable continuation instead of failing.
     #[test]
     fn oversized_responses_page_by_rows_instead_of_failing() {
         let content = "x".repeat(9 * 1024 * 1024);
         let structured = json!({"results":[{"index":0,"data":{"path":"a.txt","content":content,"totalLines":1}}]});
-        let outcome = finish(
-            StageInput {
-                tool: ToolId::LocalFetch,
-                structured,
-                response_query: json!({"path":"/tmp/a.txt"}),
-                options: ResponsePageOptions::default(),
-                mcp: true,
-                failure: None,
-                auto_page_chars: 0,
-                text_format: super::super::render::TextFormat::Yaml,
-                allow_auto_paging: false,
-                source_digest: None,
-            },
-            &context(),
-        )
-        .expect("execution")
-        .expect("contract-valid page");
-        let page = &outcome.structured_content;
-        // One 9 MiB string row cannot split into row pages: it windows.
-        assert_eq!(page["responsePagination"]["scope"], "structuredContent");
-        assert_eq!(
-            page["responsePagination"]["next"]["query"]["responseScope"],
-            "structured"
-        );
-        let text: usize = outcome.content.iter().map(|c| c.text.len()).sum();
-        assert!(text <= 9 * 1024 * 1024, "page text is bounded: {text}");
+        for allow_auto_paging in [true, false] {
+            let outcome = finish(
+                StageInput {
+                    tool: ToolId::LocalFetch,
+                    structured: structured.clone(),
+                    response_query: json!({"path":"/tmp/a.txt"}),
+                    options: ResponsePageOptions::default(),
+                    mcp: true,
+                    failure: None,
+                    auto_page_chars: 0,
+                    text_format: super::super::render::TextFormat::Yaml,
+                    allow_auto_paging,
+                    source_digest: None,
+                },
+                &context(),
+            )
+            .expect("execution")
+            .expect("contract-valid response");
+            let page = &outcome.structured_content;
+            if allow_auto_paging {
+                // One 9 MiB string row cannot split into row pages: it windows.
+                assert_eq!(page["responsePagination"]["scope"], "structuredContent");
+                assert_eq!(
+                    page["responsePagination"]["next"]["query"]["responseScope"],
+                    "structured"
+                );
+                let text: usize = outcome.content.iter().map(|c| c.text.len()).sum();
+                assert!(text <= 9 * 1024 * 1024, "page text is bounded: {text}");
+            } else {
+                assert!(page.get("responsePagination").is_none());
+                assert!(
+                    page["results"][0]["data"]["content"]
+                        .as_str()
+                        .is_some_and(|returned| returned == content),
+                    "unretained responses keep the complete source content"
+                );
+            }
+        }
     }
 
     /// A page that continues keeps every other lead its row carries when
@@ -521,8 +613,8 @@ mod tests {
             ),
         ];
         for (tool, unknown, whole, mut data) in cases {
-            data["next"] = json!({"unfiltered": call(tool, unknown.clone()),
-                "unfiltered2": call(tool, whole.clone())});
+            data["next"] = json!({"unfilteredUnknown": call(tool, unknown.clone()),
+                "unfiltered": call(tool, whole.clone())});
             for mcp in [false, true] {
                 let outcome = stage(
                     tool,
@@ -531,12 +623,12 @@ mod tests {
                 );
                 let next = &outcome.structured_content["results"][0]["data"]["next"];
                 assert_eq!(
-                    next["unfiltered"]["query"]["queries"],
+                    next["unfilteredUnknown"]["query"]["queries"],
                     json!([unknown]),
                     "{tool} mcp={mcp}: {next}"
                 );
                 assert_eq!(
-                    next["unfiltered2"]["query"]["queries"],
+                    next["unfiltered"]["query"]["queries"],
                     json!([whole]),
                     "{tool} mcp={mcp}: {next}"
                 );

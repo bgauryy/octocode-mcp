@@ -13,7 +13,7 @@ use crate::contracts::tool_types::SelectionUnit;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::id::ToolId;
 use crate::tools::result::ToolError;
-use crate::tools::selection::{Candidate, Decision, Failure, Outcome, Runtime};
+use crate::tools::selection::{Candidate, Decision, Failure, Outcome, ProviderError, Runtime};
 use octocode_engine::types::{TextSearchFile, TextSearchResult};
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -33,9 +33,13 @@ pub(super) struct Selected {
     /// selection.
     files_before: usize,
     files_kept: usize,
-    /// Hit rows of this candidate page before and after selection.
+    /// Hit rows of the groups this candidate page judged, before and after
+    /// selection.
     rows_before: usize,
     rows_kept: usize,
+    /// The provider's error when it failed this page: the hits are shown
+    /// unfiltered under an `unavailable` receipt.
+    provider: Option<ProviderError>,
 }
 
 /// The snippet groups of one file: indices into its `matches`, each group
@@ -121,24 +125,30 @@ pub(super) fn select_hits(
         }
     }
     let query_json = normalized_query(query, streamed_layout(query));
-    let outcome = crate::tools::selection::select(
-        runtime,
-        &query_json,
-        identity,
-        prior,
-        &candidates,
-        None,
-        SelectionUnit::Chunks,
-    )
-    .map_err(|failure| match failure {
-        Failure::Stale => stale_snapshot(query),
-        Failure::Cancelled => ToolError::cancelled("Selection was cancelled"),
-        Failure::Provider(failure) => failure.tool_error(crate::tools::selection::unfiltered(
-            ToolId::LocalSearch,
+    // The search succeeded: a provider that cannot answer now never
+    // withholds its hits ([`crate::tools::selection::unless_transient`]).
+    // A refused credential or request stays the row's error, with its
+    // unfiltered lead.
+    let (outcome, provider) =
+        crate::tools::selection::unless_transient(crate::tools::selection::select(
+            runtime,
             &query_json,
-            &[],
-        )),
-    })?;
+            identity,
+            prior,
+            &candidates,
+            None,
+            SelectionUnit::Chunks,
+        ))
+        .map_err(|failure| match failure {
+            Failure::Stale => stale_snapshot(query),
+            Failure::Cancelled => ToolError::cancelled("Selection was cancelled"),
+            Failure::Provider(failure) => failure.tool_error(crate::tools::selection::unfiltered(
+                ToolId::LocalSearch,
+                &query_json,
+                &[],
+            )),
+        })?;
+    let unavailable = outcome.provider_unavailable();
     let mut decisions = vec![Decision::Unknown; total];
     for &ordinal in &outcome.selected {
         decisions[ordinal] = Decision::Selected;
@@ -163,18 +173,22 @@ pub(super) fn select_hits(
         rows_total += file.matches.len();
         let lines_before = distinct_lines(&file);
         let mut keep = vec![false; file.matches.len()];
-        let (mut holds_unknown, mut considered) = (false, false);
+        let (mut holds_unknown, mut judged) = (false, false);
         for group in groups {
             // A group outside this candidate page's pool was judged (and
             // shown, or left to its unfiltered route) by an earlier one.
             if outcome.considers(ordinal) {
-                considered = true;
-                rows_before += group.len();
                 if unjudged.contains(&ordinal) {
                     holds_unknown = true;
                 } else {
+                    judged = true;
+                    rows_before += group.len();
                     match decisions[ordinal] {
                         Decision::Selected => group.iter().for_each(|&i| keep[i] = true),
+                        // Unjudgeable here: shown as found.
+                        Decision::Unknown if unavailable => {
+                            group.iter().for_each(|&i| keep[i] = true);
+                        }
                         Decision::Unknown => holds_unknown = true,
                         Decision::Excluded => {}
                     }
@@ -182,7 +196,7 @@ pub(super) fn select_hits(
             }
             ordinal += 1;
         }
-        files_before += usize::from(considered);
+        files_before += usize::from(judged);
         if holds_unknown {
             unknown_files.push(file.path.clone());
         }
@@ -216,6 +230,7 @@ pub(super) fn select_hits(
         files_kept: parsed.files.len(),
         rows_before,
         rows_kept,
+        provider,
     }))
 }
 
@@ -271,11 +286,11 @@ impl Selected {
         &self.outcome.token
     }
 
-    /// `next.unfiltered`, and `next.unfiltered2` when the first is narrower:
-    /// `unfiltered` reaches the unknown hits (the same search over exactly
-    /// the files holding them), `unfiltered2` the whole unfiltered result of
-    /// this scan. Without unknown hits, or when they span every file, the
-    /// whole result is the one lead. Groups the candidate budget left
+    /// `next.unfiltered`, the whole unfiltered result of this scan, and
+    /// `next.unfilteredUnknown` when it is narrower: the unknown hits (the
+    /// same search over exactly the files holding them). Without unknown
+    /// hits, or when they span every file, the whole result is the one
+    /// lead. Groups the candidate budget left
     /// unjudged get `nextCandidatePage`: the same classified search of the
     /// same scan judging exactly them, so a chain of candidate pages judges
     /// every group once.
@@ -285,8 +300,9 @@ impl Selected {
         snapshot: &str,
         root_is_dir: bool,
     ) -> Vec<(&'static str, Value)> {
-        let receipt = self.receipt();
-        if receipt.selected_items >= receipt.total_items {
+        // A page that kept every hit, or that the provider failed, already
+        // shows every hit unfiltered.
+        if !self.outcome.leaves_out() {
             return Vec::new();
         }
         let query_json = normalized_query(query, streamed_layout(query));
@@ -341,7 +357,7 @@ impl Selected {
         let mut unknown = crate::tools::selection::unfiltered_row(query_json, &[]);
         unknown["include"] = json!(globs);
         let unknown = crate::tools::result::Continuation::new(ToolId::LocalSearch, unknown).build();
-        vec![("unfiltered", unknown), ("unfiltered2", whole)]
+        vec![("unfiltered", whole), ("unfilteredUnknown", unknown)]
     }
 
     /// The pre-selection totals, when selection removed hits, and the
@@ -349,9 +365,16 @@ impl Selected {
     /// hits is the tool description's, not repeated here.
     pub(super) fn disclosure(&self) -> Vec<String> {
         let mut notes = Vec::new();
+        if let Some(error) = &self.provider {
+            notes.push(crate::tools::selection::unclassified_warning(
+                error,
+                "this search",
+                "its hits are",
+            ));
+        }
         if self.rows_kept < self.rows_before {
             notes.push(format!(
-                "clasifyContext kept {} of {} hit rows ({} of {} files).",
+                "clasifyContext kept {} of {} judged hit rows ({} of {} files).",
                 self.rows_kept, self.rows_before, self.files_kept, self.files_before,
             ));
         }
@@ -410,19 +433,28 @@ mod tests {
     use std::time::{Duration, Instant};
 
     /// Selects a group whose text says `keep`, excludes `drop`, else unknown;
-    /// `fail` makes the provider fail every candidate.
+    /// `fail` makes the provider fail every candidate with that error code:
+    /// a refused credential (`REFUSED`) or a provider that is down (`DOWN`).
     struct WordJudge {
-        fail: bool,
+        fail: Option<&'static str>,
     }
+
+    const REFUSED: Option<&str> = Some("classificationProviderError");
+    const DOWN: Option<&str> = Some(crate::tools::judgment::transport::CIRCUIT_OPEN);
     impl SelectionJudge for WordJudge {
         fn identity(&self) -> Value {
             json!({"test":"words"})
         }
         fn select(&self, call: JudgeCall<'_>) -> Judgments {
-            if self.fail {
+            if let Some(code) = self.fail {
+                let status = if code == REFUSED.unwrap_or_default() {
+                    "401 Unauthorized"
+                } else {
+                    "503 Service Unavailable"
+                };
                 return Err(JudgeFailure::Provider(ProviderError {
-                    code: "classificationProviderError".into(),
-                    message: "Classification provider returned HTTP 401 Unauthorized".into(),
+                    code: code.into(),
+                    message: format!("Classification provider returned HTTP {status}"),
                     hints: vec!["Check OCTOCODE_CLASSIFICATION_API and account access.".into()],
                 }));
             }
@@ -445,11 +477,15 @@ mod tests {
         }
     }
 
-    fn runtime(fail: bool, executor: &tokio::runtime::Runtime) -> Runtime {
+    fn runtime(fail: Option<&'static str>, executor: &tokio::runtime::Runtime) -> Runtime {
         runtime_with(fail, executor, 64)
     }
 
-    fn runtime_with(fail: bool, executor: &tokio::runtime::Runtime, max: usize) -> Runtime {
+    fn runtime_with(
+        fail: Option<&'static str>,
+        executor: &tokio::runtime::Runtime,
+        max: usize,
+    ) -> Runtime {
         Runtime {
             limits: SelectionLimits {
                 max_candidates: max,
@@ -472,7 +508,7 @@ mod tests {
     fn search(
         root: &std::path::Path,
         fields: Value,
-        fail: bool,
+        fail: Option<&'static str>,
     ) -> Result<LocalSearchResult, ToolError> {
         search_with(root, fields, fail, 64)
     }
@@ -480,7 +516,7 @@ mod tests {
     fn search_with(
         root: &std::path::Path,
         fields: Value,
-        fail: bool,
+        fail: Option<&'static str>,
         max: usize,
     ) -> Result<LocalSearchResult, ToolError> {
         let mut query = json!({"path": root, "matchString": "needle",
@@ -518,7 +554,7 @@ mod tests {
     #[test]
     fn each_hit_is_judged_and_counts_describe_the_kept_hits() {
         let root = fixture();
-        let result = search(root.path(), json!({}), false).expect("selected search");
+        let result = search(root.path(), json!({}), None).expect("selected search");
         let receipt = result.selection.as_ref().expect("receipt");
         assert_eq!(receipt.unit, SelectionUnit::Chunks);
         assert_eq!(
@@ -543,16 +579,16 @@ mod tests {
             result
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("kept 2 of 5 hit rows (1 of 3 files)")),
+                .any(|warning| warning.contains("kept 2 of 5 judged hit rows (1 of 3 files)")),
             "{:?}",
             result.warnings
         );
         let next = result.next.as_ref().expect("leads");
-        let unknown = &next["unfiltered"]["query"]["queries"][0];
+        let unknown = &next["unfilteredUnknown"]["query"]["queries"][0];
         assert_eq!(unknown["include"], json!(["/b.rs"]), "{next}");
         assert!(unknown.get("clasifyContext").is_none());
         assert!(unknown.get("snapshot").is_none());
-        let whole = &next["unfiltered2"]["query"]["queries"][0];
+        let whole = &next["unfiltered"]["query"]["queries"][0];
         assert!(whole.get("include").is_none());
         assert!(whole.get("snapshot").is_some());
     }
@@ -560,8 +596,8 @@ mod tests {
     #[test]
     fn the_unknown_lead_reaches_exactly_the_files_holding_unknown_hits() {
         let root = fixture();
-        let result = search(root.path(), json!({}), false).expect("selected search");
-        let lead = result.next.expect("leads")["unfiltered"]["query"]["queries"][0].clone();
+        let result = search(root.path(), json!({}), None).expect("selected search");
+        let lead = result.next.expect("leads")["unfilteredUnknown"]["query"]["queries"][0].clone();
         let query: LocalSearchQuery = serde_json::from_value(lead).expect("executable lead");
         let policy = crate::tools::test_support::workspace_policy(root.path());
         let unfiltered = super::super::execute_local_search(
@@ -603,11 +639,11 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
-        let unbudgeted = search(root.path(), json!({}), false).expect("one call");
+        let unbudgeted = search(root.path(), json!({}), None).expect("one call");
         let mut expected = shown(&unbudgeted);
         expected.sort();
         // a.rs holds groups 0-2, b.rs 3, c.rs 4; two are judged per call.
-        let mut result = search_with(root.path(), json!({}), false, 2).expect("first page");
+        let mut result = search_with(root.path(), json!({}), None, 2).expect("first page");
         let receipt = result.selection.as_ref().expect("receipt");
         assert_eq!(receipt.reason.as_deref(), Some("candidateBudget"));
         assert!(
@@ -635,7 +671,7 @@ mod tests {
             assert!(row.get("snapshot").is_some() && row.get("selection").is_some());
             assert!(row.get("include").is_none(), "the same scan: {row}");
             assert!(totals.len() < 5, "the chain ends");
-            result = search_with(root.path(), row, false, 2).expect("next candidates");
+            result = search_with(root.path(), row, None, 2).expect("next candidates");
         }
         assert_eq!(totals, [5, 3, 1], "each page counts the groups it judges");
         seen.sort();
@@ -675,7 +711,7 @@ mod tests {
         let judge = std::sync::Arc::new(Capture(std::sync::Mutex::new(Vec::new())));
         let selection = Runtime {
             judge: judge.clone(),
-            ..runtime(false, &executor)
+            ..runtime(None, &executor)
         };
         execute_local_search(
             &query,
@@ -695,10 +731,68 @@ mod tests {
         assert_eq!(names, [json!("production"), json!("checks_it")], "{seen:?}");
     }
 
+    /// A provider that cannot answer (down, overloaded, unreachable) never
+    /// withholds a search that succeeded: every hit is shown under an `unavailable` receipt naming
+    /// the provider's code, the warning states its error and hint, and the
+    /// next page replays that plan without another provider call.
     #[test]
-    fn a_provider_failing_every_hit_fails_the_row_with_its_typed_error() {
+    fn a_provider_that_is_down_shows_the_unfiltered_page_as_unavailable() {
         let root = fixture();
-        let error = search(root.path(), json!({}), true).expect_err("provider failure");
+        let result = search(root.path(), json!({}), DOWN).expect("the search succeeded");
+        let receipt = result.selection.as_ref().expect("receipt");
+        assert_eq!(
+            receipt.status,
+            crate::contracts::tool_types::SelectionStatus::Unavailable
+        );
+        assert_eq!(receipt.reason.as_deref(), DOWN);
+        assert_eq!((receipt.total_items, receipt.unknown_items), (5, 5));
+        let shown = result
+            .files
+            .iter()
+            .map(|file| {
+                (
+                    file.path.as_str(),
+                    file.matches.as_ref().map_or(0, Vec::len),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(shown, [("a.rs", 3), ("b.rs", 1), ("c.rs", 1)], "every hit");
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("HTTP 503")
+                    && warning.contains("shown unfiltered")
+                    && warning.contains("OCTOCODE_CLASSIFICATION_API")),
+            "{:?}",
+            result.warnings
+        );
+        let next = result.next.as_ref();
+        assert!(
+            next.is_none_or(|next| next.get("unfiltered").is_none()),
+            "the page is the unfiltered view: {next:?}"
+        );
+        // The recorded plan replays on the next page: the provider (now
+        // answering) is not asked again, so the page stays unavailable.
+        let first = search(root.path(), json!({"pageSize": 1}), DOWN).expect("first page");
+        let next =
+            first.next.as_ref().expect("a next page")["nextPage"]["query"]["queries"][0].clone();
+        assert!(next.get("selection").is_some(), "{next}");
+        let replay = search(root.path(), next, None).expect("replayed plan");
+        assert_eq!(
+            replay.selection.as_ref().map(|receipt| receipt.status),
+            Some(crate::contracts::tool_types::SelectionStatus::Unavailable)
+        );
+        assert!(!replay.files.is_empty(), "the next page's hits are shown");
+    }
+
+    /// A refused credential is the caller's to fix: the row fails with the
+    /// provider's typed error and hint, never masked as a page, and its
+    /// unfiltered lead keeps the evidence one call away.
+    #[test]
+    fn a_refused_credential_fails_the_row_with_its_typed_error() {
+        let root = fixture();
+        let error = search(root.path(), json!({}), REFUSED).expect_err("refused credential");
         assert_eq!(error.code, "classificationProviderError");
         assert!(
             error
@@ -711,10 +805,7 @@ mod tests {
             receipt.status,
             crate::contracts::tool_types::SelectionStatus::Unavailable
         );
-        assert_eq!(
-            receipt.reason.as_deref(),
-            Some("classificationProviderError")
-        );
+        assert_eq!(receipt.reason.as_deref(), REFUSED);
         assert_eq!(receipt.unknown_items, 5);
         let lead = &error.next.as_ref().expect("evidence stays reachable")["unfiltered"];
         assert!(lead["query"]["queries"][0].get("clasifyContext").is_none());
@@ -723,6 +814,7 @@ mod tests {
     #[test]
     fn snippet_groups_merge_overlapping_or_touching_windows() {
         let hit = |line| octocode_engine::types::TextSearchMatch {
+            deferred: None,
             line,
             column: 0,
             byte_offset: 0,

@@ -16,37 +16,6 @@ use super::format::{Confidence, EdgeKind, FLAG_TEST, GraphTables, NONE, NodeKind
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-/// Files whose change invalidates everything below their directory.
-pub(crate) fn is_global_config(path: &str) -> bool {
-    let name = path.rsplit('/').next().unwrap_or(path);
-    matches!(
-        name,
-        "package.json"
-            | "package-lock.json"
-            | "yarn.lock"
-            | "pnpm-lock.yaml"
-            | "bun.lockb"
-            | "bun.lock"
-            | "Cargo.toml"
-            | "Cargo.lock"
-            | "go.mod"
-            | "go.sum"
-            | "pyproject.toml"
-            | "setup.py"
-            | "setup.cfg"
-            | "poetry.lock"
-            | "uv.lock"
-            | "Pipfile.lock"
-            | "build.gradle"
-            | "build.gradle.kts"
-            | "pom.xml"
-            | "CMakeLists.txt"
-            | "compile_commands.json"
-    ) || (name.starts_with("tsconfig") && name.ends_with(".json"))
-        || name == "jsconfig.json"
-        || (name.starts_with("requirements") && name.ends_with(".txt"))
-}
-
 #[derive(Clone, Copy)]
 struct Reach {
     depth: u32,

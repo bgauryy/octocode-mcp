@@ -42,27 +42,31 @@ pub(crate) fn all_paths(tool: ToolId) -> Vec<&'static str> {
 }
 
 /// Whether [`prune_row`] leaves the extra at `path` on a row of `query`:
-/// its kind is wanted, its key is picked, or no kind of `tool` lists it.
+/// its kind is wanted, its key is picked, the rows are sorted by it, or no
+/// kind of `tool` lists it.
 #[must_use]
 pub fn keeps(tool: ToolId, query: &Value, path: &str) -> bool {
     tool.extra_paths()
         .iter()
         .filter(|(_, paths)| paths.contains(&path))
-        .all(|(kind, _)| wants_name(query, kind) || picked(query, path))
+        .all(|(kind, _)| {
+            wants_name(query, kind) || picked(query, path) || sorted_by(tool, query, path)
+        })
 }
 
 /// Drops `tool`'s extra fields from one result row unless its query names
 /// their kind. Error rows are pruned too: an extra field explains the call,
 /// not the failure.
 /// A key a query's `fields` pick names is evidence the caller asked for,
-/// so it stays whatever its extras kind.
+/// and the field the query's `sort` orders rows by is what the order
+/// shows (contract `sortKeyPaths`), so both stay whatever their kind.
 pub fn prune_row(row: &mut Value, tool: ToolId, query: &Value) {
     for (kind, paths) in tool.extra_paths() {
         if wants_name(query, kind) {
             continue;
         }
         for path in *paths {
-            if picked(query, path) {
+            if picked(query, path) || sorted_by(tool, query, path) {
                 continue;
             }
             if let Some(rest) = path.strip_prefix("results[].") {
@@ -70,6 +74,16 @@ pub fn prune_row(row: &mut Value, tool: ToolId, query: &Value) {
             }
         }
     }
+}
+
+/// Whether the query's `sort` orders `tool`'s rows by the extra at `path`.
+fn sorted_by(tool: ToolId, query: &Value, path: &str) -> bool {
+    let Some(sort) = query.get("sort").and_then(Value::as_str) else {
+        return false;
+    };
+    tool.sort_key_paths()
+        .iter()
+        .any(|(value, paths)| *value == sort && paths.contains(&path))
 }
 
 /// Whether `path` ends in a key the query's `fields` pick names.
@@ -236,9 +250,13 @@ mod tests {
                     object.insert(name.into(), sample(found[0], root));
                     continue;
                 }
-                let child = object
-                    .entry(name.to_owned())
-                    .or_insert_with(|| if each { json!([{}]) } else { json!({}) });
+                let child = object.entry(name.to_owned()).or_insert_with(|| {
+                    if each {
+                        json!([sample(&resolve(found[0], root)["items"], root)])
+                    } else {
+                        sample(found[0], root)
+                    }
+                });
                 if each {
                     next_targets.extend(child.as_array_mut().expect("array").iter_mut());
                 } else {
@@ -483,6 +501,62 @@ mod tests {
                 "{file}: {count} extras branch line(s), {allowed} allowed. Declare the field extra in core (fieldClass) instead."
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod sorted_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Rows sorted by an extra field show it by default (L6-8): the
+    /// comment count of a `comments:desc` search, the forks and update date
+    /// of a repository search sorted by them. Another sort drops them.
+    #[test]
+    fn the_field_rows_are_sorted_by_survives_pruning() {
+        let issue = || json!({"data":{"issues":[{"number":1,"commentsCount":40}]}});
+        let mut row = issue();
+        prune_row(
+            &mut row,
+            ToolId::GhSearchHistory,
+            &json!({"sort":"comments:desc"}),
+        );
+        assert_eq!(row["data"]["issues"][0]["commentsCount"], 40, "{row}");
+        let mut row = issue();
+        prune_row(
+            &mut row,
+            ToolId::GhSearchHistory,
+            &json!({"sort":"created:desc"}),
+        );
+        assert!(
+            row["data"]["issues"][0].get("commentsCount").is_none(),
+            "{row}"
+        );
+
+        let repo = || json!({"data":{"repositories":[{"owner":"o","repo":"r","forks":9,"updatedAt":"t"}]}});
+        let mut row = repo();
+        prune_row(
+            &mut row,
+            ToolId::GhSearchRepo,
+            &json!({"sort":"forks:desc"}),
+        );
+        assert_eq!(row["data"]["repositories"][0]["forks"], 9, "{row}");
+        assert!(
+            row["data"]["repositories"][0].get("updatedAt").is_none(),
+            "{row}"
+        );
+        let mut row = repo();
+        prune_row(
+            &mut row,
+            ToolId::GhSearchRepo,
+            &json!({"sort":"updated:desc"}),
+        );
+        assert_eq!(row["data"]["repositories"][0]["updatedAt"], "t", "{row}");
+        assert!(keeps(
+            ToolId::GhSearchRepo,
+            &json!({"sort":"updated:desc"}),
+            "results[].data.repositories[].updatedAt"
+        ));
     }
 }
 

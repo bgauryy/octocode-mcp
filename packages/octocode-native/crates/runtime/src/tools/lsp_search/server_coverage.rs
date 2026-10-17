@@ -66,13 +66,7 @@ pub(super) fn annotate(
         record_text_coverage(row, query, scope);
     }
     match language_id {
-        Some("python") => flag_partial(
-            row,
-            query,
-            DYNAMIC_REASON,
-            first_page(query).then_some(PYTHON_WARNING),
-            scope,
-        ),
+        Some("python") => flag_noted(row, query, DYNAMIC_REASON, PYTHON_WARNING.into(), scope),
         Some("rust") => {
             // A workspace symbol is a declaration the server found: no use
             // of it is missing.
@@ -132,13 +126,12 @@ pub(super) fn workspace_symbols(row: &mut Value, anchor: Option<&str>, capped_at
 /// them. The row is partial when files that use the name in code are
 /// missing from the answer, the lexical lead names them, and the reason
 /// says which load is missing: `includeOutsidePackage` (no build context
-/// loads it) or `buildScriptsOff` (with its rerun). The prose is static, so
-/// only the walk's first page states it.
+/// loads it) or `buildScriptsOff` (with its rerun). The prose is static: a
+/// notice, said once ([`flag_noted`]).
 fn annotate_includes(row: &mut Value, query: &LspSearchQuery, anchor: &str, scope: &Scope) {
     let Some(includes) = package_includes(anchor) else {
         return;
     };
-    let first_page = first_page(query);
     if let Some(outside) = includes.outside.first() {
         // Named as rows name files: relative to the search scope.
         let shown = outside
@@ -146,24 +139,16 @@ fn annotate_includes(row: &mut Value, query: &LspSearchQuery, anchor: &str, scop
             .unwrap_or(outside)
             .to_string_lossy()
             .into_owned();
-        let warning = first_page.then(|| {
-            format!(
-                "rust-analyzer never loads {shown}{} (include!d from outside this package): uses through its types are missing under any rustContext; confirm with {}.",
-                if includes.outside.len() > 1 {
-                    format!(" and {} more", includes.outside.len() - 1)
-                } else {
-                    String::new()
-                },
-                text_check()
-            )
-        });
-        flag_partial(
-            row,
-            query,
-            OUTSIDE_INCLUDE_REASON,
-            warning.as_deref(),
-            scope,
+        let note = format!(
+            "rust-analyzer never loads {shown}{} (include!d from outside this package): uses through its types are missing under any rustContext; confirm with {}.",
+            if includes.outside.len() > 1 {
+                format!(" and {} more", includes.outside.len() - 1)
+            } else {
+                String::new()
+            },
+            text_check()
         );
+        flag_noted(row, query, OUTSIDE_INCLUDE_REASON, note, scope);
     }
     if includes.generated.is_empty() || runs_build_scripts(query) {
         return;
@@ -172,23 +157,21 @@ fn annotate_includes(row: &mut Value, query: &LspSearchQuery, anchor: &str, scop
     // may hide it too, the rerun (~2 GB) can recover nothing, so the text
     // check comes first and the rerun is no lead.
     let outside = lists_reason(row, OUTSIDE_INCLUDE_REASON);
-    let warning = first_page.then(|| {
-        if outside {
-            format!(
-                "rust-analyzer also did not run this package's build scripts; confirm the missing uses with {} first: a rustContext {{buildScripts:true}} rerun (a separate rust-analyzer, ~2 GB) loads only the generated types, never the outside include.",
-                text_check()
-            )
-        } else {
-            format!(
-                "rust-analyzer did not run this package's build scripts: uses through the types they generate are missing; rerun with rustContext {{buildScripts:true}} (a separate rust-analyzer, ~2 GB) or confirm with {}.",
-                text_check()
-            )
-        }
-    });
-    flag_partial(row, query, BUILD_SCRIPTS_REASON, warning.as_deref(), scope);
+    let note = if outside {
+        format!(
+            "rust-analyzer also did not run this package's build scripts; confirm the missing uses with {} first: a rustContext {{buildScripts:true}} rerun (a separate rust-analyzer, ~2 GB) loads only the generated types, never the outside include.",
+            text_check()
+        )
+    } else {
+        format!(
+            "rust-analyzer did not run this package's build scripts: uses through the types they generate are missing; rerun with rustContext {{buildScripts:true}} (a separate rust-analyzer, ~2 GB) or confirm with {}.",
+            text_check()
+        )
+    };
+    flag_noted(row, query, BUILD_SCRIPTS_REASON, note, scope);
     // The rerun repeats the whole walk: offered once, on its first page,
     // and only where the reason holds alone.
-    if first_page && !outside && lists_reason(row, BUILD_SCRIPTS_REASON) {
+    if !continues_a_page(query) && !outside && lists_reason(row, BUILD_SCRIPTS_REASON) {
         row["next"]["includeBuildScripts"] = super::failure::build_scripts_rerun(query);
     }
 }
@@ -214,10 +197,21 @@ fn record_text_coverage(row: &mut Value, query: &LspSearchQuery, scope: &Scope) 
     }
 }
 
-/// Whether `query` reads the walk's first page: static prose about the
-/// whole answer is stated there once, not on every page.
-fn first_page(query: &LspSearchQuery) -> bool {
-    query.page().unwrap_or(1) == 1 && query.importer_page() == 1
+/// [`flag_partial`] with `note`, prose that reads the same on every page and
+/// row of the answer: a static notice, said once, on the first page
+/// ([`crate::tools::paging::push_notice`]), and only when the row is flagged.
+fn flag_noted(row: &mut Value, query: &LspSearchQuery, reason: &str, note: String, scope: &Scope) {
+    flag_partial(row, query, reason, None, scope);
+    if lists_reason(row, reason) {
+        crate::tools::paging::push_notice(row, note);
+    }
+}
+
+/// Whether `query` continues an earlier page of its answer
+/// ([`crate::tools::paging::continues_a_page`]): a rerun lead is offered on
+/// the first page only.
+fn continues_a_page(query: &LspSearchQuery) -> bool {
+    crate::tools::paging::continues_a_page(&query.to_row())
 }
 
 /// Whether `row` is flagged with `reason`.
@@ -280,7 +274,7 @@ fn annotate_rust(row: &mut Value, query: &LspSearchQuery, server_root: &str, sco
     }
     // The rerun repeats the whole walk under every feature: offered once,
     // on the walk's first page.
-    if query.page().unwrap_or(1) > 1 || query.importer_page() > 1 {
+    if continues_a_page(query) {
         return;
     }
     let mut rerun = query.to_row();
@@ -567,8 +561,13 @@ mod tests {
         assert_eq!(row["partialReasons"], json!([DYNAMIC_REASON]), "{row}");
         assert!(row["coverage"].get("reason").is_none(), "{row}");
         assert_eq!(row["isPartial"], true, "{row}");
-        let warning = row["warnings"][0].as_str().expect("warning");
-        assert!(!warning.contains("hints.findText"), "{warning}");
+        // The inference limit reads the same on every page: a notice.
+        assert_eq!(row["notices"], json!([PYTHON_WARNING]), "{row}");
+        assert!(
+            !PYTHON_WARNING.contains("hints.findText"),
+            "{PYTHON_WARNING}"
+        );
+        assert!(row.get("warnings").is_none(), "{row}");
         assert_eq!(row["next"]["findText"]["tool"], "localSearch", "{row}");
         // Outgoing questions are not affected.
         let mut definition = json!({"kind":"definition","matches":[]});
@@ -819,11 +818,12 @@ mod tests {
             "{first}"
         );
         assert!(
-            first["warnings"][0]
+            first["notices"][0]
                 .as_str()
-                .is_some_and(|warning| warning.contains("buildScripts:true")),
+                .is_some_and(|notice| notice.contains("buildScripts:true")),
             "{first}"
         );
+        assert!(first.get("warnings").is_none(), "{first}");
         assert_eq!(
             first["coverage"]["textOnlyFiles"], 1,
             "comments and strings are no uses: {first}"
@@ -836,21 +836,24 @@ mod tests {
         );
         assert_eq!(rerun["symbolName"], "include_diff", "{first}");
 
-        let later = rust_row(
-            &root,
-            &generated,
-            json!({"page": 2, "pageSize": 10}),
-            &["lib.rs"],
-        )
-        .await;
+        let later_fields = json!({"page": 2, "pageSize": 10});
+        let later = rust_row(&root, &generated, later_fields.clone(), &["lib.rs"]).await;
         assert_eq!(
             later["partialReasons"],
             json!([BUILD_SCRIPTS_REASON]),
             "{later}"
         );
+        // The response stage says a notice on the first page only.
+        let shaped = crate::response::rows::result_row(
+            ToolId::LspSearch,
+            0,
+            &later_fields,
+            later.clone(),
+            None,
+        );
         assert!(
-            later.get("warnings").is_none(),
-            "stated once, on page 1: {later}"
+            shaped["data"].get("notices").is_none() && shaped["data"].get("warnings").is_none(),
+            "stated once, on page 1: {shaped}"
         );
         assert!(
             later["next"].get("includeBuildScripts").is_none(),
@@ -890,9 +893,9 @@ mod tests {
             "{outside_row}"
         );
         assert!(
-            outside_row["warnings"][0]
+            outside_row["notices"][0]
                 .as_str()
-                .is_some_and(|warning| warning.contains("contract/types.rs")),
+                .is_some_and(|notice| notice.contains("contract/types.rs")),
             "{outside_row}"
         );
         assert!(
@@ -921,9 +924,9 @@ mod tests {
             "{both_row}"
         );
         assert!(
-            both_row["warnings"][1]
+            both_row["notices"][1]
                 .as_str()
-                .is_some_and(|warning| warning.contains("first")),
+                .is_some_and(|notice| notice.contains("first")),
             "{both_row}"
         );
 

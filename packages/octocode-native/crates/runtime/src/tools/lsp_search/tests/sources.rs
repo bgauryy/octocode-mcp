@@ -260,6 +260,7 @@ fn rust_context_overlays_the_engine_headless_defaults() {
         ),
         env: None,
         max_memory_mb: None,
+        source: Default::default(),
     };
     let q = query(serde_json::json!({
         "operation": "definition", "mainGoal": "test", "reasoning": "test",
@@ -299,6 +300,7 @@ fn rust_server_config(
         ),
         env: None,
         max_memory_mb: None,
+        source: Default::default(),
     };
     let mut row = serde_json::json!({
         "operation": "references", "path": "/repo/src/lib.rs", "symbolName": "foo", "line": 1

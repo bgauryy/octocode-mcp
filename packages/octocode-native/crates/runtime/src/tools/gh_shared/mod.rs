@@ -259,9 +259,8 @@ pub(crate) enum RenameCheck {
 }
 
 /// The canonical name of a renamed repository, `None` when `owner/repo`
-/// stands (case aside), does not exist, or cannot be checked. The memo
-/// answers first; past it, `check` decides whether one (memoized) metadata
-/// read is spent. Only a cancelled or timed-out read fails.
+/// stands (case aside), does not exist, or cannot be checked
+/// ([`canonical_scope`] tells a missing repository apart).
 pub(crate) async fn canonical_repo<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
@@ -269,8 +268,37 @@ pub(crate) async fn canonical_repo<C: ConditionalCache>(
     context: &RequestContext,
     check: RenameCheck,
 ) -> Result<Option<(String, String)>, ProviderError> {
+    Ok(
+        match canonical_scope(provider, owner, repo, context, check).await? {
+            CanonicalScope::Renamed(canonical) => Some(canonical),
+            CanonicalScope::Stands | CanonicalScope::Missing(_) => None,
+        },
+    )
+}
+
+/// What [`canonical_scope`] learned of a repository's name.
+pub(crate) enum CanonicalScope {
+    /// The name stands (case aside), or it cannot be checked.
+    Stands,
+    /// GitHub serves it under this `(owner, repo)`.
+    Renamed((String, String)),
+    /// The metadata read answered 404: the caller's not-found failure, so
+    /// a later check of the same repository need not read it again.
+    Missing(ProviderError),
+}
+
+/// [`canonical_repo`], telling a missing repository apart. The memo answers
+/// first; past it, `check` decides whether one (memoized) metadata read is
+/// spent. Only a cancelled or timed-out read fails.
+pub(crate) async fn canonical_scope<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    owner: &str,
+    repo: &str,
+    context: &RequestContext,
+    check: RenameCheck,
+) -> Result<CanonicalScope, ProviderError> {
     let Ok(partition) = provider.transport.cache_partition(context, None) else {
-        return Ok(None);
+        return Ok(CanonicalScope::Stands);
     };
     if let Some(cached) = provider
         .cache
@@ -279,10 +307,11 @@ pub(crate) async fn canonical_repo<C: ConditionalCache>(
     {
         return Ok(std::str::from_utf8(&cached.bytes)
             .ok()
-            .and_then(|full_name| renamed_to(owner, repo, full_name)));
+            .and_then(|full_name| renamed_to(owner, repo, full_name))
+            .map_or(CanonicalScope::Stands, CanonicalScope::Renamed));
     }
     if check == RenameCheck::Redirected && !provider.transport.followed_rename(owner, repo) {
-        return Ok(None);
+        return Ok(CanonicalScope::Stands);
     }
     let full_name = match provider
         .transport
@@ -298,13 +327,18 @@ pub(crate) async fn canonical_repo<C: ConditionalCache>(
         {
             return Err(error);
         }
+        Err(error) if error.kind == ProviderErrorKind::NotFound => {
+            return Ok(CanonicalScope::Missing(
+                error.with_reason(ProviderErrorReason::RepositoryNotFound),
+            ));
+        }
         Err(_) => None,
     };
     let Some(full_name) = full_name else {
-        return Ok(None);
+        return Ok(CanonicalScope::Stands);
     };
     remember_canonical(provider, owner, repo, &full_name, context).await;
-    Ok(renamed_to(owner, repo, &full_name))
+    Ok(renamed_to(owner, repo, &full_name).map_or(CanonicalScope::Stands, CanonicalScope::Renamed))
 }
 
 /// The commit a failed read or listing resolved before it failed (the ref
@@ -807,24 +841,44 @@ pub(crate) fn parent_dir(path: &str) -> String {
         .unwrap_or_else(|| ".".into())
 }
 
+/// `path`'s segments with empty, `.` and `..` ones resolved lexically, and
+/// whether a `..` climbed above the repository root (and was dropped).
+fn resolved_segments(path: &str) -> (Vec<&str>, bool) {
+    let mut segments: Vec<&str> = Vec::new();
+    let mut escaped = false;
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => escaped |= segments.pop().is_none(),
+            segment => segments.push(segment),
+        }
+    }
+    (segments, escaped)
+}
+
 /// A repository path with its `.` and `..` segments resolved lexically and
 /// clamped at the repository root (a tree has nothing above it); `.` for
 /// the root. A recovery lead never repeats a traversal the caller sent.
 pub(crate) fn repo_path(path: &str) -> String {
-    let mut segments: Vec<&str> = Vec::new();
-    for segment in path.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." => {
-                segments.pop();
-            }
-            segment => segments.push(segment),
-        }
-    }
+    let (segments, _) = resolved_segments(path);
     if segments.is_empty() {
         ".".into()
     } else {
         segments.join("/")
+    }
+}
+
+/// A requested repository path (a listed directory, a read file) as the
+/// repository names it: `.`, `..`, repeated and edge slashes resolved
+/// lexically, `""` for the root. A `..` that climbs above the root names
+/// nothing a repository holds: invalid input.
+pub(crate) fn listing_path(path: &str) -> Result<String, ProviderError> {
+    match resolved_segments(path) {
+        (_, true) => Err(ProviderError::new(
+            ProviderErrorKind::Validation,
+            format!("Path \"{path}\" climbs above the repository root."),
+        )),
+        (segments, false) => Ok(segments.join("/")),
     }
 }
 

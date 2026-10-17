@@ -23,6 +23,7 @@ use super::render::{uri_to_path, word_pattern};
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
 use octocode_engine::portable::search_text_cancellable;
+use octocode_engine::search::walk::NestedRepositories;
 use octocode_engine::types::TextSearchOptions;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -56,11 +57,18 @@ const FRESH_MTIME: Duration = Duration::from_secs(2);
 /// A larger unsettled source disables cache reuse rather than reading it
 /// whole merely to decide whether a lexical scan may be reused.
 const FRESH_CONTENT_MAX_BYTES: usize = 1024 * 1024;
-/// At most this many unanswered text-scan files are parsed to tell a code
-/// use from a comment or string mention; the rest count as uses.
-const CODE_CHECKED_FILES: usize = 256;
-/// Largest file the code-use check reads; a larger one counts as a use.
-const CODE_CHECK_MAX_BYTES: usize = 4 * 1024 * 1024;
+/// Files one check parses to tell a use from a mention: the text check
+/// (a code use, not a comment or string) and the ignored-importer check (an
+/// import, not a spelling; `importers`). Each reads them in turn, at most
+/// [`CODE_CHECK_MAX_BYTES`] apiece, so this bounds the work a request adds
+/// per check. A file past it is not proven free of a use, so it counts
+/// against completeness: as a use in `textOnlyFiles`, as an unchecked
+/// ignored file. The bound is one constant so both checks decide the same
+/// number of files.
+pub(super) const CODE_CHECK_MAX_FILES: usize = 64;
+/// Largest file the code-use and ignored-importer checks read; a larger one
+/// counts as a use, or as an unchecked ignored file.
+pub(super) const CODE_CHECK_MAX_BYTES: usize = 4 * 1024 * 1024;
 /// Bound of the text scan. A slower honored scan reports no files (no
 /// `textOnlyFiles`, and importer recovery reports a failed scan); a slower
 /// lifted scan reports the files it reached and says it did not finish
@@ -70,6 +78,10 @@ const TEXT_SCAN_BUDGET: Duration = Duration::from_secs(3);
 /// unless a file imports the name, so a large ignored tree is not worth a
 /// longer wait on every request.
 const LIFTED_SCAN_BUDGET: Duration = Duration::from_secs(1);
+/// Walk threads of the lifted scan: its wall time is bounded, and this
+/// bounds its CPU (a gitignored checkout of other repositories otherwise
+/// keeps every core busy for the whole budget).
+const LIFTED_SCAN_THREADS: u32 = 2;
 /// How long a scope whose lifted scan hit its bound skips that scan. The
 /// bound is reached by the size of the ignored tree, whatever the name, so
 /// every later request would pay it again for the same unfinished answer.
@@ -77,6 +89,17 @@ const UNBOUNDED_IGNORED_TTL: Duration = Duration::from_secs(600);
 
 /// Scopes (`root`, `include`, policy) whose lifted scan hit its bound.
 static UNBOUNDED_IGNORED: octocode_io::memo::Memo<String, ()> =
+    octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
+        max_entries: 64,
+        max_weight: 64,
+        keep_newest: false,
+    });
+
+/// Unfinished lifted scans by scope and symbol, for
+/// [`UNBOUNDED_IGNORED_TTL`]: a repeated request replays what the first one
+/// reached, so it reports the same ignored files and the same coverage
+/// instead of an empty skipped scan.
+static UNFINISHED_LIFTED: octocode_io::memo::Memo<String, Scanned> =
     octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
         max_entries: 64,
         max_weight: 64,
@@ -291,8 +314,10 @@ impl Scope {
     /// (a gitignored `repos/` checkout costs seconds, so measuring it is
     /// the only way to know). A lifted scan that fails or hits
     /// [`LIFTED_SCAN_BUDGET`] says so in [`IgnoredMentions::unfinished`],
-    /// with the files it reached before stopping; the scope then skips the
-    /// lifted scan for [`UNBOUNDED_IGNORED_TTL`], reporting it unfinished.
+    /// with the files it reached before stopping; for
+    /// [`UNBOUNDED_IGNORED_TTL`] the same symbol replays those files, and
+    /// any other symbol of the scope skips the scan, reporting it
+    /// unfinished.
     pub(super) async fn ignored_text_files(
         &self,
         symbol: &str,
@@ -315,35 +340,45 @@ impl Scope {
         let Some(visible) = self.text_files(symbol, policy, cancel).await? else {
             return Ok(IgnoredMentions::unfinished());
         };
-        let unbounded = format!(
-            "{}\u{0}{}\u{0}{policy:?}",
-            self.root,
-            self.include.join("\u{0}")
-        );
-        if UNBOUNDED_IGNORED.get(&unbounded).is_some() {
-            return Ok(IgnoredMentions::unfinished());
-        }
-        let Some(every) = scan_text(
-            &self.root,
-            &self.include,
-            symbol,
-            policy,
-            cancel,
-            Ignores::Lifted,
-            budget,
-        )
-        .await?
-        else {
-            return Ok(IgnoredMentions::unfinished());
+        let (unbounded, replay) = self.lifted_keys(symbol, policy);
+        let every = match UNFINISHED_LIFTED.get(&replay) {
+            Some(hit) => hit.value,
+            None if UNBOUNDED_IGNORED.get(&unbounded).is_some() => {
+                return Ok(IgnoredMentions::unfinished());
+            }
+            None => {
+                let Some(every) = scan_text(
+                    &self.root,
+                    &self.include,
+                    symbol,
+                    policy,
+                    cancel,
+                    Ignores::Lifted,
+                    budget,
+                )
+                .await?
+                else {
+                    return Ok(IgnoredMentions::unfinished());
+                };
+                let every = Arc::new(every);
+                if !every.complete {
+                    UNBOUNDED_IGNORED.insert(unbounded, (), 1, Some(UNBOUNDED_IGNORED_TTL));
+                    UNFINISHED_LIFTED.insert(
+                        replay,
+                        Arc::clone(&every),
+                        1,
+                        Some(UNBOUNDED_IGNORED_TTL),
+                    );
+                }
+                every
+            }
         };
         let unfinished = !every.complete;
-        if unfinished {
-            UNBOUNDED_IGNORED.insert(unbounded, (), 1, Some(UNBOUNDED_IGNORED_TTL));
-        }
         let files = every
             .files
-            .into_iter()
-            .filter(|file| !visible.contains(file) && !skip.contains(file))
+            .iter()
+            .filter(|file| !visible.contains(*file) && !skip.contains(*file))
+            .cloned()
             .collect::<Vec<_>>();
         let root = Path::new(&self.root);
         let mut rules = Vec::new();
@@ -358,15 +393,29 @@ impl Scope {
             files,
             rules,
             unfinished,
-            importing: Vec::new(),
+            nested_repositories: every.nested.clone(),
+            ..IgnoredMentions::default()
         })
+    }
+
+    /// The memo keys of the lifted scan: the scope's (for
+    /// [`UNBOUNDED_IGNORED`]) and the scope's with `symbol` (for
+    /// [`UNFINISHED_LIFTED`]).
+    fn lifted_keys(&self, symbol: &str, policy: &PathPolicy) -> (String, String) {
+        let scope = format!(
+            "{}\u{0}{}\u{0}{policy:?}",
+            self.root,
+            self.include.join("\u{0}")
+        );
+        let symbol = format!("{scope}\u{0}{symbol}");
+        (scope, symbol)
     }
 
     /// Files the text scan of `symbol` found that the server's answer does
     /// not cover and that use the name in code: a file that spells it only
     /// in comments or strings holds no use the server could have missed (a
     /// file the grammar cannot parse counts its word matches). Past
-    /// [`CODE_CHECKED_FILES`] files, the rest count by their word matches.
+    /// [`CODE_CHECK_MAX_FILES`] files, the rest count by their word matches.
     /// `None` when either side is unknown.
     pub(super) fn text_only_files(&self, symbol: &str) -> Option<Vec<String>> {
         let unanswered = {
@@ -397,7 +446,7 @@ impl Scope {
                 .into_iter()
                 .enumerate()
                 .filter(|(index, file)| {
-                    *index >= CODE_CHECKED_FILES || self.uses_in_code(symbol, file)
+                    *index >= CODE_CHECK_MAX_FILES || self.uses_in_code(symbol, file)
                 })
                 .map(|(_, file)| file)
                 .collect(),
@@ -519,11 +568,23 @@ fn search_root(anchor: &Path, server_root: &str, policy: &PathPolicy) -> String 
     {
         return root;
     }
+    widest_authorized_dir(start, policy).unwrap_or_else(|| start.to_string_lossy().into_owned())
+}
+
+/// The outermost directory of the unbroken run of authorized directories
+/// from `start` upward (canonical): the widest root the policy allows on
+/// `start`'s own path. `None` when `start` itself is not authorized.
+pub(super) fn widest_authorized_dir(start: &Path, policy: &PathPolicy) -> Option<String> {
     start
         .ancestors()
-        .map_while(authorized)
+        .map_while(|dir| {
+            policy
+                .validate(dir)
+                .ok()
+                .filter(|valid| valid.canonical.is_dir())
+                .map(|valid| valid.canonical.to_string_lossy().into_owned())
+        })
         .last()
-        .unwrap_or_else(|| start.to_string_lossy().into_owned())
 }
 
 /// `*.ext` globs of every grammar in `language_id`'s family; the anchor's
@@ -560,10 +621,18 @@ pub(super) struct IgnoredMentions {
     /// The scan failed or stopped at its bound: `files` is what it reached,
     /// and ignored files may mention the name beyond it.
     pub(super) unfinished: bool,
-    /// Of `files`, those that import the name (or could not be checked):
-    /// the evidence that ignore rules hide an importer. A file that only
-    /// spells the name (a bundled copy declaring its own) is not one.
+    /// Of `files`, those that import the name: the evidence that ignore
+    /// rules hide an importer. A file that only spells the name (a bundled
+    /// copy declaring its own) is not one.
     pub(super) importing: Vec<String>,
+    /// Of `files`, those the import check could not decide (unreadable,
+    /// too large, unparsable, or past its file bound): not importers, and
+    /// not ruled out.
+    pub(super) unchecked: Vec<String>,
+    /// Nested repositories (root-relative) the scan did not enter
+    /// ([`octocode_engine::search::walk::NestedRepositories`]): ignored
+    /// files in them are not counted.
+    pub(super) nested_repositories: Vec<String>,
 }
 
 impl IgnoredMentions {
@@ -582,6 +651,30 @@ impl IgnoredMentions {
 struct Scanned {
     files: BTreeSet<String>,
     complete: bool,
+    /// A lifted scan's nested repositories it did not enter, root-relative
+    /// and sorted.
+    nested: Vec<String>,
+}
+
+/// The read policy of a lifted scan, which also leaves nested repositories
+/// out ([`NestedRepositories`]).
+struct Lifted {
+    policy: PathPolicy,
+    nested: Arc<NestedRepositories>,
+}
+
+impl octocode_engine::portable::TextSearchPathFilter for Lifted {
+    fn allows(&self, path: &Path, is_dir: bool) -> bool {
+        self.policy.allows(path, is_dir) && !self.nested.skips(path, is_dir)
+    }
+
+    fn skipped_hidden(&self, path: &Path, is_dir: bool) {
+        self.policy.skipped_hidden(path, is_dir);
+    }
+
+    fn skipped_ignored(&self, path: &Path, is_dir: bool) {
+        self.policy.skipped_ignored(path, is_dir);
+    }
 }
 
 /// Whether a text scan honors ignore rules (every lexical scan does) or
@@ -594,7 +687,7 @@ enum Ignores {
 
 /// Word-bounded files-only scan of `root` (family `include`, read policy),
 /// observing `cancel` and the scan bounds. A scan that lifts ignore rules
-/// still skips the default-excluded directories.
+/// still skips the default-excluded directories and nested repositories.
 async fn scan_text(
     root: &str,
     include: &[String],
@@ -618,9 +711,18 @@ async fn scan_text(
             include_hidden: false,
         },
         exclude_dir: lifted.then(|| crate::policy::prune::PruneMode::SearchSafe.directories(true)),
+        walk_threads: lifted.then_some(LIFTED_SCAN_THREADS),
         ..TextSearchOptions::default()
     };
-    let filter = Arc::new(policy.clone());
+    let nested = Arc::new(NestedRepositories::new(Path::new(root)));
+    let filter: Arc<dyn octocode_engine::portable::TextSearchPathFilter> = if lifted {
+        Arc::new(Lifted {
+            policy: policy.clone(),
+            nested: Arc::clone(&nested),
+        })
+    } else {
+        Arc::new(policy.clone())
+    };
     let base = root.to_owned();
     let scanned = blocking_cancellable(cancel, move |stopped| {
         let started = Instant::now();
@@ -628,6 +730,7 @@ async fn scan_text(
         search_text_cancellable(options, filter, &bounded)
             .ok()
             .map(|parsed| Scanned {
+                nested: nested.skipped(),
                 complete: !parsed
                     .stats
                     .cap_reason
@@ -932,6 +1035,36 @@ mod tests {
         assert_eq!(scope.text_only_files("g"), None);
     }
 
+    /// The text check parses at most [`CODE_CHECK_MAX_FILES`] unanswered
+    /// files, the bound the ignored-importer check shares; a file past it is
+    /// not proven free of a use, so it counts as one.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn text_check_files_past_the_parse_bound_count_as_uses() {
+        let (_dir, root) = fixture();
+        write(&root.join("a.ts"), "export function f() {}\n");
+        for index in 0..CODE_CHECK_MAX_FILES + 2 {
+            write(
+                &root.join(format!("c{index}.ts")),
+                "// f is mentioned here\n",
+            );
+        }
+        let scope = Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".into()]);
+        let files = scope
+            .text_files(
+                "f",
+                &workspace_policy(&root),
+                &crate::tools::cancel::NeverCancel,
+            )
+            .await
+            .expect("scan")
+            .expect("files");
+        assert_eq!(files.len(), CODE_CHECK_MAX_FILES + 3, "{files:?}");
+        scope.answer([root.join("a.ts").to_string_lossy()]);
+        let uses = scope.text_only_files("f").expect("checked");
+        assert_eq!(uses.len(), 2, "{uses:?}");
+        assert!(uses.iter().all(|file| !file.ends_with("a.ts")), "{uses:?}");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn text_scan_is_reused_under_an_unchanged_fingerprint() {
         let (_dir, root) = fixture();
@@ -1010,6 +1143,96 @@ mod tests {
             skipped.unfinished && skipped.files.is_empty(),
             "{skipped:?}"
         );
+    }
+
+    /// The lifted scan does not enter a nested repository (a gitignored
+    /// checkout of another project): its files are not this repository's
+    /// ignored files, and the scan names the repository it left out.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_lifted_scan_skips_nested_repositories_and_names_them() {
+        let (_dir, root) = fixture();
+        std::fs::create_dir_all(root.join(".git")).expect("git");
+        write(&root.join(".gitignore"), "gen/\nrepos/\n");
+        write(&root.join("a.ts"), "export function f() {}\n");
+        write(&root.join("gen/g.ts"), "f();\n");
+        write(
+            &root.join("repos/other/.git/HEAD"),
+            "ref: refs/heads/main\n",
+        );
+        write(&root.join("repos/other/x.ts"), "f();\n");
+        let policy = workspace_policy(&root);
+        let scope = Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".to_owned()]);
+        let found = scope
+            .ignored_text_files(
+                "f",
+                &std::collections::HashSet::new(),
+                &policy,
+                &crate::tools::cancel::NeverCancel,
+            )
+            .await
+            .expect("scan");
+        assert!(!found.unfinished, "{found:?}");
+        assert_eq!(
+            found.files,
+            [root.join("gen/g.ts").to_string_lossy().into_owned()],
+            "{found:?}"
+        );
+        assert_eq!(found.nested_repositories, ["repos/other"], "{found:?}");
+    }
+
+    /// A warm request answers like the cold one: the symbol whose lifted
+    /// scan stopped at its bound replays the files that scan reached, still
+    /// unfinished, instead of reading as a skipped scan that found nothing.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_unfinished_ignored_scan_replays_what_it_reached() {
+        let (_dir, root) = fixture();
+        std::fs::create_dir_all(root.join(".git")).expect("git");
+        write(&root.join(".gitignore"), "gen/\n");
+        write(&root.join("a.ts"), "export function f() {}\n");
+        let reached = root.join("gen/g.ts").to_string_lossy().into_owned();
+        write(Path::new(&reached), "f();\n");
+        let policy = workspace_policy(&root);
+        let cancel = &crate::tools::cancel::NeverCancel;
+        let skip = std::collections::HashSet::new();
+        let scope = Scope::new(root.to_string_lossy().into_owned(), vec!["*.ts".to_owned()]);
+        // What a cold scan reached before its bound (the bound is timing,
+        // so the cold scan's reach is stated rather than raced).
+        let (unbounded, replay) = scope.lifted_keys("f", &policy);
+        UNBOUNDED_IGNORED.insert(unbounded, (), 1, Some(UNBOUNDED_IGNORED_TTL));
+        UNFINISHED_LIFTED.insert(
+            replay,
+            Scanned {
+                files: BTreeSet::from([reached.clone()]),
+                complete: false,
+                nested: Vec::new(),
+            },
+            1,
+            Some(UNBOUNDED_IGNORED_TTL),
+        );
+        for _ in 0..2 {
+            let warm = scope
+                .ignored_text_files("f", &skip, &policy, cancel)
+                .await
+                .expect("scan");
+            assert!(warm.unfinished, "{warm:?}");
+            assert_eq!(warm.files, std::slice::from_ref(&reached), "{warm:?}");
+            assert_eq!(warm.rules, [".gitignore:1 'gen/'"], "{warm:?}");
+        }
+    }
+
+    /// The widest authorized directory on a path: the policy root for a
+    /// file under it, nothing for a path outside every root.
+    #[test]
+    fn the_widest_authorized_dir_is_the_policy_root_on_the_path() {
+        let (_dir, root) = fixture();
+        write(&root.join("ws/crates/a/src/lib.rs"), "fn f() {}\n");
+        let policy = workspace_policy(&root.join("ws/crates"));
+        let canonical_crates = root.join("ws/crates").to_string_lossy().into_owned();
+        assert_eq!(
+            widest_authorized_dir(&root.join("ws/crates/a/src"), &policy),
+            Some(canonical_crates)
+        );
+        assert_eq!(widest_authorized_dir(&root.join("ws"), &policy), None);
     }
 
     #[cfg(unix)]

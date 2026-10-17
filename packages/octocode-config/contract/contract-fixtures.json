@@ -50,6 +50,76 @@
     }
   },
   {
+    "id": "clasify.example-sections",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "resources": {
+            "file": {
+              "tool": "localFetch",
+              "query": {
+                "path": "src/cache.ts",
+                "fullContent": true
+              }
+            }
+          },
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": "Does the target require restarting?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "operation": "sections",
+          "resources": {
+            "file": {
+              "tool": "localFetch",
+              "query": {
+                "path": "src/cache.ts",
+                "fullContent": true
+              }
+            }
+          },
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": "Does the target require restarting?"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.example-sectionsResume",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": "returned-assessment-token"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": "returned-assessment-token"
+        }
+      ]
+    }
+  },
+  {
     "id": "ghSearchRepo.example-ghSearchRepo",
     "tool": "ghSearchRepo",
     "input": {
@@ -1020,6 +1090,512 @@
     }
   },
   {
+    "id": "clasify.saved-response",
+    "tool": "clasify",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "clasify.reject-saved-response-with-queries",
+    "tool": "clasify",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {
+          "state": "held evidence",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Is this relevant?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghSearchRepo.saved-response",
+    "tool": "ghSearchRepo",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "ghSearchRepo.reject-saved-response-with-queries",
+    "tool": "ghSearchRepo",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghSearchCode.saved-response",
+    "tool": "ghSearchCode",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "ghSearchCode.reject-saved-response-with-queries",
+    "tool": "ghSearchCode",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghStructure.saved-response",
+    "tool": "ghStructure",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "ghStructure.reject-saved-response-with-queries",
+    "tool": "ghStructure",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghGetFileContent.saved-response",
+    "tool": "ghGetFileContent",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "ghGetFileContent.reject-saved-response-with-queries",
+    "tool": "ghGetFileContent",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghSearchHistory.saved-response",
+    "tool": "ghSearchHistory",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "ghSearchHistory.reject-saved-response-with-queries",
+    "tool": "ghSearchHistory",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghGetHistoryItem.saved-response",
+    "tool": "ghGetHistoryItem",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "ghGetHistoryItem.reject-saved-response-with-queries",
+    "tool": "ghGetHistoryItem",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "artifactSearch.saved-response",
+    "tool": "artifactSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "artifactSearch.reject-saved-response-with-queries",
+    "tool": "artifactSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ghCloneRepo.saved-response",
+    "tool": "ghCloneRepo",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "ghCloneRepo.reject-saved-response-with-queries",
+    "tool": "ghCloneRepo",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "localSearch.saved-response",
+    "tool": "localSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "localSearch.reject-saved-response-with-queries",
+    "tool": "localSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "structureSearch.saved-response",
+    "tool": "structureSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "structureSearch.reject-saved-response-with-queries",
+    "tool": "structureSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "astSearch.saved-response",
+    "tool": "astSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "astSearch.reject-saved-response-with-queries",
+    "tool": "astSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "astTopology.saved-response",
+    "tool": "astTopology",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "astTopology.reject-saved-response-with-queries",
+    "tool": "astTopology",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "astRewrite.saved-response",
+    "tool": "astRewrite",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "astRewrite.reject-saved-response-with-queries",
+    "tool": "astRewrite",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "localFetch.saved-response",
+    "tool": "localFetch",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "localFetch.reject-saved-response-with-queries",
+    "tool": "localFetch",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "lspSearch.saved-response",
+    "tool": "lspSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "responseOffset": 1
+    },
+    "accepted": true,
+    "normalized": {
+      "responseOffset": 1,
+      "responseSnapshot": "saved"
+    }
+  },
+  {
+    "id": "lspSearch.reject-saved-response-with-queries",
+    "tool": "lspSearch",
+    "input": {
+      "responseSnapshot": "saved",
+      "queries": [
+        {}
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-resources",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "resources": {
+            "local": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "repo": {
+              "tool": "ghGetFileContent",
+              "query": {
+                "owner": "o",
+                "repo": "r",
+                "path": "a.ts",
+                "ref": "main",
+                "ranges": [
+                  "1-5"
+                ]
+              }
+            },
+            "web": {
+              "url": "https://docs.example.org/guide#rotation"
+            }
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Does the target state this fact?"
+            },
+            "support": {
+              "type": "score",
+              "criteria": [
+                "无证据",
+                "直接证据"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "operation": "sections",
+          "resources": {
+            "local": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "repo": {
+              "tool": "ghGetFileContent",
+              "query": {
+                "owner": "o",
+                "repo": "r",
+                "path": "a.ts",
+                "ref": "main",
+                "ranges": [
+                  "1-5"
+                ]
+              }
+            },
+            "web": {
+              "url": "https://docs.example.org/guide#rotation"
+            }
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Does the target state this fact?"
+            },
+            "support": {
+              "type": "score",
+              "criteria": [
+                "无证据",
+                "直接证据"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.sections-resume",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": "returned-assessment-token"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": "returned-assessment-token"
+        }
+      ]
+    }
+  },
+  {
     "id": "clasify.state-primitives",
     "tool": "clasify",
     "input": {
@@ -1353,7 +1929,7 @@
               "type": "noul",
               "instructions": null,
               "criteria": {
-                "true": null
+                "true": "The state contains evidence."
               }
             },
             "choice": {
@@ -1382,7 +1958,7 @@
               "type": "noul",
               "instructions": null,
               "criteria": {
-                "true": null
+                "true": "The state contains evidence."
               }
             },
             "choice": {
@@ -3301,6 +3877,417 @@
           "goals": [
             "What does get return for an expired key in the local-memory cache?"
           ]
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-invalid-0",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "resources": {},
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Does the target state this fact?"
+            },
+            "support": {
+              "type": "score",
+              "criteria": [
+                "无证据",
+                "直接证据"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-invalid-1",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "resources": {
+            "local": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "repo": {
+              "tool": "ghGetFileContent",
+              "query": {
+                "owner": "o",
+                "repo": "r",
+                "path": "a.ts",
+                "ref": "main",
+                "ranges": [
+                  "1-5"
+                ]
+              }
+            },
+            "web": {
+              "url": "https://docs.example.org/guide#rotation"
+            }
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Does the target state this fact?"
+            },
+            "support": {
+              "type": "score",
+              "criteria": [
+                "无证据",
+                "直接证据"
+              ]
+            }
+          },
+          "assessment": "cursor"
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-invalid-2",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": ""
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-invalid-3",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-invalid-4",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": "cursor",
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Does the target state this fact?"
+            },
+            "support": {
+              "type": "score",
+              "criteria": [
+                "无证据",
+                "直接证据"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-invalid-5",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "assessment": "cursor",
+          "model": "jev"
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.sections-invalid-6",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "operation": "sections",
+          "resources": {
+            "r0": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r1": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r2": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r3": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r4": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r5": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r6": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r7": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r8": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r9": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r10": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r11": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r12": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r13": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r14": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r15": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r16": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r17": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r18": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r19": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r20": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r21": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r22": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r23": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r24": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            },
+            "r25": {
+              "tool": "localFetch",
+              "query": {
+                "path": "/fixture/中文.ts",
+                "fullContent": true
+              }
+            }
+          },
+          "questions": {
+            "relevant": {
+              "type": "noul",
+              "instructions": "Does the target state this fact?"
+            },
+            "support": {
+              "type": "score",
+              "criteria": [
+                "无证据",
+                "直接证据"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.noul-missing-predicate-0",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": "held evidence",
+          "questions": {
+            "question": {
+              "type": "noul"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.noul-missing-predicate-1",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": "held evidence",
+          "questions": {
+            "question": {
+              "type": "noul",
+              "instructions": null,
+              "criteria": {
+                "true": null
+              }
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "clasify.noul-missing-predicate-2",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "state": "held evidence",
+          "questions": {
+            "question": {
+              "type": "noul",
+              "instructions": "  ",
+              "criteria": {
+                "true": {},
+                "false": []
+              }
+            }
+          }
         }
       ]
     },

@@ -618,10 +618,7 @@ fn contract_data_variants(tool: ToolId) -> &'static [std::collections::BTreeSet<
     // `contracts::tool_contract`), never the whole contract's.
     static VARIANTS: [std::sync::OnceLock<Variants>; ToolId::ALL.len()] =
         [const { std::sync::OnceLock::new() }; ToolId::ALL.len()];
-    let Some(index) = ToolId::ALL.iter().position(|id| *id == tool) else {
-        return &[];
-    };
-    VARIANTS[index].get_or_init(|| {
+    VARIANTS[tool.index()].get_or_init(|| {
         let Ok(tool) = crate::contracts::tool_contract(tool) else {
             return Vec::new();
         };

@@ -143,6 +143,25 @@ fn validate_rule_depth(rule: &RawRule, depth: usize) -> Result<(), String> {
     Ok(())
 }
 
+/// Every `kind` in `rule` and its sub-rules names a node of `language`.
+fn check_kinds(language: &tree_sitter::Language, rule: &RawRule) -> Result<(), String> {
+    if let Some(kind) = rule.kind.as_deref()
+        && named_kind_id(language, kind).is_none()
+    {
+        return Err(format!(
+            "unknown node kind '{kind}' for this language grammar"
+        ));
+    }
+    rule.all
+        .iter()
+        .flatten()
+        .chain(rule.any.iter().flatten())
+        .chain(rule.has.iter().map(Box::as_ref))
+        .chain(rule.inside.iter().map(Box::as_ref))
+        .chain(rule.not.iter().map(Box::as_ref))
+        .try_for_each(|child| check_kinds(language, child))
+}
+
 impl CompiledRule {
     /// Accepts both the wrapped document form (`rule:\n  kind: ...`) and a bare
     /// rule (`kind: ...`). A top-level `rule` key is unambiguous: `RawRule` has
@@ -153,14 +172,15 @@ impl CompiledRule {
         Self::compile(lang, &raw)
     }
 
+    /// Every `kind` of the rule, at any depth, is checked before any
+    /// pattern parses: a kind this grammar lacks is named as itself, never
+    /// hidden behind an error of a pattern beside it.
     pub(super) fn compile(lang: &AgLanguage, raw: &RawRule) -> Result<Self, String> {
-        if let Some(kind) = raw.kind.as_deref()
-            && named_kind_id(&lang.tree_sitter_language(), kind).is_none()
-        {
-            return Err(format!(
-                "unknown node kind '{kind}' for this language grammar"
-            ));
-        }
+        check_kinds(&lang.tree_sitter_language(), raw)?;
+        Self::compile_checked(lang, raw)
+    }
+
+    fn compile_checked(lang: &AgLanguage, raw: &RawRule) -> Result<Self, String> {
         let pattern = raw
             .pattern
             .as_deref()
@@ -175,31 +195,31 @@ impl CompiledRule {
         let has = raw
             .has
             .as_deref()
-            .map(|rule| Self::compile(lang, rule).map(Box::new))
+            .map(|rule| Self::compile_checked(lang, rule).map(Box::new))
             .transpose()?;
         let inside = raw
             .inside
             .as_deref()
-            .map(|rule| Self::compile(lang, rule).map(Box::new))
+            .map(|rule| Self::compile_checked(lang, rule).map(Box::new))
             .transpose()?;
         let all = raw
             .all
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|rule| Self::compile(lang, rule))
+            .map(|rule| Self::compile_checked(lang, rule))
             .collect::<Result<Vec<_>, _>>()?;
         let any = raw
             .any
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|rule| Self::compile(lang, rule))
+            .map(|rule| Self::compile_checked(lang, rule))
             .collect::<Result<Vec<_>, _>>()?;
         let not = raw
             .not
             .as_deref()
-            .map(|rule| Self::compile(lang, rule).map(Box::new))
+            .map(|rule| Self::compile_checked(lang, rule).map(Box::new))
             .transpose()?;
 
         let mut compiled = Self {

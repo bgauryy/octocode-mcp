@@ -88,6 +88,50 @@ fn streamed_oversized_line_pages_its_retained_bytes_and_later_selected_lines() {
     assert!(!collected.contains("outside"));
 }
 
+/// A streamed multi-range read refused because one span needs several
+/// window pages leads to that span (`readBoundedLines`) and to one read of
+/// every other requested range (`readOtherRanges`, L2-F15): together they
+/// reach every requested line.
+#[test]
+fn a_refused_streamed_multi_range_read_leads_to_the_other_ranges() {
+    let fixture = Fixture::new();
+    let source = (1..=1_500_000)
+        .map(|n| format!("line {n}\n"))
+        .collect::<String>();
+    let path = fixture.write("large.log", &source);
+    let paths = Paths(fixture.0.clone());
+    let refused = checked_streamed_page(
+        &qj(
+            &path,
+            serde_json::json!({"ranges":["100-150","150000-157500","300000-300010"]}),
+        ),
+        &paths,
+    );
+    assert_eq!(
+        refused.error_code.as_deref(),
+        Some("largeSourceWindowOnly"),
+        "{refused:?}"
+    );
+    let next = refused.next.expect("leads");
+    let span = next.read_bounded_lines.expect("the refused span").query;
+    assert_eq!(
+        serde_json::json!(span.ranges),
+        serde_json::json!(["150000-157500"])
+    );
+    let others = next.read_other_ranges.expect("the other ranges").query;
+    assert_eq!(
+        serde_json::json!(others.ranges),
+        serde_json::json!(["100-150", "300000-300010"])
+    );
+    let rest = checked_streamed_page(&others, &paths);
+    assert_eq!(rest.status, "success", "{rest:?}");
+    let content = rest.content.as_deref().expect("content");
+    for line in ["line 100\n", "line 150\n", "line 300000\n", "line 300010\n"] {
+        assert!(content.contains(line), "{line}");
+    }
+    assert!(!content.contains("line 150000\n"));
+}
+
 #[test]
 fn streamed_byte_pages_reject_source_changes_and_whole_source_byte_reads() {
     let fixture = Fixture::new();
@@ -441,6 +485,26 @@ fn directory_path_is_not_a_file_with_tree_lead() {
             next["viewTree"]["query"]["queries"][0]["operation"], "tree",
             "{next}"
         );
+    }
+}
+
+/// A path the policy refuses keeps the policy's shared code, as every local
+/// tool reports it: a NUL byte anywhere is malformed input (not a file to
+/// look for), and a withheld path is denied.
+#[test]
+fn a_policy_refusal_keeps_the_shared_code() {
+    let t = Fixture::new();
+    fs::write(t.0.join("kv.json"), "{}\n").expect("file");
+    fs::write(t.0.join(".env"), "A=1\n").expect("env");
+    for (path, code) in [
+        ("kv\u{0}.json", "invalidInput"),
+        ("kv.json\u{0}", "invalidInput"),
+        (".env", crate::policy::PATH_POLICY_DENIED),
+    ] {
+        let mut req = LocalFetchQuery::test_default();
+        req.path = path.parse().expect("path");
+        let result = fetch(&req, &workspace_policy(&t.0));
+        assert_eq!(result.error_code.as_deref(), Some(code), "{result:?}");
     }
 }
 

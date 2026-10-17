@@ -110,6 +110,50 @@ pub(crate) fn diagnostic_row(
     row
 }
 
+/// Diagnostic rows with one entry per distinct diagnostic: rows equal in
+/// everything but `path` fold into one row that counts its files in the
+/// message and lists every one (`files[].path`, shaped by the response stage
+/// like any row path); a diagnostic one file raised keeps its own `path`.
+/// Only the repeated text is removed, never a path.
+pub(crate) fn group_diagnostics(rows: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    // Per distinct diagnostic: its first row as written, the row without
+    // `path` it is compared by, and every path that raised it.
+    let mut grouped: Vec<(serde_json::Value, serde_json::Value, Vec<serde_json::Value>)> =
+        Vec::new();
+    for row in rows {
+        let mut key = row.clone();
+        let path = key
+            .as_object_mut()
+            .and_then(|fields| fields.shift_remove("path"));
+        match grouped.iter_mut().find(|(_, known, _)| *known == key) {
+            Some((_, _, paths)) => paths.extend(path),
+            None => grouped.push((row, key, path.into_iter().collect())),
+        }
+    }
+    grouped
+        .into_iter()
+        .map(|(first, mut row, mut paths)| {
+            match paths.len() {
+                0 => return first,
+                1 if first.get("path").is_some() => return first,
+                1 => {
+                    row["path"] = paths.remove(0);
+                    return row;
+                }
+                _ => {}
+            }
+            if let Some(message) = row["message"].as_str() {
+                row["message"] = format!("{message} ({} files)", paths.len()).into();
+            }
+            row["files"] = paths
+                .into_iter()
+                .map(|path| serde_json::json!({"path": path}))
+                .collect();
+            row
+        })
+        .collect()
+}
+
 /// A rule that does not compile, as both tools report it.
 #[derive(Debug)]
 pub(crate) struct RuleError {

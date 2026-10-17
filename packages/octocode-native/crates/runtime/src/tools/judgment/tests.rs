@@ -143,7 +143,9 @@ async fn models_use_authenticated_get_retry_and_validate_the_catalog() {
         .expect(2)
         .mount(&server)
         .await;
-    let evaluator = evaluator(&server);
+    let home = tempfile::tempdir().unwrap();
+    let mut evaluator = evaluator(&server);
+    evaluator.stats_home = Some(home.path().to_owned());
     assert_eq!(
         evaluator
             .models(&evaluation_budget(&evaluator), &evaluator.gate())
@@ -151,6 +153,11 @@ async fn models_use_authenticated_get_retry_and_validate_the_catalog() {
             .unwrap(),
         catalog
     );
+    let recorded: Value =
+        serde_json::from_slice(&std::fs::read(home.path().join("stats.json")).unwrap()).unwrap();
+    assert_eq!(recorded["stats"]["clasify"]["discovery_calls"], 2);
+    assert_eq!(recorded["stats"]["clasify"]["calls"], 0);
+    assert_eq!(recorded["stats"]["clasify"]["unknown_usage_calls"], 0);
     for request in server.received_requests().await.unwrap() {
         assert!(request.body.is_empty());
         assert_eq!(request.headers["authorization"], "Bearer test-key");
@@ -472,5 +479,36 @@ fn selection_preserves_sibling_decisions_and_accounts_for_every_request() {
     assert_eq!(
         executor.block_on(server.received_requests()).unwrap().len(),
         3
+    );
+}
+
+#[test]
+fn per_call_usage_excludes_replayed_tokens_and_retains_unknown_attempts() {
+    let mut usage = stats::ClassificationUsage::default();
+    let mut judged = Judged {
+        answers: vec![],
+        model: "resolved".into(),
+        input_tokens: 10,
+        output_tokens: 2,
+        provider_calls: 3,
+        known_usage_calls: 1,
+        replayed: false,
+    };
+    usage.add(&Ok(judged.clone()));
+    judged.provider_calls = 0;
+    judged.known_usage_calls = 0;
+    judged.replayed = true;
+    usage.add(&Ok(judged));
+    let error = ClassificationError {
+        provider_calls: 1,
+        ..ClassificationError::new("classificationProviderError", "401", "Check credentials.")
+    };
+    usage.add(&Err(error));
+    assert_eq!(
+        serde_json::to_value(usage.output()).unwrap(),
+        json!({
+            "calls":4,"knownUsageCalls":1,"unknownUsageCalls":3,
+            "inputTokens":10,"outputTokens":2,"replayedEvaluations":1,"models":["resolved"]
+        })
     );
 }

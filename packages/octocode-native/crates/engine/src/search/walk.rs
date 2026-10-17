@@ -10,7 +10,7 @@
 //! [`IgnoreRules`] answers the same question for one path, and says which
 //! rule decided it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError, RwLock};
@@ -164,6 +164,53 @@ impl RootedPrune {
     }
 }
 
+/// The nested repositories a walk that lifts ignore rules leaves out, and
+/// records: a directory below the walk's root holding its own `.git` (a
+/// clone's directory, or the file a submodule or linked worktree keeps).
+/// Lifting the rules finds what they hide in this repository; a nested one
+/// is another repository (git itself never enters it), and a gitignored
+/// checkout of others can hold more than the rest of the tree.
+#[derive(Debug, Default)]
+pub struct NestedRepositories {
+    root: PathBuf,
+    skipped: std::sync::Mutex<BTreeSet<PathBuf>>,
+}
+
+impl NestedRepositories {
+    pub fn new(root: &Path) -> Self {
+        Self {
+            root: root.to_path_buf(),
+            skipped: std::sync::Mutex::default(),
+        }
+    }
+
+    /// Whether the walk skips `path`: a directory below the root that is a
+    /// nested repository. A skipped one is recorded.
+    pub fn skips(&self, path: &Path, is_dir: bool) -> bool {
+        let nested = is_dir
+            && path != self.root
+            && path.starts_with(&self.root)
+            && std::fs::symlink_metadata(path.join(".git")).is_ok();
+        if nested {
+            self.skipped
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(path.to_path_buf());
+        }
+        nested
+    }
+
+    /// The skipped repositories, root-relative with `/` separators, sorted.
+    pub fn skipped(&self) -> Vec<String> {
+        self.skipped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|path| crate::text::slash_path(path.strip_prefix(&self.root).unwrap_or(path)))
+            .collect()
+    }
+}
+
 /// The ignore rule that keeps a path out of a walk.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IgnoreReason {
@@ -179,6 +226,10 @@ pub struct IgnoreReason {
     pub pattern: String,
 }
 
+/// The ignore files a directory may hold: `.gitignore`, which applies inside
+/// a repository only, and `.ignore`, which applies with or without one.
+pub const IGNORE_FILES: [&str; 2] = [".gitignore", ".ignore"];
+
 /// The ignore rules of one directory.
 struct Level {
     /// `.ignore`: applies with or without a repository.
@@ -187,19 +238,19 @@ struct Level {
     gitignore: Gitignore,
     /// The repository's `info/exclude`, for a directory holding `.git`.
     exclude: Gitignore,
-    /// The directory holds `.git` (or `.jj`): a repository root.
+    /// The directory is a repository root ([`super::repository`]).
     has_git: bool,
 }
 
 impl Level {
     fn load(dir: &Path) -> Self {
-        let has_git = dir.join(".git").exists() || dir.join(".jj").exists();
+        let [gitignore, dot_ignore] = IGNORE_FILES.map(|name| rules_file(dir, &dir.join(name)));
         Self {
-            dot_ignore: rules_file(dir, &dir.join(".ignore")),
-            gitignore: rules_file(dir, &dir.join(".gitignore")),
+            dot_ignore,
+            gitignore,
             exclude: git_exclude_file(dir)
                 .map_or_else(Gitignore::empty, |file| rules_file(dir, &file)),
-            has_git,
+            has_git: super::repository::is_root(dir),
         }
     }
 }
@@ -239,7 +290,7 @@ fn git_exclude_file(dir: &Path) -> Option<PathBuf> {
 }
 
 /// The files outside a walk of `root` whose contents decide its ignore rules
-/// ([`walk_builder`], [`IgnoreRules`]): the `.gitignore` and `.ignore` of each
+/// ([`walk_builder`], [`IgnoreRules`]): the [`IGNORE_FILES`] of each
 /// directory above `root`, the `info/exclude` of a repository whose `.git`
 /// sits at or above `root` (through a worktree's `gitdir:` pointer and
 /// `commondir`), the global excludes file, and the git config files that may
@@ -251,20 +302,19 @@ pub fn external_ignore_inputs(root: &Path) -> Vec<PathBuf> {
     let real = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let mut inputs = Vec::new();
     for dir in real.ancestors().skip(1) {
-        inputs.push(dir.join(".gitignore"));
-        inputs.push(dir.join(".ignore"));
+        inputs.extend(IGNORE_FILES.map(|name| dir.join(name)));
     }
     inputs.extend(real.ancestors().filter_map(git_exclude_file));
     inputs.extend(ignore::gitignore::gitconfig_excludes_path());
-    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+    let config_home = crate::process_env::var_os("XDG_CONFIG_HOME")
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::home_dir().map(|home| home.join(".config")));
-    let system = std::env::var_os("GIT_CONFIG_SYSTEM")
+    let system = crate::process_env::var_os("GIT_CONFIG_SYSTEM")
         .filter(|path| !path.is_empty())
         .map_or_else(|| PathBuf::from("/etc/gitconfig"), PathBuf::from);
     inputs.extend(
-        std::env::var_os("GIT_CONFIG_GLOBAL")
+        crate::process_env::var_os("GIT_CONFIG_GLOBAL")
             .filter(|path| !path.is_empty())
             .map(PathBuf::from)
             .into_iter()
@@ -560,10 +610,7 @@ mod tests {
     }
 
     fn relative(root: &Path, path: &Path) -> String {
-        path.strip_prefix(root)
-            .expect("under root")
-            .to_string_lossy()
-            .replace('\\', "/")
+        crate::text::slash_path(path.strip_prefix(root).expect("under root"))
     }
 
     fn fixture() -> tempfile::TempDir {
@@ -773,5 +820,50 @@ mod tests {
         .map(|entry| relative(&root, entry.path()))
         .collect();
         assert_eq!(files, BTreeSet::from(["src/a.rs".to_owned()]));
+    }
+
+    /// A lifted walk enters neither a clone nor a submodule below its root
+    /// (a `.git` directory or file), records both, and still walks the
+    /// root's own repository and its gitignored directories.
+    #[test]
+    fn a_lifted_walk_skips_and_records_nested_repositories() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = dir.path();
+        write(&root.join(".git/HEAD"), "ref: refs/heads/main\n");
+        write(&root.join(".gitignore"), "repos/\ngen/\n");
+        write(&root.join("src/a.rs"), "x");
+        write(&root.join("gen/b.rs"), "x");
+        write(
+            &root.join("repos/clone/.git/HEAD"),
+            "ref: refs/heads/main\n",
+        );
+        write(&root.join("repos/clone/c.rs"), "x");
+        write(
+            &root.join("repos/module/.git"),
+            "gitdir: ../../.git/modules/m\n",
+        );
+        write(&root.join("repos/module/d.rs"), "x");
+        write(&root.join("repos/plain/e.rs"), "x");
+        let nested = std::sync::Arc::new(NestedRepositories::new(root));
+        let skips = std::sync::Arc::clone(&nested);
+        let mut builder = walk_builder(root, IgnorePolicy::ALL, None);
+        builder.filter_entry(move |entry| {
+            !skips.skips(
+                entry.path(),
+                entry.file_type().is_some_and(|kind| kind.is_dir()),
+            )
+        });
+        let files: BTreeSet<String> = builder
+            .build()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
+            .map(|entry| relative(root, entry.path()))
+            .filter(|path| !path.starts_with(".git"))
+            .collect();
+        assert_eq!(
+            files,
+            BTreeSet::from(["gen/b.rs", "repos/plain/e.rs", "src/a.rs"].map(str::to_owned))
+        );
+        assert_eq!(nested.skipped(), ["repos/clone", "repos/module"]);
     }
 }

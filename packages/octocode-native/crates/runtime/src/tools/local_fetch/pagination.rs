@@ -57,9 +57,10 @@ fn line_at(content: &str, offset: usize) -> usize {
         .count()
 }
 
-/// The raw source lines behind a transformed whole-file view (the standard
-/// view drops blank and comment lines): each view line's 1-based source
-/// line, ascending, and the source's line count.
+/// The lines behind a transformed view (the standard view drops blank and
+/// comment lines) in the unit a raw read of the same selection pages in:
+/// each view line's 1-based line of the selected text, ascending, and that
+/// text's line count. A whole-file view's selected text is the source.
 pub(super) struct SourceLines {
     pub(super) lines: Vec<usize>,
     pub(super) total: usize,
@@ -79,6 +80,36 @@ impl SourceLines {
             lines.push(line);
         }
         Some(Self { lines, total })
+    }
+
+    /// [`Self::of_gutter`] for a view of an extraction (ranges): `selected`
+    /// maps each line of the extracted text to its source line
+    /// ([`super::extraction::OMISSION_LINE`] for an omission marker), so a
+    /// gutter line counts as its line of the extracted text and a gap line
+    /// ([`crate::tools::numbered::GAP`]) as its marker. `None` when a view
+    /// line maps onto no extracted line.
+    pub(super) fn of_selected_gutter(view: &str, selected: &[usize]) -> Option<Self> {
+        let mut lines = Vec::new();
+        let mut next = 0;
+        for record in view.split_inclusive('\n') {
+            let wanted = if record == crate::tools::numbered::GAP {
+                super::extraction::OMISSION_LINE
+            } else {
+                let (number, _) = record.split_once(crate::tools::numbered::SEPARATOR)?;
+                number.parse::<usize>().ok()?
+            };
+            let at = next
+                + selected
+                    .get(next..)?
+                    .iter()
+                    .position(|line| *line == wanted)?;
+            lines.push(at + 1);
+            next = at + 1;
+        }
+        Some(Self {
+            lines,
+            total: selected.len(),
+        })
     }
 }
 

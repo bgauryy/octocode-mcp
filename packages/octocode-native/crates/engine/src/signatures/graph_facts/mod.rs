@@ -344,11 +344,60 @@ fn extract_facts_before(
     deadline: std::time::Instant,
     declarations_only: bool,
 ) -> Option<super::GraphFactsExtraction> {
-    let ext = extension.to_owned();
-    if !graph_fact_extensions().iter().any(|item| item == &ext) {
+    let entry = graph_fact_entry(extension)?;
+    let tree = super::extractor::parse_before(content, &entry.language, deadline);
+    facts_from_tree(
+        content,
+        file_path,
+        extension,
+        deadline,
+        declarations_only,
+        tree.as_ref(),
+    )
+}
+
+/// The registry entry of a grammar graph facts are extracted for.
+fn graph_fact_entry(extension: &str) -> Option<&'static languages::LanguageEntry> {
+    if !graph_fact_extensions().iter().any(|item| item == extension) {
         return None;
     }
-    let entry = languages::find_entry(&ext)?;
+    languages::find_entry(extension)
+}
+
+/// The declarations-only facts of `content` from `tree`, a parse of it in
+/// the grammar of `extension` another reader already made (the symbols
+/// outline): one parse serves both (`None`: the parse ran out of time, and
+/// the facts say they are incomplete, as an own parse would). `None` when
+/// graph facts have no such grammar.
+pub(crate) fn declaration_facts_from_tree(
+    content: &str,
+    file_path: &str,
+    extension: &str,
+    tree: Option<&tree_sitter::Tree>,
+    deadline: std::time::Instant,
+) -> Option<GraphFactsDocument> {
+    if content.len() > crate::signatures::MAX_PARSE_SIZE {
+        return None;
+    }
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        facts_from_tree(content, file_path, extension, deadline, true, tree)
+    }))
+    .unwrap_or(None)
+    .map(|extraction| extraction.facts)
+}
+
+/// Graph facts from `tree` (`None`: the parse ran out of time, and the
+/// facts say they are incomplete).
+fn facts_from_tree(
+    content: &str,
+    file_path: &str,
+    extension: &str,
+    deadline: std::time::Instant,
+    declarations_only: bool,
+    tree: Option<&tree_sitter::Tree>,
+) -> Option<super::GraphFactsExtraction> {
+    let ext = extension.to_owned();
+    let entry = graph_fact_entry(&ext)?;
     let mut acc = GraphAccumulator::new(file_path, &ext);
     acc.declarations_only = declarations_only;
     let mut rust_root_unsupported = (ext == "rs").then_some(true);
@@ -356,7 +405,7 @@ fn extract_facts_before(
     let mut import_uses = None;
     let mut error_lines = Vec::new();
     let rust = ext == "rs";
-    if let Some(tree) = super::extractor::parse_before(content, &entry.language, deadline) {
+    if let Some(tree) = tree {
         let root = tree.root_node();
         let line_index = NodePositions::new(content);
         rust_root_unsupported = (ext == "rs").then(|| rust_inner_unsupported(root, content));

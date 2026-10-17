@@ -9,6 +9,9 @@ pub use runtime_fixture::*;
 use std::process::Command;
 
 impl Workspace {
+    /// The CLI in this workspace. Tool calls run in process
+    /// (`storage.mode = memory`), so no test leaves a warm server behind;
+    /// `warm_server` runs the one test that starts one, and stops it.
     pub fn cli(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_octocode"));
         command
@@ -22,6 +25,7 @@ impl Workspace {
             .env("OCTOCODE_ENABLE_LOCAL", "true")
             .env("NO_COLOR", "1")
             .env("OCTOCODE_ENABLE_STATS", "false")
+            .env("OCTOCODE_STORAGE_MODE", "memory")
             .env("GITHUB_API_URL", UNMOCKED_GITHUB_API_URL);
         command
     }

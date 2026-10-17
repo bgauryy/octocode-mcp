@@ -4,7 +4,7 @@ use crate::lsp::types::JsLanguageServerConfig;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -954,17 +954,9 @@ fn normalize_workspace_root(root: &str) -> Result<String> {
     if let Ok(real) = std::fs::canonicalize(&absolute) {
         return Ok(real.to_string_lossy().into_owned());
     }
-    let mut normalized = PathBuf::new();
-    for component in absolute.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other.as_os_str()),
-        }
-    }
-    Ok(normalized.to_string_lossy().into_owned())
+    Ok(crate::text::lexical(&absolute)
+        .to_string_lossy()
+        .into_owned())
 }
 
 #[cfg(test)]
@@ -1747,6 +1739,7 @@ mod tests {
             initialization_options: Some(serde_json::json!({"z": 1, "nested": {"b": 2, "a": 1}})),
             env: Some(env_a),
             max_memory_mb: None,
+            source: Default::default(),
         };
         let second = JsLanguageServerConfig {
             workspace_root: root.join("workspace").to_string_lossy().into_owned(),
@@ -2034,6 +2027,7 @@ mod tests {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         };
         let direct = canonical_lsp_key(&config(&real)).expect("direct key");
         let via_link = canonical_lsp_key(&config(&link)).expect("symlink key");

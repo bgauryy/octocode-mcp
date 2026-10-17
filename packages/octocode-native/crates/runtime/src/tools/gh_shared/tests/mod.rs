@@ -100,3 +100,31 @@ fn recovery_paths_resolve_traversal_inside_the_repository() {
     assert_eq!(super::parent_dir("../../../../user"), ".");
     assert_eq!(super::parent_dir("a/../b/c.md"), "b");
 }
+
+/// A listing path resolves `.`, `..` and stray slashes the way the
+/// repository names it; one climbing above the root is invalid input.
+#[test]
+fn listing_paths_resolve_inside_the_repository_or_are_rejected() {
+    for (path, listed) in [
+        ("./packages/react-dom/npm", "packages/react-dom/npm"),
+        ("packages//react-dom/", "packages/react-dom"),
+        (
+            "packages/react-dom/../react-dom/npm",
+            "packages/react-dom/npm",
+        ),
+        ("a/../b/c", "b/c"),
+        (".", ""),
+        ("/", ""),
+        ("a/..", ""),
+    ] {
+        assert_eq!(super::listing_path(path).expect(path), listed, "{path}");
+    }
+    for path in ["..", "../..", "../../etc", "a/../../b", "./.."] {
+        let error = super::listing_path(path).expect_err(path);
+        assert_eq!(
+            error.kind,
+            octocode_github::ProviderErrorKind::Validation,
+            "{path}"
+        );
+    }
+}

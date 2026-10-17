@@ -1,5 +1,6 @@
 use super::{
-    CachedContent, GitHubTransport, ProviderError, ProviderErrorKind, RequestContext, RequestSpec,
+    CachedContent, GitHubTransport, Partition, ProviderError, ProviderErrorKind, RequestContext,
+    RequestSpec,
 };
 use bytes::Bytes;
 use reqwest::header::{HeaderValue, IF_NONE_MATCH};
@@ -10,8 +11,50 @@ pub struct HistoryItemResponse {
     pub value: Value,
     pub has_more: bool,
 }
+
+/// A history read that names only immutable objects: a commit by its full
+/// SHA, or a comparison of two full SHAs (`base...head`). Its body, and
+/// every page of it, never changes.
+fn pinned_history(segments: &[&str]) -> bool {
+    match segments {
+        ["repos", _, _, "commits", sha] => super::content::is_full_sha(sha),
+        ["repos", _, _, "compare", refs] => refs.split_once("...").is_some_and(|(base, head)| {
+            super::content::is_full_sha(base) && super::content::is_full_sha(head)
+        }),
+        _ => false,
+    }
+}
+
+/// One history read's cache key: the URL and media type, in the pinned or
+/// the revalidated namespace.
+fn history_key(spec: &RequestSpec, pinned: bool) -> String {
+    let mut digest = Sha256::new();
+    digest.update(spec.url.as_str().as_bytes());
+    digest.update([0]);
+    if let Some(accept) = spec.headers.get(reqwest::header::ACCEPT) {
+        digest.update(accept.as_bytes());
+    }
+    let namespace = if pinned {
+        "github-commit"
+    } else {
+        "github-history"
+    };
+    format!("{namespace}:{}", hex::encode(digest.finalize()))
+}
+
+/// In-flight history reads: a transient slot holds the first read's answer
+/// for the reads that waited on it, and is forgotten once none waits, so it
+/// never outlives one concurrent wave.
+type HistoryFlights = super::KeyedFlight<(Partition, String), Option<(Bytes, bool)>>;
+
+fn history_flights() -> &'static HistoryFlights {
+    static FLIGHTS: HistoryFlights = super::KeyedFlight::transient();
+    &FLIGHTS
+}
+
 impl GitHubTransport {
-    /// One history read (issue, pull request, commit, their pages).
+    /// One history read (issue, pull request, commit, comparison, their
+    /// pages).
     pub async fn history_item(
         &self,
         segments: &[&str],
@@ -25,10 +68,13 @@ impl GitHubTransport {
                 pairs.append_pair(k, v);
             }
         }
-        let pinned =
-            matches!(segments, ["repos", _, _, "commits", sha] if super::content::is_full_sha(sha));
         let (value, has_more) = self
-            .revalidated_json(RequestSpec::get(url), pinned, context, "history item")
+            .revalidated_json(
+                RequestSpec::get(url),
+                pinned_history(segments),
+                context,
+                "history item",
+            )
             .await?;
         Ok(HistoryItemResponse { value, has_more })
     }
@@ -54,31 +100,43 @@ impl GitHubTransport {
 
     /// GET through the conditional cache. Issues, pull requests and their
     /// lists change, so a stored body is served only after GitHub confirms
-    /// it (304, no rate-limit cost). A `pinned` read (a commit addressed by
-    /// its full SHA) cannot change and is served from the cache directly.
+    /// it (304, no rate-limit cost). A `pinned` read (a commit, or a
+    /// comparison of two commits, addressed by full SHAs) cannot change and
+    /// is served from the cache directly. Concurrent reads of one URL (the
+    /// rows of a batch naming one item) share a single flight: the first
+    /// sends the request and the others take its answer; a failed read
+    /// leaves nothing, so the next one asks again.
     /// Returns the body and whether a next page exists.
     pub(crate) async fn revalidated_get(
         &self,
-        mut spec: RequestSpec,
+        spec: RequestSpec,
         pinned: bool,
         context: &RequestContext,
     ) -> Result<(Bytes, bool), ProviderError> {
         let partition = self.cache_partition(context, None)?;
-        let key = {
-            let mut digest = Sha256::new();
-            digest.update(spec.url.as_str().as_bytes());
-            digest.update([0]);
-            if let Some(accept) = spec.headers.get(reqwest::header::ACCEPT) {
-                digest.update(accept.as_bytes());
-            }
-            let namespace = if pinned {
-                "github-commit"
-            } else {
-                "github-history"
-            };
-            format!("{namespace}:{}", hex::encode(digest.finalize()))
-        };
-        let cached = self.cache.get(&partition, &key).await;
+        let key = history_key(&spec, pinned);
+        let ticket = history_flights().join((partition.clone(), key.clone()));
+        let mut shared = context.budget.wait(ticket.turn()).await?;
+        if let Some(answer) = shared.as_ref() {
+            return Ok(answer.clone());
+        }
+        let answer = self
+            .revalidated_get_once(spec, pinned, &partition, key, context)
+            .await?;
+        *shared = Some(answer.clone());
+        Ok(answer)
+    }
+
+    /// The read behind [`Self::revalidated_get`]'s flight.
+    async fn revalidated_get_once(
+        &self,
+        mut spec: RequestSpec,
+        pinned: bool,
+        partition: &Partition,
+        key: String,
+        context: &RequestContext,
+    ) -> Result<(Bytes, bool), ProviderError> {
+        let cached = self.cache.get(partition, &key).await;
         if pinned && let Some(cached) = cached.as_ref().filter(|value| value.etag.is_none()) {
             return Ok((cached.bytes.clone(), !cached.resolved_ref.is_empty()));
         }
@@ -111,7 +169,7 @@ impl GitHubTransport {
         if pinned || etag.is_some() {
             self.cache
                 .put(
-                    &partition,
+                    partition,
                     key,
                     CachedContent {
                         etag,
@@ -130,5 +188,87 @@ impl GitHubTransport {
                 .await;
         }
         Ok((body, has_more))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pinned_history;
+    use crate::{
+        CredentialSource, GitHubEndpoint, GitHubTransport, RequestBudget, RequestContext,
+        ResolvedCredential, RetryPolicy,
+    };
+    use std::time::Duration;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
+
+    /// Rows of one batch that name the same pull request read it once: the
+    /// first read's answer serves the reads that waited on it.
+    #[tokio::test]
+    async fn concurrent_reads_of_one_item_send_one_request() {
+        let server = MockServer::builder().start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/repos/o/r/pulls/9"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("etag", "\"v1\"")
+                    .set_delay(Duration::from_millis(150))
+                    .set_body_json(serde_json::json!({"number": 9})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let endpoint =
+            GitHubEndpoint::new(url::Url::parse(&format!("{}/api/v3", server.uri())).unwrap())
+                .unwrap();
+        let transport = GitHubTransport::new(
+            endpoint,
+            RetryPolicy {
+                max_attempts: 1,
+                base_delay: Duration::from_millis(1),
+                max_retry_after: Duration::from_secs(1),
+                max_rate_limit_wait: Duration::from_secs(1),
+            },
+        )
+        .unwrap();
+        let context = || {
+            RequestContext::new(
+                RequestBudget::with_timeout(Duration::from_secs(5), 1 << 20),
+                Some(ResolvedCredential::new(
+                    "flight",
+                    CredentialSource::Environment,
+                )),
+            )
+        };
+        let read = || async {
+            transport
+                .history_item(&["repos", "o", "r", "pulls", "9"], &[], &context())
+                .await
+                .expect("pull request")
+        };
+        let (first, second, third) = tokio::join!(read(), read(), read());
+        for item in [first, second, third] {
+            assert_eq!(item.value["number"], 9);
+        }
+    }
+
+    /// Only reads that name immutable objects by full SHA are pinned: a
+    /// commit, or a comparison of two commits. A branch, tag, short SHA or
+    /// cross-repository `owner:ref` side keeps revalidating.
+    #[test]
+    fn commits_and_comparisons_of_full_shas_are_pinned() {
+        let (a, b) = ("a".repeat(40), "b".repeat(40));
+        let compare = |refs: &str| pinned_history(&["repos", "o", "r", "compare", refs]);
+        assert!(pinned_history(&["repos", "o", "r", "commits", &a]));
+        assert!(compare(&format!("{a}...{b}")));
+        assert!(!compare(&format!("{a}...main")));
+        assert!(!compare(&format!("v1...{b}")));
+        assert!(!compare(&format!("{a}...fork:{b}")));
+        assert!(!compare(&format!("{}...{b}", &a[..12])));
+        assert!(!compare(&format!("{a}..{b}")));
+        assert!(!pinned_history(&["repos", "o", "r", "commits", "main"]));
+        assert!(!pinned_history(&["repos", "o", "r", "pulls", "1"]));
     }
 }

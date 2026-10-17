@@ -120,13 +120,31 @@ try {
   const corrected = await call(query({ retry: 'invalid-response' }), 'valid response later');
   check('invalid provider response is not cached', corrected.calls === 1 && verdicts(corrected.result).includes(0.1));
 
-  // Each CLI invocation is a fresh process: the process-local cache cannot persist.
-  const coldBefore = ctx.calls();
+  const persistentBefore = ctx.calls();
+  const persistentUsage = usageTotals();
+  const persistentFirst = await ctx.cli('clasify', query({ cli: 'persistent' }), { OCTOCODE_STORAGE_MODE: 'persistent', OCTOCODE_ENABLE_STATS: 'true' });
+  const persistentColdCalls = ctx.calls() - persistentBefore;
+  const persistentSecond = await ctx.cli('clasify', query({ cli: 'persistent' }), { OCTOCODE_STORAGE_MODE: 'persistent', OCTOCODE_ENABLE_STATS: 'true' });
+  const persistentWarmCalls = ctx.calls() - persistentBefore - persistentColdCalls;
+  check('persistent judgments survive fresh CLI processes and mark replay', persistentColdCalls === 1 && persistentWarmCalls === 0
+    && verdicts(persistentFirst).includes(0.1) && verdicts(persistentSecond).includes(0.1)
+    && row(persistentFirst)?.replayed !== true && row(persistentSecond)?.replayed === true,
+  JSON.stringify({ persistentColdCalls, persistentWarmCalls }));
+  const persistentCharged = usageSince(persistentUsage);
+  check('persistent CLI replay retains the receipt without charging usage twice',
+    stable(row(persistentSecond)?.usage) === stable(row(persistentFirst)?.usage)
+      && stable(persistentCharged) === stable({ calls: 1, known_usage_calls: 1, unknown_usage_calls: 0, input_tokens: 10, output_tokens: 2 }),
+  JSON.stringify(persistentCharged));
+
+  const memoryCalls = [];
+  const memoryResults = [];
   for (let i = 0; i < 2; i++) {
-    const result = await ctx.cli('clasify', query({ cli: 'same' }));
-    assert.ok(verdicts(result).includes(0.1), JSON.stringify(result.json));
+    const before = ctx.calls();
+    memoryResults.push(await ctx.cli('clasify', query({ cli: 'memory' }), { OCTOCODE_STORAGE_MODE: 'memory' }));
+    memoryCalls.push(ctx.calls() - before);
   }
-  check('separate CLI processes do not pretend to share cached judgments', ctx.calls() - coldBefore === 2);
+  check('memory judgments do not survive fresh CLI processes', memoryCalls.every(calls => calls === 1)
+    && memoryResults.every(result => verdicts(result).includes(0.1) && row(result)?.replayed !== true), JSON.stringify(memoryCalls));
 
   // Multiple runtimes can coexist in a host process; account boundaries must
   // hold there, where the process-global cache is actually shared.

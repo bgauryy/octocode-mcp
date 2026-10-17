@@ -679,3 +679,44 @@ async fn the_default_branch_is_looked_up_once_per_repository() {
         assert_eq!(out.data["resolvedRef"], "main", "{}", out.data);
     }
 }
+
+/// Concurrent rows on one commit share one recursive tree read: the later
+/// rows wait for the first and list from the tree it cached.
+#[tokio::test]
+async fn concurrent_rows_on_one_commit_read_its_tree_once() {
+    let server = MockServer::builder().start().await;
+    mount_ref(&server, "main").await;
+    let tree = crate::tools::gh_shared::test_support::Delayed::new(
+        std::time::Duration::from_millis(200),
+        ResponseTemplate::new(200).set_body_json(json!({
+            "sha":"b".repeat(40),"truncated":false,
+            "tree":[{"path":"src","type":"tree"},{"path":"src/a.rs","type":"blob","size":1}]
+        })),
+    );
+    Mock::given(method("GET"))
+        .and(path(format!("/api/v3/repos/a/b/git/trees/{TREE_SHA}")))
+        .respond_with(tree.clone())
+        .mount(&server)
+        .await;
+    let provider = GitHubProvider {
+        transport: provider(&server).transport,
+        cache: MemoryCache::default(),
+    };
+    let context = default_context();
+    let home = crate::tools::test_support::Fixture::new();
+    let row = |depth: u32| -> gh_structure::GhStructureQuery {
+        serde_json::from_value(json!({"owner":"a","repo":"b","ref":"main","maxDepth":depth}))
+            .expect("tree query")
+    };
+    let (a, b, c) = (row(5), row(5), row(3));
+    let (a, b, c) = tokio::join!(
+        gh_structure::execute(&provider, &a, &context, &home.0),
+        gh_structure::execute(&provider, &b, &context, &home.0),
+        gh_structure::execute(&provider, &c, &context, &home.0),
+    );
+    for out in [a, b, c] {
+        let out = out.expect("listing");
+        assert_eq!(out.data["commitSha"], TREE_SHA, "{}", out.data);
+    }
+    assert_eq!(tree.arrivals.count(), 1, "one recursive tree GET");
+}

@@ -562,10 +562,11 @@ fn wanted_topics(query: &GhSearchRepoQuery) -> Vec<String> {
 
 /// One compact repository row: `owner`, `repo` and `defaultBranch` (the
 /// next hop's coordinates; a page whose rows agree states the branch once in
-/// `shared`), the decision facts (stars,
-/// language, license, last push, creation, `archived`/`fork` when set), the whole
-/// description, and every topic (query matches first). Forks and the
-/// metadata-update date are verbose (core field class).
+/// `shared`), the decision facts by default (stars, language, last push,
+/// `archived`/`fork` when set) and the whole description. The license, the
+/// creation date and every topic (query matches first) are `details`
+/// extras; the fork count and the metadata-update date are `stats` extras
+/// (the contract's extra paths decide what a response keeps).
 fn repository_row(item: octocode_github::RepositorySearchItem, wanted: &[String]) -> Value {
     let mut topics = item.topics;
     // A topic equal to the repository's own name repeats `repo`; one equal

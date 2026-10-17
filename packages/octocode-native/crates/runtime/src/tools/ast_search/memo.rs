@@ -23,12 +23,13 @@
 //! a repository marker (`.git`, `.jj`) above the scope keeps its presence.
 //!
 //! [`SETTLE`]: octocode_engine::graph::SourceStamp::SETTLE
-use super::super::page_memo::PageMemo;
-use crate::tools::source::{Link, StampSet};
+use super::super::page_memo::{PageMemo, Proof, Watch};
+use crate::tools::source::Link;
 #[cfg(test)]
 use octocode_engine::graph::SourceStamp;
+#[cfg(test)]
+use std::path::{Path, PathBuf};
 use std::{
-    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -42,28 +43,8 @@ const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 const TTL: Duration = Duration::from_secs(60);
 
 struct Stored<T> {
-    stamps: StampSet,
-    /// Paths whose existence alone is the proof: whether each existed.
-    presence: Arc<[(PathBuf, bool)]>,
+    proof: Proof,
     scan: Arc<T>,
-}
-
-/// What a stored scan's freshness depends on.
-pub(super) struct Watch<'a> {
-    /// The scope root: stamped, with every directory holding a source.
-    pub(super) root: &'a Path,
-    /// Entries the scan read or walked: each keeps its stamp.
-    pub(super) sources: &'a [PathBuf],
-    /// Files outside the walk whose contents decide its ignore rules: a
-    /// present one keeps its stamp, an absent one stays absent.
-    pub(super) rules: &'a [PathBuf],
-    /// Entries whose existence alone decides the rules (repository markers).
-    pub(super) markers: &'a [PathBuf],
-}
-
-/// Whether `path` exists (a dangling link counts: its name is taken).
-fn exists(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok()
 }
 
 /// One store per scan type (the executor keeps one).
@@ -81,14 +62,10 @@ impl<T> ScanMemo<T> {
     /// The scan stored for `snapshot` under `key` while every stamped entry
     /// is unchanged; a changed one is evicted.
     pub(super) fn get(&self, snapshot: &str, key: &str) -> Option<Arc<T>> {
-        let (scan, stamps, presence) = self.store.get(snapshot, key, |stored| {
-            (
-                Arc::clone(&stored.scan),
-                stored.stamps.clone(),
-                Arc::clone(&stored.presence),
-            )
+        let (scan, proof) = self.store.get(snapshot, key, |stored| {
+            (Arc::clone(&stored.scan), stored.proof.clone())
         })?;
-        if stamps.unchanged() && presence.iter().all(|(path, was)| exists(path) == *was) {
+        if proof.holds() {
             return Some(scan);
         }
         self.evict(snapshot);
@@ -112,42 +89,10 @@ impl<T> ScanMemo<T> {
         if bytes > MAX_BYTES {
             return;
         }
-        let root = watch.root;
-        let mut paths = std::collections::BTreeSet::new();
-        paths.insert(root.to_path_buf());
-        for source in watch.sources {
-            if let Some(parent) = source.parent()
-                && parent.starts_with(root)
-            {
-                paths.insert(parent.to_path_buf());
-            }
-            paths.insert(source.clone());
-        }
-        let mut presence = watch
-            .markers
-            .iter()
-            .map(|marker| (marker.clone(), exists(marker)))
-            .collect::<Vec<_>>();
-        for rule in watch.rules {
-            if exists(rule) {
-                paths.insert(rule.clone());
-            } else {
-                presence.push((rule.clone(), false));
-            }
-        }
-        let Some(stamps) = StampSet::capture(paths, Link::Follow, Some(started)) else {
+        let Some(proof) = watch.capture(Link::Follow, Some(started)) else {
             return;
         };
-        self.store.put(
-            snapshot,
-            key,
-            bytes,
-            Stored {
-                stamps,
-                presence: presence.into(),
-                scan,
-            },
-        );
+        self.store.put(snapshot, key, bytes, Stored { proof, scan });
     }
 
     pub(super) fn evict(&self, snapshot: &str) {

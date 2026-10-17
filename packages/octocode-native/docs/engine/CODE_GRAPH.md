@@ -11,7 +11,7 @@ The native `crates/engine` crate owns the reusable code graph model and algorith
 - `SnapshotMetadata` holds the scan root, the graph-fact schema, and each normalized source path with its content digest.
 - `GraphCompleteness` records whether the scan was complete and why not.
 
-The implementation is in `src/graph/model.rs` and `src/graph/diff.rs`. Native graph-fact extraction crosses the Rust package boundary as `GraphFactsTypedScanResult`.
+The implementation is in `src/graph/model.rs` and `src/graph/diff.rs`. Native graph-fact extraction crosses the Rust package boundary as `GraphFactsMappedScan<T>`: `scan_graph_facts` hands each parsed file to the caller's map as a borrowed `GraphFactsView`, and the scan keeps only what the map returns. `FactsSource` picks full graph facts (`Graph`) or the caller's cached declarations (`Declarations`).
 
 ## Ingestion flow
 
@@ -34,7 +34,7 @@ Reusable deterministic algorithms are in `src/graph/algorithms.rs`:
 - condensation and topological layers
 - transitive-edge detection
 
-`crates/runtime/src/tools/ast_graph/algorithms.rs` only re-exports these engine primitives. The public `astTopology` response remains a syntax-confidence file-topology contract; semantic evidence isn't relabeled as syntax or exposed as proven symbol identity.
+`crates/runtime/src/tools/ast_graph/algorithms.rs` re-exports these engine primitives and adds the `astTopology` JSON rendering, the dependency view (module-tree edges removed) and runtime view (eager-load edges only), and immediate dominators. The public `astTopology` response remains a syntax-confidence file-topology contract; semantic evidence isn't relabeled as syntax or exposed as proven symbol identity.
 
 ## Persisted graphs (CLI)
 
@@ -45,10 +45,24 @@ Reusable deterministic algorithms are in `src/graph/algorithms.rs`:
 ```text
 <workspace>/.octocode/graph/
   latest                         # id of the newest snapshot
-  <YYYYMMDDTHHMMSSZ>-<scope>/
-    manifest.json                # scope, counts, link tallies, diagnostics, sha256
+  <YYYYMMDDTHHMMSSZ>-<scope>-<root tag>/
+    manifest.json                # root, scope, counts, link tallies, diagnostics,
+                                 # linking-config digests (inputs), sha256
     graph.bin
 ```
+
+The root tag is 6 hex digits of the scanned root, so two roots whose scopes
+slug alike (`a-b`, `a/b`) never share an id, and pruning keeps snapshots per
+root. Before any read, hash or `git` call, a snapshot's manifest root must be
+canonical and inside the allowed roots.
+
+Freshness has one owner (`ast_graph/freshness.rs`), shared with the
+`astTopology` memo. It covers every source and the linking configs that change
+resolution (tsconfig/jsconfig, `package.json`, `Cargo.toml`, `go.mod`, and the
+like). Both ingest reuse and `graph query stale` use it: `stale` rescans the
+scoped file list, so it reports `changed`, `missing`, `added` and `excluded`
+sources and changed configs. A snapshot truncated at its file limit is never
+reported fresh.
 
 `graph.bin` (format v2) is a sectioned, varint-coded file:
 

@@ -268,6 +268,23 @@ pub(crate) fn github_repo_dir(url: &str) -> Option<String> {
     (!segments.is_empty()).then(|| segments.join("/"))
 }
 
+/// The ref of a `/tree/<ref>` or `/blob/<ref>` repository URL when it names
+/// `version`'s release (`v8.1.4` for 8.1.4) and nothing after it: a branch
+/// or a monorepo directory URL is not release evidence.
+pub(crate) fn release_ref_in(url: &str, version: &str) -> Option<String> {
+    let rest = url.split_once("github.com/")?.1;
+    let rest = rest.split(['#', '?']).next()?;
+    let mut parts = rest.split('/').filter(|part| !part.is_empty());
+    let (_owner, _repo, kind, reference) =
+        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    let tagged = !version.is_empty()
+        && reference
+            .strip_suffix(version)
+            .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with(['v', '-', '/', '@']));
+    (matches!(kind, "tree" | "blob") && parts.next().is_none() && tagged)
+        .then(|| reference.to_owned())
+}
+
 #[cfg(test)]
 mod github_slug_tests {
     use super::github_slug;

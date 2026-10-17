@@ -47,6 +47,18 @@ These are agent research failures, not proof of runtime defects. The preserved c
 - Classification was disabled in this GitHub comparison. No TypeSafe calls belong to it. The separately approved 26-case classification A/B retained all targets and reduced provider input tokens 16.9%, while retaining seven size-gate failures.
 - The freeze predates later empty-result guidance, singleton repair and adaptive-page fixes. It is not a measurement of the final shared checkout. Different historical campaigns are not causal baselines.
 
+## Follow-up fixes and precision confirmation
+
+The final pre-precision release replayed all **12 malformed benchmark calls**: each remained strictly rejected and supplied a schema-valid executable repair. This is a deterministic recovery check, not a rerun of the researcher benchmark, so the original 12 failures remain in the table above.
+
+A separately approved, frozen six-file direct-tool comparison tested the previously drafted stricter classifier predicate. Both arms retained all six complete target declarations; pages were complete and ordered, with no provider errors. Host response bytes fell from **58,862 to 22,364 (62.0%)**; provider input tokens increased from **230,260 to 239,359 (4.0%)**, within the predeclared 5% ceiling. One large-file byte failure became zero. All **674 requests** finished within the 800-request / 20-minute total budget. The exact wording was integrated in the owning core at classifier template version 4; the repaired isolated snapshot built on all six platforms and passed 590 local fixture tool calls and 41 MCP acceptance checks. The full workspace gate passed all 12 packages; newer shared-checkout changes remain outside that snapshot.
+
+The paired geometric mean byte ratio is **0.5645**: four cases shrink, one ties, and one grows by three bytes. Redis contributes **80.9%** of aggregate savings, and its candidate still includes three related helper/caller declarations beyond the exact target. The result supports bounded selected-view delivery; it does not establish perfect precision or a representative 62% reduction across workloads.
+
+Every **selected-view** page was read. All six selections in each arm were explicitly partial because of candidate budgets or uncertain judgments: 509 unknown items in the baseline and 502 in the candidate. Their unfiltered recovery leads remain available but were not read or included in selected-view bytes. Complete target declarations are verified; exhaustive whole-file classification is not claimed.
+
+This is six new pinned public files, with the same frozen native CLI and admitted states for both arms. It is neither an agent-token benchmark nor a retest of the seven earlier development size failures. The failed earlier development gate is retained. [Frozen precision results](../../../.octocode/octocode-dev/output-quality-2026-10-16/precision-confirmation-summary.json).
+
 ## Evidence
 
 [Campaign manifest](../campaigns/output-quality-2026-10-16/campaign.json), [measured summary](../campaigns/output-quality-2026-10-16/measured-summary.json), [all runs and judgments](runs/output-quality-2026-10-16.json), [input failure classification](../campaigns/output-quality-2026-10-16/failure-classification.json), [strict rehash receipts](../campaigns/output-quality-2026-10-16/strict-rehash.json), [judge isolation and source-read audit](../campaigns/output-quality-2026-10-16/judge-audit.json).

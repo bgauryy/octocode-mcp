@@ -157,7 +157,7 @@ fn acquire(
         }
         "ghGetFileContent" => {
             let response =
-                dispatcher.capture_github_asset(query, context, policy::MAX_IMAGE_BYTES)?;
+                dispatcher.capture_github_content(query, context, policy::MAX_IMAGE_BYTES)?;
             if response.bytes.len() > policy::MAX_IMAGE_BYTES {
                 return Err(too_large(
                     "The GitHub image exceeds the per-image byte limit.",
@@ -300,13 +300,13 @@ mod tests {
 
     #[test]
     fn dimensions_reject_each_axis_below_the_minimum() {
-        for (width, height) in [(255, 308), (308, 255)] {
+        for (width, height) in [(256, 400), (400, 256), (279, 400), (400, 279)] {
             let error = dimensions(&header(width, height)).unwrap_err();
             assert_eq!(
                 error.code, "invalidClassificationContext",
                 "{width}x{height}"
             );
-            assert!(error.message.contains("256..=1568"));
+            assert!(error.message.contains("280..=1568"));
             assert!(error.message.contains("78400..=2458624"));
         }
     }
@@ -324,13 +324,7 @@ mod tests {
 
     #[test]
     fn dimensions_accept_inclusive_dimension_and_area_edges() {
-        for (width, height) in [
-            (280, 280),
-            (256, 307),
-            (307, 256),
-            (1568, 256),
-            (1568, 1568),
-        ] {
+        for (width, height) in [(280, 280), (280, 1568), (1568, 280), (1568, 1568)] {
             assert_eq!(
                 dimensions(&header(width, height)).unwrap(),
                 ("png", width as usize, height as usize)
@@ -340,7 +334,7 @@ mod tests {
 
     #[test]
     fn dimensions_reject_maximum_dimension_and_area_overages() {
-        for (width, height) in [(1569, 256), (256, 1569), (1569, 1568)] {
+        for (width, height) in [(1569, 280), (280, 1569), (1569, 1568)] {
             assert_eq!(
                 dimensions(&header(width, height)).unwrap_err().code,
                 "classificationContextTooLarge",

@@ -108,7 +108,7 @@ A configuration maps file extensions to launch specs:
 - A live client whose readiness wait ended in `timeout` stays pooled (it keeps indexing); the next acquisition waits for readiness again, so the stored `timeout` never fails every later call.
 - Runtime shutdown stops every client and joins owned work.
 
-Long-lived MCP sessions reuse warm servers. The CLI shares them through `octocode serve`: the first `lspSearch` call of a workspace starts a detached server behind a private Unix socket in `<temp dir>/octocode-<uid>` (its name carries the home through the key, so a long home still fits the socket path limit), and later calls send their query there. The server is keyed by binary build, working directory, every env name the config contract binds plus the `OCTOCODE_*`/`GITHUB_*`/`GH_*` variables, and config file versions, so a call under different settings never reaches a server holding old ones. It exits after 10 minutes idle; with `storage.mode = memory`, on Windows, or when the socket cannot be reached, the call runs in process; an unusable socket location (too long, not private) is stated on stderr.
+Long-lived MCP sessions reuse warm servers. The CLI shares them through the [warm tool server](../../README.md#warm-tool-server) (`octocode serve`): one server per workspace and configuration, whose runtimes (one per working directory and environment) share one pool, so later calls reach servers already loaded.
 
 ## Resource containment
 

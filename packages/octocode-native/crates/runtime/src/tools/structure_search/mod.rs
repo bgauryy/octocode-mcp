@@ -476,6 +476,8 @@ struct Cut {
     /// Listing rows before this window's end: the next window's
     /// `scanOffset`.
     covered: usize,
+    /// The listing ranks rows by something other than walk order.
+    ranked: bool,
     snapshot: String,
 }
 
@@ -586,10 +588,23 @@ impl Cut {
                         "the walk stopped at maxEntries {}; entries past it",
                         self.requested
                     )
+                } else if self.scan_cut {
+                    // The walk stopped at its ceiling: what it found is a
+                    // lower bound, and a sort ranks only what it walked.
+                    let ranking = if self.ranked {
+                        ", so this sort ranks only the entries walked first (walk order: name-sorted, depth-first)"
+                    } else {
+                        ""
+                    };
+                    format!(
+                        "the walk stopped at its {}-entry ceiling with at least {} entries matched{ranking}; entries past it",
+                        max_walk(),
+                        self.matched()
+                    )
                 } else {
                     format!(
                         "{} entries matched, past maxEntries {}; the rest",
-                        self.total_discovered.max(self.available),
+                        self.matched(),
                         self.requested
                     )
                 }
@@ -668,10 +683,18 @@ impl Cut {
             out["clipped"] = json!(true);
             if self.early_exit {
                 out["atLeast"] = json!(self.scan_offset + self.total + 1);
+            } else if self.scan_cut {
+                out["atLeast"] = json!(self.matched());
             } else {
-                out["totalAvailable"] = json!(self.total_discovered.max(self.available));
+                out["totalAvailable"] = json!(self.matched());
             }
         }
+    }
+
+    /// Entries the walk matched: every one when it walked the whole tree,
+    /// a lower bound when it stopped at its ceiling (`scan_cut`).
+    fn matched(&self) -> usize {
+        self.total_discovered.max(self.available)
     }
 }
 
@@ -862,6 +885,10 @@ struct WalkMeta {
     bytes: u64,
     uncovered: Uncovered,
     warnings: Vec<String>,
+    /// The listing is ranked by something other than walk order (`files`
+    /// sorted by size, lines, name or time): a walk cut at its ceiling ranks
+    /// only the entries it walked first.
+    ranked: bool,
 }
 
 impl<R: Sourced + Send + Sync + 'static> memo::Listed for Walked<R> {
@@ -945,6 +972,20 @@ impl WalkLeft {
             .record(path, path.is_dir());
     }
 
+    /// Whether a `filtered` listing walked past an admitted link to a
+    /// directory: the walk follows no link, so the entries there are on no
+    /// page, and a filter hides the link row too. It is disclosed like a
+    /// withheld entry (`N symlinks not followed`).
+    fn unfollowed(
+        path: &std::path::Path,
+        file_type: Option<std::fs::FileType>,
+        filtered: bool,
+    ) -> bool {
+        filtered
+            && file_type.map_or_else(|| path.is_symlink(), |kind| kind.is_symlink())
+            && path.is_dir()
+    }
+
     fn into_uncovered(self, ignored: usize) -> Uncovered {
         Uncovered {
             ignored,
@@ -1008,6 +1049,7 @@ impl<R: Sourced> Walked<R> {
             bytes,
             uncovered: left.into_uncovered(native.ignored as usize),
             warnings,
+            ranked: false,
         };
         Self { rows, meta }
     }
@@ -1045,6 +1087,7 @@ impl<R: Sourced> Walked<R> {
             total_discovered: meta.total_discovered,
             scan_offset,
             covered: meta.covered,
+            ranked: meta.ranked,
             snapshot,
         }
     }
@@ -1071,15 +1114,16 @@ impl WalkMeta {
         summary
     }
 
-    /// The page's warnings: `cut`'s own (`warnings`), and on the first
-    /// page the walk's (unreadable entries, the path policy's withheld
-    /// entries) and the query's, which describe every page alike and are
-    /// stated once, like the summary.
+    /// The page's warnings: `cut`'s own (`warnings`), and on the walk's
+    /// first page its own (unreadable entries, the path policy's withheld
+    /// entries), stated once per walk like the summary: a resumed walk
+    /// (`walkOffset`) reports the entries it read. The query's notes read
+    /// the same for the whole result: they are notices, said once
+    /// ([`crate::tools::paging::push_notice`]).
     fn warn(&self, out: &mut Value, query_notes: Vec<String>, cut: Vec<String>, page: usize) {
         let mut warnings = Vec::new();
         if page == 1 {
             warnings.extend(self.warnings.iter().cloned());
-            warnings.extend(query_notes);
         }
         warnings.extend(cut);
         if page == 1 {
@@ -1087,6 +1131,9 @@ impl WalkMeta {
         }
         if !warnings.is_empty() {
             out["warnings"] = json!(warnings);
+        }
+        for note in query_notes {
+            crate::tools::paging::push_notice(out, note);
         }
     }
 }
@@ -1180,8 +1227,10 @@ impl FilterProbe {
         })
     }
 
+    /// A directory, or a link to one (the walk follows none), may hold
+    /// matches.
     fn could_list(&self, path: &std::path::Path) -> bool {
-        if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir()) {
+        if path.is_dir() {
             return true;
         }
         let name = crate::tools::display_name(path);

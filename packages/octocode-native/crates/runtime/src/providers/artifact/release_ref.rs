@@ -1,10 +1,11 @@
 //! Release refs for registries whose metadata names no commit. Each is a
 //! lead source only: any failure leaves the lookup without a release ref.
-use super::ArtifactType;
 use super::http::RegistryClient;
 use super::util::{commit_sha, encode_component, github_repo_dir, github_slug, parse_url, string};
+use super::{ArtifactItem, ArtifactType};
 use serde_json::Value;
-use std::io::Read;
+use std::io::Write;
+use std::ops::ControlFlow;
 
 /// Decompressed bytes read while looking for one archive entry.
 const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
@@ -36,7 +37,9 @@ pub(crate) async fn crate_vcs(
 }
 
 /// `.cargo_vcs_info.json` of `name@version` (`{}` when the archive has
-/// none); `None` when the archive cannot be read.
+/// none); `None` when the archive cannot be read. The archive streams in
+/// and the download stops at the entry: cargo packs it first, so a
+/// multi-megabyte crate costs its first kilobytes.
 async fn archive_vcs_info(name: &str, version: &str, client: &RegistryClient<'_>) -> Option<Value> {
     let url = parse_url(&format!(
         "https://static.crates.io/crates/{name}/{name}-{version}.crate",
@@ -44,28 +47,155 @@ async fn archive_vcs_info(name: &str, version: &str, client: &RegistryClient<'_>
         version = encode_component(version),
     ))
     .ok()?;
-    let archive = client
-        .bytes(ArtifactType::Crates, url)
+    let mut reader = ArchiveEntry::new(&format!("{name}-{version}/.cargo_vcs_info.json"));
+    client
+        .stream(ArtifactType::Crates, url, &mut |chunk| reader.feed(chunk))
         .await
         .ok()
         .flatten()?;
     Some(
-        archive_entry(&archive, &format!("{name}-{version}/.cargo_vcs_info.json"))
+        reader
+            .finish()
             .and_then(|info| serde_json::from_slice(&info).ok())
             .unwrap_or_else(|| Value::Object(serde_json::Map::new())),
     )
 }
 
-/// One file's bytes from a gzip-compressed tar archive (POSIX ustar names
-/// with prefixes, GNU long names).
-fn archive_entry(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
-    let mut tar = flate2::read::GzDecoder::new(archive).take(MAX_ARCHIVE_BYTES);
-    let mut long_name: Option<String> = None;
-    loop {
-        let mut header = [0u8; 512];
-        tar.read_exact(&mut header).ok()?;
+/// Reads one entry of a gzip-compressed tar archive (POSIX ustar names with
+/// prefixes, GNU long names) from compressed chunks as they arrive.
+struct ArchiveEntry {
+    gzip: flate2::write::GzDecoder<TarScan>,
+}
+
+impl ArchiveEntry {
+    fn new(wanted: &str) -> Self {
+        Self {
+            gzip: flate2::write::GzDecoder::new(TarScan {
+                wanted: wanted.to_owned(),
+                pending: Vec::new(),
+                state: TarState::Header,
+                long_name: None,
+                decompressed: 0,
+                found: None,
+            }),
+        }
+    }
+
+    /// Decompress `chunk` into the scan; `Break` once the entry is read, the
+    /// archive ended, or it cannot be read.
+    fn feed(&mut self, chunk: &[u8]) -> ControlFlow<()> {
+        let fed = self.gzip.write_all(chunk).and_then(|()| self.gzip.flush());
+        let scan = self.gzip.get_mut();
+        if fed.is_err() && scan.found.is_none() {
+            scan.found = Some(None);
+        }
+        if scan.found.is_some() {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    }
+
+    /// The entry's bytes, `None` when the archive lacks it or is unreadable.
+    fn finish(mut self) -> Option<Vec<u8>> {
+        if self.gzip.get_ref().found.is_none() {
+            let _ = self.gzip.try_finish();
+        }
+        self.gzip.get_mut().found.take().flatten()
+    }
+}
+
+/// Where the tar scan is: before a header, inside an entry it skips
+/// (`remaining` bytes with padding), or inside one it holds (a GNU long name
+/// or the wanted file, `size` bytes padded to `padded`).
+enum TarState {
+    Header,
+    Skip { remaining: u64 },
+    Hold { size: u64, padded: u64, kind: u8 },
+}
+
+/// A tar reader fed decompressed bytes: it buffers at most one header or
+/// one held entry, skipping every other entry as it passes.
+struct TarScan {
+    wanted: String,
+    pending: Vec<u8>,
+    state: TarState,
+    long_name: Option<String>,
+    decompressed: u64,
+    /// Set once the scan ends: the entry, or `None` when it is absent,
+    /// oversized, or the archive is malformed.
+    found: Option<Option<Vec<u8>>>,
+}
+
+impl std::io::Write for TarScan {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.found.is_none() {
+            self.decompressed = self.decompressed.saturating_add(bytes.len() as u64);
+            if self.decompressed > MAX_ARCHIVE_BYTES {
+                self.found = Some(None);
+            } else {
+                self.pending.extend_from_slice(bytes);
+                self.advance();
+            }
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl TarScan {
+    fn advance(&mut self) {
+        while self.found.is_none() {
+            match self.state {
+                TarState::Header => {
+                    let Some(header) = self.pending.get(..512) else {
+                        return;
+                    };
+                    let header: [u8; 512] = header.try_into().unwrap_or([0; 512]);
+                    self.pending.drain(..512);
+                    self.state = self.header(&header);
+                }
+                TarState::Skip { remaining } => {
+                    let skipped = remaining.min(self.pending.len() as u64);
+                    self.pending.drain(..skipped as usize);
+                    if skipped < remaining {
+                        self.state = TarState::Skip {
+                            remaining: remaining - skipped,
+                        };
+                        return;
+                    }
+                    self.state = TarState::Header;
+                }
+                TarState::Hold { size, padded, kind } => {
+                    if (self.pending.len() as u64) < padded {
+                        return;
+                    }
+                    let body = self.pending[..size as usize].to_vec();
+                    self.pending.drain(..padded as usize);
+                    self.state = TarState::Header;
+                    if kind == b'L' {
+                        let end = body
+                            .iter()
+                            .position(|byte| *byte == 0)
+                            .unwrap_or(body.len());
+                        self.long_name = Some(String::from_utf8_lossy(&body[..end]).into_owned());
+                    } else {
+                        self.found = Some(Some(body));
+                    }
+                }
+            }
+        }
+    }
+
+    /// The state after `header`; an end-of-archive block, a malformed
+    /// header or an oversized held entry ends the scan.
+    fn header(&mut self, header: &[u8; 512]) -> TarState {
         if header.iter().all(|byte| *byte == 0) {
-            return None;
+            self.found = Some(None);
+            return TarState::Header;
         }
         let field = |range: std::ops::Range<usize>| {
             let bytes = &header[range];
@@ -75,9 +205,12 @@ fn archive_entry(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
                 .unwrap_or(bytes.len());
             String::from_utf8_lossy(&bytes[..end]).into_owned()
         };
-        let size = u64::from_str_radix(field(124..136).trim(), 8).ok()?;
+        let Ok(size) = u64::from_str_radix(field(124..136).trim(), 8) else {
+            self.found = Some(None);
+            return TarState::Header;
+        };
         let kind = header[156];
-        let name = long_name.take().unwrap_or_else(|| {
+        let name = self.long_name.take().unwrap_or_else(|| {
             let prefix = field(345..500);
             let name = field(0..100);
             if &header[257..263] == b"ustar\0" && !prefix.is_empty() {
@@ -86,29 +219,16 @@ fn archive_entry(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
                 name
             }
         });
-        let mut body = Vec::new();
         let padded = size.div_ceil(512) * 512;
-        let wanted_body = kind == b'L' || (name == wanted && matches!(kind, b'0' | 0));
-        if wanted_body && size > MAX_ENTRY_BYTES {
-            return None;
+        let held = kind == b'L' || (name == self.wanted && matches!(kind, b'0' | 0));
+        if !held {
+            return TarState::Skip { remaining: padded };
         }
-        if wanted_body {
-            (&mut tar).take(size).read_to_end(&mut body).ok()?;
-            std::io::copy(&mut (&mut tar).take(padded - size), &mut std::io::sink()).ok()?;
-        } else {
-            std::io::copy(&mut (&mut tar).take(padded), &mut std::io::sink()).ok()?;
+        if size > MAX_ENTRY_BYTES {
+            self.found = Some(None);
+            return TarState::Header;
         }
-        match kind {
-            b'L' => {
-                let end = body
-                    .iter()
-                    .position(|byte| *byte == 0)
-                    .unwrap_or(body.len());
-                long_name = Some(String::from_utf8_lossy(&body[..end]).into_owned());
-            }
-            _ if wanted_body => return Some(body),
-            _ => {}
-        }
+        TarState::Hold { size, padded, kind }
     }
 }
 
@@ -124,21 +244,60 @@ pub trait ReleaseTags: Send + Sync {
     fn exists<'a>(&'a self, owner: &'a str, repo: &'a str, tag: &'a str) -> TagFuture<'a>;
 }
 
+/// Pins `artifact`'s source to the upstream release tag of `version` when
+/// its registry named no commit: the one fallback every registry without a
+/// recorded release commit (or whose commit is unknown) takes. `package` is
+/// the name the package's tags go by (Maven's artifactId, not its
+/// coordinate).
+pub(crate) async fn pin_release_tag(
+    artifact: &mut ArtifactItem,
+    package: &str,
+    version: &str,
+    client: &RegistryClient<'_>,
+) {
+    if artifact.source_ref.is_some() {
+        return;
+    }
+    let Some(repository) = artifact.repository.as_deref() else {
+        return;
+    };
+    let directory = artifact
+        .repository_directory
+        .clone()
+        .or_else(|| github_repo_dir(repository));
+    artifact.source_ref =
+        github_release_tag(repository, directory.as_deref(), package, version, client).await;
+    artifact.source_tag = artifact.source_ref.is_some();
+}
+
 /// The release tag of `version` in a GitHub repository, when one exists
 /// upstream: `v<version>`, `<version>`, then the shapes a monorepo uses for
 /// one package's releases ([`tag_candidates`]). Without a GitHub check, or
 /// when the check fails (rate limit, missing repository), there is no tag.
-pub(crate) async fn github_release_tag(
+/// A found tag is remembered as a release fact, so a repeated lookup spends
+/// no GitHub request; an absent one is checked again (it may be pushed
+/// later).
+async fn github_release_tag(
     repository: &str,
+    directory: Option<&str>,
     package: &str,
     version: &str,
     client: &RegistryClient<'_>,
 ) -> Option<String> {
     let tags = client.tags?;
     let (owner, repo) = github_slug(repository)?;
-    let directory = github_repo_dir(repository);
-    for tag in tag_candidates(&repo, package, directory.as_deref(), version) {
+    let resource = format!(
+        "tag:{}/{}/{}:{package}@{version}",
+        owner.to_ascii_lowercase(),
+        repo.to_ascii_lowercase(),
+        directory.unwrap_or_default()
+    );
+    if let Some(fact) = client.fact(&resource) {
+        return string(fact.get("tag"));
+    }
+    for tag in tag_candidates(&repo, package, directory, version) {
         if tags.exists(&owner, &repo, &tag).await? {
+            client.remember_fact(&resource, &serde_json::json!({ "tag": tag }));
             return Some(tag);
         }
     }
@@ -249,6 +408,14 @@ pub(crate) fn test_archive(entries: &[(&str, &[u8], u8)]) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    /// One file's bytes from a whole gzip-compressed tar archive, fed to
+    /// the streaming reader as one chunk.
+    fn archive_entry(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
+        let mut reader = ArchiveEntry::new(wanted);
+        let _ = reader.feed(archive);
+        reader.finish()
+    }
+
     #[test]
     fn a_monorepo_package_is_tagged_by_the_names_it_goes_by() {
         // pydantic-core is released from pydantic/pydantic as `core-v<version>`.
@@ -343,5 +510,61 @@ mod tests {
         assert_eq!(crate_vcs(name, "1.0.0", &client).await, expected);
         assert_eq!(crate_vcs(name, "1.0.0", &client).await, expected);
         assert_eq!(http.calls(), 1);
+    }
+
+    /// The archive streams in and the download stops at the VCS entry:
+    /// cargo packs it first, so a large crate is read for its first pieces
+    /// only; an entry packed last is still found.
+    #[tokio::test]
+    async fn crate_vcs_info_stops_the_download_at_its_entry() {
+        let info =
+            br#"{"git":{"sha1":"b6a77c4413f902523646be0d7f5520631df53ff6"},"path_in_vcs":""}"#;
+        // Incompressible filler: the compressed archive stays megabytes.
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let filler = (0..2 * 1024 * 1024)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state as u8
+            })
+            .collect::<Vec<_>>();
+        let budget = super::super::types::test_budget();
+        for (name, first) in [("streamed-first", true), ("streamed-last", false)] {
+            let entry = format!("{name}-1.0.0/.cargo_vcs_info.json");
+            let source = format!("{name}-1.0.0/src/lib.rs");
+            let entries: Vec<(&str, &[u8], u8)> = if first {
+                vec![
+                    (entry.as_str(), &info[..], b'0'),
+                    (source.as_str(), &filler, b'0'),
+                ]
+            } else {
+                vec![
+                    (source.as_str(), &filler, b'0'),
+                    (entry.as_str(), &info[..], b'0'),
+                ]
+            };
+            let http = super::super::test_http::ChunkedHttp::new(test_archive(&entries), 4096);
+            let client = RegistryClient::uncached(&http, &budget);
+            assert_eq!(
+                crate_vcs(name, "1.0.0", &client).await,
+                Some(("b6a77c4413f902523646be0d7f5520631df53ff6".to_owned(), None))
+            );
+            if first {
+                assert!(
+                    http.fed() <= 2,
+                    "read {} of {} pieces",
+                    http.fed(),
+                    http.pieces()
+                );
+            } else {
+                assert!(
+                    http.fed() + 1 >= http.pieces(),
+                    "read {} of {}",
+                    http.fed(),
+                    http.pieces()
+                );
+            }
+        }
     }
 }

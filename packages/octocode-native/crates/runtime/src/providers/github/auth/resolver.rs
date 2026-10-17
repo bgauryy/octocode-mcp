@@ -8,13 +8,15 @@ use secrecy::ExposeSecret;
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
-    sync::{Arc, Mutex, Once},
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
 
-/// How long "no credential" is remembered, so a login made in another
-/// process is picked up without a restart.
-const ANONYMOUS_MEMO: Duration = Duration::from_secs(60);
+/// How long a request credential (or "no credential") is remembered: a
+/// login, logout, `gh auth switch`, or token rotation made in another process
+/// is picked up within it, without a restart of a long-lived host (an MCP
+/// session, the CLI's warm server).
+const MEMO_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AuthMode {
@@ -49,12 +51,15 @@ struct Remembered {
     /// When a remembered stored credential must be refreshed; past it the
     /// entry is a miss, so the next request reloads and refreshes.
     refresh_due: Option<SystemTime>,
+    /// The warning the selection was made with, said again by each request
+    /// that reuses it, as a fresh selection would.
+    notice: Option<String>,
 }
 
 pub struct Authentication {
     config: Arc<ConfigOutput>,
-    /// Request credentials resolve once per host per process: a `gh` spawn or
-    /// a store read per query row is pure overhead.
+    /// Request credentials resolve once per host per [`MEMO_TTL`]: a `gh`
+    /// spawn or a store read per query row is pure overhead.
     memo: Mutex<HashMap<String, Remembered>>,
     /// Host partitions of the tokens GitHub rejected in this process. A
     /// rejected stored or `gh` token is skipped, so the next request falls
@@ -94,17 +99,15 @@ impl Authentication {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .contains(&octocode_github::Partition::new(host, Some(&token)))
     }
-    fn remembered(&self, host: &str) -> Option<Option<AuthSelection>> {
+    fn remembered(&self, host: &str) -> Option<(Option<AuthSelection>, Option<String>)> {
         let memo = self
             .memo
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let entry = memo.get(host)?;
-        let live = match entry.selection {
-            Some(_) => entry.refresh_due.is_none_or(|due| SystemTime::now() < due),
-            None => entry.at.elapsed() < ANONYMOUS_MEMO,
-        };
-        live.then(|| entry.selection.clone())
+        let live = entry.at.elapsed() < MEMO_TTL
+            && entry.refresh_due.is_none_or(|due| SystemTime::now() < due);
+        live.then(|| (entry.selection.clone(), entry.notice.clone()))
     }
     fn remember(&self, host: &str, resolved: &Resolved) {
         self.memo
@@ -116,6 +119,7 @@ impl Authentication {
                     selection: resolved.selection.clone(),
                     at: Instant::now(),
                     refresh_due: resolved.refresh_due,
+                    notice: resolved.notice.clone(),
                 },
             );
     }
@@ -135,6 +139,33 @@ impl Authentication {
         )
         .await
     }
+    /// Inspect local credentials afresh without token refresh or network access.
+    /// A credential this runtime rejected cannot authorize a saved response.
+    pub(crate) async fn inspect_response_identity(
+        &self,
+        host: &str,
+        budget: &RequestBudget,
+    ) -> Result<String, ProviderError> {
+        let selection = self.resolve(host, AuthMode::Inspect, budget).await?;
+        if selection
+            .as_ref()
+            .is_some_and(|selected| self.is_rejected(host, selected.token()))
+        {
+            return Err(ProviderError::new(
+                ProviderErrorKind::Authentication,
+                "The current GitHub credential was rejected.",
+            ));
+        }
+        Ok(octocode_github::Partition::new(
+            host,
+            selection
+                .as_ref()
+                .map(|selected| selected.credential.secret()),
+        )
+        .identity()
+        .to_owned())
+    }
+
     async fn resolve_with(
         &self,
         host: &str,
@@ -154,8 +185,11 @@ impl Authentication {
             }));
         }
         if mode == AuthMode::Request
-            && let Some(selection) = self.remembered(&host)
+            && let Some((selection, notice)) = self.remembered(&host)
         {
+            if let Some(notice) = notice {
+                octocode_io::notice::raise(ANONYMOUS_NOTICE, notice);
+            }
             return Ok(selection);
         }
         let resolved = self.resolve_stored(&host, mode, budget, backend).await?;
@@ -239,37 +273,45 @@ impl Authentication {
                 if mode == AuthMode::Request
                     && error.kind == ProviderErrorKind::CredentialStoreUnavailable =>
             {
-                warn_anonymous(&host);
-                Ok(Resolved::untimed(None))
+                let notice = anonymous_notice(&host);
+                octocode_io::notice::raise(ANONYMOUS_NOTICE, notice.clone());
+                Ok(Resolved {
+                    notice: Some(notice),
+                    ..Resolved::untimed(None)
+                })
             }
             Some(error) => Err(error),
             None => Ok(Resolved::untimed(None)),
         }
     }
 }
-/// Once per process on stderr (stdout carries results and JSON-RPC).
-fn warn_anonymous(host: &str) {
-    static WARNED: Once = Once::new();
-    WARNED.call_once(|| {
-        eprintln!(
-            "[octocode] warning: no GitHub credential for {host} and the secure credential store is unavailable; GitHub tools run unauthenticated (60 requests/hour). Set GITHUB_TOKEN or run octocode auth login for a higher limit."
-        );
-    });
+/// The kind of [`anonymous_notice`]: said on stderr once per process
+/// ([`octocode_io::notice`]).
+const ANONYMOUS_NOTICE: &str = "github-anonymous";
+
+fn anonymous_notice(host: &str) -> String {
+    format!(
+        "[octocode] warning: no GitHub credential for {host} and the secure credential store is unavailable; GitHub tools run unauthenticated (60 requests/hour). Set GITHUB_TOKEN or run octocode auth login for a higher limit."
+    )
 }
 /// A selection and when it must be refreshed.
 struct Resolved {
     selection: Option<AuthSelection>,
     refresh_due: Option<SystemTime>,
+    /// A warning the selection was made with.
+    notice: Option<String>,
 }
 impl Resolved {
     fn untimed(selection: Option<AuthSelection>) -> Self {
         Self {
             selection,
             refresh_due: None,
+            notice: None,
         }
     }
     fn stored(stored: StoredCredentials, source: CredentialSource) -> Self {
         Self {
+            notice: None,
             refresh_due: login::refresh_due(&stored),
             selection: Some(AuthSelection {
                 credential: ResolvedCredential::new(stored.token.token, source),

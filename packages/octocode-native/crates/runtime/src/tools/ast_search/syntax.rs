@@ -65,7 +65,10 @@ pub fn execute_syntax(
         q.named_only,
         q.line()
     ]));
-    if q.page() > 1 && q.snapshot() != Some(snapshot.as_str()) {
+    // A page without a snapshot pins nothing: it pages the current tree, as
+    // every astSearch and structureSearch listing does; only a snapshot
+    // that no longer matches is stale.
+    if q.page() > 1 && q.snapshot().is_some_and(|given| given != snapshot) {
         return Ok(crate::tools::result::stale_snapshot(
             crate::tools::result::restart_query(
                 ToolId::AstSearch,

@@ -142,6 +142,33 @@ impl Fixture {
         }
     }
 
+    /// `query` as `run` hands it to [`execute_clone`]: its ref pinned to the
+    /// full commit it names in the fixture's origin (the GitHub API's answer
+    /// in production). No ref, or one naming nothing, stays as it is.
+    fn pin(&self, query: &GhCloneRepoQuery) -> GhCloneRepoQuery {
+        let mut pinned = query.clone();
+        if let Some(reference) = query
+            .ref_
+            .as_deref()
+            .filter(|reference| !octocode_github::is_full_sha(reference))
+        {
+            let output = fixture_git(
+                &self.work,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("{reference}^{{commit}}"),
+                ],
+            );
+            if output.status.success() {
+                let commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+                pinned.ref_ = Some(self::reference(&commit));
+            }
+        }
+        pinned
+    }
+
     fn push_second(&self) -> String {
         fs::write(self.work.join("README.md"), "fixture two\n").expect("update");
         git(&self.work, &["add", "README.md"]);
@@ -225,13 +252,13 @@ fn fixture_runner(fixture: &Fixture) -> RewriteRunner {
     )
 }
 
-/// Cache metadata for the fixture's shallow `main` checkout.
+/// Cache metadata for a shallow checkout of the fixture.
 fn fixture_main_meta() -> cache::CacheMeta {
     cache::CacheMeta::new(
         &cache::Identity {
             owner: "fixture-owner",
             repo: "fixture-repo",
-            branch: "main",
+            commit: &"1".repeat(40),
             sparse_key: None,
             depth: 1,
         },
@@ -281,6 +308,16 @@ fn rejects_sparse_path(path: &str) -> bool {
     let mut row = serde_json::to_value(query()).expect("fixture query JSON");
     row["path"] = serde_json::json!(path);
     serde_json::from_value::<GhCloneRepoQuery>(row).is_err()
+}
+
+/// [`execute_clone`] of `query` pinned the way `run` pins it
+/// ([`Fixture::pin`]).
+fn clone_pinned(
+    fixture: &Fixture,
+    query: &GhCloneRepoQuery,
+    context: &CloneContext<'_>,
+) -> Result<CloneResult, CloneError> {
+    execute_clone(&fixture.pin(query), context)
 }
 
 fn parse_query(value: serde_json::Value) -> GhCloneRepoQuery {
@@ -353,7 +390,7 @@ fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
         .expect("clone row satisfies the output contract");
         data
     };
-    let fresh = row(&execute_clone(&query(), &context).expect("fresh clone"));
+    let fresh = row(&clone_pinned(&fixture, &query(), &context).expect("fresh clone"));
     let explore = &fresh["next"]["exploreClone"];
     assert_eq!(explore["tool"], "structureSearch", "{fresh}");
     assert_eq!(
@@ -371,7 +408,7 @@ fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
         assert!(fresh["location"].get(absent).is_none(), "{fresh}");
     }
 
-    let cached = row(&execute_clone(&query(), &context).expect("cached clone"));
+    let cached = row(&clone_pinned(&fixture, &query(), &context).expect("cached clone"));
     assert_eq!(cached["location"]["cached"], true);
     let cloned_at = cached["location"]["clonedAt"].as_str().expect("clonedAt");
     let expires_at = cached["location"]["expiresAt"].as_str().expect("expiresAt");
@@ -380,7 +417,8 @@ fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
         "{cached}"
     );
 
-    let sparse = row(&execute_clone(
+    let sparse = row(&clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             path: Some(one("src")),
             ..query()
@@ -396,7 +434,8 @@ fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
     assert_eq!(sparse["next"]["exploreClone"]["tool"], "structureSearch");
 
     // A single checked-out file is read, not listed as a directory.
-    let file = row(&execute_clone(
+    let file = row(&clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             path: Some(one("src/lib.rs")),
             ..query()
@@ -435,7 +474,7 @@ fn creates_a_new_configured_home_before_authorizing_the_clone_target() {
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
 
     assert!(!cache_home.exists());
-    let result = execute_clone(&query(), &context).expect("new home clone");
+    let result = clone_pinned(&fixture, &query(), &context).expect("new home clone");
     assert!(cache_home.is_dir());
     assert_eq!(result.location.commit_sha, fixture.first_commit);
     assert!(Path::new(&result.location.local_path).starts_with(cache_home));
@@ -459,7 +498,7 @@ fn clones_with_only_the_clones_root_allowed_under_an_existing_home() {
     let config = CloneConfig::persistent(&cache_home);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
 
-    let result = execute_clone(&query(), &context).expect("clone under the clones root");
+    let result = clone_pinned(&fixture, &query(), &context).expect("clone under the clones root");
     assert_eq!(result.location.commit_sha, fixture.first_commit);
     assert!(
         Path::new(&result.location.local_path).starts_with(cache::clones_root(&cache_home)),
@@ -539,7 +578,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
         Some(&credential),
     );
 
-    let fresh = execute_clone(&query(), &context).expect("fresh clone");
+    let fresh = clone_pinned(&fixture, &query(), &context).expect("fresh clone");
     assert!(!fresh.location.cached);
     assert!(fresh.location.verified);
     assert_eq!(fresh.location.commit_sha, fixture.first_commit);
@@ -549,7 +588,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
         "fixture\n"
     );
     assert!(fresh.bytes > 0);
-    let cached = execute_clone(&query(), &context).expect("cached clone");
+    let cached = clone_pinned(&fixture, &query(), &context).expect("cached clone");
     assert!(cached.location.cached);
     // A cache hit reports the verification state persisted at clone time, not a
     // bare false: this checkout was verified when created, so the warm read
@@ -559,7 +598,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     // Editing the cached working tree must not replace the user's bytes.
     let readme = Path::new(&cached.location.local_path).join("README.md");
     fs::write(&readme, "tampered\n").expect("tamper cached checkout");
-    let error = execute_clone(&query(), &context).expect_err("preserve dirty checkout");
+    let error = clone_pinned(&fixture, &query(), &context).expect_err("preserve dirty checkout");
     assert_eq!(error.code, "checkoutDirty");
     assert_eq!(
         fs::read_to_string(&readme).expect("read preserved checkout"),
@@ -568,7 +607,8 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     fs::write(&readme, "fixture\n").expect("restore owned fixture");
     // `run` pins every row to a ref first: without one there is nothing to
     // check out.
-    let unpinned = execute_clone(
+    let unpinned = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             ref_: None,
             ..query()
@@ -579,7 +619,8 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     assert_eq!(unpinned.code, "invalidInput");
 
     let second = fixture.push_second();
-    let refreshed = execute_clone(
+    let refreshed = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             force_refresh: Some(true),
             ..query()
@@ -594,7 +635,8 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
         "fixture two\n"
     );
 
-    let sparse = execute_clone(
+    let sparse = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             path: Some(one("src")),
             ..query()
@@ -615,7 +657,8 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
     );
 
     for branch in ["v1".to_owned(), fixture.first_commit.clone()] {
-        let pinned = execute_clone(
+        let pinned = clone_pinned(
+            &fixture,
             &GhCloneRepoQuery {
                 ref_: Some(reference(&branch)),
                 ..query()
@@ -625,7 +668,8 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
         .expect("pinned clone");
         assert_eq!(pinned.location.commit_sha, fixture.first_commit);
     }
-    let pinned_sparse = execute_clone(
+    let pinned_sparse = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference(&fixture.first_commit)),
             path: Some(one("src")),
@@ -663,7 +707,7 @@ fn dirty_checkout_preserves_tracked_untracked_ignored_and_user_metadata_names() 
     let runner = fixture_runner(&fixture);
     let config = CloneConfig::persistent(&cache_home);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let fresh = execute_clone(&query(), &context).expect("fresh clone");
+    let fresh = clone_pinned(&fixture, &query(), &context).expect("fresh clone");
     let checkout = Path::new(&fresh.location.local_path);
     for (name, ignored) in [
         ("README.md", false),
@@ -692,13 +736,14 @@ fn dirty_checkout_preserves_tracked_untracked_ignored_and_user_metadata_names() 
             // its checkout must still preserve them.
             if ignored && !force_refresh {
                 assert!(
-                    execute_clone(&request, &context)
+                    clone_pinned(&fixture, &request, &context)
                         .expect("ignored reuse")
                         .location
                         .cached
                 );
             } else {
-                let error = execute_clone(&request, &context).expect_err("preserve user file");
+                let error =
+                    clone_pinned(&fixture, &request, &context).expect_err("preserve user file");
                 assert_eq!(
                     error.code, "checkoutDirty",
                     "{name}, refresh={force_refresh}"
@@ -757,10 +802,11 @@ fn refresh_rechecks_user_changes_written_while_fetching() {
     };
     let config = CloneConfig::persistent(&cache_home);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let fresh = execute_clone(&query(), &context).expect("fresh clone");
+    let fresh = clone_pinned(&fixture, &query(), &context).expect("fresh clone");
     let checkout = PathBuf::from(fresh.location.local_path);
     *runner.target.lock().expect("target lock") = Some(checkout.clone());
-    let error = execute_clone(
+    let error = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             force_refresh: Some(true),
             ..query()
@@ -789,14 +835,17 @@ fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
     let mut config = CloneConfig::persistent(&cache_home);
     config.max_clone_count = 1;
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let fresh = execute_clone(&query(), &context).expect("fresh clone");
+    let fresh = clone_pinned(&fixture, &query(), &context).expect("fresh clone");
     let checkout = PathBuf::from(fresh.location.local_path);
     fs::write(checkout.join(".git/info/exclude"), "ignored-evidence.txt\n").expect("exclude");
     let evidence = checkout.join("ignored-evidence.txt");
     fs::write(&evidence, "preserve through eviction\n").expect("owned evidence");
-    execute_clone(
+    // Every ref here names one commit: each history depth is its own entry.
+    clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference("v1")),
+            history_depth: std::num::NonZeroU64::new(2),
             ..query()
         },
         &context,
@@ -815,9 +864,11 @@ fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
         serde_json::to_vec(&meta).expect("serialize meta"),
     )
     .expect("expire");
-    execute_clone(
+    clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference(&fixture.first_commit)),
+            history_depth: std::num::NonZeroU64::new(3),
             ..query()
         },
         &context,
@@ -895,8 +946,15 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
             control: &GitRunControl<'_>,
         ) -> Result<GitOutput, CloneError> {
             let output = self.inner.run(request, control)?;
-            if request.label == "full clone" && self.collide.load(Ordering::SeqCst) {
-                let stage = PathBuf::from(request.args.last().expect("clone stage argument"));
+            if request.label == "check out requested commit" && self.collide.load(Ordering::SeqCst)
+            {
+                let stage = request
+                    .args
+                    .iter()
+                    .position(|argument| argument == "-C")
+                    .and_then(|at| request.args.get(at + 1))
+                    .map(PathBuf::from)
+                    .expect("checkout stage argument");
                 fs::write(
                     stage.join(cache::META_FILE),
                     "reserved repository evidence\n",
@@ -918,7 +976,8 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
     };
     let config = CloneConfig::persistent(&cache_home);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let fresh_error = execute_clone(&query(), &context).expect_err("reject fresh reserved source");
+    let fresh_error =
+        clone_pinned(&fixture, &query(), &context).expect_err("reject fresh reserved source");
     assert_eq!(fresh_error.code, "cacheUnavailable");
     assert!(fresh_error.message.contains(cache::META_FILE));
     assert!(fresh_error.message.contains(&fixture.first_commit));
@@ -938,11 +997,12 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
         "failed tool-owned staging is cleaned up"
     );
     runner.collide.store(false, Ordering::SeqCst);
-    let initial = execute_clone(&query(), &context).expect("clean initial checkout");
+    let initial = clone_pinned(&fixture, &query(), &context).expect("clean initial checkout");
     let checkout = PathBuf::from(initial.location.local_path);
     let original_meta = fs::read(checkout.join(cache::META_FILE)).expect("original metadata");
     runner.collide.store(true, Ordering::SeqCst);
-    let refresh_error = execute_clone(
+    let refresh_error = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             force_refresh: Some(true),
             ..query()
@@ -979,7 +1039,8 @@ fn sparse_file_path_checks_out_only_that_file() {
             ("README.md", ["src/lib.rs", "other/skip.txt"]),
             ("src/lib.rs", ["README.md", "src/nested/data.txt"]),
         ] {
-            let clone = execute_clone(
+            let clone = clone_pinned(
+                &fixture,
                 &GhCloneRepoQuery {
                     ref_: branch.as_deref().map(reference),
                     path: Some(one(file)),
@@ -1011,11 +1072,11 @@ fn corruption_expiry_stale_lock_and_failed_publication_preserve_cache() {
     config.cache_ttl = Duration::from_secs(60);
     config.lock_wait = Duration::from_secs(1);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let first = execute_clone(&query(), &context).expect("first clone");
+    let first = clone_pinned(&fixture, &query(), &context).expect("first clone");
     let clone_path = PathBuf::from(&first.location.local_path);
     fs::write(clone_path.join(cache::META_FILE), "bad").expect("corrupt meta");
     assert!(
-        !execute_clone(&query(), &context)
+        !clone_pinned(&fixture, &query(), &context)
             .expect("rebuild corrupt")
             .location
             .cached
@@ -1032,7 +1093,7 @@ fn corruption_expiry_stale_lock_and_failed_publication_preserve_cache() {
     )
     .expect("expire metadata");
     assert!(
-        !execute_clone(&query(), &context)
+        !clone_pinned(&fixture, &query(), &context)
             .expect("rebuild expired")
             .location
             .cached
@@ -1046,7 +1107,7 @@ fn corruption_expiry_stale_lock_and_failed_publication_preserve_cache() {
     )
     .expect("lock meta");
     assert!(
-        execute_clone(&query(), &context)
+        clone_pinned(&fixture, &query(), &context)
             .expect("recover stale")
             .location
             .cached
@@ -1074,16 +1135,15 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     config.max_clone_count = 1;
     config.lock_wait = Duration::from_millis(120);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let main = execute_clone(&query(), &context).expect("main clone");
+    let main = clone_pinned(&fixture, &query(), &context).expect("main clone");
     let main_path = PathBuf::from(&main.location.local_path);
-    let tag = execute_clone(
-        &GhCloneRepoQuery {
-            ref_: Some(reference("v1")),
-            ..query()
-        },
-        &context,
-    )
-    .expect("tag clone");
+    // The tag names main's commit: a deeper history is another entry.
+    let deep_tag = GhCloneRepoQuery {
+        ref_: Some(reference("v1")),
+        history_depth: std::num::NonZeroU64::new(2),
+        ..query()
+    };
+    let tag = clone_pinned(&fixture, &deep_tag, &context).expect("tag clone");
     assert!(!main_path.exists(), "oldest clone should be evicted");
     assert!(Path::new(&tag.location.local_path).is_dir());
 
@@ -1109,18 +1169,12 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
         serde_json::json!({"pid": std::process::id(), "createdAt": 0}).to_string(),
     )
     .expect("live lock metadata");
-    let error = execute_clone(
-        &GhCloneRepoQuery {
-            ref_: Some(reference("v1")),
-            ..query()
-        },
-        &context,
-    )
-    .expect_err("live lock must time out");
+    let error = clone_pinned(&fixture, &deep_tag, &context).expect_err("live lock must time out");
     assert_eq!(error.code, "timeout");
     fs::remove_dir_all(live_lock).expect("remove live lock");
 
-    let missing = execute_clone(
+    let missing = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             path: Some(one("missing/path")),
             ..query()
@@ -1151,7 +1205,11 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
         &NeverCancel,
         None,
     );
-    let error = execute_clone(&query(), &context).expect_err("missing git");
+    let pinned = GhCloneRepoQuery {
+        ref_: Some(reference(&"a".repeat(40))),
+        ..query()
+    };
+    let error = execute_clone(&pinned, &context).expect_err("missing git");
     assert_eq!(error.code, "gitUnavailable");
 
     // Plain http is a valid API base, and clone source, on loopback only.
@@ -1380,8 +1438,10 @@ fn concurrent_requests_publish_once_and_validation_fails_closed() {
     let runner = Arc::new(fixture_runner(&fixture));
     let config = Arc::new(CloneConfig::persistent(&cache_home));
     let barrier = Arc::new(Barrier::new(2));
+    let pinned = Arc::new(fixture.pin(&query()));
     let mut workers = vec![];
     for _ in 0..2 {
+        let pinned = pinned.clone();
         let policy = policy.clone();
         let endpoint = endpoint.clone();
         let runner = runner.clone();
@@ -1390,7 +1450,7 @@ fn concurrent_requests_publish_once_and_validation_fails_closed() {
         workers.push(std::thread::spawn(move || {
             barrier.wait();
             execute_clone(
-                &query(),
+                &pinned,
                 &CloneContext {
                     config: &config,
                     endpoint: &endpoint,
@@ -1449,7 +1509,8 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
     config.cache_ttl = Duration::from_secs(60);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
     for (branch, sparse) in [("main", None), (head.as_str(), None), ("main", Some("src"))] {
-        let clone = execute_clone(
+        let clone = clone_pinned(
+            &fixture,
             &GhCloneRepoQuery {
                 ref_: Some(reference(branch)),
                 path: sparse.map(one),
@@ -1472,11 +1533,10 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     for step in [
-        "full clone",
-        "sparse clone",
+        "initialize commit checkout",
         "fetch requested commit",
         "check out requested commit",
-        "set sparse checkout paths",
+        "set sparse commit paths",
     ] {
         let request = seen
             .iter()
@@ -1499,7 +1559,8 @@ fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
     let mut config = CloneConfig::persistent(&cache_home);
     config.cache_ttl = Duration::from_secs(60);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let lower = execute_clone(
+    let lower = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference(&fixture.first_commit)),
             ..query()
@@ -1507,7 +1568,8 @@ fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
         &context,
     )
     .expect("lowercase sha clone");
-    let upper = execute_clone(
+    let upper = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference(&fixture.first_commit.to_ascii_uppercase())),
             ..query()
@@ -1525,7 +1587,8 @@ fn uppercase_commit_refs_share_the_cache_and_mismatched_meta_is_a_miss() {
         serde_json::from_slice(&fs::read(&meta_path).expect("meta")).expect("meta json");
     meta["repo"] = serde_json::json!("some-other-repo");
     fs::write(&meta_path, serde_json::to_vec(&meta).expect("json")).expect("write meta");
-    let again = execute_clone(
+    let again = clone_pinned(
+        &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference(&fixture.first_commit)),
             ..query()
@@ -1620,7 +1683,8 @@ fn unbranched() -> GhCloneRepoQuery {
 fn multiple_sparse_paths_check_out_every_path() {
     let bench = Bench::new();
     let context = bench.context();
-    let both = execute_clone(
+    let both = clone_pinned(
+        &bench.fixture,
         &GhCloneRepoQuery {
             path: Some(many(&["src/nested", "other"])),
             ..query()
@@ -1646,7 +1710,8 @@ fn multiple_sparse_paths_check_out_every_path() {
         "several paths explore the checkout root"
     );
 
-    let reordered = execute_clone(
+    let reordered = clone_pinned(
+        &bench.fixture,
         &GhCloneRepoQuery {
             path: Some(many(&["other", "src/nested"])),
             ..query()
@@ -1659,7 +1724,8 @@ fn multiple_sparse_paths_check_out_every_path() {
         "request order does not split the cache"
     );
 
-    let mixed = execute_clone(
+    let mixed = clone_pinned(
+        &bench.fixture,
         &GhCloneRepoQuery {
             path: Some(many(&["README.md", "src/nested"])),
             ..query()
@@ -1673,7 +1739,8 @@ fn multiple_sparse_paths_check_out_every_path() {
     assert!(!local.join("src/lib.rs").exists());
     assert!(!local.join("other/skip.txt").exists());
 
-    let missing = execute_clone(
+    let missing = clone_pinned(
+        &bench.fixture,
         &GhCloneRepoQuery {
             path: Some(many(&["src", "nope"])),
             ..query()
@@ -1692,8 +1759,9 @@ fn history_depth_fetches_that_many_commits() {
     let bench = Bench::new();
     let context = bench.context();
     bench.fixture.push_second();
-    let shallow = execute_clone(&query(), &context).expect("shallow");
-    let deep = execute_clone(
+    let shallow = clone_pinned(&bench.fixture, &query(), &context).expect("shallow");
+    let deep = clone_pinned(
+        &bench.fixture,
         &GhCloneRepoQuery {
             history_depth: std::num::NonZeroU64::new(2),
             ..query()
@@ -1793,13 +1861,13 @@ fn cache_hits_skip_the_git_probe_and_report_the_recorded_size() {
     let runner = fixture_runner(&fixture);
     let config = CloneConfig::persistent(&cache_home);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    let fresh = execute_clone(&query(), &context).expect("fresh clone");
+    let fresh = clone_pinned(&fixture, &query(), &context).expect("fresh clone");
     runner
         .seen
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clear();
-    let cached = execute_clone(&query(), &context).expect("cached clone");
+    let cached = clone_pinned(&fixture, &query(), &context).expect("cached clone");
     assert!(cached.location.cached);
     assert_eq!(cached.bytes, fresh.bytes);
     assert!(fresh.bytes > 0);
@@ -2238,4 +2306,62 @@ async fn an_unreachable_api_refuses_the_row_before_git() {
         }
     }
     assert_eq!(bench.clones_seen(), 0, "no git ran");
+}
+
+/// A published entry records its whole size (checkout and `.git`), which
+/// eviction weighs it by instead of walking it; a file beside the entries
+/// (a retired layout's default-branch memo) is swept by the next eviction
+/// pass; rows for two entries run at once and both publish.
+#[test]
+fn entries_record_their_size_orphans_are_swept_and_distinct_rows_run_at_once() {
+    let fixture = Fixture::new();
+    let (root, cache_home) = home_root();
+    let policy = test_support::workspace_policy(&root.0);
+    let endpoint = api_github_endpoint();
+    let runner = fixture_runner(&fixture);
+    let config = CloneConfig::persistent(&cache_home);
+    let repo_dir = cache::clones_root(&cache_home)
+        .join("fixture-owner")
+        .join("fixture-repo");
+    fs::create_dir_all(&repo_dir).expect("repo dir");
+    let orphan = repo_dir.join(".default-branch__host_0123456789abcdef.json");
+    fs::write(&orphan, "{}").expect("orphan");
+    let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
+    let fresh = clone_pinned(&fixture, &query(), &context).expect("fresh clone");
+    let local = Path::new(&fresh.location.local_path);
+    let meta: cache::CacheMeta =
+        serde_json::from_slice(&fs::read(local.join(cache::META_FILE)).expect("meta"))
+            .expect("meta json");
+    let checkout = meta.checkout_bytes.expect("checkout bytes");
+    assert_eq!(checkout, fresh.bytes);
+    assert!(
+        meta.size_bytes.is_some_and(|size| size > checkout),
+        "the entry's size counts .git too: {meta:?}"
+    );
+    assert!(!orphan.exists(), "an orphaned file is swept");
+    assert!(repo_dir.is_dir(), "entry directories stay");
+
+    let rows = std::thread::scope(|scope| {
+        let workers = ["README.md", "src/lib.rs"].map(|path| {
+            let (fixture, runner, config) = (&fixture, &runner, &config);
+            let (endpoint, policy) = (&endpoint, &policy);
+            scope.spawn(move || {
+                let context = setup(runner, config, endpoint, policy, &NeverCancel, None);
+                clone_pinned(
+                    fixture,
+                    &GhCloneRepoQuery {
+                        path: Some(one(path)),
+                        ..query()
+                    },
+                    &context,
+                )
+            })
+        });
+        workers.map(|worker| worker.join().expect("worker"))
+    });
+    for row in rows {
+        let row = row.expect("concurrent distinct clone");
+        assert!(!row.location.cached);
+        assert!(Path::new(&row.location.local_path).is_dir());
+    }
 }

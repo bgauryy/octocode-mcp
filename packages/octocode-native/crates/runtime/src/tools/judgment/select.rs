@@ -1,7 +1,6 @@
 //! Inline evidence questions use the same typed evaluator as `clasify`.
 //! Every admitted candidate receives independent questions; the core-owned
 //! probability policy selects, excludes or leaves it unknown before host output.
-use super::transport::CIRCUIT_OPEN;
 use super::{ClassificationError, EvaluationInput, Evaluator, stats::ClassificationUsage};
 use crate::tools::selection::{
     Decision, JudgeCall, JudgeFailure, Judgments, ProviderError, SelectionJudge,
@@ -230,7 +229,7 @@ impl SelectionJudge for Evaluator {
                 }
                 Ok(_) => Decision::Unknown,
                 Err(error) => {
-                    let rank = (error.code == CIRCUIT_OPEN, ordinal);
+                    let rank = (error.paused, ordinal);
                     if !matches!(error.code.as_str(), "timeout" | "cancelled")
                         && first_failure
                             .as_ref()
@@ -243,7 +242,8 @@ impl SelectionJudge for Evaluator {
             };
             decisions.push((ordinal, decision));
         }
-        self.record(usage);
+        self.record(usage.clone());
+        *call.usage = usage;
         // A provider that failed every candidate gave no answer at all: its
         // typed error (credential, quota, transport) is the row's outcome,
         // never an "unknown" judgment that looks like an honest unsure model.
@@ -394,7 +394,8 @@ mod tests {
             github_credential: None,
         };
         let run = |main_goal| {
-            evaluator
+            let mut usage = ClassificationUsage::default();
+            let decisions = evaluator
                 .select(JudgeCall {
                     candidates: &candidates,
                     admitted: &[0, 1],
@@ -409,8 +410,18 @@ mod tests {
                     },
                     handle: executor.handle(),
                     context: &context,
+                    usage: &mut usage,
                 })
-                .expect("independent candidate outcomes")
+                .expect("independent candidate outcomes");
+            assert_eq!(usage.calls, 2);
+            assert_eq!(usage.known_usage_calls, 1);
+            assert_eq!(usage.unknown_usage_calls, 1);
+            assert_eq!((usage.input_tokens, usage.output_tokens), (10, 2));
+            assert_eq!(
+                usage.models.into_iter().collect::<Vec<_>>(),
+                ["jev-resolved"]
+            );
+            decisions
         };
         let mut decisions = run("Explain retry behavior");
         decisions.sort_by_key(|(ordinal, _)| *ordinal);
@@ -507,6 +518,7 @@ mod tests {
                 },
                 handle: executor.handle(),
                 context: &context,
+                usage: &mut ClassificationUsage::default(),
             })
             .expect_err("no candidate was judged");
         let JudgeFailure::Provider(error) = failure else {
@@ -575,12 +587,17 @@ mod tests {
                 },
                 handle: executor.handle(),
                 context: &context,
+                usage: &mut ClassificationUsage::default(),
             })
             .expect_err("nothing was judged");
         let JudgeFailure::Provider(error) = failure else {
             panic!("a provider failure: {failure:?}");
         };
-        assert_eq!(error.code, "classificationProviderError", "{error:?}");
+        assert_eq!(
+            error.code,
+            super::super::transport::CIRCUIT_OPEN,
+            "the provider is unavailable: {error:?}"
+        );
         assert!(error.message.contains("could not connect"), "{error:?}");
     }
 

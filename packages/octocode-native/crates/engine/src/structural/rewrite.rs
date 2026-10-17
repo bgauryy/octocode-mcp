@@ -110,7 +110,10 @@ pub struct StructuralRewritePosition {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// The matched node's span: byte offsets and the positions they fall at.
 pub struct StructuralRewriteRange {
+    pub start_byte: u32,
+    pub end_byte: u32,
     pub start: StructuralRewritePosition,
     pub end: StructuralRewritePosition,
 }
@@ -125,8 +128,12 @@ pub struct StructuralRewriteCapture {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StructuralRewriteMatch {
+    /// The replaced span: the node span as the fixer adjusts it
+    /// (`expandStart`/`expandEnd`, a pattern's own match length), else equal
+    /// to it.
     pub byte_start: u32,
     pub byte_end: u32,
+    /// The matched node's span.
     pub range: StructuralRewriteRange,
     pub text: String,
     pub replaced_text: String,
@@ -447,16 +454,23 @@ impl CompiledRewrite {
             .map(|macros| macros.token_trees(tree.root_node(), content))
             .unwrap_or_default();
         // Text inside the file's string literals never matches in a body.
-        let strings = if bodies.is_empty() {
+        let mut strings = if bodies.is_empty() {
             Vec::new()
         } else {
             super::macro_bodies::string_literals(tree.root_node())
         };
+        strings.sort_by_key(|string| string.start);
+        let crlf = is_crlf(content);
         self.collect_matches(
             content,
-            tree,
-            None,
-            &strings,
+            Parsed {
+                text: content,
+                base: 0,
+                tree,
+                body: None,
+                strings: Vec::new(),
+            },
+            crlf,
             deadline,
             &line_index,
             &mut output,
@@ -467,7 +481,10 @@ impl CompiledRewrite {
         while let Some(range) = bodies.pop() {
             let depth = depth_of.pop().unwrap_or(MAX_MACRO_DEPTH);
             let language = &config.language.entry.language;
-            let Some(body) = parse_body(content, language, range, deadline)
+            let span = BodySpan::of(content, &range);
+            let local = span.to_local(&range);
+            let text = &content[span.base..range.end_byte];
+            let Some(body) = parse_body(text, language, local, deadline)
                 .map_err(|error| format!("[{}] {}", error.code, error.message))?
             else {
                 continue;
@@ -475,15 +492,26 @@ impl CompiledRewrite {
             if depth < MAX_MACRO_DEPTH
                 && let Some(macros) = &self.macros
             {
-                let nested = macros.token_trees(body.root_node(), content);
+                let nested = macros.token_trees(body.root_node(), text);
                 depth_of.extend(std::iter::repeat_n(depth + 1, nested.len()));
-                bodies.extend(nested);
+                bodies.extend(nested.iter().map(|inner| span.to_file(inner)));
             }
+            let first = strings.partition_point(|string| string.start < range.start_byte);
+            let inside = strings[first..]
+                .iter()
+                .take_while(|string| string.start < range.end_byte)
+                .map(|string| string.start - span.base..string.end - span.base)
+                .collect();
             self.collect_matches(
                 content,
-                body,
-                Some(&range),
-                &strings,
+                Parsed {
+                    text,
+                    base: span.base,
+                    tree: body,
+                    body: Some(local),
+                    strings: inside,
+                },
+                crlf,
                 deadline,
                 &line_index,
                 &mut output,
@@ -516,12 +544,20 @@ impl CompiledRewrite {
         let Some(name) = &self.bare_name else {
             return Ok(Vec::new());
         };
+        // `matches` is sorted by start: an occurrence is covered when a match
+        // starting at or before it reaches past it, so the running maximum of
+        // the ends answers each lookup by binary search.
+        let reach = matches
+            .iter()
+            .scan(0usize, |furthest, matched| {
+                *furthest = (*furthest).max(matched.byte_end as usize);
+                Some(*furthest)
+            })
+            .collect::<Vec<_>>();
         let mut found = Vec::new();
         for start in word_occurrences(content, name) {
-            let covered = matches.iter().any(|matched| {
-                (matched.byte_start as usize..matched.byte_end as usize).contains(&start)
-            });
-            if covered {
+            let before = matches.partition_point(|matched| matched.byte_start as usize <= start);
+            if before > 0 && reach[before - 1] > start {
                 continue;
             }
             let in_code = tree
@@ -539,31 +575,32 @@ impl CompiledRewrite {
         Ok(found)
     }
 
-    /// Rewrite matches of one parse tree of `content` (the file, or one
-    /// re-parsed macro body whose wrapper node is excluded) into `output`.
+    /// Rewrite matches of one parse of `content` (the file, or one re-parsed
+    /// macro body whose wrapper node is excluded) into `output`, in file
+    /// offsets.
     fn collect_matches(
         &self,
         content: &str,
-        tree: tree_sitter::Tree,
-        body: Option<&tree_sitter::Range>,
-        strings: &[std::ops::Range<usize>],
+        parsed: Parsed<'_>,
+        crlf: bool,
         deadline: Instant,
         line_index: &LineIndex,
         output: &mut Vec<StructuralRewriteMatch>,
     ) -> Result<(), String> {
         let config = &self.config;
         let (fixer, layout) = match &self.crlf {
-            Some((fixer, layout)) if is_crlf(content) => (fixer, layout),
+            Some((fixer, layout)) if crlf => (fixer, layout),
             _ => (&self.fixer, &self.layout),
         };
+        let base = parsed.base;
         let grep = AstGrep::doc(StrDoc {
-            src: content.to_owned(),
+            src: parsed.text.to_owned(),
             lang: config.language.clone(),
-            tree,
+            tree: parsed.tree,
         });
         for matched in grep.root().find_all(&config.matcher) {
-            if let Some(body) = body
-                && !is_body_candidate(matched.get_inner_node(), body, strings)
+            if let Some(body) = &parsed.body
+                && !is_body_candidate(matched.get_inner_node(), body, &parsed.strings)
             {
                 continue;
             }
@@ -579,13 +616,15 @@ impl CompiledRewrite {
                 ));
             }
             let replaced = fixer.get_replaced_range(&matched, &config.matcher);
+            let replaced = replaced.start + base..replaced.end + base;
             let replacement = layout
                 .as_ref()
-                .and_then(|layout| layout.replacement(&matched, &config.language, content))
+                .and_then(|layout| layout.replacement(&matched, &config.language, parsed.text))
                 .unwrap_or_else(|| fixer.generate_replacement(&matched));
             // Columns are 0-based UTF-16 code units like astSearch and LSP
             // (ast-grep's `column()` counts Unicode scalars).
             let span = matched.range();
+            let span = span.start + base..span.end + base;
             let position = |byte: usize| {
                 u32::try_from(byte)
                     .map(|byte| line_index.byte_to_position(content, byte))
@@ -643,6 +682,12 @@ impl CompiledRewrite {
                 byte_end: u32::try_from(replaced.end)
                     .map_err(|_| "[structural.rewrite.range] byte offset overflow".to_owned())?,
                 range: StructuralRewriteRange {
+                    start_byte: u32::try_from(span.start).map_err(|_| {
+                        "[structural.rewrite.range] byte offset overflow".to_owned()
+                    })?,
+                    end_byte: u32::try_from(span.end).map_err(|_| {
+                        "[structural.rewrite.range] byte offset overflow".to_owned()
+                    })?,
                     start: StructuralRewritePosition {
                         line: start_line,
                         column: start_column,
@@ -666,6 +711,70 @@ impl CompiledRewrite {
             });
         }
         Ok(())
+    }
+}
+
+/// One parse to match: the file, or a re-parsed macro body. A body holds
+/// only its own lines (`text` starts `base` bytes into the file, at the
+/// start of the line the body opens on), so a file with many bodies is not
+/// copied once per body, and a capture's line and indentation read the same
+/// as in the file.
+struct Parsed<'a> {
+    text: &'a str,
+    base: usize,
+    tree: tree_sitter::Tree,
+    /// The body's token tree, in `text` offsets; `None` for the file.
+    body: Option<tree_sitter::Range>,
+    /// The file's string literals inside the body, in `text` offsets.
+    strings: Vec<std::ops::Range<usize>>,
+}
+
+/// Where a body's own text starts in the file: the line it opens on.
+struct BodySpan {
+    base: usize,
+    row: usize,
+}
+
+impl BodySpan {
+    fn of(content: &str, range: &tree_sitter::Range) -> Self {
+        Self {
+            base: content[..range.start_byte]
+                .rfind('\n')
+                .map_or(0, |at| at + 1),
+            row: range.start_point.row,
+        }
+    }
+
+    /// `range` (file offsets) in the body's text.
+    fn to_local(&self, range: &tree_sitter::Range) -> tree_sitter::Range {
+        tree_sitter::Range {
+            start_byte: range.start_byte - self.base,
+            end_byte: range.end_byte - self.base,
+            start_point: tree_sitter::Point::new(
+                range.start_point.row - self.row,
+                range.start_point.column,
+            ),
+            end_point: tree_sitter::Point::new(
+                range.end_point.row - self.row,
+                range.end_point.column,
+            ),
+        }
+    }
+
+    /// `range` (body text offsets) in the file.
+    fn to_file(&self, range: &tree_sitter::Range) -> tree_sitter::Range {
+        tree_sitter::Range {
+            start_byte: range.start_byte + self.base,
+            end_byte: range.end_byte + self.base,
+            start_point: tree_sitter::Point::new(
+                range.start_point.row + self.row,
+                range.start_point.column,
+            ),
+            end_point: tree_sitter::Point::new(
+                range.end_point.row + self.row,
+                range.end_point.column,
+            ),
+        }
     }
 }
 
@@ -1256,5 +1365,87 @@ mod tests {
         )
         .expect_err("a lone metavariable names no kind");
         assert!(error.contains("kind"), "{error}");
+    }
+    /// `range` is the matched node's span in bytes and positions alike; the
+    /// replaced span (`byte_start..byte_end`) is wider only where the fixer
+    /// expands it.
+    #[test]
+    fn range_is_the_node_span_and_the_replaced_span_follows_the_fixer() {
+        let source = "const xs = [foo(1), bar];\n";
+        let plain = rewrite(
+            source,
+            json!({"id":"r","language":"typescript","rule":{"pattern":"foo($A)"},"fix":"baz($A)"}),
+        )
+        .expect("plain");
+        assert_eq!(plain.len(), 1);
+        let node = (plain[0].range.start_byte, plain[0].range.end_byte);
+        assert_eq!(&source[node.0 as usize..node.1 as usize], "foo(1)");
+        assert_eq!((plain[0].byte_start, plain[0].byte_end), node);
+        assert_eq!(plain[0].range.start.column, node.0);
+
+        let expanded = rewrite(
+            source,
+            json!({
+                "id":"r","language":"typescript","rule":{"pattern":"foo($A)"},
+                "fix":{"template":"","expandEnd":{"regex":","}}
+            }),
+        )
+        .expect("expanded");
+        assert_eq!(expanded.len(), 1);
+        let matched = &expanded[0];
+        assert_eq!((matched.range.start_byte, matched.range.end_byte), node);
+        assert_eq!(matched.byte_start, node.0);
+        assert!(matched.byte_end > node.1, "{matched:?}");
+        assert_eq!(
+            &source[matched.byte_start as usize..matched.byte_end as usize],
+            matched.replaced_text
+        );
+        assert_eq!(matched.text, "foo(1)");
+    }
+
+    /// Mentions outside every match are found by binary search over the
+    /// sorted matches: each code hit is covered, each comment word is not,
+    /// at any count.
+    #[test]
+    fn unmatched_mentions_scale_with_many_matches() {
+        let mut source = String::new();
+        for index in 0..2000 {
+            source.push_str(&format!("let v{index} = Name; // Name\n"));
+        }
+        let scan = identifier_scan("rust", &source);
+        assert_eq!(scan.matches.len(), 2000);
+        assert_eq!(scan.unmatched.len(), 2000);
+        assert!(scan.unmatched.iter().all(|mention| !mention.in_code));
+        assert!(
+            scan.unmatched
+                .iter()
+                .enumerate()
+                .all(|(index, mention)| mention.line == index as u32)
+        );
+    }
+    /// A body is re-parsed from its own lines, yet a match inside it keeps
+    /// file offsets and lines, and a multi-line capture keeps the source's
+    /// layout exactly as the same code outside a macro does.
+    #[test]
+    fn a_macro_body_match_keeps_file_offsets_and_layout() {
+        let call = "        call(\n            1,\n            2\n        );\n";
+        let wrapped = format!("fn t() {{\n    let x = 1;\n    m!({{\n{call}    }});\n}}\n");
+        let plain = format!("fn t() {{\n    let x = 1;\n    {{\n{call}    }};\n}}\n");
+        let rule = json!({
+            "id":"r","language":"rust","rule":{"pattern":"call($$$A)"},
+            "fix":"wrapped( $$$A )"
+        });
+        let in_macro = rewrite(&wrapped, rule.clone()).expect("macro");
+        let outside = rewrite(&plain, rule).expect("plain");
+        assert_eq!((in_macro.len(), outside.len()), (1, 1), "{in_macro:?}");
+        let (inner, outer) = (&in_macro[0], &outside[0]);
+        assert_eq!(inner.replacement, outer.replacement);
+        assert_eq!(inner.range.start.line, 3);
+        assert_eq!(inner.range.start.column, outer.range.start.column);
+        assert_eq!(
+            &wrapped[inner.byte_start as usize..inner.byte_end as usize],
+            inner.replaced_text
+        );
+        assert_eq!(inner.replaced_text, outer.replaced_text);
     }
 }

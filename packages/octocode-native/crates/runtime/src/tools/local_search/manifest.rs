@@ -2,30 +2,29 @@
 //! the path policy that produced them. A scan is stored only with the digest
 //! of the bytes its values came from: the search hashes each file in the read
 //! it searches with, and a file it did not hash is read here and must still
-//! hold every value at its line. A hit is only a candidate: every matched
-//! file must keep its size and modification time, the executor re-hashes
-//! each file a page shows (binding its secret checks to those bytes) and
-//! restarts on any difference, and it proves the submitted query still
-//! derives the stored snapshot before serving it. A file created
-//! after the scan is not seen until the entry expires; a rescan after expiry
-//! restarts a changed result.
-use super::super::page_memo::PageMemo;
+//! hold every value at its line. A scan is also stored only with the proof of
+//! what its walk searched ([`Walked`]): every searched file, every walked
+//! directory and the ignore rules, none written within the settle window
+//! before the walk. A hit is only a candidate: it is served only while that
+//! proof holds, so a file created after the scan, or an unmatched file that
+//! gains a match, drops it and the page rescans (and its changed snapshot
+//! restarts). The executor re-hashes each file a page shows (binding its
+//! secret checks to those bytes) and restarts on any difference, and it
+//! proves the submitted query still derives the stored snapshot before
+//! serving it.
+use super::super::page_memo::{PageMemo, Proof};
 use super::packed::Packed;
 pub use super::verify::Redaction;
+pub use super::walked::Walked;
 use crate::policy::discovery::WalkSkips;
 use octocode_engine::types::{TextSearchMatch, TextSearchResult};
 use sha2::{Digest as _, Sha256};
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
 const MAX_ENTRIES: usize = 64;
 /// Bytes one stored scan may keep: its packed matches, its sources' paths and
 /// its redaction.
-const MAX_BYTES: usize = 4 * 1024 * 1024;
+pub(super) const MAX_BYTES: usize = 4 * 1024 * 1024;
 /// Bytes one stored scan's matches may take unpacked: what a page reads
 /// back from it.
 const MAX_RAW_BYTES: usize = 64 * 1024 * 1024;
@@ -42,8 +41,6 @@ pub type Digest = [u8; 32];
 /// A matched file as it was when its scan was stored.
 struct Source {
     path: String,
-    size: u64,
-    modified: Option<SystemTime>,
     digest: Digest,
 }
 
@@ -55,6 +52,8 @@ struct Scan {
     query_key: String,
     redaction: Option<Arc<Redaction>>,
     skipped: Arc<WalkSkips>,
+    /// What the walk searched, unchanged since the walk.
+    proof: Proof,
 }
 
 /// A fresh scan offered for storage, with what its page derived from it.
@@ -66,9 +65,11 @@ pub struct Fresh {
     /// What redacting `value` changed (see [`Redaction`]).
     pub redaction: Redaction,
     pub skipped: Arc<WalkSkips>,
+    /// What the walk searched (see [`Walked`]).
+    pub walked: Walked,
 }
 
-/// A stored scan whose matched files keep their stored size and time.
+/// A stored scan whose walk is unchanged since it was stored.
 pub struct Stored {
     pub value: TextSearchResult,
     /// Digest of each matched file when stored, keyed by its scanned path.
@@ -89,12 +90,6 @@ pub struct Stored {
 /// Stored scans, weighed by their kept bytes.
 static STORE: PageMemo<Scan> = PageMemo::new(TTL, MAX_ENTRIES, MAX_TOTAL_BYTES);
 
-fn stamp(path: &str) -> Option<(u64, Option<SystemTime>)> {
-    std::fs::metadata(path)
-        .ok()
-        .map(|meta| (meta.len(), meta.modified().ok()))
-}
-
 /// Streamed SHA-256 of `path` ([`octocode_engine::digest::copy_hashed`]).
 pub fn digest_file(path: &std::path::Path) -> std::io::Result<Digest> {
     let file = std::fs::File::open(path)?;
@@ -105,27 +100,41 @@ pub fn digest_file(path: &std::path::Path) -> std::io::Result<Digest> {
 }
 
 /// `value` packed for storage, or `None` when it is too large to store.
+#[cfg(test)]
 pub fn pack(value: &TextSearchResult) -> Option<Packed> {
-    Packed::pack(value, MAX_RAW_BYTES).filter(|packed| packed.weight() <= MAX_BYTES)
+    pack_checked(value, &|| false)
 }
 
+#[cfg(test)]
 pub fn get(snapshot: &str, policy: &str) -> Option<Stored> {
-    let (value, sources, query_key, redaction, skipped) = STORE.get(snapshot, policy, |scan| {
-        (
-            Arc::clone(&scan.value),
-            Arc::clone(&scan.sources),
-            scan.query_key.clone(),
-            scan.redaction.clone(),
-            Arc::clone(&scan.skipped),
-        )
-    })?;
-    // Size and time reject most edits without a read; the digest that proves
-    // a file's bytes is checked when a page shows it, so a walk hashes each
+    get_checked(snapshot, policy, &|| false)
+}
+
+pub fn pack_checked(value: &TextSearchResult, cancelled: &dyn Fn() -> bool) -> Option<Packed> {
+    Packed::pack_checked(value, MAX_RAW_BYTES, MAX_BYTES, cancelled)
+}
+
+pub fn get_checked(snapshot: &str, policy: &str, cancelled: &dyn Fn() -> bool) -> Option<Stored> {
+    let (value, sources, query_key, redaction, skipped, proof) =
+        STORE.get(snapshot, policy, |scan| {
+            (
+                Arc::clone(&scan.value),
+                Arc::clone(&scan.sources),
+                scan.query_key.clone(),
+                scan.redaction.clone(),
+                Arc::clone(&scan.skipped),
+                scan.proof.clone(),
+            )
+        })?;
+    // The stamps of everything the walk searched reject an edit, a new file
+    // or a changed ignore rule without a read; the digest that proves a
+    // file's bytes is checked when a page shows it, so a walk hashes each
     // file once rather than every file on every page.
-    let unchanged = sources
-        .iter()
-        .all(|source| stamp(&source.path) == Some((source.size, source.modified)));
-    if let Some(value) = unchanged.then(|| value.unpack()).flatten() {
+    if let Some(value) = proof
+        .holds()
+        .then(|| value.unpack_checked(cancelled))
+        .flatten()
+    {
         return Some(Stored {
             value,
             digests: sources
@@ -141,34 +150,52 @@ pub fn get(snapshot: &str, policy: &str) -> Option<Stored> {
     None
 }
 
-/// Store `fresh` unless it is too large or a matched file no longer holds the
-/// values it was scanned with (it changed between the scan and this call).
+/// Store `fresh` unless it is too large, a matched file no longer holds the
+/// values it was scanned with (it changed between the scan and this call),
+/// or what the walk searched cannot be proved unchanged from here on.
+#[cfg(test)]
 pub fn put(snapshot: String, policy: String, fresh: Fresh) {
+    put_checked(snapshot, policy, fresh, &|| false);
+}
+
+pub fn put_checked(snapshot: String, policy: String, fresh: Fresh, cancelled: &dyn Fn() -> bool) {
     let Fresh {
         value,
         query_key,
         redaction,
         skipped,
+        walked,
     } = fresh;
-    let Some(scan) = value.unpack() else {
+    if walked.untracked || walked.oversize {
+        return;
+    }
+    let Some(scan) = value.unpack_checked(cancelled) else {
         return;
     };
     let mut budget = MAX_SOURCE_BYTES;
     let mut sources = Vec::with_capacity(scan.files.len());
     for file in scan.files {
+        if cancelled() {
+            return;
+        }
+        let path = if std::path::Path::new(&file.path).is_absolute() {
+            file.path.clone()
+        } else {
+            let root = if walked.root.is_file() {
+                walked.root.parent().unwrap_or(&walked.root)
+            } else {
+                &walked.root
+            };
+            root.join(&file.path).to_string_lossy().into_owned()
+        };
         // The search hashed the bytes it read the values from; only a file
         // it did not hash is read again here.
         let source = match file.source {
-            Some(searched) => budget.checked_sub(searched.size).map(|left| {
-                budget = left;
-                Source {
-                    path: file.path,
-                    size: searched.size,
-                    modified: searched.modified,
-                    digest: searched.digest,
-                }
+            Some(searched) => Some(Source {
+                path,
+                digest: searched.digest,
             }),
-            None => read_source(file.path, &file.matches, &mut budget),
+            None => read_source(path, &file.matches, &mut budget),
         };
         let Some(source) = source else {
             return;
@@ -189,10 +216,14 @@ pub fn put(snapshot: String, policy: String, fresh: Fresh) {
             .iter()
             .map(|source| source.path.len())
             .sum::<usize>()
-        + redaction.as_ref().map_or(0, Redaction::weight);
+        + redaction.as_ref().map_or(0, Redaction::weight)
+        + walked.weight();
     if bytes > MAX_BYTES {
         return;
     }
+    let Some(proof) = walked.proof() else {
+        return;
+    };
     STORE.put(
         snapshot,
         policy,
@@ -203,6 +234,7 @@ pub fn put(snapshot: String, policy: String, fresh: Fresh) {
             query_key,
             redaction: redaction.map(Arc::new),
             skipped,
+            proof,
         },
     );
 }
@@ -234,8 +266,6 @@ fn read_source(path: String, matches: &[TextSearchMatch], budget: &mut u64) -> O
     }
     Some(Source {
         path,
-        size,
-        modified: metadata.modified().ok(),
         digest: Sha256::digest(&bytes).into(),
     })
 }
@@ -289,6 +319,9 @@ mod tests {
                     query_key: String::new(),
                     redaction: None,
                     skipped: Default::default(),
+                    proof: Walked::settled(std::env::temp_dir(), Vec::new())
+                        .proof()
+                        .expect("proof"),
                 },
             );
         }
@@ -298,12 +331,23 @@ mod tests {
         assert!(snapshots.iter().all(|snapshot| snapshot != "scan-0"));
     }
 
+    /// `value` offered for storage, its walk the files it matched.
     fn fresh(value: TextSearchResult) -> Fresh {
+        let entries = value
+            .files
+            .iter()
+            .map(|file| PathBuf::from(&file.path))
+            .collect::<Vec<_>>();
+        let root = entries
+            .first()
+            .and_then(|path| path.parent())
+            .map_or_else(std::env::temp_dir, std::path::Path::to_path_buf);
         Fresh {
             value: pack(&value).expect("packed"),
             query_key: String::new(),
             redaction: Redaction::default(),
             skipped: Default::default(),
+            walked: Walked::settled(root, entries),
         }
     }
 
@@ -313,6 +357,7 @@ mod tests {
                 path: path.to_string_lossy().into_owned(),
                 match_count: 1,
                 matches: vec![TextSearchMatch {
+                    deferred: None,
                     line,
                     column: 0,
                     byte_offset: 0,
@@ -402,7 +447,7 @@ mod tests {
         assert_eq!(budget, 9);
         let mut budget = 25;
         let source = read_source(path, &[], &mut budget).expect("within budget");
-        assert_eq!((source.size, budget), (10, 15));
+        assert_eq!(budget, 15);
         let digest: Digest = Sha256::digest(b"0123456789").into();
         assert_eq!(source.digest, digest);
         // A directory is not a regular file and is never read.
@@ -411,13 +456,48 @@ mod tests {
 
     #[test]
     fn a_stored_scan_is_only_served_under_its_own_policy() {
+        let dir = tempfile::tempdir().expect("fixture directory");
         let snapshot = "manifest-policy-binding-test".to_owned();
         let empty = TextSearchResult {
             files: Vec::new(),
             stats: Default::default(),
         };
-        put(snapshot.clone(), "policy-a".into(), fresh(empty));
+        let mut offered = fresh(empty);
+        offered.walked = Walked::settled(dir.path().to_path_buf(), Vec::new());
+        put(snapshot.clone(), "policy-a".into(), offered);
         assert!(get(&snapshot, "policy-a").is_some());
         assert!(get(&snapshot, "policy-b").is_none());
+    }
+    /// A stored scan is served only while everything its walk searched is
+    /// unchanged: an unmatched searched file that gains a match, or a file
+    /// created in a walked directory, drops it.
+    #[test]
+    fn a_stored_scan_is_dropped_when_its_walk_would_find_more() {
+        let dir = tempfile::tempdir().expect("fixture directory");
+        let matched = dir.path().join("a.txt");
+        let unmatched = dir.path().join("c.txt");
+        std::fs::write(&matched, "needle\n").expect("fixture");
+        std::fs::write(&unmatched, "hay\n").expect("fixture");
+        let store = |snapshot: &str| {
+            let mut offered = fresh(one_match(&matched, 1, "needle"));
+            offered.walked = Walked::settled(
+                dir.path().to_path_buf(),
+                vec![dir.path().to_path_buf(), matched.clone(), unmatched.clone()],
+            );
+            put(snapshot.into(), "policy".into(), offered);
+            assert!(get(snapshot, "policy").is_some(), "stored");
+        };
+        store("manifest-walk-edit-test");
+        std::fs::write(&unmatched, "needle\n").expect("edit");
+        assert!(
+            get("manifest-walk-edit-test", "policy").is_none(),
+            "an unmatched file that gains a match drops the scan"
+        );
+        store("manifest-walk-create-test");
+        std::fs::write(dir.path().join("0new.txt"), "needle\n").expect("create");
+        assert!(
+            get("manifest-walk-create-test", "policy").is_none(),
+            "a file created in a walked directory drops the scan"
+        );
     }
 }

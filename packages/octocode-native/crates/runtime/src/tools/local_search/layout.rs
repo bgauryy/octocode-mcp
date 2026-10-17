@@ -198,7 +198,7 @@ impl Layout {
                 file: &|file| costs.file(file),
                 row: &|row| costs.row(row),
                 name: &|index, row| costs.name(index, &files[index], &files[index].matches[row]),
-                expansion_rows: &|rows| expansion_rows(rows, costs),
+                read: &|row| costs.read(row),
             },
         );
         let total_pages = u32::try_from(pages.len()).unwrap_or(u32::MAX).max(1);
@@ -288,7 +288,8 @@ pub(super) struct PageCosts {
     pub(super) prefix_chars: usize,
     /// matchOnly rows show their exact span clipped to the display bound.
     pub(super) match_only_limit: Option<usize>,
-    pub(super) match_only: bool,
+    /// Span rows carry `column` in the response (see [`shows_span_columns`]).
+    pub(super) span_columns: bool,
     pub(super) expand_context: u32,
     /// Multiline values are read once per file (see [`expansion_rows`]).
     pub(super) multiline: bool,
@@ -371,7 +372,7 @@ impl PageCosts {
         Self {
             prefix_chars,
             match_only_limit: match_only.then_some(effective_match_content_length(query) as usize),
-            match_only,
+            span_columns: shows_span_columns(query),
             expand_context: if match_only { 0 } else { context_lines },
             multiline: query.multiline != LocalSearchQueryMultiline::Off,
             shows_names: !list_view(query.result_view),
@@ -462,7 +463,7 @@ impl PageCosts {
     }
 
     pub(super) fn row(&self, matched: &octocode_engine::types::TextSearchMatch) -> usize {
-        let row = row_chars(matched, self.match_only_limit, self.match_only);
+        let row = row_chars(matched, self.match_only_limit, self.span_columns);
         if self.clipped(matched) {
             // Its line range, and a share of the extra read every
             // `RANGES_MAX_ITEMS` ranges open.
@@ -528,16 +529,36 @@ pub(super) fn file_pagination(
 pub(super) const FILE_ENTRY_CHARS: usize = 25;
 
 /// Serialized chars of one match row as a page shows it, with its separator.
+/// The value is priced in place, never copied.
 pub(super) fn row_chars(
     matched: &octocode_engine::types::TextSearchMatch,
     display_cap: Option<usize>,
-    span_rows: bool,
+    span_columns: bool,
 ) -> usize {
-    let mut row = project_match(matched, display_cap);
-    if !span_rows {
+    if let Some(price) = matched.deferred.filter(|price| *price > 0) {
+        return price as usize;
+    }
+    let (mut row, value) = project_shape(matched, display_cap);
+    if !span_columns {
         row.column = None;
     }
-    crate::tools::stream_page::json_chars(&row) + 1
+    crate::tools::stream_page::json_chars(&row)
+        + crate::tools::stream_page::json_text_chars(value)
+        + 1
+}
+
+/// The response path of a span row's `column`.
+const SPAN_COLUMN_PATH: &str = "results[].data.files[].matches[].column";
+
+/// Whether the response keeps `column` on this query's rows: only matchOnly
+/// span rows carry one, and only while the output stage keeps the field
+/// ([`crate::response::extras::keeps`]: core may class it an extra its
+/// `extras` kind must name). A page is priced for what it emits.
+pub(super) fn shows_span_columns(query: &LocalSearchQuery) -> bool {
+    query.result_view == LocalSearchQueryResultView::MatchOnly
+        && serde_json::to_value(query).is_ok_and(|row| {
+            crate::response::extras::keeps(ToolId::LocalSearch, &row, SPAN_COLUMN_PATH)
+        })
 }
 
 /// Most chars a streamed file entry's `pagination` can take: its later rows
@@ -584,9 +605,8 @@ pub(super) struct StreamCosts<'a> {
     pub(super) row: &'a dyn Fn(&octocode_engine::types::TextSearchMatch) -> usize,
     /// The enclosing name a row (by file index and rank) carries.
     pub(super) name: &'a dyn Fn(usize, usize) -> RowName,
-    /// The `expandValues` rows one file's rows on a page need.
-    pub(super) expansion_rows:
-        &'a dyn Fn(&mut dyn Iterator<Item = &octocode_engine::types::TextSearchMatch>) -> usize,
+    /// What reading one row's clipped value takes (see [`FileReads`]).
+    pub(super) read: &'a dyn Fn(&octocode_engine::types::TextSearchMatch) -> RowRead,
 }
 
 /// Rows one `expandValues` call runs: a page never needs more to read every
@@ -641,17 +661,24 @@ pub(super) fn stream_pages(
         .map(|(index, file)| (index, per_file..file.matches.len()));
     let mut pages: Vec<PageRows> = Vec::new();
     let mut page: PageRows = Vec::new();
-    let mut slot = std::collections::HashMap::<usize, usize>::new();
+    // Each file on the page: its entry's position, and the reads its rows
+    // there need, kept as rows join so a row's added reads cost no rescan.
+    let mut slot = std::collections::HashMap::<usize, (usize, FileReads)>::new();
     // Files whose `pagination` this page already counts.
     let mut paged = std::collections::HashSet::<usize>::new();
     // Declarations the page already names in full.
     let mut names = PageNames::default();
+    // Each file entry's own chars and its `pagination`'s, priced once: a
+    // file rides several pages.
+    let mut entries_chars = vec![None::<(usize, usize)>; files.len()];
     let mut used = 0usize;
     let max_reads = max_expansion_rows();
     // `expandValues` rows the page's clipped values need.
     let mut reads = 0usize;
     for (index, rows) in first.chain(rest) {
         let file = &files[index];
+        let (file_chars, pagination) = *entries_chars[index]
+            .get_or_insert_with(|| ((costs.file)(file), pagination_chars(file)));
         // A row-less file still takes its place as one entry.
         let entries: Vec<Option<usize>> = if rows.is_empty() {
             vec![None]
@@ -661,33 +688,34 @@ pub(super) fn stream_pages(
         for row in entries {
             let more_after = row.is_some_and(|row| row + 1 < file.matches.len());
             let name = row.map_or(RowName::None, |row| (costs.name)(index, row));
-            let cost = |page_has_file: bool, page_counts_pagination: bool, name_chars: usize| {
-                row.map_or(0, |row| (costs.row)(&file.matches[row]))
-                    + name_chars
-                    + if page_has_file { 0 } else { (costs.file)(file) }
-                    + if more_after && !page_counts_pagination {
-                        pagination_chars(file)
+            let read = row.map_or(RowRead::None, |row| (costs.read)(&file.matches[row]));
+            let row_chars = row.map_or(0, |row| (costs.row)(&file.matches[row]));
+            let cost = |slot: &std::collections::HashMap<usize, (usize, FileReads)>,
+                        paged: &std::collections::HashSet<usize>,
+                        names: &PageNames| {
+                row_chars
+                    + names.price(index, name)
+                    + if slot.contains_key(&index) {
+                        0
+                    } else {
+                        file_chars
+                    }
+                    + if more_after && !paged.contains(&index) {
+                        pagination
                     } else {
                         0
                     }
             };
-            let has_file = slot.contains_key(&index);
-            let over_budget =
-                used + cost(has_file, paged.contains(&index), names.price(index, name)) > budget;
             // The reads this row adds to its file's on the page: only a
             // clipped row adds one.
-            let added_reads = |page: &PageRows, slot: &std::collections::HashMap<usize, usize>| {
-                let Some(row) = row else {
-                    return 0;
-                };
-                let shown = slot
-                    .get(&index)
-                    .map_or(row..row, |&position| page[position].1.clone());
-                let with = shown.start.min(row)..shown.end.max(row + 1);
-                (costs.expansion_rows)(&mut file.matches[with].iter())
-                    .saturating_sub((costs.expansion_rows)(&mut file.matches[shown].iter()))
+            let added_reads = |slot: &std::collections::HashMap<usize, (usize, FileReads)>| {
+                slot.get(&index).map_or_else(
+                    || FileReads::default().added(read),
+                    |(_, reads)| reads.added(read),
+                )
             };
-            let over_reads = reads + added_reads(&page, &slot) > max_reads;
+            let over_budget = used + cost(&slot, &paged, &names) > budget;
+            let over_reads = reads + added_reads(&slot) > max_reads;
             if !page.is_empty() && (over_budget || over_reads) {
                 pages.push(std::mem::take(&mut page));
                 slot.clear();
@@ -696,21 +724,23 @@ pub(super) fn stream_pages(
                 used = 0;
                 reads = 0;
             }
-            let has_file = slot.contains_key(&index);
-            used += cost(has_file, paged.contains(&index), names.price(index, name));
+            used += cost(&slot, &paged, &names);
             names.add(index, name);
-            reads += added_reads(&page, &slot);
+            reads += added_reads(&slot);
             if more_after {
                 paged.insert(index);
             }
             let span = row.map_or(0..0, |row| row..row + 1);
-            match slot.get(&index) {
-                Some(&position) => {
-                    let range = &mut page[position].1;
+            match slot.get_mut(&index) {
+                Some((position, file_reads)) => {
+                    let range = &mut page[*position].1;
                     *range = range.start.min(span.start)..range.end.max(span.end);
+                    file_reads.add(read);
                 }
                 None => {
-                    slot.insert(index, page.len());
+                    let mut file_reads = FileReads::default();
+                    file_reads.add(read);
+                    slot.insert(index, (page.len(), file_reads));
                     page.push((index, span));
                 }
             }
@@ -908,33 +938,293 @@ pub(super) fn expansion_rows<'a>(
     rows: impl IntoIterator<Item = &'a octocode_engine::types::TextSearchMatch>,
     costs: &PageCosts,
 ) -> usize {
-    let clipped = rows
-        .into_iter()
-        .filter(|matched| costs.clipped(matched))
-        .collect::<Vec<_>>();
-    if clipped.is_empty() {
-        return 0;
+    let mut reads = FileReads::default();
+    for matched in rows {
+        reads.add(costs.read(matched));
     }
-    if costs.multiline {
-        return 1;
-    }
-    // The same rows `is_long_line_hit` reads by a byte window.
-    let long = |matched: &&octocode_engine::types::TextSearchMatch| {
-        super::leads::passes_line_page(
+    reads.rows()
+}
+
+/// What reading one row's value whole takes ([`expand_values`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RowRead {
+    /// The value is whole.
+    None,
+    /// A clipped multiline value: its file is read once, however many.
+    Multiline,
+    /// A clipped value on a line past one read page: its own byte read.
+    Long,
+    /// A clipped line value: its hit lines with this context on each side.
+    Window { start: u32, end: u32 },
+}
+
+impl PageCosts {
+    /// What reading `matched`'s value whole takes.
+    pub(super) fn read(&self, matched: &octocode_engine::types::TextSearchMatch) -> RowRead {
+        if !self.clipped(matched) {
+            RowRead::None
+        } else if self.multiline {
+            RowRead::Multiline
+        } else if super::leads::passes_line_page(
+            // The same rows `is_long_line_hit` reads by a byte window.
             matched
                 .original_bytes
                 .map_or_else(|| matched.value.len(), |bytes| bytes as usize),
-        )
-    };
-    let (long, plain): (Vec<_>, Vec<_>) = clipped.into_iter().partition(long);
-    long.len()
-        + hit_windows(
-            plain.iter().map(|matched| matched.line),
-            costs.expand_context,
-        )
-        .len()
-        .div_ceil(RANGES_MAX_ITEMS)
+        ) {
+            RowRead::Long
+        } else {
+            let (start, end) = hit_windows([matched.line], self.expand_context)[0];
+            RowRead::Window { start, end }
+        }
+    }
+}
+
+/// The `expandValues` rows one file's rows on a page need, kept as rows
+/// join: its long-line hits, its merged hit windows ([`hit_windows`]), and
+/// whether a multiline value is clipped. Adding a row costs a lookup among
+/// the windows, so a page cut never rescans the rows a file already shows.
+#[derive(Clone, Debug, Default)]
+pub(super) struct FileReads {
+    multiline: bool,
+    long: usize,
+    /// Merged windows, start to end: disjoint and not adjacent.
+    windows: std::collections::BTreeMap<u32, u32>,
+}
+
+impl FileReads {
+    /// The `expandValues` rows these reads take.
+    pub(super) fn rows(&self) -> usize {
+        if self.multiline {
+            1
+        } else {
+            self.long + self.windows.len().div_ceil(RANGES_MAX_ITEMS)
+        }
+    }
+
+    /// The rows `read` would add, without adding it.
+    pub(super) fn added(&self, read: RowRead) -> usize {
+        let after = match read {
+            RowRead::None => return 0,
+            RowRead::Multiline => 1,
+            _ if self.multiline => 1,
+            RowRead::Long => self.long + 1 + self.windows.len().div_ceil(RANGES_MAX_ITEMS),
+            RowRead::Window { start, end } => {
+                let merged = self.touching(start, end).count();
+                self.long + (self.windows.len() + 1 - merged).div_ceil(RANGES_MAX_ITEMS)
+            }
+        };
+        after.saturating_sub(self.rows())
+    }
+
+    pub(super) fn add(&mut self, read: RowRead) {
+        match read {
+            RowRead::None => {}
+            RowRead::Multiline => self.multiline = true,
+            RowRead::Long => self.long += 1,
+            RowRead::Window { start, end } => {
+                let touching = self.touching(start, end).collect::<Vec<_>>();
+                let mut merged = (start, end);
+                for (from, to) in touching {
+                    self.windows.remove(&from);
+                    merged = (merged.0.min(from), merged.1.max(to));
+                }
+                self.windows.insert(merged.0, merged.1);
+            }
+        }
+    }
+
+    /// The windows `start..=end` overlaps or adjoins, as [`hit_windows`]
+    /// merges them.
+    fn touching(&self, start: u32, end: u32) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.windows
+            .range(..=end.saturating_add(1))
+            .rev()
+            .take_while(move |(_, to)| to.saturating_add(1) >= start)
+            .map(|(&from, &to)| (from, to))
+    }
 }
 
 /// Line runs `moreLines` names before it summarizes the rest as a count.
 pub(super) const MAX_MORE_LINES: usize = 24;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use octocode_engine::types::{TextSearchFile, TextSearchMatch};
+
+    fn hit(line: u32, clipped: bool) -> TextSearchMatch {
+        TextSearchMatch {
+            deferred: None,
+            line,
+            column: 0,
+            byte_offset: 0,
+            value: format!("needle {line}"),
+            value_digest: [0; 32],
+            count: None,
+            rank: Some(1),
+            original_chars: clipped.then_some(4_000),
+            original_bytes: clipped.then_some(4_000),
+        }
+    }
+
+    /// Kept as rows join, a file's reads equal the batch count over the
+    /// same rows ([`hit_windows`] merged, long hits one each), and `added`
+    /// is exactly what `add` then changes.
+    #[test]
+    fn incremental_file_reads_equal_the_batch_count() {
+        // Lines in rank order: out of line order, overlapping, adjacent,
+        // bridging, repeated.
+        let lines = [
+            40u32, 10, 12, 60, 11, 30, 26, 34, 90, 1, 2, 70, 80, 55, 45, 50, 100, 120, 140, 160,
+            180, 200, 220, 240, 260, 25, 33,
+        ];
+        for context in [0, 2, 4] {
+            let mut reads = FileReads::default();
+            let mut shown = Vec::new();
+            for (n, &line) in lines.iter().enumerate() {
+                let read = if n % 7 == 3 {
+                    RowRead::Long
+                } else {
+                    let (start, end) = hit_windows([line], context)[0];
+                    RowRead::Window { start, end }
+                };
+                let before = reads.rows();
+                let added = reads.added(read);
+                reads.add(read);
+                assert_eq!(reads.rows(), before + added, "{context} {line}");
+                shown.push((line, read));
+                let long = shown
+                    .iter()
+                    .filter(|(_, read)| *read == RowRead::Long)
+                    .count();
+                let windows = hit_windows(
+                    shown
+                        .iter()
+                        .filter(|(_, read)| *read != RowRead::Long)
+                        .map(|(line, _)| *line),
+                    context,
+                );
+                assert_eq!(
+                    reads.rows(),
+                    long + windows.len().div_ceil(RANGES_MAX_ITEMS),
+                    "{context} {line}"
+                );
+            }
+        }
+        let mut multiline = FileReads::default();
+        assert_eq!(multiline.added(RowRead::Multiline), 1);
+        multiline.add(RowRead::Multiline);
+        assert_eq!(multiline.added(RowRead::Multiline), 0);
+        assert_eq!(multiline.added(RowRead::None), 0);
+    }
+
+    /// Cutting every page prices each row once and each file entry once,
+    /// however many pages a file rides, and every page keeps within its
+    /// read bound.
+    #[test]
+    fn stream_pages_price_each_row_and_file_once() {
+        let files = (0..30u32)
+            .map(|n| TextSearchFile {
+                path: format!("src/f{n}.rs"),
+                match_count: 40,
+                matches: (1..=40).map(|line| hit(line * 3, line % 2 == 0)).collect(),
+                source: None,
+            })
+            .collect::<Vec<_>>();
+        let rows = std::cell::Cell::new(0usize);
+        let entries = std::cell::Cell::new(0usize);
+        let read = |matched: &TextSearchMatch| {
+            if matched.original_chars.is_some() {
+                let (start, end) = hit_windows([matched.line], 1)[0];
+                RowRead::Window { start, end }
+            } else {
+                RowRead::None
+            }
+        };
+        let pages = stream_pages(
+            &files,
+            10,
+            false,
+            2_000,
+            StreamCosts {
+                file: &|_| {
+                    entries.set(entries.get() + 1);
+                    30
+                },
+                row: &|_| {
+                    rows.set(rows.get() + 1);
+                    25
+                },
+                name: &|_, _| RowName::None,
+                read: &read,
+            },
+        );
+        assert!(pages.len() > 1, "{}", pages.len());
+        assert_eq!(rows.get(), 30 * 40);
+        assert_eq!(entries.get(), 30);
+        let mut seen = 0;
+        for page in &pages {
+            let reads = page
+                .iter()
+                .map(|(index, range)| {
+                    let mut reads = FileReads::default();
+                    for matched in &files[*index].matches[range.clone()] {
+                        reads.add(read(matched));
+                    }
+                    reads.rows()
+                })
+                .sum::<usize>();
+            assert!(reads <= max_expansion_rows(), "{reads}");
+            seen += page.iter().map(|(_, range)| range.len()).sum::<usize>();
+        }
+        assert_eq!(seen, 30 * 40, "every row on exactly one page");
+    }
+
+    /// A row is priced from its borrowed value exactly as the copy the page
+    /// shows serializes, with `column` only where the response keeps it.
+    #[test]
+    fn row_chars_price_the_row_as_shown() {
+        let mut matched = hit(7, false);
+        matched.value = "quote \" tab \t é 😀 needle".into();
+        matched.column = 4;
+        for (cap, span_columns) in [(None, false), (Some(5), true), (Some(500), false)] {
+            let mut row = project_match(&matched, cap);
+            if !span_columns {
+                row.column = None;
+            }
+            assert_eq!(
+                row_chars(&matched, cap, span_columns),
+                crate::tools::stream_page::json_chars(&row) + 1,
+                "{cap:?} {span_columns}"
+            );
+        }
+    }
+
+    fn query(fields: serde_json::Value) -> LocalSearchQuery {
+        let mut value = serde_json::json!({"path": ".", "matchString": "x", "mainGoal": "test", "reasoning": "test"});
+        for (key, field) in fields.as_object().expect("fields") {
+            value[key] = field.clone();
+        }
+        serde_json::from_value(value).expect("query")
+    }
+
+    /// Span rows are priced with `column` only while the response keeps
+    /// it: line rows never carry one, and span rows always do, since equal
+    /// spans on one line differ only by column (L1-F4: core classes it
+    /// evidence, not an `extras` detail).
+    #[test]
+    fn span_columns_follow_what_the_response_keeps() {
+        assert!(!shows_span_columns(&query(serde_json::json!({}))));
+        assert!(crate::response::extras::keeps(
+            ToolId::LocalSearch,
+            &serde_json::json!({}),
+            SPAN_COLUMN_PATH,
+        ));
+        assert!(shows_span_columns(&query(
+            serde_json::json!({"resultView": "matchOnly"})
+        )));
+        assert!(shows_span_columns(&query(
+            serde_json::json!({"resultView": "matchOnly", "extras": ["details"]})
+        )));
+    }
+}

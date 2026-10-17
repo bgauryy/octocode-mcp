@@ -1,4 +1,4 @@
-use super::{ExecutionContext, ExecutionError, RequestLimits, RequestRuntime, RuntimeLimits};
+use super::{Cost, ExecutionContext, ExecutionError, RequestLimits, RequestRuntime, RuntimeLimits};
 use crate::config::{self, ConfigInput, ConfigOutput, RuntimeSurface};
 use crate::contracts;
 use crate::policy::path::{PathPolicy, PathPolicyConfig};
@@ -7,10 +7,11 @@ use crate::response::{continuations, extras, read_share, render, rows, stage};
 use crate::security::{ContentSecurity, ValidationResult};
 use crate::tools::ast_graph::store as graph_store;
 use crate::tools::cancel::CancellationCheck;
-use crate::tools::id::ToolId;
+use crate::tools::id::{ToolFamily, ToolId};
 use crate::tools::local_fetch::LocalFetchRegex;
 use crate::tools::result::FailureKind;
 
+use base64::Engine as _;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -69,12 +70,17 @@ pub struct ToolRuntime {
         std::sync::OnceLock<Result<super::github::GitHubServices, octocode_github::ProviderError>>,
     >,
     lsp_pool: Arc<octocode_engine::lsp::pool::LspClientPool>,
+    /// Whether this runtime created [`Self::lsp_pool`]: only its creator
+    /// stops the servers on close; a runtime given a shared pool leaves them
+    /// to the pool's owner and to its other runtimes.
+    owns_lsp_pool: bool,
     /// Sanitized full views of recently paged local files (this runtime's
     /// security policy only), so each localFetch page skips a full rescan.
     local_views: Arc<crate::security::scan::SanitizedViewMemo>,
     /// Pre-paging envelopes of recent paged responses (this runtime's config
     /// and workspace only), so a later page skips re-executing the batch.
     page_replays: Arc<PageReplayMemo>,
+    section_sessions: Arc<crate::tools::clasify::sections::Sessions>,
     /// Registry answers for artifactSearch; `None` under memory storage.
     artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
     /// Resolved once from the immutable config and surface. Provider
@@ -90,55 +96,145 @@ pub struct ToolRuntime {
     classification: &'static dyn crate::providers::classification::ClassificationProvider,
 }
 
-/// One paged response's settled envelope (validated, continuations shaped;
-/// see [`stage::settle`]) before paging, replayed only for a request that
-/// carries the page's `responseSnapshot` while its sources are unchanged
-/// since it executed. Later pages reuse its rendered text.
+/// The configuration diagnostics every runtime start prints. A key no
+/// setting reads (unknown, or removed by the contract) changes nothing, so
+/// `octocode config` reports it instead of every call; an ignored value of a
+/// live setting (invalid, protected, an unreadable file) is said each time.
+fn startup_diagnostics(
+    diagnostics: &[config::ConfigDiagnostic],
+) -> impl Iterator<Item = &config::ConfigDiagnostic> {
+    diagnostics.iter().filter(|diagnostic| {
+        ![config::UNKNOWN_CONFIG_CODE, config::REMOVED_SETTING_CODE]
+            .contains(&diagnostic.code.as_str())
+    })
+}
+
+/// Largest file a [`Cost::Light`] local row reads.
+const LIGHT_FILE_BYTES: u64 = 1024 * 1024;
+
+const PAGE_REPLAY_TTL: Duration = Duration::from_secs(120);
+
+/// Immutable settled output. Page reads never consult its original sources.
+#[derive(Serialize, Deserialize)]
 struct PageReplay {
-    /// When the rows started executing: the sources must be unchanged since.
-    started: std::time::SystemTime,
+    access: [u8; 32],
+    github_identity: Option<String>,
     structured: Value,
     remaining: Vec<Vec<crate::response::pages::Remaining>>,
     response_query: Value,
     failure: Option<FailureKind>,
     source_digest: Option<String>,
+    expires_at: String,
+    page_length: usize,
+    page_scope: String,
+    #[serde(skip)]
     text: stage::TextCache,
 }
 
-/// Bounded, expiring LRU of [`PageReplay`]s by page snapshot, partitioned by
-/// the batch identity ([`page_replay_key`]). A page served from it is
-/// byte-identical to the one a same-snapshot re-execution would produce,
-/// without the dispatch; a mismatched or missing snapshot, or changed
-/// sources, always re-execute, so a later page answers as a fresh runtime
-/// would.
-struct PageReplayMemo(crate::tools::page_memo::PageMemo<Arc<PageReplay>>);
-
-impl Default for PageReplayMemo {
-    fn default() -> Self {
-        Self(crate::tools::page_memo::PageMemo::new(
-            Duration::from_secs(120),
-            8,
-            32 * 1024 * 1024,
-        ))
-    }
+struct PageReplayMemo {
+    store: crate::cache::Store<PageReplay>,
+    policy: String,
+    persistent: bool,
 }
 
 impl PageReplayMemo {
-    fn get(&self, key: &[u8; 32], snapshot: &str) -> Option<Arc<PageReplay>> {
-        self.0.get(snapshot, &hex::encode(key), Arc::clone)
+    fn cache_config() -> crate::cache::CacheConfig {
+        crate::cache::CacheConfig {
+            max_entries: 8,
+            max_bytes: 32 * 1024 * 1024,
+            disk_bytes: 128 * 1024 * 1024,
+        }
     }
 
-    fn insert(&self, key: &[u8; 32], snapshot: String, replay: PageReplay) {
-        let weight = json_bytes(&replay.structured);
-        self.0
-            .put(snapshot, hex::encode(key), weight, Arc::new(replay));
+    fn new(config: &ConfigOutput, cwd: &std::path::Path) -> Self {
+        let persistent = config::is_persistent_storage_enabled(&config.resolved);
+        let policy = crate::digest::sha256(
+            format!(
+                "{}:{}:{}",
+                config.identity_digest(),
+                cwd.display(),
+                contracts::tool_types::TOOL_TYPES_CONTRACT_FINGERPRINT
+            )
+            .as_bytes(),
+        );
+        Self {
+            store: crate::cache::Store::new(
+                Self::cache_config(),
+                persistent.then(|| config.home.join("tmp").join("response-pages")),
+            ),
+            policy,
+            persistent,
+        }
+    }
+
+    fn storage(&self) -> &'static str {
+        if self.persistent {
+            "persistent"
+        } else {
+            "memory"
+        }
+    }
+
+    fn key(&self, key: &[u8; 32], snapshot: &str) -> crate::cache::CacheKey {
+        crate::cache::CacheKey {
+            namespace: "response-pages-v1".into(),
+            scope: format!("{}:{}", self.policy, hex::encode(key)),
+            resource: snapshot.into(),
+        }
+    }
+
+    fn get(&self, key: &[u8; 32], snapshot: &str) -> Option<Arc<PageReplay>> {
+        self.store
+            .get(&self.key(key, snapshot))
+            .map(|hit| hit.value)
+    }
+
+    fn insert(
+        &self,
+        key: &[u8; 32],
+        snapshot: &str,
+        replay: PageReplay,
+    ) -> (Arc<PageReplay>, bool) {
+        let weight = crate::cache::json_len(&replay);
+        self.store.put_confirmed(
+            self.key(key, snapshot),
+            replay,
+            weight,
+            crate::cache::CacheClass::Volatile {
+                ttl: PAGE_REPLAY_TTL,
+            },
+        )
     }
 }
 
-/// Identity of an executed batch: the validated (defaulted, sanitized) rows
-/// in canonical key order and their original input indices, so a compacted
-/// `next.query` replay (which carries only the admitted rows) maps to its
-/// origin however the caller ordered its fields.
+fn page_expiry() -> String {
+    let expires = std::time::SystemTime::now()
+        .checked_add(PAGE_REPLAY_TTL)
+        .unwrap_or(std::time::SystemTime::now())
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    crate::civil_date::iso8601_millis(i64::try_from(expires.as_millis()).unwrap_or(i64::MAX))
+}
+
+fn decode_saved_snapshot(snapshot: &str) -> Option<([u8; 32], String)> {
+    let (key, raw) = snapshot.strip_prefix("saved-v1:")?.split_once(':')?;
+    let (kind, digest) = raw.rsplit_once(':')?;
+    let base64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let key: [u8; 32] = base64.decode(key).ok()?.try_into().ok()?;
+    let digest: [u8; 32] = base64.decode(digest).ok()?.try_into().ok()?;
+    Some((key, format!("{kind}:{}", hex::encode(digest))))
+}
+
+fn snapshot_expired() -> RuntimeError {
+    RuntimeError::new(
+        "responseSnapshotExpired",
+        "The saved response is missing, expired or belongs to another tool, session or configuration. No source or provider was called. Pages expire after 120 seconds or earlier eviction; memory storage lasts only in the current runtime. Use persistent storage across CLI calls, or explicitly rerun without responseSnapshot and responseOffset.",
+    )
+}
+
+/// Identity of an executed batch: validated rows in canonical key order,
+/// original input indices, surface and request credential. The saved handle
+/// carries this digest; an independent access digest verifies each replay.
 fn page_replay_key(
     tool: &str,
     mcp: bool,
@@ -481,7 +577,11 @@ fn execute_ordinary_queries(
     std::thread::scope(|scope| {
         let tasks = queries
             .iter()
-            .map(|query| scope.spawn(move || dispatcher.execute(tool, query, context)))
+            .map(|query| {
+                scope.spawn(octocode_io::notice::carried(move || {
+                    dispatcher.execute(tool, query, context)
+                }))
+            })
             .collect::<Vec<_>>();
         tasks
             .into_iter()
@@ -492,6 +592,35 @@ fn execute_ordinary_queries(
 
 impl ToolRuntime {
     pub fn from_host(options: HostOptions) -> Result<Self, RuntimeError> {
+        Self::from_host_sharing(options, None)
+    }
+
+    /// [`Self::from_host`] whose language servers come from `lsp_pool`, a
+    /// pool its owner shares across runtimes (the CLI's warm server keeps
+    /// one runtime per working directory and one set of servers). Closing
+    /// this runtime leaves the pool running; the owner clears it.
+    pub fn from_host_with_lsp_pool(
+        options: HostOptions,
+        lsp_pool: Arc<octocode_engine::lsp::pool::LspClientPool>,
+    ) -> Result<Self, RuntimeError> {
+        Self::from_host_sharing(options, Some(lsp_pool))
+    }
+
+    /// Print the configuration diagnostics every runtime start prints: on
+    /// stderr, since stdout carries CLI results and MCP JSON-RPC. A host
+    /// that answers a call from another process's runtime (the CLI's warm
+    /// server client) prints its own configuration's, as an in-process
+    /// start would.
+    pub fn print_startup_diagnostics(config: &ConfigOutput) {
+        for diagnostic in startup_diagnostics(&config.diagnostics) {
+            eprintln!("{diagnostic}");
+        }
+    }
+
+    fn from_host_sharing(
+        options: HostOptions,
+        lsp_pool: Option<Arc<octocode_engine::lsp::pool::LspClientPool>>,
+    ) -> Result<Self, RuntimeError> {
         // Reject a bad timeout before config acquisition or maintenance run.
         if let Some(secs) = options.timeout_secs {
             let max = super::lifecycle::MAX_TIMEOUT.as_secs();
@@ -514,16 +643,10 @@ impl ToolRuntime {
             home,
             options.surface,
         );
-        let mut runtime = Self::new(input)?;
+        let mut runtime = Self::build(input, RuntimeLimits::DEFAULT, lsp_pool)?;
         // Misconfiguration never fails startup; say what was ignored and
-        // where. stderr only: stdout carries CLI results and MCP JSON-RPC.
-        // An unknown key changes nothing, so `octocode config` reports it
-        // instead of every call.
-        for diagnostic in &runtime.config.diagnostics {
-            if diagnostic.code != config::UNKNOWN_CONFIG_CODE {
-                eprintln!("{diagnostic}");
-            }
-        }
+        // where.
+        Self::print_startup_diagnostics(&runtime.config);
         // storage.mode=memory must not touch the disk cache at all.
         if config::is_persistent_storage_enabled(&runtime.config.resolved) {
             super::maintenance::run_if_due(&runtime.config.home, runtime.limits.clone.ttl);
@@ -547,6 +670,16 @@ impl ToolRuntime {
     /// limits are `limits` instead of the code constants. Not configuration:
     /// nothing reads them from the environment or a file.
     pub fn with_limits(input: ConfigInput, limits: RuntimeLimits) -> Result<Self, RuntimeError> {
+        Self::build(input, limits, None)
+    }
+
+    /// A runtime for `input` whose language servers come from `lsp_pool`
+    /// when given, else from a pool of its own.
+    fn build(
+        input: ConfigInput,
+        limits: RuntimeLimits,
+        lsp_pool: Option<Arc<octocode_engine::lsp::pool::LspClientPool>>,
+    ) -> Result<Self, RuntimeError> {
         let config = Arc::new(config::resolve_config(&input));
         let local = &config.resolved.local;
         let octocode_home = config.home.clone();
@@ -615,6 +748,7 @@ impl ToolRuntime {
                 )
                 .collect(),
             octocode_home: Some(octocode_home),
+            invocation_dir: Some(input.cwd.clone()),
             lead_cache: std::sync::Arc::default(),
             prewarm_state: std::sync::Arc::default(),
         });
@@ -625,6 +759,12 @@ impl ToolRuntime {
             input.runtime_surface,
         ));
         let selection_available = selection_available(&config, &availability);
+        let page_replays = Arc::new(PageReplayMemo::new(&config, &input.cwd));
+        let section_sessions = Arc::new(crate::tools::clasify::sections::Sessions::new(
+            PageReplayMemo::cache_config(),
+            persistent.then(|| config.home.join("tmp").join("section-assessments")),
+            page_replays.policy.clone(),
+        ));
         Ok(Self {
             requests,
             input,
@@ -638,9 +778,11 @@ impl ToolRuntime {
             security: Arc::new(security),
             github_cache,
             github_services: Arc::new(std::sync::OnceLock::new()),
-            lsp_pool: Arc::new(octocode_engine::lsp::pool::LspClientPool::default()),
+            owns_lsp_pool: lsp_pool.is_none(),
+            lsp_pool: lsp_pool.unwrap_or_default(),
             local_views: Arc::default(),
-            page_replays: Arc::default(),
+            page_replays,
+            section_sessions,
             artifact_cache,
             lsp_execution_config,
             workspace_root,
@@ -656,8 +798,12 @@ impl ToolRuntime {
     pub async fn close(&self) {
         self.begin_close();
         self.requests.close().await;
-        self.lsp_pool.clear_all().await;
+        if self.owns_lsp_pool {
+            self.lsp_pool.clear_all().await;
+        }
         self.github_cache.clear_memory();
+        self.page_replays.store.clear_memory();
+        self.section_sessions.clear_memory();
     }
     pub fn inspect_config(&self) -> config::ConfigInspectorData {
         config::inspector_data(&self.input, &self.config)
@@ -666,6 +812,8 @@ impl ToolRuntime {
     /// Delete every cached response: GitHub content and registry answers.
     pub fn clear_response_caches(&self) {
         self.github_cache.clear();
+        self.page_replays.store.clear();
+        self.section_sessions.clear();
         if let Some(artifact) = &self.artifact_cache {
             artifact.clear();
         }
@@ -696,8 +844,12 @@ impl ToolRuntime {
         if !self.config.resolved.local.enabled {
             return graph_local_disabled();
         }
+        let options = graph_store::IngestOptions {
+            workspace: Some(self.graph_workspace(options.workspace.as_deref())),
+            ..options.clone()
+        };
         graph_store::ingest(
-            options,
+            &options,
             &self.paths,
             &self.security,
             &crate::tools::cancel::NeverCancel,
@@ -710,7 +862,20 @@ impl ToolRuntime {
         if !self.config.resolved.local.enabled {
             return graph_local_disabled();
         }
-        graph_store::query(options, &self.paths)
+        let options = graph_store::QueryOptions {
+            workspace: Some(self.graph_workspace(options.workspace.as_deref())),
+            ..options.clone()
+        };
+        graph_store::query(&options, &self.paths)
+    }
+
+    /// The workspace that owns a graph: `explicit`, else the one this
+    /// runtime's working directory belongs to (not the process's).
+    fn graph_workspace(&self, explicit: Option<&std::path::Path>) -> PathBuf {
+        explicit.map_or_else(
+            || graph_store::default_workspace(self.input.cwd.clone(), &self.paths),
+            std::path::Path::to_path_buf,
+        )
     }
 
     pub fn is_available(&self, tool: &str) -> bool {
@@ -867,49 +1032,93 @@ impl ToolRuntime {
             }
         };
         let clasify = id.is_clasify();
-        if clasify {
-            crate::tools::clasify::reject_response_pagination(&input)?;
-        }
         // Parse response-paging options before contract validation.
         let mut options = ResponsePageOptions::deserialize(&input).unwrap_or_default();
         options.render_text = Some(render_text);
-        let AdmittedRows {
-            queries,
-            rejected: rejected_rows,
-        } = self.admit_queries(id, &input)?;
-        let response_query = if queries.len() == 1 {
-            queries[0].clone()
-        } else {
-            json!({"queries":queries})
-        };
-        // Each admitted row's original input index: from the snapshot mark of
-        // a continuation (which carries only admitted rows), else every input
-        // position not rejected.
-        let rejected_at: Vec<usize> = rejected_rows.iter().map(|(index, _)| *index).collect();
-        let marked = options
+        let access = page_replay_key(&tool, mcp, &[], &[], admission.github_credential());
+        let (queries, rejected_rows, row_indices, response_query, replay_key, replayed) = if options
             .response_snapshot
-            .as_deref()
-            .filter(|_| rejected_rows.is_empty())
-            .and_then(|snapshot| super::row_indices::unmark(snapshot, queries.len()));
-        let row_indices = match marked {
-            Some((snapshot, indices)) => {
-                options.response_snapshot = Some(snapshot);
-                indices
+            .is_some()
+            || options.response_offset.unwrap_or(0) > 0
+        {
+            if input.get("queries").is_some() {
+                return Err(RuntimeError::new(
+                    "invalidInput",
+                    "Saved response reads accept only responseSnapshot, responseOffset, responseLength and responseScope; remove queries or start a new call without responseSnapshot.",
+                ));
             }
-            None => super::row_indices::admitted_indices(queries.len(), &rejected_at),
+            contracts::validate(&tool, input.clone())
+                .map_err(|error| invalid_input_error(&tool, &input, error))?;
+            let snapshot = options
+                .response_snapshot
+                .as_deref()
+                .ok_or_else(snapshot_expired)?;
+            let (key, raw) = decode_saved_snapshot(snapshot).ok_or_else(snapshot_expired)?;
+            let replay = self
+                .page_replays
+                .get(&key, snapshot)
+                .filter(|replay| replay.access == access)
+                .ok_or_else(snapshot_expired)?;
+            if options
+                .response_length
+                .is_some_and(|length| length != replay.page_length)
+                || options
+                    .response_scope
+                    .as_deref()
+                    .is_some_and(|scope| scope != replay.page_scope)
+            {
+                return Err(RuntimeError::new(
+                    "responsePageMismatch",
+                    "Keep responseLength and responseScope unchanged when reading a saved response. Copy responsePagination.next; no source or provider was called.",
+                ));
+            }
+            options.response_snapshot = Some(raw);
+            options.response_length = Some(replay.page_length);
+            options.response_scope = Some(replay.page_scope.clone());
+            (
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                replay.response_query.clone(),
+                key,
+                Some(replay),
+            )
+        } else {
+            if clasify && options.response_scope.is_none() {
+                options.response_scope = Some("rows".into());
+            }
+            let AdmittedRows {
+                queries,
+                rejected: rejected_rows,
+            } = self.admit_queries(id, &input)?;
+            let response_query = if queries.len() == 1 {
+                queries[0].clone()
+            } else {
+                json!({"queries": queries})
+            };
+            let rejected_at: Vec<usize> = rejected_rows.iter().map(|(index, _)| *index).collect();
+            let row_indices = super::row_indices::admitted_indices(queries.len(), &rejected_at);
+            let key = page_replay_key(
+                &tool,
+                mcp,
+                &queries,
+                &row_indices,
+                admission.github_credential(),
+            );
+            (
+                queries,
+                rejected_rows,
+                row_indices,
+                response_query,
+                key,
+                None,
+            )
         };
-        let replay_key = page_replay_key(
-            &tool,
-            mcp,
-            &queries,
-            &row_indices,
-            admission.github_credential(),
-        );
-        let replayed = options
-            .response_snapshot
-            .as_deref()
-            .filter(|_| !clasify)
-            .and_then(|snapshot| self.page_replays.get(&replay_key, snapshot));
+        let cost = self.request_cost(id, &queries, replayed.is_some());
+        let dispatcher = super::domain_dispatch::DomainDispatcher {
+            explicit_window: options.explicit(),
+            ..self.dispatcher()
+        };
         let run = ChannelRun {
             id,
             mcp,
@@ -919,7 +1128,7 @@ impl ToolRuntime {
             row_indices,
             response_query,
             clasify,
-            dispatcher: self.dispatcher(),
+            dispatcher,
             output: OutputSettings {
                 redact_emails: self.config.resolved.output.redact_emails,
                 auto_page_chars: self.limits.auto_page_chars,
@@ -927,12 +1136,46 @@ impl ToolRuntime {
             },
             replayed,
             replays: (self.page_replays.clone(), replay_key),
+            section_sessions: self.section_sessions.clone(),
+            access,
         };
         self.requests
-            .execute_blocking_admitted(admission, move |context| run.run(&context))
+            .execute_blocking_admitted(admission.with_cost(cost), move |context| {
+                if let Err(error) = run.check_replay_access(&context) {
+                    return Ok(Err(error));
+                }
+                run.run(&context)
+                    .map(|result| result.map_err(|error| output_contract_error(&tool, error)))
+            })
             .await
             .map_err(runtime_execution_error)?
-            .map_err(|error| output_contract_error(&tool, error))
+    }
+
+    /// The admission [`Cost`] of `queries`: light for a provider page the
+    /// memo serves (no dispatch, no source check) or for local rows the local
+    /// runner serves that each read one regular file of at most
+    /// [`LIGHT_FILE_BYTES`] and judge nothing. Anything else may walk a tree,
+    /// or wait on a provider (a `clasifyContext` or `selection` row asks the
+    /// classification provider) or a language server.
+    fn request_cost(&self, id: ToolId, queries: &[Value], replayed: bool) -> Cost {
+        if replayed {
+            return Cost::Light;
+        }
+        let light_row = |row: &Value| {
+            let judged = row.get("clasifyContext").is_some() || row.get("selection").is_some();
+            !judged
+                && row["path"].as_str().is_some_and(|path| {
+                    std::fs::metadata(self.paths.expand_and_resolve(std::path::Path::new(path)))
+                        .is_ok_and(|meta| meta.is_file() && meta.len() <= LIGHT_FILE_BYTES)
+                })
+        };
+        let light = match id.family() {
+            ToolFamily::GitHub | ToolFamily::Remote => replayed,
+            ToolFamily::Local => {
+                id != ToolId::LspSearch && !queries.is_empty() && queries.iter().all(light_row)
+            }
+        };
+        if light { Cost::Light } else { Cost::Walk }
     }
 
     /// The tool behind `tool` when this surface may run it, else the
@@ -1072,6 +1315,7 @@ impl ToolRuntime {
             regex: LocalFetchRegex,
             github_services: self.github_services.clone(),
             github_cache: self.github_cache.clone(),
+            github_access: super::github::ResponseAccess::default(),
             config: self.config.clone(),
             limits: self.limits,
             home: self.config.home.clone(),
@@ -1083,6 +1327,7 @@ impl ToolRuntime {
             selection_available: self.selection_available,
             evaluator: self.evaluator.clone(),
             artifact_cache: self.artifact_cache.clone(),
+            explicit_window: false,
         }
     }
 }
@@ -1220,32 +1465,42 @@ struct ChannelRun {
     output: OutputSettings,
     replayed: Option<Arc<PageReplay>>,
     replays: (Arc<PageReplayMemo>, [u8; 32]),
+    section_sessions: Arc<crate::tools::clasify::sections::Sessions>,
+    access: [u8; 32],
 }
 
 impl ChannelRun {
-    fn run(self, context: &ExecutionContext) -> StageResult {
-        let mark = super::row_indices::mark(&self.row_indices);
-        let mut finished = self.run_unmarked(context)?;
-        if let (Ok(outcome), Some(mark)) = (&mut finished, mark) {
-            super::row_indices::mark_snapshots(outcome, &mark);
+    fn check_replay_access(&self, context: &ExecutionContext) -> Result<(), RuntimeError> {
+        let Some(expected) = self
+            .replayed
+            .as_ref()
+            .and_then(|saved| saved.github_identity.as_ref())
+        else {
+            return Ok(());
+        };
+        context.check().map_err(runtime_execution_error)?;
+        let identity = self.dispatcher.github_response_identity(context);
+        context.check().map_err(runtime_execution_error)?;
+        if identity.as_ref().is_ok_and(|identity| identity == expected) {
+            Ok(())
+        } else {
+            Err(snapshot_expired())
         }
-        Ok(finished)
     }
 
-    fn run_unmarked(mut self, context: &ExecutionContext) -> StageResult {
-        if let Some(replay) = self.replayed.take()
-            && super::source_identity::unchanged_since(
-                self.id,
-                &self.queries,
-                &self.dispatcher.paths,
-                replay.started,
-            )
-        {
-            let stage = self.stage(
+    fn run(mut self, context: &ExecutionContext) -> StageResult {
+        if let Some(replay) = self.replayed.take() {
+            let mut stage = self.stage(
                 replay.structured.clone(),
                 replay.response_query.clone(),
                 true,
             );
+            stage.options.saved = Some(crate::response::pager::SavedResponse {
+                key: self.replays.1,
+                expires_at: replay.expires_at.clone(),
+                storage: self.replays.0.storage(),
+                replayed: true,
+            });
             return stage::respond(
                 stage::StageInput {
                     failure: replay.failure,
@@ -1254,6 +1509,7 @@ impl ChannelRun {
                 },
                 replay.remaining.clone(),
                 Some(&replay.text),
+                None,
                 context,
             );
         }
@@ -1288,7 +1544,15 @@ impl ChannelRun {
             tool: self.id,
             structured,
             response_query,
-            options: self.options.clone(),
+            options: ResponsePageOptions {
+                saved: Some(crate::response::pager::SavedResponse {
+                    key: self.replays.1,
+                    expires_at: page_expiry(),
+                    storage: self.replays.0.storage(),
+                    replayed: false,
+                }),
+                ..self.options.clone()
+            },
             mcp: self.mcp,
             failure: None,
             auto_page_chars: self.output.auto_page_chars,
@@ -1298,8 +1562,7 @@ impl ChannelRun {
         }
     }
 
-    /// Clasify runs its own rows through the shared evaluator; its answers
-    /// are billed per evaluation, so its response never auto-pages.
+    /// Clasify evaluates once; its settled answers use the same saved-page store.
     fn run_clasify(
         &self,
         scope: &continuations::Scope<'_>,
@@ -1310,6 +1573,11 @@ impl ChannelRun {
             &self.queries,
             &self.dispatcher,
             context,
+            crate::tools::clasify::sections::Runtime {
+                sessions: &self.section_sessions,
+                access: self.access,
+                can_resume: self.mcp || self.replays.0.persistent,
+            },
         )?;
         if let Err(error) = continuations::finalize(
             &mut receipts.structured,
@@ -1319,14 +1587,52 @@ impl ChannelRun {
         ) {
             debug_assert!(false, "invalid clasify continuation: {:?}", error.issues);
         }
-        let stage = self.stage(receipts.structured, self.response_query.clone(), false);
-        stage::finish(
-            stage::StageInput {
-                failure: receipts.failure,
-                ..stage
-            },
+        let mut stage = self.stage(receipts.structured, self.response_query.clone(), true);
+        stage.failure = receipts.failure;
+        let remaining = match stage::settle(
+            self.id,
+            &mut stage.structured,
+            &stage.response_query,
+            &mut stage.failure,
+        ) {
+            Ok(remaining) => remaining,
+            Err(error) => return Ok(Err(error)),
+        };
+        let expires_at = stage
+            .options
+            .saved
+            .as_ref()
+            .map(|saved| saved.expires_at.clone())
+            .unwrap_or_default();
+        let text = stage::TextCache::default();
+        let mut kept = None;
+        let mut finished = stage::respond(
+            stage,
+            remaining.clone(),
+            Some(&text),
+            Some(&mut kept),
             context,
-        )
+        )?;
+        if let (Ok(outcome), Some(structured)) = (&mut finished, kept) {
+            self.remember_page(
+                outcome,
+                PageReplay {
+                    access: self.access,
+                    github_identity: None,
+                    structured,
+                    remaining,
+                    response_query: self.response_query.clone(),
+                    failure: receipts.failure,
+                    source_digest: None,
+                    expires_at,
+                    page_length: 0,
+                    page_scope: String::new(),
+                    text,
+                },
+                context,
+            )?;
+        }
+        Ok(finished)
     }
 
     /// Ordinary rows: execute, shape each row, envelope, continuations, then
@@ -1337,7 +1643,6 @@ impl ChannelRun {
         scope: &continuations::Scope<'_>,
         context: &ExecutionContext,
     ) -> StageResult {
-        let started = std::time::SystemTime::now();
         let ShapedRows {
             mut structured,
             response_query,
@@ -1346,12 +1651,12 @@ impl ChannelRun {
             failure: shaped_failure,
             source_digest,
         } = self.shape_rows(rejected, scope, context)?;
-        // A replay seed only for a response that can page: an explicit
-        // window, or one near the automatic page size.
-        let pageable = self.options.explicit()
-            || crate::tools::stream_page::json_chars(&structured) * 2 > self.output.auto_page_chars;
         // A paged batch with rejected rows pages only its admitted rows (the
         // body a continuation reproduces); the rejected rows ride page 1.
+        // Only a response that can page needs that body: an explicit window,
+        // or one near the automatic page size.
+        let pageable = self.options.explicit()
+            || crate::tools::stream_page::json_chars(&structured) * 2 > self.output.auto_page_chars;
         let body = match admitted.filter(|_| pageable) {
             Some(rows) => Some(self.envelope_of(rows, &rejected_at, scope, context)?.0),
             None => None,
@@ -1378,31 +1683,49 @@ impl ChannelRun {
             stage::settle(self.id, structured, &response_query, &mut failure)
                 .map(|remaining| (remaining, failure))
         };
-        let seed_of = |structured: &Value, remaining: &[Vec<_>], failure| PageReplay {
-            started,
-            structured: structured.clone(),
-            remaining: remaining.to_vec(),
-            response_query: response_query.clone(),
-            failure,
-            source_digest: source_digest.clone(),
-            text: stage::TextCache::default(),
+        // Respond over a settled envelope; the stage keeps a copy of it (the
+        // replay seed) only when the response windows.
+        let respond = |structured: Value, remaining: Vec<Vec<_>>, failure| {
+            let text = stage::TextCache::default();
+            let mut kept = None;
+            let stage = self.stage(structured, response_query.clone(), true);
+            let expires_at = stage
+                .options
+                .saved
+                .as_ref()
+                .map(|saved| saved.expires_at.clone())
+                .unwrap_or_default();
+            let finished = stage::respond(
+                stage::StageInput {
+                    failure,
+                    source_digest: source_digest.clone(),
+                    ..stage
+                },
+                remaining.clone(),
+                Some(&text),
+                Some(&mut kept),
+                context,
+            )?;
+            let seed = kept.map(|structured| PageReplay {
+                access: self.access,
+                github_identity: None,
+                expires_at,
+                page_length: 0,
+                page_scope: String::new(),
+                structured,
+                remaining,
+                response_query: response_query.clone(),
+                failure,
+                source_digest: source_digest.clone(),
+                text,
+            });
+            Ok::<_, ExecutionError>((finished, seed))
         };
         let (remaining, failure) = match settle(&mut structured) {
             Ok(settled) => settled,
             Err(error) => return Ok(Err(error)),
         };
-        let seed = pageable.then(|| seed_of(&structured, &remaining, failure));
-        let stage = self.stage(structured, response_query.clone(), true);
-        let finished = stage::respond(
-            stage::StageInput {
-                failure,
-                source_digest: source_digest.clone(),
-                ..stage
-            },
-            remaining,
-            seed.as_ref().map(|seed| &seed.text),
-            context,
-        )?;
+        let (mut finished, seed) = respond(structured, remaining, failure)?;
         if let (Ok(outcome), Some(mut body)) = (&finished, body)
             && super::row_indices::is_paged(outcome)
         {
@@ -1410,20 +1733,11 @@ impl ChannelRun {
                 Ok(settled) => settled,
                 Err(error) => return Ok(Err(error)),
             };
-            let seed = seed_of(&body, &remaining, failure);
-            let stage = self.stage(body, response_query.clone(), true);
-            let mut finished = stage::respond(
-                stage::StageInput {
-                    failure,
-                    source_digest: source_digest.clone(),
-                    ..stage
-                },
-                remaining,
-                Some(&seed.text),
-                context,
-            )?;
+            let (mut finished, seed) = respond(body, remaining, failure)?;
             if let Ok(outcome) = &mut finished {
-                remember_page(&self.replays, outcome, seed);
+                if let Some(seed) = seed {
+                    self.remember_page(outcome, seed, context)?;
+                }
                 if self.options.response_offset.unwrap_or(0) == 0 {
                     super::row_indices::attach_rejected(
                         outcome,
@@ -1436,10 +1750,81 @@ impl ChannelRun {
             }
             return Ok(finished);
         }
-        if let (Ok(outcome), Some(seed)) = (&finished, seed) {
-            remember_page(&self.replays, outcome, seed);
+        if let (Ok(outcome), Some(seed)) = (&mut finished, seed) {
+            self.remember_page(outcome, seed, context)?;
         }
         Ok(finished)
+    }
+
+    /// Publish a continuation only after its complete result is retained.
+    fn remember_page(
+        &self,
+        outcome: &mut ToolOutcome,
+        mut seed: PageReplay,
+        context: &ExecutionContext,
+    ) -> Result<(), ExecutionError> {
+        let pagination = &outcome.structured_content["responsePagination"];
+        let Some(snapshot) = pagination["snapshot"].as_str() else {
+            return Ok(());
+        };
+        let next = &pagination["next"]["query"];
+        seed.page_length = next["responseLength"]
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok())
+            .or(self.options.response_length)
+            .unwrap_or(self.output.auto_page_chars);
+        seed.page_scope = next["responseScope"]
+            .as_str()
+            .unwrap_or_else(|| match pagination["scope"].as_str() {
+                Some("rows") => "rows",
+                Some("structuredContent") => "structured",
+                _ => "text",
+            })
+            .into();
+        let auth_retained = match self.dispatcher.github_access.identity() {
+            Ok(Some(observed)) => {
+                let current = self.dispatcher.github_response_identity(context);
+                context.check()?;
+                if current.as_ref().is_ok_and(|identity| identity == &observed) {
+                    seed.github_identity = Some(observed);
+                    true
+                } else {
+                    false
+                }
+            }
+            Ok(None) => true,
+            Err(()) => false,
+        };
+        let (saved, retained) = if auth_retained {
+            self.replays.0.insert(&self.replays.1, snapshot, seed)
+        } else {
+            (Arc::new(seed), false)
+        };
+        if !retained {
+            let mut stage = self.stage(
+                saved.structured.clone(),
+                saved.response_query.clone(),
+                false,
+            );
+            stage.options = ResponsePageOptions {
+                render_text: self.options.render_text,
+                ..ResponsePageOptions::default()
+            };
+            stage.auto_page_chars = 0;
+            stage.failure = saved.failure;
+            stage.source_digest = saved.source_digest.clone();
+            let warnings = stage.structured.as_object_mut().and_then(|map| {
+                map.entry("warnings")
+                    .or_insert_with(|| json!([]))
+                    .as_array_mut()
+            });
+            if let Some(warnings) = warnings {
+                warnings.push(json!("The response could not be retained with a stable access identity or within snapshot storage limits; the complete result is returned without display pagination."));
+            }
+            *outcome = stage::respond(stage, saved.remaining.clone(), None, None, context)?
+                .map_err(|_| ExecutionError::WorkerFailed)?;
+        }
+        Ok(())
     }
 
     /// Executes the admitted rows, merges the `rejected` ones back in input
@@ -1592,37 +1977,6 @@ struct EvaluatedRows {
     source_digest: Option<String>,
 }
 
-/// Keeps a paged response's settled envelope for its later pages.
-fn remember_page(
-    (replays, key): &(Arc<PageReplayMemo>, [u8; 32]),
-    outcome: &ToolOutcome,
-    seed: PageReplay,
-) {
-    let pagination = &outcome.structured_content["responsePagination"];
-    if pagination["hasMore"] == true
-        && let Some(snapshot) = pagination["snapshot"].as_str()
-    {
-        replays.insert(key, snapshot.to_owned(), seed);
-    }
-}
-
-/// Serialized JSON length of `value` in bytes, without building the string.
-fn json_bytes(value: &Value) -> usize {
-    struct ByteCounter(usize);
-    impl std::io::Write for ByteCounter {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0 += bytes.len();
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let mut counter = ByteCounter(0);
-    serde_json::to_writer(&mut counter, value).map_or(0, |()| counter.0)
-}
-
 fn runtime_execution_error(error: ExecutionError) -> RuntimeError {
     RuntimeError::new(error.code(), error.to_string())
 }
@@ -1717,12 +2071,9 @@ mod batch_budget_tests {
     use super::*;
 
     #[test]
-    fn read_only_batches_fan_out_one_thread_per_query_and_mutations_stay_ordered() {
+    fn independent_batches_fan_out_one_thread_per_query_and_rewrites_stay_ordered() {
         for id in ToolId::ALL {
-            let ordered = matches!(
-                id,
-                ToolId::GhCloneRepo | ToolId::AstRewrite | ToolId::Clasify
-            );
+            let ordered = matches!(id, ToolId::AstRewrite | ToolId::Clasify);
             let width = BatchBudget::new(id, 5, 12).width;
             assert_eq!(width, if ordered { 1 } else { 5 }, "{id}");
             assert_eq!(BatchBudget::new(id, 1, 12).width, 1, "{id}");
@@ -1826,6 +2177,334 @@ mod construction_tests {
             runtime_surface: RuntimeSurface::Mcp,
         })
         .expect("runtime")
+    }
+
+    async fn section_call(
+        runtime: &ToolRuntime,
+        query: Value,
+        channel: Channel,
+        token: &str,
+    ) -> Value {
+        let admission = runtime
+            .admit("sections".into())
+            .expect("admit")
+            .with_github_token(SecretString::from(token.to_owned()));
+        runtime
+            .execute(admission, "clasify".into(), query, channel)
+            .await
+            .expect("sections response")
+            .structured_content
+    }
+
+    async fn section_fixture(
+        home: &std::path::Path,
+        mode: &str,
+    ) -> (ToolRuntime, wiremock::MockServer) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::builder().start().await;
+        Mock::given(method("POST")).and(path("/v1/systemone"))
+            .respond_with(|request: &wiremock::Request| {
+                let body: Value = serde_json::from_slice(&request.body).expect("body");
+                let answers: serde_json::Map<String, Value> = body["questions"].as_object().expect("questions")
+                    .keys().map(|key| (key.clone(), json!({"type":"noul","noul":0.9}))).collect();
+                ResponseTemplate::new(200).set_body_json(json!({"model":"jev-1.13.0","answers":answers,"usage":{"input_tokens":10,"output_tokens":2}}))
+            }).mount(&server).await;
+        let runtime = runtime(
+            home,
+            &[
+                ("OCTOCODE_BETA", "true"),
+                ("OCTOCODE_CLASSIFICATION_API", "secret"),
+                ("OCTOCODE_CLASSIFICATION_API_HOST", &server.uri()),
+                ("OCTOCODE_STORAGE_MODE", mode),
+            ],
+        );
+        let mut limits = RuntimeLimits::DEFAULT;
+        limits.selection.max_candidates = 1;
+        let runtime =
+            ToolRuntime::with_limits(runtime.input.clone(), limits).expect("bounded runtime");
+        (runtime, server)
+    }
+
+    fn section_query(home: &std::path::Path) -> Value {
+        std::fs::write(
+            home.join("first.txt"),
+            "First source: restart the service.\n",
+        )
+        .expect("first");
+        std::fs::write(
+            home.join("second.txt"),
+            "Second source: stop the service.\n",
+        )
+        .expect("second");
+        json!({"queries":[{"id":"sections","operation":"sections","resources":{
+            "first":{"tool":"localFetch","query":{"path":home.join("first.txt"),"fullContent":true}},
+            "second":{"tool":"localFetch","query":{"path":home.join("second.txt"),"fullContent":true}}
+        },"questions":{"restart":{"type":"noul","instructions":"Does this section require a restart?"}}}]})
+    }
+
+    #[tokio::test]
+    async fn sections_runtime_resumes_replays_and_partitions_access_and_policy() {
+        for mode in ["memory", "persistent"] {
+            let home = tempfile::tempdir().expect("home");
+            let (runtime, server) = section_fixture(home.path(), mode).await;
+            let channel = if mode == "memory" {
+                Channel::Mcp
+            } else {
+                Channel::Structured
+            };
+            let first =
+                section_call(&runtime, section_query(home.path()), channel, "caller-a").await;
+            let next = first["queries"][0]["next"]["nextSectionPage"]["query"].clone();
+            assert!(next.is_object(), "{first}");
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
+            let denied = section_call(&runtime, next.clone(), channel, "caller-b").await;
+            assert!(
+                denied
+                    .to_string()
+                    .contains("classificationContextUnavailable"),
+                "{denied}"
+            );
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
+            let runtime = if mode == "persistent" {
+                let mut changed = runtime.input.clone();
+                changed
+                    .env
+                    .insert("OCTOCODE_ENABLE_LOCAL".into(), "false".into());
+                let other =
+                    ToolRuntime::with_limits(changed, runtime.limits).expect("other policy");
+                let denied = section_call(&other, next.clone(), channel, "caller-a").await;
+                assert!(
+                    denied
+                        .to_string()
+                        .contains("classificationContextUnavailable"),
+                    "{denied}"
+                );
+                runtime.close().await;
+                ToolRuntime::with_limits(runtime.input.clone(), runtime.limits).expect("reopened")
+            } else {
+                runtime
+            };
+            let second = section_call(&runtime, next.clone(), channel, "caller-a").await;
+            assert_eq!(
+                second["queries"][0]["resources"]["second"]["sections"][0]["answers"]["restart"]["status"],
+                "answered",
+                "{second}"
+            );
+            assert_eq!(server.received_requests().await.unwrap().len(), 2);
+            let replay = section_call(&runtime, next, channel, "caller-a").await;
+            assert_eq!(
+                replay["queries"][0]["resources"],
+                second["queries"][0]["resources"]
+            );
+            assert_eq!(replay["queries"][0]["replayed"], true);
+            assert_eq!(server.received_requests().await.unwrap().len(), 2);
+            runtime.close().await;
+            if mode == "memory" {
+                assert!(!home.path().join("tmp/section-assessments").exists());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn sections_runtime_refuses_changed_sources_and_one_shot_memory_continuations() {
+        let home = tempfile::tempdir().expect("home");
+        let (runtime, server) = section_fixture(home.path(), "memory").await;
+        let query = section_query(home.path());
+        let one_shot = section_call(&runtime, query.clone(), Channel::Structured, "caller").await;
+        assert!(one_shot.to_string().contains("unassessed"), "{one_shot}");
+        assert!(one_shot["queries"][0].get("next").is_none());
+        assert!(server.received_requests().await.unwrap().is_empty());
+        let first = section_call(&runtime, query, Channel::Mcp, "caller").await;
+        let next = first["queries"][0]["next"]["nextSectionPage"]["query"].clone();
+        assert!(next.is_object(), "{first}");
+        std::fs::write(home.path().join("second.txt"), "Changed source.").expect("change");
+        let changed = section_call(&runtime, next, Channel::Mcp, "caller").await;
+        assert!(changed.to_string().contains("sourceMismatch"), "{changed}");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        runtime.close().await;
+    }
+
+    #[tokio::test]
+    async fn sections_runtime_checks_paths_and_sanitizes_before_inference() {
+        let home = tempfile::tempdir().expect("home");
+        let outside = tempfile::NamedTempFile::new().expect("outside");
+        let (runtime, server) = section_fixture(home.path(), "memory").await;
+        let secret = format!("ghp_{}", "A".repeat(36));
+        let file = home.path().join("secret.txt");
+        std::fs::write(&file, format!("Restart with token {secret}.\n")).expect("source");
+        let result = section_call(&runtime, json!({"queries":[{"id":"secure","operation":"sections","resources":{
+            "secret":{"tool":"localFetch","query":{"path":file,"fullContent":true}},
+            "outside":{"tool":"localFetch","query":{"path":outside.path(),"fullContent":true}}
+        },"questions":{"check":{"type":"noul","instructions":"Does this section require a restart?"}}}]}), Channel::Mcp, "caller").await;
+        assert_eq!(
+            result["queries"][0]["resources"]["outside"]["status"], "error",
+            "{result}"
+        );
+        assert_eq!(
+            result["queries"][0]["resources"]["secret"]["sections"][0]["answers"]["check"]["status"],
+            "answered",
+            "{result}"
+        );
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        let body = String::from_utf8(sent[0].body.clone()).unwrap();
+        assert!(!body.contains(&secret), "provider received secret");
+        assert!(body.contains("REDACTED"), "{body}");
+        assert!(!result.to_string().contains(&secret));
+        let mut context = ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: std::time::Instant::now() - Duration::from_secs(1),
+            walk_threads: None,
+            response_window: None,
+            github_credential: None,
+        };
+        assert_eq!(
+            runtime
+                .dispatcher()
+                .capture_local_text(&json!({"path":file}), &context)
+                .unwrap_err()
+                .code,
+            "timeout"
+        );
+        context.deadline = std::time::Instant::now() + Duration::from_secs(30);
+        context.cancellation.cancel();
+        assert_eq!(
+            runtime
+                .dispatcher()
+                .capture_local_text(&json!({"path":file}), &context)
+                .unwrap_err()
+                .code,
+            "cancelled"
+        );
+        runtime.close().await;
+    }
+
+    /// Keys no setting reads (unknown or removed) are left to `octocode
+    /// config`; an ignored value of a live setting prints at every start.
+    #[test]
+    fn startup_prints_only_ignored_values_of_live_settings() {
+        let diagnostic = |code: &str| config::ConfigDiagnostic {
+            severity: config::Severity::Warning,
+            code: code.into(),
+            field_path: None,
+            message: code.into(),
+            source_path: None,
+        };
+        let diagnostics = [
+            diagnostic(config::UNKNOWN_CONFIG_CODE),
+            diagnostic(config::REMOVED_SETTING_CODE),
+            diagnostic("invalid_config"),
+            diagnostic("config_load_error"),
+        ];
+        let printed: Vec<&str> = startup_diagnostics(&diagnostics)
+            .map(|diagnostic| diagnostic.code.as_str())
+            .collect();
+        assert_eq!(printed, ["invalid_config", "config_load_error"]);
+    }
+
+    /// Reads of small single files and stored provider pages admit as
+    /// light; a directory, a large file, a missing path, lspSearch and a
+    /// fresh provider call admit as walks.
+    #[test]
+    fn small_single_file_reads_and_stored_provider_pages_admit_as_light() {
+        let home = tempfile::tempdir().expect("home");
+        let root = home.path().canonicalize().expect("root");
+        std::fs::write(root.join("small.rs"), "fn main() {}\n").expect("small");
+        std::fs::write(
+            root.join("large.txt"),
+            vec![b'x'; usize::try_from(LIGHT_FILE_BYTES).unwrap() + 1],
+        )
+        .expect("large");
+        std::fs::create_dir(root.join("src")).expect("dir");
+        let runtime = runtime(&root, &[]);
+        let cost = |id, rows: &[Value], replayed| runtime.request_cost(id, rows, replayed);
+        let file = |path: &str| json!({"path": path});
+        assert_eq!(
+            cost(ToolId::LocalSearch, &[file("small.rs")], false),
+            Cost::Light
+        );
+        assert_eq!(
+            cost(ToolId::LocalFetch, &[file("small.rs"), file("src")], false),
+            Cost::Walk
+        );
+        for row in [file("large.txt"), file("missing.rs"), json!({})] {
+            assert_eq!(cost(ToolId::LocalFetch, &[row], false), Cost::Walk);
+        }
+        assert_eq!(
+            cost(ToolId::LspSearch, &[file("small.rs")], false),
+            Cost::Walk
+        );
+        // A judged row waits on the classification provider, so it walks
+        // even on a small file.
+        let judged = json!({"path": "small.rs", "clasifyContext": {"classifiers": ["Relevant?"]}});
+        let continued = json!({"path": "small.rs", "selection": "token"});
+        for id in [ToolId::LocalFetch, ToolId::LocalSearch] {
+            for row in [&judged, &continued] {
+                assert_eq!(
+                    cost(id, std::slice::from_ref(row), false),
+                    Cost::Walk,
+                    "{id:?}"
+                );
+            }
+            assert_eq!(
+                cost(id, &[file("small.rs"), judged.clone()], false),
+                Cost::Walk,
+                "{id:?}"
+            );
+        }
+        assert_eq!(cost(ToolId::GhSearchCode, &[json!({})], false), Cost::Walk);
+        assert_eq!(cost(ToolId::GhSearchCode, &[json!({})], true), Cost::Light);
+    }
+
+    /// A runtime given a pool runs its servers there and leaves them to the
+    /// pool's owner on close; one built alone owns and stops its own.
+    #[tokio::test]
+    async fn a_runtime_on_a_shared_pool_leaves_it_to_its_owner() {
+        let home = tempfile::tempdir().expect("home");
+        let pool = Arc::new(octocode_engine::lsp::pool::LspClientPool::default());
+        let shared = ToolRuntime::from_host_with_lsp_pool(
+            HostOptions {
+                cwd: Some(home.path().to_path_buf()),
+                env: Some(BTreeMap::from([(
+                    "OCTOCODE_HOME".to_owned(),
+                    home.path().to_string_lossy().into_owned(),
+                )])),
+                ..HostOptions::default()
+            },
+            Arc::clone(&pool),
+        )
+        .expect("runtime");
+        assert!(Arc::ptr_eq(&shared.lsp_pool, &pool));
+        assert!(!shared.owns_lsp_pool);
+        shared.close().await;
+        assert_eq!(Arc::strong_count(&pool), 2, "the pool outlives the close");
+        let alone = runtime(home.path(), &[]);
+        assert!(alone.owns_lsp_pool);
+        assert!(!Arc::ptr_eq(&alone.lsp_pool, &pool));
+    }
+
+    /// The graph workspace and the language-server invocation directory
+    /// come from the runtime's working directory, so a host serving several
+    /// directories runs each like a CLI started there.
+    #[test]
+    fn the_graph_workspace_and_lsp_invocation_dir_follow_the_runtime_cwd() {
+        let home = tempfile::tempdir().expect("home");
+        let repo = home.path().join("repo");
+        let cwd = repo.join("sub");
+        std::fs::create_dir_all(repo.join(".git")).expect("git");
+        std::fs::create_dir_all(&cwd).expect("sub");
+        let mut input = runtime(home.path(), &[]).input.clone();
+        input.cwd = cwd.clone();
+        input
+            .env
+            .insert("WORKSPACE_ROOT".into(), repo.to_string_lossy().into_owned());
+        let runtime = ToolRuntime::new(input).expect("runtime");
+        assert_ne!(Some(cwd.clone()), std::env::current_dir().ok());
+        assert_eq!(runtime.graph_workspace(None), repo);
+        assert_eq!(runtime.graph_workspace(Some(&cwd)), cwd);
+        let discovery = runtime.lsp_execution_config().discovery(None);
+        assert_eq!(discovery.invocation_dir, Some(cwd));
     }
 
     /// Catalog `lspServers` resolve against the runtime's workspace
@@ -2008,12 +2687,6 @@ mod construction_tests {
             assert_eq!(left, 0, "{dir}");
         }
         assert!(home.path().join("keep.txt").exists());
-    }
-
-    #[test]
-    fn replay_bytes_are_the_serialized_length() {
-        let value = json!({"a": "é😀\n\"", "b": [1, 2.5, null]});
-        assert_eq!(json_bytes(&value), value.to_string().len());
     }
 
     /// Local tools reach only the GitHub checkouts (clones, materialized

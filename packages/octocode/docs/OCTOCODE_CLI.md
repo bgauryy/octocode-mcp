@@ -186,10 +186,12 @@ percentile)).
 - Go, JVM and .NET files share package scope, so file-level checks skip them.
   Python libraries skip reachability. Generated, bundled, vendored and unparsed
   files are never subjects.
-- Each finding has a `tier`: `100` nothing references it, `90` no graph or text
-  reference, `60` referenced only by text (`evidence.mentionedIn`). The default
-  shows 90 and above; `--min-tier 60` shows all, and `summary.hiddenBelowTier`
-  counts the rest.
+- Each finding has a `tier`: `100` nothing references it; `90` no graph or code
+  reference (bare prose words are listed in `evidence.textMentions`); `60` the
+  file path, or every unused export, is referenced in code or qualified text
+  such as `mod.run` (`evidence.mentionedIn`; some exports alone keep 90), or
+  no mention scan ran. The default shows 90 and above; `--min-tier 60` shows
+  all, and `summary.hiddenBelowTier` counts the rest.
 - `--baseline <snapshot>` labels findings `new` or `existing` and lists
   `resolvedFindings`. `summary.health` reports Lakos NCCD.
 

@@ -112,6 +112,52 @@ fn advise_login_for_anonymous_quota(data: &mut Value, anonymous: bool) {
     }
 }
 
+/// Credential identities actually used by one dispatched batch, never shared
+/// with another call. Failed or mixed resolution cannot authorize saved pages.
+#[derive(Default)]
+pub(super) struct ResponseAccess(std::sync::Mutex<(std::collections::BTreeSet<String>, bool)>);
+
+impl ResponseAccess {
+    fn observe(&self, host: &str, request: &Result<RequestContext, ProviderError>) {
+        let mut used = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match request {
+            Ok(request) => {
+                used.0.insert(
+                    Partition::new(
+                        host,
+                        request
+                            .resolved_credential()
+                            .map(ResolvedCredential::secret),
+                    )
+                    .identity()
+                    .to_owned(),
+                );
+            }
+            Err(_) => used.1 = true,
+        }
+    }
+
+    pub(super) fn identity(&self) -> Result<Option<String>, ()> {
+        let used = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if used.1 || used.0.len() > 1 {
+            return Err(());
+        }
+        Ok(used.0.first().cloned())
+    }
+}
+
+pub(super) struct QueryExecution<'a> {
+    pub context: &'a ExecutionContext,
+    pub handle: &'a tokio::runtime::Handle,
+    pub access: &'a ResponseAccess,
+}
+
 pub(super) struct GitHubServices {
     credentials: Authentication,
     provider: GitHubProvider<GitHubContentCache>,
@@ -121,7 +167,8 @@ pub(super) struct GitHubServices {
     clone_limits: crate::runtime::CloneLimits,
     /// ghCloneRepo's git, keeping the runtime env's PATH, proxy and CA names.
     git: SystemGit,
-    /// The automatic response page: patch pages are sized to fit it.
+    /// The automatic response page: file and patch pages are sized to fit
+    /// it when the call names no `responseLength`.
     auto_page_chars: usize,
     /// Sanitized full views of recently paged files (scoped to this runtime's
     /// single security policy), so each `next.continueWindow` skips a full rescan.
@@ -135,8 +182,9 @@ impl GitHubServices {
         context: &ExecutionContext,
         handle: &tokio::runtime::Handle,
         max_bytes: usize,
+        access: &ResponseAccess,
     ) -> Result<ContentResponse, ProviderError> {
-        let mut request_context = self.request_context(context, handle)?;
+        let mut request_context = self.request_context(context, handle, access)?;
         // GitHub's JSON content envelope includes base64 and metadata. The
         // decoded bytes are checked separately, including cache hits.
         request_context.budget.max_body_bytes = max_bytes.saturating_mul(2);
@@ -202,18 +250,22 @@ impl GitHubServices {
         &self,
         tool: ToolId,
         query: &Value,
-        context: &ExecutionContext,
+        execution: QueryExecution<'_>,
         security: &ContentSecurity,
         regex: &LocalFetchRegex,
-        handle: &tokio::runtime::Handle,
         paths: &PathPolicy,
         selection: &crate::tools::selection::Runtime,
     ) -> Result<DomainResult, ExecutionError> {
+        let QueryExecution {
+            context,
+            handle,
+            access,
+        } = execution;
         let Some(github_tool) = tool.github() else {
             return Err(ExecutionError::WorkerFailed);
         };
         context.check()?;
-        let request_context = self.request_context(context, handle);
+        let request_context = self.request_context(context, handle, access);
         context.check()?;
         let mut result = handle.block_on(self.execute_resolved(
             github_tool,
@@ -247,8 +299,9 @@ impl GitHubServices {
         &self,
         context: &ExecutionContext,
         handle: &tokio::runtime::Handle,
+        access: &ResponseAccess,
     ) -> Result<RequestContext, ProviderError> {
-        handle.block_on(self.resolve_request(context))
+        handle.block_on(self.resolve_request(context, access))
     }
 
     fn reject_credential(&self, request: Option<&RequestContext>) {
@@ -258,41 +311,67 @@ impl GitHubServices {
         );
     }
 
-    /// The request budget and resolved credential for one row.
+    fn request_budget(&self, context: &ExecutionContext) -> RequestBudget {
+        let mut budget = RequestBudget::with_timeout(self.timeout, 16 * 1024 * 1024);
+        budget.deadline = context.deadline.min(budget.deadline);
+        budget.wait_until = context.deadline;
+        budget.cancellation = context.cancellation.clone();
+        budget
+    }
+
+    /// Read-only local auth inspection for an already saved response.
+    pub(super) fn response_identity(
+        &self,
+        context: &ExecutionContext,
+        handle: &tokio::runtime::Handle,
+    ) -> Result<String, ProviderError> {
+        let host = self.provider.transport.endpoint().credential_host();
+        if let Some(credential) = &context.github_credential {
+            return Ok(Partition::new(host, Some(credential.secret()))
+                .identity()
+                .to_owned());
+        }
+        handle.block_on(
+            self.credentials
+                .inspect_response_identity(host, &self.request_budget(context)),
+        )
+    }
+
+    /// Resolve and record the exact credential used by every GitHub entry.
     async fn resolve_request(
         &self,
         context: &ExecutionContext,
+        access: &ResponseAccess,
     ) -> Result<RequestContext, ProviderError> {
-        let host = self
-            .provider
-            .transport
-            .endpoint()
-            .credential_host()
-            .to_owned();
-        let mut budget =
-            octocode_github::RequestBudget::with_timeout(self.timeout, 16 * 1024 * 1024);
-        budget.deadline = context.deadline.min(budget.deadline);
-        // Rate-limit waits run on the call's own time, not the request's.
-        budget.wait_until = context.deadline;
-        budget.cancellation = context.cancellation.clone();
-        // A request-supplied token is the only credential: no fallback.
-        if let Some(credential) = &context.github_credential {
-            return Ok(RequestContext::new(budget, Some(credential.clone())));
+        let host = self.provider.transport.endpoint().credential_host();
+        let result = async {
+            let budget = self.request_budget(context);
+            let credential = match &context.github_credential {
+                Some(credential) => Some(credential.clone()),
+                None => self
+                    .credentials
+                    .resolve(host, AuthMode::Request, &budget)
+                    .await?
+                    .map(|selection| selection.credential),
+            };
+            Ok(RequestContext::new(budget, credential))
         }
-        let credential = self
-            .credentials
-            .resolve(&host, AuthMode::Request, &budget)
-            .await?
-            .map(|selection| selection.credential);
-        Ok(RequestContext::new(budget, credential))
+        .await;
+        access.observe(host, &result);
+        result
     }
 
     /// artifactSearch's upstream release-tag checks for one row, through
     /// this transport: the configured API URL, credential and budget.
-    pub(crate) fn release_tags<'a>(&'a self, context: &'a ExecutionContext) -> ReleaseTagCheck<'a> {
+    pub(crate) fn release_tags<'a>(
+        &'a self,
+        context: &'a ExecutionContext,
+        access: &'a ResponseAccess,
+    ) -> ReleaseTagCheck<'a> {
         ReleaseTagCheck {
             services: self,
             context,
+            access,
         }
     }
 
@@ -349,7 +428,7 @@ impl GitHubServices {
                     &self.provider,
                     &query,
                     request,
-                    Some(self.auto_page_chars),
+                    Some(context.row_page_chars(self.auto_page_chars)),
                     &security,
                     context,
                     regex,
@@ -449,7 +528,7 @@ impl GitHubServices {
             Err(error) => return Ok(super::dispatch::invalid_query(&error)),
         };
         // Patch windows fill this row's share of the response page.
-        query.auto_page_chars = Some(context.response_window.unwrap_or(self.auto_page_chars));
+        query.auto_page_chars = Some(context.row_page_chars(self.auto_page_chars));
         let result = gh_get_history_item::execute(
             &self.provider.transport,
             &query,
@@ -521,6 +600,7 @@ fn tool_row(result: Result<ToolData, GhFailure>) -> DomainResult {
 pub(crate) struct ReleaseTagCheck<'a> {
     services: &'a GitHubServices,
     context: &'a ExecutionContext,
+    access: &'a ResponseAccess,
 }
 
 impl crate::providers::artifact::ReleaseTags for ReleaseTagCheck<'_> {
@@ -531,7 +611,11 @@ impl crate::providers::artifact::ReleaseTags for ReleaseTagCheck<'_> {
         tag: &'a str,
     ) -> crate::providers::artifact::TagFuture<'a> {
         Box::pin(async move {
-            let request = self.services.resolve_request(self.context).await.ok()?;
+            let request = self
+                .services
+                .resolve_request(self.context, self.access)
+                .await
+                .ok()?;
             match self
                 .services
                 .provider
@@ -597,6 +681,22 @@ mod tests {
             crate::response::rows::result_row(tool, 0, &query, result.data.clone(), result.status);
         crate::response::rows::apply_hint_policy(&mut row, tool, &query);
         row["data"].take()
+    }
+
+    /// A file read and a patch window fill the row's share of the call's
+    /// response page; only a call without one uses the automatic page.
+    #[test]
+    fn github_rows_page_by_the_calls_response_window() {
+        let context = |response_window| ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: std::time::Instant::now() + Duration::from_secs(5),
+            walk_threads: None,
+            response_window,
+            github_credential: None,
+        };
+        assert_eq!(context(Some(5_000)).row_page_chars(20_000), 5_000);
+        assert_eq!(context(Some(50_000)).row_page_chars(20_000), 50_000);
+        assert_eq!(context(None).row_page_chars(20_000), 20_000);
     }
 
     #[test]
@@ -1071,5 +1171,39 @@ mod tests {
             "{}",
             result.data
         );
+    }
+}
+
+#[cfg(test)]
+mod response_access_tests {
+    use super::*;
+
+    #[test]
+    fn saved_response_access_requires_one_successful_credential_identity() {
+        let access = ResponseAccess::default();
+        assert_eq!(access.identity(), Ok(None));
+        let request = |token: &str| {
+            Ok(RequestContext::new(
+                RequestBudget::with_timeout(Duration::from_secs(5), 1024),
+                Some(ResolvedCredential::new(token, CredentialSource::Home)),
+            ))
+        };
+        access.observe("github.com", &request("one"));
+        let first = access.identity().expect("one identity");
+        assert!(first.is_some());
+        access.observe("github.com", &request("one"));
+        assert_eq!(access.identity(), Ok(first));
+        access.observe("github.com", &request("two"));
+        assert_eq!(access.identity(), Err(()));
+        let failed = ResponseAccess::default();
+        failed.observe(
+            "github.com",
+            &Err(ProviderError::new(
+                ProviderErrorKind::CredentialStoreUnavailable,
+                "fixture",
+            )),
+        );
+        failed.observe("github.com", &request("one"));
+        assert_eq!(failed.identity(), Err(()));
     }
 }

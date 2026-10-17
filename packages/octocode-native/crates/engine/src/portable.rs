@@ -7,12 +7,11 @@ use crate::types::{
     TextSearchResult, YamlConversionConfig,
 };
 
+pub use crate::search::text_parser::line_match as materialize_search_line;
 pub use crate::search::text_pattern::{
     TextPatternValidationResult, matches_line_break, validate_text_pattern,
 };
-pub use crate::signatures::{
-    extract_declarations, extract_declarations_with_extension, extract_graph_facts,
-};
+pub use crate::signatures::extract_graph_facts;
 pub use crate::text::diff_parser::filter_patch;
 
 /// Contain a panic from a fallible engine entry point at the transport-neutral

@@ -5,7 +5,7 @@
 //! ```text
 //! <workspace>/.octocode/graph/
 //!   latest                                   # id of the newest snapshot
-//!   20260928T101500Z-packages-app/
+//!   20260928T101500Z-packages-app-1a2b3c/     # time, scope, root tag
 //!     manifest.json                          # scope, counts, digests, gaps
 //!     graph.bin                              # see `format.rs`
 //! ```
@@ -29,7 +29,7 @@ use crate::{
 use octocode_io::atomic::write_atomic;
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -101,36 +101,34 @@ impl GraphOutput {
 pub struct IngestOptions {
     /// Directory to scan.
     pub path: PathBuf,
-    /// Workspace that owns `.octocode/graph`; defaults to the nearest
-    /// ancestor of the current directory holding `.git`, else the current
-    /// directory.
+    /// Workspace that owns `.octocode/graph`. The runtime fills it when
+    /// unset ([`default_workspace`] of its working directory).
     pub workspace: Option<PathBuf>,
     pub exclude_dir: Vec<String>,
     pub max_files: Option<u32>,
-    /// Snapshots of the same scope to retain, newest first (default 3).
+    /// Snapshots of the same root to retain, newest first (default 3).
     pub keep: Option<usize>,
     /// Rebuild even when the latest snapshot of this scope is current.
     pub force: bool,
 }
 
-/// `<workspace>/.octocode/graph`, where the workspace is explicit or the
-/// nearest `.git` ancestor of `cwd` that `paths` allows (else `cwd`), so a
-/// run from a repository subdirectory stays inside the allowed roots.
-pub(crate) fn graph_home(workspace: Option<&Path>, paths: &PathPolicy) -> Result<PathBuf, String> {
-    let workspace = match workspace {
-        Some(path) => path.to_path_buf(),
-        None => {
-            let cwd = std::env::current_dir()
-                .map_err(|error| format!("cannot read the current directory: {error}"))?;
-            default_workspace(cwd, paths)
-        }
-    };
+/// `<workspace>/.octocode/graph`. The workspace is the caller's: the
+/// runtime names one ([`default_workspace`] of its own working directory)
+/// when the call does not, so the process directory never decides it.
+pub(crate) fn graph_home(workspace: Option<&Path>) -> Result<PathBuf, String> {
+    let workspace =
+        workspace.ok_or("no workspace: name the directory that owns .octocode/graph")?;
     Ok(workspace.join(".octocode").join("graph"))
 }
 
-fn default_workspace(cwd: PathBuf, paths: &PathPolicy) -> PathBuf {
+/// The nearest repository root at or above `cwd`
+/// ([`octocode_engine::search::repository`]) that `paths` allows (else `cwd`),
+/// so a run from a repository subdirectory stays inside the allowed roots.
+pub(crate) fn default_workspace(cwd: PathBuf, paths: &PathPolicy) -> PathBuf {
     cwd.ancestors()
-        .find(|dir| dir.join(".git").exists() && paths.validate(dir).is_ok())
+        .find(|dir| {
+            octocode_engine::search::repository::is_root(dir) && paths.validate(dir).is_ok()
+        })
         .map(Path::to_path_buf)
         .unwrap_or(cwd)
 }
@@ -206,12 +204,15 @@ pub(crate) fn list_snapshots(home: &Path) -> Vec<String> {
     ids
 }
 
-/// Removes older snapshots of `slug` beyond `keep` and abandoned temp dirs.
-fn prune(home: &Path, slug: &str, keep: usize) -> Vec<String> {
+/// Removes older snapshots of `root` beyond `keep` and abandoned temp dirs.
+/// Snapshots are grouped by the root they scanned, never by their scope
+/// name: two roots that share a name keep their own snapshots.
+fn prune(home: &Path, root: &Path, keep: usize) -> Vec<String> {
     let mut removed = Vec::new();
+    let root = root.to_string_lossy();
     let same_scope = list_snapshots(home)
         .into_iter()
-        .filter(|id| read_manifest(&home.join(id)).is_some_and(|m| m["scope"] == slug))
+        .filter(|id| read_manifest(&home.join(id)).is_some_and(|m| m["root"] == root.as_ref()))
         .collect::<Vec<_>>();
     let excess = same_scope.len().saturating_sub(keep.max(1));
     for id in same_scope.into_iter().take(excess) {
@@ -245,13 +246,15 @@ pub fn ingest(
     cargo: Option<&str>,
 ) -> GraphOutput {
     let started = Instant::now();
-    let home = match graph_home(options.workspace.as_deref(), paths) {
+    let home = match graph_home(options.workspace.as_deref()) {
         Ok(home) => home,
         Err(message) => return GraphOutput::error("workspaceRootInvalid", message),
     };
     let home = match paths.validate_output(&home) {
         Ok(valid) => valid.canonical,
-        Err(error) => return GraphOutput::error("pathPolicyDenied", error.message),
+        Err(error) => {
+            return GraphOutput::error(error.local_error_code("pathPolicyDenied"), error.message);
+        }
     };
     let workspace = home
         .parent()
@@ -261,7 +264,7 @@ pub fn ingest(
     let max_files = options.max_files.unwrap_or(DEFAULT_MAX_FILES);
     if !options.force
         && let Ok(root) = paths.validate(&options.path).map(|valid| valid.canonical)
-        && let Some(receipt) = reuse_current(&home, &root, options, max_files)
+        && let Some(receipt) = reuse_current(&home, &root, options, max_files, paths)
     {
         let mut receipt = receipt;
         receipt["totalMs"] = json!(started.elapsed().as_millis() as u64);
@@ -300,12 +303,15 @@ pub fn ingest(
 
     let slug = scope_slug(&built.root, &workspace);
     let (stamp, created_at) = utc_now();
-    let mut id = format!("{stamp}-{slug}");
+    // Roots whose names map to one slug (`a-b`, `a/b`) still get distinct ids.
+    let root_tag = &octocode_engine::digest::sha256(built.root.to_string_lossy().as_bytes())[..6];
+    let mut id = format!("{stamp}-{slug}-{root_tag}");
     let mut attempt = 1;
     while home.join(&id).exists() {
         attempt += 1;
-        id = format!("{stamp}-{slug}-{attempt}");
+        id = format!("{stamp}-{slug}-{root_tag}-{attempt}");
     }
+    let inputs = snapshot_inputs(paths, &built.root, &projection.tables);
     let manifest = manifest(&ManifestInput {
         id: &id,
         scope: &slug,
@@ -317,6 +323,7 @@ pub fn ingest(
         digest: &digest,
         max_files,
         exclude_dir: &options.exclude_dir,
+        inputs: &inputs,
         build_ms,
     });
     let dir = match publish(&home, &id, &stamp, &bytes, &manifest) {
@@ -328,7 +335,7 @@ pub fn ingest(
             );
         }
     };
-    let pruned = prune(&home, &slug, options.keep.unwrap_or(DEFAULT_KEEP));
+    let pruned = prune(&home, &built.root, options.keep.unwrap_or(DEFAULT_KEEP));
     let mut receipt = json!({
         "id": id,
         "dir": dir.to_string_lossy(),
@@ -457,16 +464,13 @@ pub(crate) fn source_matches(
 }
 
 /// The latest snapshot of `root` when nothing it covers changed: same scan
-/// options, same octocode and format version, the same file set (with the
-/// ingest's exclusions and `.gitignore`), and identical content digests.
-/// A file whose recorded stamp still holds skips the hash; the rest are
-/// hashed, which is far cheaper than parsing, so an unchanged tree returns in
-/// a fraction of the ingest time.
+/// options, same octocode and format version, and no [`snapshot_changes`].
 fn reuse_current(
     home: &Path,
     root: &Path,
     options: &IngestOptions,
     max_files: u32,
+    paths: &PathPolicy,
 ) -> Option<Value> {
     let root_text = root.to_string_lossy();
     let (id, manifest) = list_snapshots(home).into_iter().rev().find_map(|id| {
@@ -487,49 +491,9 @@ fn reuse_current(
     if manifest["graph"]["sha256"].as_str() != Some(digest.as_str()) {
         return None;
     }
-    let recorded = tables
-        .nodes
-        .iter()
-        .filter(|node| node.kind == format::NodeKind::File)
-        .map(|node| tables.str(node.key))
-        .collect::<std::collections::BTreeSet<_>>();
-    let extensions = octocode_engine::signatures::graph_facts::graph_fact_extensions();
-    let excluded = crate::tools::syntax_prune(
-        INGEST_EXCLUDES
-            .iter()
-            .map(|name| (*name).to_owned())
-            .chain(options.exclude_dir.iter().cloned()),
-    );
-    let walker = crate::tools::pruned_walk(root, excluded).build();
-    let mut current = std::collections::BTreeSet::new();
-    for entry in walker.flatten() {
-        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-            continue;
-        }
-        let path = entry.path();
-        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase());
-        if !ext.is_some_and(|ext| extensions.contains(&ext)) {
-            continue;
-        }
-        let rel = path
-            .strip_prefix(root)
-            .ok()?
-            .to_string_lossy()
-            .replace('\\', "/");
-        current.insert(rel);
-    }
-    if current.len() != recorded.len()
-        || !current.iter().all(|file| recorded.contains(file.as_str()))
-    {
+    let freshness = snapshot_changes(paths, root, &tables, &manifest, true);
+    if !freshness.changes.is_empty() || !freshness.added_checked {
         return None;
-    }
-    let stamps = tables.stamps_by_node();
-    for (node, digest) in &tables.digests {
-        let file = tables.str(tables.nodes[*node as usize].key);
-        let same = source_matches(&root.join(file), tables.str(*digest), stamps.get(node))?;
-        if !same {
-            return None;
-        }
     }
     write_atomic(&home.join(LATEST_FILE), id.as_bytes(), false).ok()?;
     Some(json!({
@@ -547,6 +511,174 @@ fn reuse_current(
     }))
 }
 
+/// The linking configs a build of the snapshot's files read (see
+/// [`super::freshness::config_inputs`]), recorded in its manifest.
+fn snapshot_inputs(
+    paths: &PathPolicy,
+    root: &Path,
+    tables: &format::GraphTables,
+) -> BTreeMap<String, String> {
+    let files = tables
+        .nodes
+        .iter()
+        .filter(|node| node.kind == format::NodeKind::File)
+        .map(|node| tables.str(node.key));
+    super::freshness::config_inputs(paths, root, &super::freshness::scope_dirs(root, files))
+}
+
+/// The source files a re-ingest of `root` would scan, root-relative: the
+/// ingest's exclusions and `.gitignore`, graph-fact extensions only.
+fn scope_files(root: &Path, exclude_dir: &[String]) -> BTreeSet<String> {
+    let extensions = octocode_engine::signatures::graph_facts::graph_fact_extensions();
+    let excluded = crate::tools::syntax_prune(
+        INGEST_EXCLUDES
+            .iter()
+            .map(|name| (*name).to_owned())
+            .chain(exclude_dir.iter().cloned()),
+    );
+    let mut current = BTreeSet::new();
+    for entry in crate::tools::pruned_walk(root, excluded).build().flatten() {
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+            continue;
+        }
+        let path = entry.path();
+        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase());
+        if !ext.is_some_and(|ext| extensions.contains(&ext)) {
+            continue;
+        }
+        if let Ok(rel) = path.strip_prefix(root) {
+            current.insert(octocode_engine::text::slash_path(rel));
+        }
+    }
+    current
+}
+
+/// One way the tree differs from a snapshot of it.
+pub(crate) struct Change {
+    pub file: String,
+    /// `changed`, `missing`, `added`, or `excluded` (still present, but a
+    /// re-ingest would no longer scan it).
+    pub status: &'static str,
+    /// A linking config (manifest, tsconfig, ...), not a parsed source.
+    pub config: bool,
+}
+
+pub(crate) struct Freshness {
+    pub changes: Vec<Change>,
+    /// Files added since ingest were looked for; a truncated scan cannot
+    /// tell an added file from one past `maxFiles`.
+    pub added_checked: bool,
+}
+
+/// Every way the tree under `root` differs from the snapshot `tables`
+/// (`manifest` its manifest): a source edited or removed (digests, a settled
+/// stamp skipping the hash), a source added (a rescan with the ingest's
+/// exclusions), and a linking config edited, removed or added. The one
+/// freshness check behind ingest reuse and `query stale`; `first_only`
+/// stops at the first difference.
+pub(crate) fn snapshot_changes(
+    paths: &PathPolicy,
+    root: &Path,
+    tables: &format::GraphTables,
+    manifest: &Value,
+    first_only: bool,
+) -> Freshness {
+    let mut changes = Vec::new();
+    let done = |changes: &Vec<Change>| first_only && !changes.is_empty();
+    let added_checked = manifest["scan"]["truncated"] == false;
+    let stamps = tables.stamps_by_node();
+    for (node, digest) in &tables.digests {
+        let file = tables.str(tables.nodes[*node as usize].key);
+        let status = match source_matches(&root.join(file), tables.str(*digest), stamps.get(node)) {
+            None => "missing",
+            Some(true) => continue,
+            Some(false) => "changed",
+        };
+        changes.push(Change {
+            file: file.to_owned(),
+            status,
+            config: false,
+        });
+        if done(&changes) {
+            return Freshness {
+                changes,
+                added_checked,
+            };
+        }
+    }
+    if added_checked {
+        let recorded = tables
+            .nodes
+            .iter()
+            .filter(|node| node.kind == format::NodeKind::File)
+            .map(|node| tables.str(node.key))
+            .collect::<BTreeSet<_>>();
+        let excludes = manifest["scan"]["excludeDir"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let current = scope_files(root, &excludes);
+        let reported = changes
+            .iter()
+            .map(|change| change.file.clone())
+            .collect::<BTreeSet<_>>();
+        // Recorded files a re-ingest would no longer scan: gone, or now
+        // ignored or excluded.
+        let excluded = recorded
+            .iter()
+            .filter(|file| !current.contains(**file) && !reported.contains(**file))
+            .map(|file| {
+                let status = if root.join(file).exists() {
+                    "excluded"
+                } else {
+                    "missing"
+                };
+                ((*file).to_owned(), status)
+            });
+        let added = current
+            .iter()
+            .filter(|file| !recorded.contains(file.as_str()))
+            .map(|file| (file.clone(), "added"));
+        for (file, status) in added.chain(excluded).collect::<Vec<_>>() {
+            changes.push(Change {
+                file,
+                status,
+                config: false,
+            });
+            if done(&changes) {
+                return Freshness {
+                    changes,
+                    added_checked,
+                };
+            }
+        }
+    }
+    let recorded = manifest["inputs"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, digest)| Some((key.clone(), digest.as_str()?.to_owned())))
+        .collect::<BTreeMap<_, _>>();
+    let current = snapshot_inputs(paths, root, tables);
+    for (file, status) in super::freshness::config_changes(&recorded, &current) {
+        changes.push(Change {
+            file,
+            status,
+            config: true,
+        });
+        if done(&changes) {
+            break;
+        }
+    }
+    Freshness {
+        changes,
+        added_checked,
+    }
+}
+
 struct ManifestInput<'a> {
     id: &'a str,
     scope: &'a str,
@@ -558,6 +690,7 @@ struct ManifestInput<'a> {
     digest: &'a str,
     max_files: u32,
     exclude_dir: &'a [String],
+    inputs: &'a BTreeMap<String, String>,
     build_ms: u64,
 }
 
@@ -590,7 +723,10 @@ fn manifest(input: &ManifestInput) -> Value {
         "scan": {
             "filesScanned": input.built.facts.len(),
             "filesSkipped": input.built.files_skipped,
-            "truncated": input.built.truncated || input.built.edges_capped,
+            // The file scan stopped at `maxFiles`; the edge cap is apart:
+            // more files cannot lift it, and it leaves the scan complete.
+            "truncated": input.built.truncated,
+            "edgesCapped": input.built.edges_capped,
             "maxFiles": input.max_files,
             "excludeDir": input.exclude_dir,
         },
@@ -614,6 +750,7 @@ fn manifest(input: &ManifestInput) -> Value {
             json!({"language": language, "files": files, "linking": linking})
         }).collect::<Vec<_>>(),
         "diagnostics": {"total": tables.diagnostics.len(), "byCode": by_code},
+        "inputs": input.inputs,
         "buildMs": input.build_ms,
     })
 }

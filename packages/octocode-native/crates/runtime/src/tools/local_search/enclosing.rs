@@ -26,74 +26,26 @@ pub(super) struct Outline {
     declarations: Vec<Declaration>,
 }
 
-/// The part of the extractor's facts document an outline reads (the
-/// engine's `GraphFactsDocument`, whose lines are `u32`).
-#[derive(serde::Deserialize)]
-struct Facts {
-    declarations: Vec<FactDeclaration>,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct FactDeclaration {
-    #[serde(default)]
-    kind: Option<String>,
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    range: Option<Range>,
-    #[serde(default)]
-    selection_range: Option<Range>,
-}
-
-#[derive(serde::Deserialize)]
-struct Range {
-    #[serde(default)]
-    start: Option<Position>,
-    #[serde(default)]
-    end: Option<Position>,
-}
-
-#[derive(serde::Deserialize)]
-struct Position {
-    #[serde(default)]
-    line: Option<u32>,
-}
-
 impl Outline {
     /// The outline of `source`; `None` when no extractor supports the file.
+    /// It reads the typed declarations parse every reader of the file
+    /// shares ([`crate::tools::declarations_cache::file_document`]): one
+    /// parse per source version, never a JSON round trip.
     pub(super) fn of(source: &str, canonical_path: &str) -> Option<Self> {
-        let raw = crate::tools::declarations_cache::extract(source, canonical_path, None, || {
-            octocode_engine::portable::extract_declarations(source, canonical_path)
-        })?;
-        // Only the declarations' names, kinds and lines are read; every
-        // other fact (and every other declaration field) is skipped
-        // unparsed rather than built into a JSON tree.
-        let facts: Facts = serde_json::from_str(&raw).ok()?;
-        let line = |position: Option<&Position>| {
-            position
-                .and_then(|position| position.line)
-                .map(|line| line.saturating_add(1))
-        };
-        let declarations = facts
+        let document = crate::tools::declarations_cache::file_document(source, canonical_path)?;
+        let declarations = document
             .declarations
-            .into_iter()
-            .filter_map(|item| {
-                let range = item.range?;
-                let start = line(range.start.as_ref())?;
-                let end = line(range.end.as_ref())?.max(start);
-                Some(Declaration {
-                    kind: item.kind?,
-                    name: item.name.filter(|name| !name.is_empty())?,
-                    line: line(
-                        item.selection_range
-                            .as_ref()
-                            .and_then(|range| range.start.as_ref()),
-                    )
-                    .unwrap_or(start),
+            .iter()
+            .filter(|item| !item.name.is_empty())
+            .map(|item| {
+                let start = item.range.start.line.saturating_add(1);
+                Declaration {
+                    kind: item.kind.clone(),
+                    name: item.name.clone(),
+                    line: item.selection_range.start.line.saturating_add(1),
                     start,
-                    end,
-                })
+                    end: item.range.end.line.saturating_add(1).max(start),
+                }
             })
             .collect();
         Some(Self { declarations })
@@ -261,56 +213,67 @@ fn free() {\n\
             .collect()
     }
 
-    /// The outline read through a whole JSON tree, as it was read before
-    /// the typed facts: the reference the typed read must equal.
-    fn tree_rows(raw: &str) -> Option<Vec<Row>> {
-        let facts: serde_json::Value = serde_json::from_str(raw).ok()?;
-        let line = |item: &serde_json::Value, pointer: &str| {
-            item.pointer(pointer)
-                .and_then(serde_json::Value::as_u64)
-                .and_then(|line| u32::try_from(line).ok())
-                .map(|line| line.saturating_add(1))
-        };
-        Some(
-            facts["declarations"]
-                .as_array()?
-                .iter()
-                .filter_map(|item| {
-                    let start = line(item, "/range/start/line")?;
-                    let end = line(item, "/range/end/line")?.max(start);
-                    Some((
-                        item["kind"].as_str()?.to_owned(),
-                        item["name"]
-                            .as_str()
-                            .filter(|name| !name.is_empty())?
-                            .to_owned(),
-                        line(item, "/selectionRange/start/line").unwrap_or(start),
-                        start,
-                        end,
-                    ))
-                })
-                .collect(),
-        )
-    }
-
-    /// The typed read of the facts document keeps exactly the declarations
-    /// the JSON-tree read kept, for the oxc (TS/JS) and tree-sitter paths.
+    /// The outline keeps every named declaration with its 1-based name,
+    /// first and last line, for the oxc (TS/JS) and tree-sitter paths.
     #[test]
-    fn the_typed_outline_reads_what_the_json_tree_read() {
+    fn the_outline_keeps_every_declaration_with_its_lines() {
         let ts = "export class Box<T> {\n  private value: T;\n  constructor(v: T) { this.value = v; }\n  get(): T {\n    return this.value;\n  }\n}\nexport function make(): Box<number> {\n  const inner = () => 1;\n  return new Box(inner());\n}\ninterface Shape { area(): number }\nnamespace NS { export const k = 1; }\n";
         let py = "class A:\n    def m(self):\n        return 1\n\ndef f(x):\n    def g():\n        pass\n    return g\n";
-        for (source, path) in [
-            (SOURCE, "enclosing-test/a.rs"),
-            (ts, "enclosing-test/b.ts"),
-            (ts, "enclosing-test/b.tsx"),
-            (py, "enclosing-test/c.py"),
+        let row = |kind: &str, name: &str, line, start, end| -> Row {
+            (kind.into(), name.into(), line, start, end)
+        };
+        let ts_rows = [
+            row("class", "Box", 1, 1, 7),
+            row("property", "value", 2, 2, 2),
+            row("constructor", "constructor", 3, 3, 3),
+            row("method", "get", 4, 4, 6),
+            row("function", "make", 8, 8, 11),
+            row("function", "inner", 9, 9, 9),
+            row("interface", "Shape", 12, 12, 12),
+            row("method", "area", 12, 12, 12),
+            row("namespace", "NS", 13, 13, 13),
+            row("constant", "k", 13, 13, 13),
+        ];
+        for (source, path, expected) in [
+            (
+                SOURCE,
+                "enclosing-test/a.rs",
+                vec![
+                    row("struct", "Harness", 1, 1, 1),
+                    row("impl", "Harness", 2, 2, 7),
+                    row("method", "try_read_output", 3, 3, 6),
+                    row("function", "free", 9, 9, 11),
+                ],
+            ),
+            (ts, "enclosing-test/b.ts", ts_rows.to_vec()),
+            (ts, "enclosing-test/b.tsx", ts_rows.to_vec()),
+            (
+                py,
+                "enclosing-test/c.py",
+                vec![
+                    row("class", "A", 1, 1, 3),
+                    row("method", "m", 2, 2, 3),
+                    row("function", "f", 5, 5, 8),
+                    row("function", "g", 6, 6, 7),
+                ],
+            ),
         ] {
-            let raw = octocode_engine::portable::extract_declarations(source, path)
-                .expect("supported language");
-            let typed = rows(&Outline::of(source, path).expect("outline"));
-            assert!(!typed.is_empty(), "{path}");
-            assert_eq!(Some(typed), tree_rows(&raw), "{path}");
+            let outline = rows(&Outline::of(source, path).expect("outline"));
+            assert_eq!(outline, expected, "{path}");
         }
+    }
+
+    /// An outline reads the shared typed parse: the parse it built is the
+    /// one the next reader of the same source version takes, unparsed again.
+    #[test]
+    fn an_outline_reads_the_shared_declarations_parse() {
+        let path = "enclosing-test/shared-parse.rs";
+        let source = format!("{SOURCE}\n// shared parse\n");
+        assert!(Outline::of(&source, path).is_some());
+        let first = crate::tools::declarations_cache::file_document(&source, path).expect("parse");
+        let again = crate::tools::declarations_cache::file_document(&source, path).expect("parse");
+        assert!(std::sync::Arc::ptr_eq(&first, &again));
+        assert!(Outline::of("not a supported file", "enclosing-test/a.unknownext").is_none());
     }
 
     #[test]

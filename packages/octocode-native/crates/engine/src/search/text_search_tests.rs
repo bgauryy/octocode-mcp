@@ -1896,3 +1896,104 @@ fn the_search_walks_exactly_what_the_ignore_walker_walks() {
         }
     }
 }
+
+/// A file root is searched on the calling thread: the parallel walker's
+/// pool (and its idle 1 ms polls) is a fixed cost one entry never repays.
+/// A directory root still walks on the pool. Both find the same match.
+#[test]
+fn a_file_root_is_searched_on_the_calling_thread() {
+    struct Threads(Mutex<Vec<std::thread::ThreadId>>);
+    impl TextSearchPathFilter for Threads {
+        fn allows(&self, _: &Path, is_dir: bool) -> bool {
+            if !is_dir {
+                self.0
+                    .lock()
+                    .expect("lock")
+                    .push(std::thread::current().id());
+            }
+            true
+        }
+    }
+    let t = TmpDir::new();
+    t.write("one.rs", "fn needle() {}\n");
+    let file = Path::new(&t.path()).join("one.rs");
+    for (root, serial) in [
+        (file.to_string_lossy().into_owned(), true),
+        (t.path(), false),
+    ] {
+        let threads = Arc::new(Threads(Mutex::new(Vec::new())));
+        let result = search_cancellable(opts(root.clone(), "needle"), threads.clone(), &|| false)
+            .expect("search ok");
+        assert_eq!(result.files.len(), 1, "{root}");
+        assert_eq!(result.files[0].matches[0].line, 1, "{root}");
+        let seen = threads.0.lock().expect("lock").clone();
+        assert_eq!(seen.len(), 1, "{root}");
+        assert_eq!(seen[0] == std::thread::current().id(), serial, "{root}");
+    }
+}
+
+#[test]
+fn deferred_lines_preserve_every_anchor_rank_digest_and_clip_length() {
+    let t = TmpDir::new();
+    let body = format!(
+        "// needle\r\nlet needle = 1;\r\nneedle();\r\nneedle();\r\né😀{}needle\r\n",
+        "x".repeat(100_000)
+    );
+    t.write("dense.rs", &body);
+    for (context, only, unique, multiline) in [
+        (0, false, false, false),
+        (2, false, false, false),
+        (0, true, false, false),
+        (0, true, true, false),
+        (0, false, false, true),
+    ] {
+        let mut options = opts(t.path(), "needle");
+        options.context_lines = Some(context);
+        options.only_matching = Some(only);
+        options.unique = Some(unique);
+        options.count_unique = Some(unique);
+        options.multiline = Some(multiline);
+        options.digest_max_bytes = Some(u64::MAX);
+        options.max_snippet_chars = Some(40);
+        let before = search(options.clone()).expect("owned scan");
+        options.defer_values = true;
+        let after = search(options).expect("compact scan");
+        assert_eq!(before.stats.match_count, after.stats.match_count);
+        assert_eq!(before.stats.matched_lines, after.stats.matched_lines);
+        for (a, b) in before.files.iter().zip(&after.files) {
+            assert_eq!(a.source, b.source);
+            assert_eq!(a.matches.len(), b.matches.len());
+            for (a, b) in a.matches.iter().zip(&b.matches) {
+                assert_eq!(
+                    (
+                        a.line,
+                        a.column,
+                        a.byte_offset,
+                        a.rank,
+                        a.value_digest,
+                        a.count,
+                        a.original_chars,
+                        a.original_bytes
+                    ),
+                    (
+                        b.line,
+                        b.column,
+                        b.byte_offset,
+                        b.rank,
+                        b.value_digest,
+                        b.count,
+                        b.original_chars,
+                        b.original_bytes
+                    )
+                );
+                if context == 0 && !only && !multiline {
+                    assert_eq!(b.deferred, Some(0));
+                    assert_eq!(b.value.capacity(), 0);
+                } else {
+                    assert_eq!(a.value, b.value);
+                    assert_eq!(b.deferred, None);
+                }
+            }
+        }
+    }
+}

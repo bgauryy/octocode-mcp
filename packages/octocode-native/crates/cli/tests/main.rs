@@ -19,6 +19,7 @@ mod cli_skill;
 mod cli_tool_contract;
 mod config_edit;
 mod config_view;
+mod warm_server;
 
 /// `autotests = false` means a `tests/*.rs` file missing from the list above
 /// would silently never run.

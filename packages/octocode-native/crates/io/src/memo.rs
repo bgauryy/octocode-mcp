@@ -1,10 +1,11 @@
-//! The one in-process memo: least-recently-used order, an entry cap and a
-//! weight cap, a lifetime chosen per entry, shared (`Arc`) values, and a
-//! lock that recovers from poisoning instead of skipping work.
+//! The one in-process memo outside the engine's own caches ([`crate`]):
+//! least-recently-used order, an entry cap and a weight cap, a lifetime
+//! chosen per entry, shared (`Arc`) values, and a lock that recovers from
+//! poisoning instead of skipping work.
 //!
 //! Single flight is composed, not built in: a caller that must not run the
-//! same load twice holds a `KeyedFlight` turn (in `octocode-github`) around
-//! its `get`-then-`insert`.
+//! same load twice holds a `KeyedFlight` turn ([`crate::flight`]) around its
+//! `get`-then-`insert`.
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

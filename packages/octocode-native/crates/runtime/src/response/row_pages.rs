@@ -112,12 +112,15 @@ fn lean_skeleton(skeleton: &mut Value, budget: usize, pointer: &str) -> Option<V
 
 /// The outermost array element a paged array at `pointer` lies in (reached
 /// through single-element arrays), as (array pointer, element index).
-fn enclosing_element(pointer: &str) -> Option<(String, usize)> {
+fn enclosing_element(value: &Value, pointer: &str) -> Option<(String, usize)> {
     let mut prefix = String::new();
+    let mut node = value;
     for segment in pointer.trim_start_matches('/').split('/') {
-        if let Ok(index) = segment.parse::<usize>() {
-            return Some((prefix, index));
+        let key = segment.replace("~1", "/").replace("~0", "~");
+        if node.is_array() {
+            return key.parse().ok().map(|index| (prefix, index));
         }
+        node = node.as_object()?.get(&key)?;
         prefix = format!("{prefix}/{segment}");
     }
     None
@@ -139,6 +142,39 @@ fn take_largest_array(row: &mut Value) -> Option<(String, Vec<Value>)> {
     Some((pointer, items))
 }
 
+/// Resolve declared collection paths without entering arbitrary answer values
+/// or treating coordinate tuples and criteria as evidence lists.
+fn collection_pointer(row: &Value, paths: &[&str]) -> Option<String> {
+    fn visit(value: &Value, segments: &[&str], pointer: &str) -> Option<String> {
+        let Some((segment, rest)) = segments.split_first() else {
+            let len = match value {
+                Value::Array(items) => items.len(),
+                Value::Object(items) => items.len(),
+                _ => 0,
+            };
+            return (len > 1).then(|| pointer.to_owned());
+        };
+        if *segment == "*" {
+            return match value {
+                Value::Object(map) => map.iter().find_map(|(key, child)| {
+                    visit(child, rest, &format!("{pointer}/{}", escape_pointer(key)))
+                }),
+                Value::Array(items) if items.len() == 1 => {
+                    visit(&items[0], rest, &format!("{pointer}/0"))
+                }
+                _ => None,
+            };
+        }
+        let key = segment.replace("~1", "/").replace("~0", "~");
+        let child = value.as_object()?.get(&key)?;
+        visit(child, rest, &format!("{pointer}/{}", escape_pointer(&key)))
+    }
+    paths.iter().find_map(|path| {
+        let segments = path.trim_start_matches('/').split('/').collect::<Vec<_>>();
+        visit(row, &segments, "")
+    })
+}
+
 /// One row fragment, planned by size before anything is built. Oversized rows
 /// are split into a skeleton (every field except the largest array, emptied)
 /// plus that array's items; a fragment is a slice of those items. An element
@@ -146,6 +182,11 @@ fn take_largest_array(row: &mut Value) -> Option<(String, Vec<Value>)> {
 /// element becomes one oversized fragment rather than being cut mid-value.
 enum Fragment {
     Whole(usize),
+    Records {
+        split: usize,
+        start: usize,
+        end: usize,
+    },
     Chunk {
         split: usize,
         start: usize,
@@ -173,15 +214,36 @@ enum Fragment {
 /// A planned fragment and its serialized chars.
 type Planned = (Fragment, usize);
 
+/// Later fragments of an array element retain its original position.
+fn mark_continuations(array: &str, at: usize, index: usize, out: &mut [Planned]) {
+    for (fragment, size) in out.iter_mut().skip(at + 1) {
+        let inner = std::mem::replace(fragment, Fragment::Whole(0));
+        *fragment = Fragment::Continues {
+            inner: Box::new(inner),
+            array: array.to_owned(),
+            index,
+        };
+        *size += continues_chars(array, index);
+    }
+}
+
 struct RowSplit {
     skeleton: Value,
     pointer: String,
     items: Vec<Value>,
 }
 
+struct RecordSplit {
+    skeleton: Value,
+    pointer: String,
+    records: Vec<(String, Value)>,
+}
+
 #[derive(Default)]
 struct FragmentArena {
     wholes: Vec<Value>,
+    records: Vec<RecordSplit>,
+    collection_paths: Option<&'static [&'static str]>,
     splits: Vec<RowSplit>,
     /// Fields an entry schema of the responding tool requires: a later
     /// slice keeps them on the elements it passes through.
@@ -194,9 +256,29 @@ impl FragmentArena {
     /// bounded by `head`, every later one by `budget`.
     fn plan(&mut self, mut row: Value, head: usize, budget: usize, out: &mut Vec<Planned>) {
         let row_chars = json_chars(&row);
-        let taken = (row_chars > head)
-            .then(|| take_largest_array(&mut row))
+        let declared = (row_chars > head)
+            .then(|| {
+                self.collection_paths
+                    .and_then(|paths| collection_pointer(&row, paths))
+            })
             .flatten();
+        if let Some(pointer) = &declared
+            && let Some(records) = row.pointer_mut(pointer).and_then(Value::as_object_mut)
+        {
+            let records = std::mem::take(records);
+            self.plan_records(row, pointer.clone(), records, head, budget, out);
+            return;
+        }
+        let taken = if let Some(pointer) = declared {
+            row.pointer_mut(&pointer)
+                .and_then(Value::as_array_mut)
+                .map(std::mem::take)
+                .map(|items| (pointer, items))
+        } else if row_chars > head && self.collection_paths.is_none() {
+            take_largest_array(&mut row)
+        } else {
+            None
+        };
         let Some((pointer, items)) = taken else {
             out.push((Fragment::Whole(self.wholes.len()), row_chars));
             self.wholes.push(row);
@@ -235,6 +317,7 @@ impl FragmentArena {
         };
         let mut slicer = Slicer {
             split: self.splits.len(),
+            enclosing: enclosing_element(&row, &pointer),
             pointer: pointer.clone(),
             first,
             head,
@@ -251,6 +334,79 @@ impl FragmentArena {
             slicer.push(self, index, chars + 1, out);
         }
         slicer.close(item_chars.len(), out);
+    }
+
+    fn plan_records(
+        &mut self,
+        row: Value,
+        pointer: String,
+        records: Map<String, Value>,
+        head: usize,
+        budget: usize,
+        out: &mut Vec<Planned>,
+    ) {
+        let base = json_chars(&row);
+        let budget = budget.max(base.saturating_mul(2));
+        let head = head.max(base.saturating_mul(2)).min(budget);
+        let enclosing = enclosing_element(&row, &pointer);
+        let first = out.len();
+        let split = self.records.len();
+        let mut start = 0;
+        let mut size = base;
+        let mut limit = head;
+        let records: Vec<_> = records.into_iter().collect();
+        let sizes = records
+            .iter()
+            .map(|(key, value)| json_chars(key) + 1 + json_chars(value))
+            .collect::<Vec<_>>();
+        self.records.push(RecordSplit {
+            skeleton: row,
+            pointer,
+            records,
+        });
+        for (index, chars) in sizes.iter().copied().enumerate() {
+            let comma = usize::from(index > start);
+            if index > start && size + comma + chars > limit {
+                out.push((
+                    Fragment::Records {
+                        split,
+                        start,
+                        end: index,
+                    },
+                    size,
+                ));
+                start = index;
+                size = base;
+                limit = budget;
+            }
+            if base + chars > limit {
+                let record = &mut self.records[split];
+                let (key, value) = &mut record.records[index];
+                let mut single = record.skeleton.clone();
+                if let Some(slot) = single.pointer_mut(&record.pointer) {
+                    *slot = Value::Object(Map::from_iter([(key.clone(), std::mem::take(value))]));
+                }
+                self.plan(single, limit, budget, out);
+                start = index + 1;
+                size = base;
+                limit = budget;
+                continue;
+            }
+            size += usize::from(index > start) + chars;
+        }
+        if start < sizes.len() {
+            out.push((
+                Fragment::Records {
+                    split,
+                    start,
+                    end: sizes.len(),
+                },
+                size,
+            ));
+        }
+        if let Some((array, index)) = enclosing {
+            mark_continuations(&array, first, index, out);
+        }
     }
 
     /// Build one planned fragment, moving its data out of the arena.
@@ -273,6 +429,10 @@ impl FragmentArena {
     fn later_pointers(&self, fragment: &Fragment) -> Vec<String> {
         match fragment {
             Fragment::Whole(_) => Vec::new(),
+            Fragment::Records { split, start, .. } => (*start > 0)
+                .then(|| self.records[*split].pointer.clone())
+                .into_iter()
+                .collect(),
             Fragment::Chunk { split, start, .. } => (*start > 0)
                 .then(|| self.splits[*split].pointer.clone())
                 .into_iter()
@@ -286,6 +446,19 @@ impl FragmentArena {
     fn build(&mut self, fragment: &Fragment) -> Value {
         match fragment {
             Fragment::Whole(index) => std::mem::take(&mut self.wholes[*index]),
+            Fragment::Records { split, start, end } => {
+                let split = &mut self.records[*split];
+                let mut row = split.skeleton.clone();
+                if let Some(slot) = row.pointer_mut(&split.pointer) {
+                    *slot = Value::Object(
+                        split.records[*start..*end]
+                            .iter_mut()
+                            .map(|(key, value)| (key.clone(), std::mem::take(value)))
+                            .collect(),
+                    );
+                }
+                row
+            }
             Fragment::Chunk { split, start, end } => {
                 let row_split = &mut self.splits[*split];
                 let items = row_split.items[*start..*end]
@@ -358,6 +531,7 @@ enum Open {
 /// by `head`, every later one by `budget`.
 struct Slicer {
     split: usize,
+    enclosing: Option<(String, usize)>,
     /// The paged array's pointer.
     pointer: String,
     first: usize,
@@ -434,7 +608,7 @@ impl Slicer {
             arena.plan(self.single(arena, index, at), head, self.budget, &mut trial);
             if trial[0].1 + pending <= limit {
                 out.extend(trial);
-                self.mark_continuations(arena, at, index, out);
+                mark_continuations(&self.pointer, at, index, out);
                 self.join_before(at, start..index, pending, out);
             } else {
                 // The trial's arena entries are never built.
@@ -446,7 +620,7 @@ impl Slicer {
                     self.budget,
                     out,
                 );
-                self.mark_continuations(arena, at, index, out);
+                mark_continuations(&self.pointer, at, index, out);
             }
         } else {
             self.close(index, out);
@@ -457,7 +631,7 @@ impl Slicer {
                 self.budget,
                 out,
             );
-            self.mark_continuations(arena, at, index, out);
+            mark_continuations(&self.pointer, at, index, out);
         }
         let last = out.len() - 1;
         self.open = Open::Tail {
@@ -465,27 +639,6 @@ impl Slicer {
             start: index + 1,
             chars: out[last].1,
         };
-    }
-
-    /// Every part of item `index` after its first (planned from `at`)
-    /// continues that element of this split's array.
-    fn mark_continuations(
-        &self,
-        arena: &FragmentArena,
-        at: usize,
-        index: usize,
-        out: &mut [Planned],
-    ) {
-        let array = &arena.splits[self.split].pointer;
-        for (fragment, size) in out.iter_mut().skip(at + 1) {
-            let inner = std::mem::replace(fragment, Fragment::Whole(0));
-            *fragment = Fragment::Continues {
-                inner: Box::new(inner),
-                array: array.clone(),
-                index,
-            };
-            *size += continues_chars(array, index);
-        }
     }
 
     /// Item `index` as a one-item row planned at position `at`; after the
@@ -522,7 +675,7 @@ impl Slicer {
         let split = self.split;
         let chunk = Fragment::Chunk { split, start, end };
         let element = (out.len() > self.first)
-            .then(|| enclosing_element(&self.pointer))
+            .then(|| self.enclosing.clone())
             .flatten();
         out.push(match element {
             Some((array, index)) => {
@@ -857,12 +1010,13 @@ pub(super) fn paginate_rows(
     tool: Option<crate::tools::id::ToolId>,
 ) -> (Map<String, Value>, ResponsePagination) {
     let budget = options.response_length.unwrap_or(1).max(1);
-    let rows = match structured.remove("results") {
+    let rows_key = tool.map_or("results", |tool| tool.output().rows_key());
+    let rows = match structured.remove(rows_key) {
         Some(Value::Array(rows)) => rows,
         _ => Vec::new(),
     };
     volatile.resize(rows.len(), None);
-    let overhead = json_chars(&structured) + "\"results\":[],".len();
+    let overhead = json_chars(&structured) + rows_key.len() + 6;
     // Room for the envelope warning a page with rows left over leads with.
     let row_budget = budget
         .saturating_sub(overhead + INCOMPLETE_BANNER_CHARS)
@@ -870,13 +1024,13 @@ pub(super) fn paginate_rows(
     let mut plan = RowPlan::new(rows, &volatile, row_budget, tool);
     let total = full.encode_utf16().count();
     let snapshot = format!(
-        "response-rows-v4:{budget}:{}",
+        "response-rows-v5:{budget}:{}",
         crate::digest::sha256(full.as_bytes())
     );
     let requested = options.response_offset.unwrap_or(0);
     let changed = options.response_snapshot.as_deref() != Some(&snapshot);
     if requested > 0 && (changed || requested >= plan.total_pages) {
-        structured.insert("results".into(), Value::Array(Vec::new()));
+        structured.insert(rows_key.into(), Value::Array(Vec::new()));
         // The page asked for, named in the envelope so a restart says why.
         let reason = if changed {
             "the response or page size changed, or its snapshot is missing; restart from responseOffset=0"
@@ -903,7 +1057,7 @@ pub(super) fn paginate_rows(
     }
     let selected = plan.build_page(requested, &mut volatile, remaining);
     let later = plan.rows_after(requested);
-    structured.insert("results".into(), Value::Array(selected));
+    structured.insert(rows_key.into(), Value::Array(selected));
     if later > 0 {
         lead_with_incomplete_banner(&mut structured, later, plan.rows);
     }
@@ -948,6 +1102,7 @@ fn lead_with_incomplete_banner(structured: &mut Map<String, Value>, later: usize
 /// placed on a page by its size.
 struct RowPlan {
     arena: FragmentArena,
+    first_fields: Vec<Map<String, Value>>,
     placed: Vec<Placed>,
     total_pages: usize,
     rows: usize,
@@ -955,14 +1110,36 @@ struct RowPlan {
 
 impl RowPlan {
     fn new(
-        rows: Vec<Value>,
+        mut rows: Vec<Value>,
         volatile: &[Option<Map<String, Value>>],
         row_budget: usize,
         tool: Option<crate::tools::id::ToolId>,
     ) -> Self {
+        let first_names = tool.map_or(&[][..], |tool| tool.output().first_fragment_fields());
+        let first_fields = rows
+            .iter_mut()
+            .map(|row| {
+                first_names
+                    .iter()
+                    .filter_map(|name| {
+                        row.as_object_mut()?
+                            .shift_remove(*name)
+                            .map(|value| ((*name).to_owned(), value))
+                    })
+                    .collect::<Map<_, _>>()
+            })
+            .collect::<Vec<_>>();
         let reserves: Vec<usize> = volatile
             .iter()
-            .map(|fields| fields.as_ref().map_or(0, volatile_reserve))
+            .zip(&first_fields)
+            .map(|(fields, first)| {
+                fields.as_ref().map_or(0, volatile_reserve)
+                    + if first.is_empty() {
+                        0
+                    } else {
+                        json_chars(first) - 1
+                    }
+            })
             .collect();
         let sizes: Vec<usize> = rows
             .iter()
@@ -972,6 +1149,7 @@ impl RowPlan {
         let shares = fair_shares(&sizes, row_budget);
         let mut arena = FragmentArena {
             required: tool.map(crate::contracts::shared_fields::required_entry_fields),
+            collection_paths: tool.and_then(|tool| tool.output().collection_paths()),
             ..FragmentArena::default()
         };
         let mut heads = Vec::with_capacity(rows.len());
@@ -997,6 +1175,7 @@ impl RowPlan {
         let (placed, total_pages) = assign_pages(heads.into_iter().chain(tails), row_budget);
         Self {
             arena,
+            first_fields,
             placed,
             total_pages,
             rows: sizes.len(),
@@ -1017,6 +1196,11 @@ impl RowPlan {
             .into_iter()
             .map(|p| {
                 let mut value = self.arena.materialize(&p.fragment);
+                if p.part == 1
+                    && let Some(row) = value.as_object_mut()
+                {
+                    row.extend(std::mem::take(&mut self.first_fields[p.row]));
+                }
                 if p.part == 1
                     && let (Some(fields), Some(data)) = (
                         volatile[p.row].take(),
@@ -1148,6 +1332,184 @@ fn assign_pages(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn declared_nested_collections_preserve_atomic_answers_and_shared_definitions() {
+        let mut resources = Map::new();
+        let mut expected = std::collections::BTreeMap::new();
+        for resource in ["0", "r/~other"] {
+            let sections = (0..3).map(|section| {
+                let answers = (0..7).map(|question| {
+                    let key = format!("q/{question}");
+                    let probabilities = (0..13).map(|option| (format!("option-{option}"), json!(1.0 / 13.0))).collect::<Map<_, _>>();
+                    let answer = json!({"status":"answered","answer":{
+                        "type":"choice", "choice":"option-0", "confidence":0.0,
+                        "probabilities":probabilities
+                    }});
+                    expected.insert((resource.to_owned(), format!("s{section}"), key.clone()), answer.clone());
+                    (key, answer)
+                }).collect::<Map<_, _>>();
+                json!({"id":format!("s{section}"),"target":{"bytes":[section*100,(section+1)*100],"lines":[section*5+1,(section+1)*5]},
+                    "context":[{"bytes":[0,5],"lines":[1,1]}],"answers":answers})
+            }).collect::<Vec<_>>();
+            resources.insert(
+                resource.into(),
+                json!({"status":"ready","snapshot":"fixed","sections":sections}),
+            );
+        }
+        let row = json!({"id":"research","operation":"sections","resources":resources,
+            "questions":(0..7).map(|question| (format!("q/{question}"), json!({"type":"choice","criteria":(0..13).map(|option| (format!("option-{option}"), Value::Null)).collect::<Map<_,_>>()}))).collect::<Map<_,_>>(),
+            "next":{"nextSectionPage":{"tool":"clasify","query":{"queries":[{"operation":"sections","assessment":"next"}]}}}});
+        let mut plan = RowPlan::new(
+            vec![row],
+            &[None],
+            1_800,
+            Some(crate::tools::id::ToolId::Clasify),
+        );
+        assert!(plan.total_pages > 1);
+        let mut seen = std::collections::BTreeMap::new();
+        let mut definitions = 0;
+        let mut next_calls = 0;
+        for page in 0..plan.total_pages {
+            for row in plan.build_page(page, &mut [None], &[]) {
+                definitions += usize::from(row.get("questions").is_some());
+                next_calls += usize::from(row["next"].get("nextSectionPage").is_some());
+                if row["next"].get("nextSectionPage").is_some() {
+                    assert_eq!(row["rowPart"]["part"], row["rowPart"]["of"]);
+                }
+                for (resource, value) in row["resources"].as_object().expect("resources") {
+                    for section in value["sections"].as_array().expect("sections") {
+                        assert_eq!(
+                            section["target"]["bytes"].as_array().expect("bytes").len(),
+                            2
+                        );
+                        assert_eq!(
+                            section["target"]["lines"].as_array().expect("lines").len(),
+                            2
+                        );
+                        assert_eq!(section["context"][0]["bytes"], json!([0, 5]));
+                        for (question, answer) in section["answers"].as_object().expect("answers") {
+                            let key = (
+                                resource.clone(),
+                                section["id"].as_str().expect("id").to_owned(),
+                                question.clone(),
+                            );
+                            assert!(
+                                seen.insert(key, answer.clone()).is_none(),
+                                "duplicate answer"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(seen, expected);
+        assert_eq!(definitions, 1);
+        assert_eq!(next_calls, 1);
+    }
+
+    #[test]
+    fn declared_collections_leave_a_single_oversized_answer_whole() {
+        let probabilities = (0..100)
+            .map(|index| (format!("option-{index}-{}", "x".repeat(48)), json!(0.01)))
+            .collect::<Map<_, _>>();
+        let answer = json!({"status":"answered","answer":{"type":"choice","choice":probabilities.keys().next().expect("option"),"confidence":0.0,"probabilities":probabilities}});
+        let row = json!({"id":"research","operation":"sections","questions":{"q":{"type":"choice"}},
+            "resources":{"r":{"sections":[{"id":"s","target":{"bytes":[0,1],"lines":[1,1]},"answers":{"q":answer}}]}}});
+        let mut plan = RowPlan::new(
+            vec![row],
+            &[None],
+            500,
+            Some(crate::tools::id::ToolId::Clasify),
+        );
+        assert_eq!(plan.total_pages, 1);
+        let rows = plan.build_page(0, &mut [None], &[]);
+        assert_eq!(
+            rows[0]["resources"]["r"]["sections"][0]["answers"]["q"],
+            answer
+        );
+    }
+
+    #[test]
+    fn large_resource_identity_does_not_force_one_page_per_small_answer() {
+        let answers = (0..25)
+            .map(|index| {
+                (
+                    format!("q{index}"),
+                    json!({
+                        "status":"answered","answer":{"type":"noul","probability":0.5}
+                    }),
+                )
+            })
+            .collect::<Map<_, _>>();
+        let row = json!({"id":"research","operation":"sections",
+            "resources":{"r":{"source":{"url":format!("https://example.test/{}","x".repeat(4000))},
+            "sections":[{"id":"s","target":{"bytes":[0,1],"lines":[1,1]},"answers":answers}]}}});
+        let mut plan = RowPlan::new(
+            vec![row],
+            &[None],
+            500,
+            Some(crate::tools::id::ToolId::Clasify),
+        );
+        assert_eq!(plan.total_pages, 1);
+        let rows = plan.build_page(0, &mut [None], &[]);
+        assert_eq!(
+            rows[0]["resources"]["r"]["sections"][0]["answers"],
+            json!(answers)
+        );
+    }
+
+    #[test]
+    fn answer_fragments_continue_their_only_section() {
+        let answers = (0..30)
+            .map(|index| {
+                (
+                    format!("q{index}"),
+                    json!({
+                        "status":"answered","answer":{"type":"noul","probability":0.5}
+                    }),
+                )
+            })
+            .collect::<Map<_, _>>();
+        let row = json!({"id":"research","operation":"sections",
+            "resources":{"r/~0":{"sections":[{"id":"s","target":{"bytes":[0,1],"lines":[1,1]},"answers":answers}]}}});
+        let mut plan = RowPlan::new(
+            vec![row],
+            &[None],
+            600,
+            Some(crate::tools::id::ToolId::Clasify),
+        );
+        assert!(plan.total_pages > 1);
+        let mut seen = Map::new();
+        let mut fragments = 0;
+        for page in 0..plan.total_pages {
+            for row in plan.build_page(page, &mut [None], &[]) {
+                if fragments > 0 {
+                    assert_eq!(
+                        row["rowPart"]["continues"],
+                        json!({"array":"/resources/r~1~00/sections","index":0})
+                    );
+                }
+                for (key, value) in row["resources"]["r/~0"]["sections"][0]["answers"]
+                    .as_object()
+                    .expect("answers")
+                {
+                    assert!(seen.insert(key.clone(), value.clone()).is_none());
+                }
+                fragments += 1;
+            }
+        }
+        assert_eq!(seen, answers);
+    }
+
+    #[test]
+    fn numeric_resource_keys_are_not_array_indexes() {
+        let row = json!({"resources":{"0":{"sections":[{"answers":{}}]}}});
+        assert_eq!(
+            enclosing_element(&row, "/resources/0/sections/0/answers"),
+            Some(("/resources/0/sections".into(), 0))
+        );
+    }
 
     #[test]
     fn rows_scope_splits_nested_arrays_into_complete_json_pages() {
@@ -1446,6 +1808,7 @@ mod lazy_page_tests {
             response_snapshot: snapshot,
             response_scope: Some("rows".into()),
             render_text: None,
+            saved: None,
         }
     }
 
@@ -1490,10 +1853,10 @@ mod lazy_page_tests {
             &[],
             None,
         );
-        assert!(first.snapshot.starts_with("response-rows-v4:"));
+        assert!(first.snapshot.starts_with("response-rows-v5:"));
         let obsolete = first
             .snapshot
-            .replacen("response-rows-v4:", "response-rows-v3:", 1);
+            .replacen("response-rows-v5:", "response-rows-v4:", 1);
         let (page, pagination) = paginate_rows(
             structured,
             &full,

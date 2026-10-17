@@ -1597,24 +1597,24 @@ mod tests {
             if fixture["tool"] == "clasify" {
                 continue;
             }
-            let result = crate::contracts::prepare_many_and_validate(
-                fixture["tool"].as_str().expect("tool"),
-                fixture["input"].clone(),
-            )
-            .map(|mut queries| queries.swap_remove(0));
+            let tool = fixture["tool"].as_str().expect("tool");
+            let result =
+                crate::contracts::prepare_many_and_validate(tool, fixture["input"].clone());
             assert_eq!(
                 result.is_ok(),
                 fixture["accepted"].as_bool().expect("accepted"),
                 "{}: {result:?}",
                 fixture["id"],
             );
-            if let Ok(normalized) = result {
-                let expected = fixture["normalized"]
+            if let Ok(rows) = result {
+                let normalized = super::validate(tool, fixture["input"].clone())
+                    .expect("accepted fixture validates as a complete envelope");
+                assert_eq!(normalized, fixture["normalized"], "{}", fixture["id"]);
+                let expected_rows = fixture["normalized"]
                     .get("queries")
                     .and_then(Value::as_array)
-                    .and_then(|queries| queries.first())
-                    .unwrap_or(&fixture["normalized"]);
-                assert_eq!(&normalized, expected, "{}", fixture["id"]);
+                    .map_or(&[][..], Vec::as_slice);
+                assert_eq!(rows, expected_rows, "{}", fixture["id"]);
             }
         }
     }

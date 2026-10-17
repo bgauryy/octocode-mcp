@@ -14,9 +14,25 @@ pub const MAX_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Clone, Debug)]
 pub struct RequestLimits {
+    /// Requests of [`Cost::Walk`] that run at once.
     pub concurrency: usize,
+    /// Requests of [`Cost::Light`] that run at once, on slots of their own.
+    pub light_concurrency: usize,
+    /// Admitted requests (running or queued, both costs) before `busy`.
     pub pending: usize,
     pub timeout: Duration,
+}
+
+/// What a request may cost while it holds a slot, decided at admission.
+/// Light requests (a stored page, a read of one small file) run on their own
+/// slots, so they never queue behind tree walks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Cost {
+    /// May walk a tree, or wait on a provider or a language server.
+    #[default]
+    Walk,
+    /// Bounded, small work.
+    Light,
 }
 
 /// The per-request execution budget of every runtime surface (CLI, warm
@@ -29,6 +45,7 @@ impl Default for RequestLimits {
     fn default() -> Self {
         Self {
             concurrency: 4,
+            light_concurrency: 4,
             pending: 64,
             timeout: DEFAULT_TIMEOUT,
         }
@@ -99,6 +116,13 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
+    /// The characters a row's own pages fill: its share of the response page
+    /// ([`Self::response_window`]), else the automatic page.
+    #[must_use]
+    pub fn row_page_chars(&self, auto_page_chars: usize) -> usize {
+        self.response_window.unwrap_or(auto_page_chars)
+    }
+
     pub fn check(&self) -> Result<(), ExecutionError> {
         if Instant::now() >= self.deadline {
             return Err(ExecutionError::Timeout);
@@ -119,6 +143,7 @@ struct State {
 struct Inner {
     state: Mutex<State>,
     slots: Arc<Semaphore>,
+    light_slots: Arc<Semaphore>,
     drained: Notify,
     limits: RequestLimits,
 }
@@ -138,9 +163,17 @@ struct RequestGuard {
 pub struct RequestAdmission {
     guard: RequestGuard,
     context: ExecutionContext,
+    cost: Cost,
 }
 
 impl RequestAdmission {
+    /// Run this request on the slots of `cost` (default [`Cost::Walk`]).
+    #[must_use]
+    pub fn with_cost(mut self, cost: Cost) -> Self {
+        self.cost = cost;
+        self
+    }
+
     /// Carry the caller's GitHub token on this request as a secret override.
     pub fn with_github_token(mut self, token: SecretString) -> Self {
         self.context.github_credential =
@@ -167,6 +200,7 @@ impl Drop for RequestGuard {
 impl RequestRuntime {
     pub fn new(limits: RequestLimits) -> Result<Self, ExecutionError> {
         if limits.concurrency == 0
+            || limits.light_concurrency == 0
             || limits.pending < limits.concurrency
             || limits.timeout.is_zero()
             || limits.timeout > MAX_TIMEOUT
@@ -177,6 +211,7 @@ impl RequestRuntime {
             inner: Arc::new(Inner {
                 state: Mutex::new(State::default()),
                 slots: Arc::new(Semaphore::new(limits.concurrency)),
+                light_slots: Arc::new(Semaphore::new(limits.light_concurrency)),
                 drained: Notify::new(),
                 limits,
             }),
@@ -272,6 +307,7 @@ impl RequestRuntime {
                 response_window: None,
                 github_credential: None,
             },
+            cost: Cost::Walk,
         })
     }
 
@@ -287,7 +323,15 @@ impl RequestRuntime {
         if !Arc::ptr_eq(&self.inner, &admission.guard.inner) {
             return Err(ExecutionError::WorkerFailed);
         }
-        let RequestAdmission { guard, context } = admission;
+        let RequestAdmission {
+            guard,
+            context,
+            cost,
+        } = admission;
+        let slots = match cost {
+            Cost::Walk => &self.inner.slots,
+            Cost::Light => &self.inner.light_slots,
+        };
         let token = context.cancellation.clone();
         let _cancel_on_drop = token.clone().drop_guard();
         let deadline = tokio::time::Instant::from_std(context.deadline);
@@ -295,16 +339,16 @@ impl RequestRuntime {
             biased;
             _ = token.cancelled() => return Err(ExecutionError::Cancelled),
             _ = tokio::time::sleep_until(deadline) => return Err(ExecutionError::Timeout),
-            permit = self.inner.slots.clone().acquire_owned() => permit.map_err(|_| ExecutionError::Closed)?,
+            permit = slots.clone().acquire_owned() => permit.map_err(|_| ExecutionError::Closed)?,
         };
-        let mut task = tokio::task::spawn_blocking(move || {
+        let mut task = tokio::task::spawn_blocking(octocode_io::notice::carried(move || {
             let _guard = guard;
             let _permit = permit;
             context.check()?;
             let result = work(context.clone());
             context.check()?;
             result
-        });
+        }));
         let reason = tokio::select! {
             biased;
             result = &mut task => return result.map_err(|_| ExecutionError::WorkerFailed)?,

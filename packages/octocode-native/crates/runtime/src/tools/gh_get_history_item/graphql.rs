@@ -1,13 +1,15 @@
 //! GraphQL pull-request fast path.
 //!
 //! One GraphQL request can serve a first page of several PR collections at
-//! once. This module decides eligibility, runs that request, and projects the
+//! once. This module decides eligibility, runs that request, reads on from a
+//! connection's end cursor until the first page is covered, and projects the
 //! GraphQL shape into the REST-shaped values the rest of the tool consumes,
 //! with per-collection completeness state.
 
 use super::util::str_at;
-use super::{HistoryItemRequest, ItemOperation, Section, Sections};
-use octocode_github::{GitHubTransport, ProviderError, RequestContext};
+use super::window::{MAX_COLLECTION_BATCHES, MAX_FILE_BATCHES, MAX_PR_COMMIT_BATCHES};
+use super::{HistoryItemRequest, ItemOperation, Section};
+use octocode_github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
 use serde_json::{Value, json};
 
 /// The first-page PR served by GraphQL: REST-shaped metadata, the raw
@@ -21,8 +23,49 @@ pub(super) struct GraphqlPr {
     pub(super) commits: GraphqlCollection,
 }
 
-/// GraphQL pays off only for a first page of at least two collections and no
-/// patches (GraphQL returns no patch text).
+/// What GraphQL serves for one read: the wanted collections that no filter
+/// narrows. A filtered collection needs every provider batch, which REST
+/// reads at once from the PR's counts with full rows (a rename's previous
+/// path, which an `include` scope matches); GraphQL would page it one
+/// cursor at a time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct GraphqlWants {
+    pub(super) body: bool,
+    pub(super) files: bool,
+    pub(super) discussion: bool,
+    pub(super) reviews: bool,
+    pub(super) commits: bool,
+}
+
+impl GraphqlWants {
+    pub(super) fn of(query: &HistoryItemRequest) -> Self {
+        let wants = query.sections();
+        let unmatched = super::text::needle(query).is_none();
+        Self {
+            body: wants.has(Section::Body),
+            files: wants.lists_files() && unmatched && !query.query.has_file_filter(),
+            discussion: wants.has(Section::Comments) && unmatched,
+            reviews: wants.has(Section::Reviews) && unmatched,
+            commits: wants.lists_commits(),
+        }
+    }
+
+    fn count(self) -> usize {
+        [
+            self.body,
+            self.files,
+            self.discussion,
+            self.reviews,
+            self.commits,
+        ]
+        .into_iter()
+        .filter(|wanted| *wanted)
+        .count()
+    }
+}
+
+/// GraphQL pays off only for a first page of at least two collections it
+/// serves and no patches (GraphQL returns no patch text).
 pub(super) fn graphql_complete_collection_eligible(query: &HistoryItemRequest) -> bool {
     if !matches!(
         query.operation(),
@@ -30,24 +73,10 @@ pub(super) fn graphql_complete_collection_eligible(query: &HistoryItemRequest) -
     ) {
         return false;
     }
-    if query.page().unwrap_or(1) > 1 {
+    if query.page().unwrap_or(1) > 1 || query.sections().has(Section::Patches) {
         return false;
     }
-    let wants = query.sections();
-    if wants.has(Section::Patches) {
-        return false;
-    }
-    let eligible = [
-        wants.has(Section::Body),
-        wants.lists_files(),
-        wants.has(Section::Comments),
-        wants.lists_commits(),
-        wants.has(Section::Reviews),
-    ]
-    .into_iter()
-    .filter(|value| *value)
-    .count();
-    eligible >= 2
+    GraphqlWants::of(query).count() >= 2
 }
 
 /// What the GraphQL fast path produced for one pull-request read.
@@ -61,14 +90,79 @@ pub(super) enum GraphqlOutcome {
     Served(Box<GraphqlPr>),
 }
 
-/// The pull-request document for the wanted collections, and the page size
-/// variable each collection binds. The body is selected only when the read
-/// shows it (`body`); a row without it leaves `body` unknown, not empty.
-pub(super) fn pull_request_document(
-    wants: &Sections,
-    body: bool,
-) -> (String, Vec<(&'static str, u32)>) {
-    let mut selections: Vec<&str> = vec![
+/// One paged PR connection: its response key, the field (with its alias)
+/// it selects, its page-size variable, the node fields, and where the PR
+/// counts its items (`total`, a pointer into the PR), when it does.
+struct Connection {
+    key: &'static str,
+    field: &'static str,
+    variable: &'static str,
+    nodes: &'static str,
+    /// A connection with a count beside it is read by REST past its first
+    /// GraphQL page: REST sizes every batch from the count and reads them
+    /// in one concurrent wave, where the cursor walks one spaced GraphQL
+    /// request at a time.
+    total: Option<&'static str>,
+}
+
+const FILES: Connection = Connection {
+    key: "files",
+    field: "files",
+    variable: "files",
+    nodes: "path additions deletions changeType",
+    total: Some("/changedFiles"),
+};
+const DISCUSSION: Connection = Connection {
+    key: "commentsConn",
+    field: "commentsConn: comments",
+    variable: "discussion",
+    nodes: "databaseId author{ login __typename } body createdAt url",
+    total: Some("/comments/totalCount"),
+};
+const REVIEWS: Connection = Connection {
+    key: "reviews",
+    field: "reviews",
+    variable: "reviews",
+    nodes: "databaseId author{ login __typename } state body submittedAt commit{ oid }",
+    total: None,
+};
+const COMMITS: Connection = Connection {
+    key: "commits",
+    field: "commits",
+    variable: "commits",
+    nodes: "commit{ oid message messageHeadline authoredDate author{ name user{ login } } }",
+    total: None,
+};
+
+/// Nodes per connection page: GitHub's maximum, the size of one REST batch.
+const CONNECTION_PAGE: u32 = 100;
+
+impl Connection {
+    /// The connection's selection; `after` binds `$after` (a continuation).
+    fn selection(&self, after: bool) -> String {
+        let after = if after { ",after:$after" } else { "" };
+        format!(
+            "{}(first:${}{after}){{ pageInfo{{ hasNextPage endCursor }} nodes{{ {} }} }}",
+            self.field, self.variable, self.nodes
+        )
+    }
+
+    /// The document that reads this connection's next page.
+    fn continuation_document(&self) -> String {
+        format!(
+            "query($owner:String!,$repo:String!,$number:Int!,${}:Int!,$after:String!){{ repository(owner:$owner,name:$repo){{ pullRequest(number:$number){{ {} }} }} }}",
+            self.variable,
+            self.selection(true)
+        )
+    }
+}
+
+/// The pull-request document for the collections GraphQL serves, and the
+/// page size variable each collection binds. The body is selected only when
+/// the read shows it (`body`); a row without it leaves `body` unknown, not
+/// empty.
+pub(super) fn pull_request_document(wants: &GraphqlWants) -> (String, Vec<(&'static str, u32)>) {
+    let mut selections: Vec<String> = [
         "number title url state isDraft author { login }",
         "labels(first:20){ pageInfo{ hasNextPage } nodes { name } }",
         "baseRefName baseRefOid headRefName headRefOid createdAt updatedAt closedAt mergedAt mergeCommit { oid }",
@@ -76,42 +170,24 @@ pub(super) fn pull_request_document(
         // Totals only: an alias keeps the count apart from a paged
         // `commits(first:)` selection of the same connection.
         "commitsCount: commits { totalCount } reviewThreads { totalCount }",
-    ];
-    if body {
-        selections.push("body");
+    ]
+    .map(str::to_owned)
+    .into();
+    if wants.body {
+        selections.push("body".to_owned());
     }
     let mut variables = Vec::new();
     let mut header = String::from("query($owner:String!,$repo:String!,$number:Int!");
-    for (wanted, variable, first, selection) in [
-        (
-            wants.lists_files(),
-            "files",
-            100,
-            "files(first:$files){ pageInfo{ hasNextPage } nodes{ path additions deletions changeType } }",
-        ),
-        (
-            wants.has(Section::Comments),
-            "discussion",
-            100,
-            "commentsConn: comments(first:$discussion){ pageInfo{ hasNextPage } nodes{ databaseId author{ login __typename } body createdAt url } }",
-        ),
-        (
-            wants.has(Section::Reviews),
-            "reviews",
-            100,
-            "reviews(first:$reviews){ pageInfo{ hasNextPage } nodes{ databaseId author{ login __typename } state body submittedAt commit{ oid } } }",
-        ),
-        (
-            wants.lists_commits(),
-            "commits",
-            50,
-            "commits(first:$commits){ pageInfo{ hasNextPage } nodes{ commit{ oid message messageHeadline authoredDate author{ name user{ login } } } } }",
-        ),
+    for (wanted, connection) in [
+        (wants.files, &FILES),
+        (wants.discussion, &DISCUSSION),
+        (wants.reviews, &REVIEWS),
+        (wants.commits, &COMMITS),
     ] {
         if wanted {
-            selections.push(selection);
-            variables.push((variable, first));
-            header.push_str(&format!(",${variable}:Int!"));
+            selections.push(connection.selection(false));
+            variables.push((connection.variable, CONNECTION_PAGE));
+            header.push_str(&format!(",${}:Int!", connection.variable));
         }
     }
     header.push(')');
@@ -139,12 +215,12 @@ fn graphql_failure(errors: &[octocode_github::GraphQlError]) -> String {
     )
 }
 
-/// Fetch the PR and its wanted collections in one GraphQL request.
+/// Fetch the PR and its wanted collections in one GraphQL request, then
+/// read on from each connection's end cursor until its first page is held.
 pub(super) async fn graphql_pull_request(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    wants: &Sections,
 ) -> Result<GraphqlOutcome, ProviderError> {
     if !transport.graphql_enabled || !transport.graphql_available(context) {
         return Ok(GraphqlOutcome::Unavailable);
@@ -152,8 +228,8 @@ pub(super) async fn graphql_pull_request(
     let Some(number) = query.number() else {
         return Ok(GraphqlOutcome::Unavailable);
     };
-    let body = wants.has(Section::Body);
-    let (document, bound) = pull_request_document(wants, body);
+    let wants = GraphqlWants::of(query);
+    let (document, bound) = pull_request_document(&wants);
     let mut variables = json!({
         "owner": query.owner(),
         "repo": query.repo(),
@@ -163,9 +239,9 @@ pub(super) async fn graphql_pull_request(
         variables[variable] = json!(first);
     }
     let page = transport
-        .execute_graphql(&document, variables, context)
+        .execute_graphql(&document, variables.clone(), context)
         .await?;
-    let pr = page
+    let mut pr = page
         .data
         .as_ref()
         .and_then(|value| value.pointer("/repository/pullRequest"))
@@ -174,22 +250,142 @@ pub(super) async fn graphql_pull_request(
     if pr.is_null() {
         return Ok(GraphqlOutcome::Failed(graphql_failure(&page.errors)));
     }
+    let collection_page = query.collection_page_size();
+    let file_page = super::inventory::file_page_size(query, false);
+    // Each wanted connection, the nodes its first page needs, and the
+    // pages REST would read at most.
+    let plans = [
+        (&FILES, wants.files, file_page, MAX_FILE_BATCHES),
+        (
+            &DISCUSSION,
+            wants.discussion,
+            collection_page,
+            MAX_COLLECTION_BATCHES,
+        ),
+        (
+            &REVIEWS,
+            wants.reviews,
+            collection_page,
+            MAX_COLLECTION_BATCHES,
+        ),
+        (
+            &COMMITS,
+            wants.commits,
+            collection_page,
+            MAX_PR_COMMIT_BATCHES,
+        ),
+    ];
+    let mut states = [GraphqlCollection::Unused; 4];
+    for (slot, (connection, wanted, need, max_pages)) in states.iter_mut().zip(plans) {
+        if wanted {
+            *slot = read_on(
+                transport, context, &variables, &mut pr, connection, need, max_pages,
+            )
+            .await?;
+        }
+    }
+    let [files, discussion, reviews, commits] = states;
     Ok(GraphqlOutcome::Served(Box::new(GraphqlPr {
-        files: graphql_collection_state(&pr, "files", wants.lists_files()),
-        discussion: graphql_collection_state(&pr, "commentsConn", wants.has(Section::Comments)),
-        reviews: graphql_collection_state(&pr, "reviews", wants.has(Section::Reviews)),
-        commits: graphql_collection_state(&pr, "commits", wants.lists_commits()),
+        files,
+        discussion,
+        reviews,
+        commits,
         raw: map_graphql_pr_metadata(&pr),
         source: pr,
     })))
 }
 
+/// Read `connection` on from its end cursor, appending every page's nodes
+/// to `pr`, until it ends, `need` nodes are held, or `max_pages` pages were
+/// read; then its state. A connection the PR counts is never read on: REST
+/// reads the rest in one wave ([`Connection::total`]). A continuation that
+/// fails (other than by cancellation or timeout) leaves the connection to
+/// REST.
+async fn read_on(
+    transport: &GitHubTransport,
+    context: &RequestContext,
+    variables: &Value,
+    pr: &mut Value,
+    connection: &Connection,
+    need: usize,
+    max_pages: usize,
+) -> Result<GraphqlCollection, ProviderError> {
+    let mut pages = 1;
+    loop {
+        let state = graphql_collection_state(pr, connection.key, true);
+        let held = &pr[connection.key];
+        if state == GraphqlCollection::Complete || held.is_null() {
+            return Ok(state);
+        }
+        if held["nodes"].as_array().map_or(0, Vec::len) >= need {
+            return Ok(GraphqlCollection::Partial);
+        }
+        if connection
+            .total
+            .is_some_and(|total| pr.pointer(total).is_some_and(Value::is_u64))
+        {
+            return Ok(GraphqlCollection::Incomplete);
+        }
+        let Some(cursor) = held
+            .pointer("/pageInfo/endCursor")
+            .and_then(Value::as_str)
+            .filter(|_| pages < max_pages)
+            .map(str::to_owned)
+        else {
+            return Ok(GraphqlCollection::Incomplete);
+        };
+        let mut next = variables.clone();
+        next[connection.variable] = json!(CONNECTION_PAGE);
+        next["after"] = json!(cursor);
+        let answer = match transport
+            .execute_graphql(&connection.continuation_document(), next, context)
+            .await
+        {
+            Ok(answer) => answer,
+            Err(error)
+                if matches!(
+                    error.kind,
+                    ProviderErrorKind::Cancelled | ProviderErrorKind::Timeout
+                ) =>
+            {
+                return Err(error);
+            }
+            Err(_) => return Ok(GraphqlCollection::Incomplete),
+        };
+        let Some(page) = answer
+            .data
+            .as_ref()
+            .and_then(|data| data.pointer(&format!("/repository/pullRequest/{}", connection.key)))
+            .filter(|page| page.is_object())
+        else {
+            return Ok(GraphqlCollection::Incomplete);
+        };
+        let nodes = page
+            .get("nodes")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if nodes.is_empty() {
+            return Ok(GraphqlCollection::Incomplete);
+        }
+        let held = &mut pr[connection.key];
+        if let Some(list) = held.get_mut("nodes").and_then(Value::as_array_mut) {
+            list.extend(nodes);
+        }
+        held["pageInfo"] = page["pageInfo"].clone();
+        pages += 1;
+    }
+}
+
 /// Whether a paginated PR sub-collection was fully returned by the GraphQL
-/// query, partially returned (more pages remain), or not requested.
+/// query, returned in part that covers its first page (more pages remain),
+/// left for REST, or not requested.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum GraphqlCollection {
     Unused,
     Complete,
+    /// The held nodes cover the first page; later pages remain.
+    Partial,
     Incomplete,
 }
 
@@ -466,23 +662,36 @@ mod tests {
             "sections":["body","files","comments","reviews","commits"]
         }))
         .expect("GitHub history test data should be valid");
-        let wants = every.sections();
-        assert!(
-            wants.lists_files()
-                && wants.has(Section::Comments)
-                && wants.has(Section::Reviews)
-                && wants.lists_commits()
+        let wants = GraphqlWants::of(&every);
+        assert_eq!(
+            wants,
+            GraphqlWants {
+                body: true,
+                files: true,
+                discussion: true,
+                reviews: true,
+                commits: true
+            }
         );
-        let (document, variables) = pull_request_document(&wants, true);
+        let (document, variables) = pull_request_document(&wants);
         // The PR's own body is selected only when the read uses it.
         assert!(document.contains("totalCount } body "), "{document}");
-        let (without_body, _) = pull_request_document(&wants, false);
+        let (without_body, _) = pull_request_document(&GraphqlWants {
+            body: false,
+            ..wants
+        });
         assert!(
             !without_body.contains("totalCount } body "),
             "{without_body}"
         );
         assert_eq!(undefined_selections(&document), Vec::<String>::new());
         assert_eq!(variables.len(), 4, "{document}");
+        // Each connection's continuation reads on from its end cursor.
+        for connection in [&FILES, &DISCUSSION, &REVIEWS, &COMMITS] {
+            let next = connection.continuation_document();
+            assert!(next.contains("after:$after"), "{next}");
+            assert_eq!(undefined_selections(&next), Vec::<String>::new());
+        }
         assert_eq!(
             undefined_selections(super::super::issue::CLOSING_REFERENCES_DOCUMENT),
             Vec::<String>::new()

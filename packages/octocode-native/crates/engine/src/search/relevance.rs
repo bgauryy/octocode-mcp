@@ -419,7 +419,8 @@ pub(crate) fn is_demoted_path(relative: &str) -> bool {
 /// `.gitattributes` `linguist-generated` / `linguist-vendored` marks, as git
 /// resolves them: the deepest attributes file decides, its last matching line
 /// wins, and `-attr`, `!attr` or `attr=false` unset. Read once per directory
-/// per search; only inside a git work tree.
+/// per search; only inside a repository ([`super::repository`]): a git or a
+/// Jujutsu checkout.
 pub(crate) struct GitAttributes {
     repo_root: std::path::PathBuf,
     dirs: std::sync::Mutex<
@@ -435,12 +436,9 @@ struct AttributeRule {
 const GENERATED_ATTRIBUTES: [&str; 2] = ["linguist-generated", "linguist-vendored"];
 
 impl GitAttributes {
-    /// `None` outside a git work tree.
+    /// `None` outside a repository ([`super::repository`]).
     pub(crate) fn new(search_root: &std::path::Path) -> Option<Self> {
-        let repo_root = search_root
-            .ancestors()
-            .find(|dir| dir.join(".git").exists())?
-            .to_path_buf();
+        let repo_root = super::repository::nearest(search_root)?.to_path_buf();
         Some(Self {
             repo_root,
             dirs: std::sync::Mutex::default(),
@@ -727,5 +725,25 @@ mod tests {
         ] {
             assert!(!is_demoted_path(path), "{path}");
         }
+    }
+
+    /// A Jujutsu checkout is a repository like a git one: its
+    /// `.gitattributes` marks generated and vendored files.
+    #[test]
+    fn a_jj_checkout_applies_gitattributes() {
+        let base = tempfile::tempdir().expect("tempdir");
+        let checkout = base.path().join("checkout");
+        std::fs::create_dir_all(checkout.join("src")).expect("dirs");
+        std::fs::write(
+            checkout.join(".gitattributes"),
+            "src/gen.ts linguist-generated\nsrc/vendor.ts linguist-vendored\n",
+        )
+        .expect("attributes");
+        assert!(GitAttributes::new(&checkout.join("src")).is_none());
+        std::fs::create_dir(checkout.join(".jj")).expect("jj marker");
+        let marks = GitAttributes::new(&checkout.join("src")).expect("a jj checkout");
+        assert!(marks.marks_generated(&checkout.join("src/gen.ts")));
+        assert!(marks.marks_generated(&checkout.join("src/vendor.ts")));
+        assert!(!marks.marks_generated(&checkout.join("src/main.ts")));
     }
 }

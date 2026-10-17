@@ -646,6 +646,8 @@ fn rejects_changed_and_forged_snapshots_even_on_empty_or_final_pages() {
     for foreign in [
         format!("lexical-live-v3:{digest}"),
         format!("lexical-live-v4:{}", "0".repeat(64)),
+        // A v5 snapshot of this very digest: the JSON-hashed identity.
+        format!("lexical-live-v5:{digest}"),
     ] {
         continued.snapshot = Some(foreign.parse().expect("snapshot"));
         assert_eq!(
@@ -683,6 +685,7 @@ fn a_scan_over_a_mebibyte_is_stored_for_its_later_pages() {
             .collect::<String>();
         fs::write(root.path().join(format!("f{n:03}.rs")), body).expect("fixture");
     }
+    settle();
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "sort": "path"}),
@@ -704,7 +707,24 @@ fn a_scan_over_a_mebibyte_is_stored_for_its_later_pages() {
         .flat_map(|file| &file.matches)
         .map(|hit| hit.value.len())
         .sum::<usize>();
-    assert!(raw > 1024 * 1024, "{raw}");
+    assert_eq!(raw, 0, "stored ordinary matches retain no snippet text");
+    assert_eq!(
+        stored
+            .value
+            .files
+            .iter()
+            .map(|f| f.matches.len())
+            .sum::<usize>(),
+        8_000
+    );
+    assert!(
+        stored
+            .value
+            .files
+            .iter()
+            .flat_map(|f| &f.matches)
+            .all(|hit| hit.deferred.is_some_and(|price| price > 0))
+    );
     let next = first.next.clone().expect("continuation")["nextPage"]["query"]["queries"][0].clone();
     let page = |query: &serde_json::Value| {
         let result = execute_local_search(
@@ -924,16 +944,18 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
     assert!(control.files.is_empty());
 }
 
-/// Continuations reuse the page-1 scan whatever `includeIgnored` says, so pages
-/// stay consistent; a matched file that changed since the scan, or a
-/// scan that expired, falls back to a rescan that restarts a changed
-/// result.
+/// Continuations reuse the page-1 scan while nothing its walk searched
+/// changed. A new matching file, an unmatched file that gains a match, or a
+/// matched file that changed drops the stored scan, and the rescan restarts
+/// the changed result: exactly what a call with no stored scan answers.
 #[test]
-fn continuations_reuse_their_scan_until_a_matched_file_changes() {
+fn continuations_reuse_their_scan_until_the_walk_changes() {
     let root = tempfile::tempdir().expect("fixture directory");
     for name in ["a.txt", "b.txt", "c.txt"] {
         fs::write(root.path().join(name), "needle\n").expect("fixture");
     }
+    fs::write(root.path().join("d.txt"), "hay\n").expect("fixture");
+    settle();
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "pageSize": 1, "sort": "path"}),
@@ -951,79 +973,117 @@ fn continuations_reuse_their_scan_until_a_matched_file_changes() {
             Some(&request),
         )
     };
-    // A new matching file is not part of the stored scan.
-    fs::write(root.path().join("a0.txt"), "needle\n").expect("new file");
+    assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
     let second = execute_local_search(&page(2), &policy, &security, &NeverCancel, None, None, None)
         .expect("page 2 from the stored scan");
     assert_eq!(second.files[0].path, "b.txt");
-    // Once the scan is gone, the rescan sees the new file and restarts.
-    super::manifest::evict(&snapshot);
-    assert_eq!(
-        execute_local_search(&page(2), &policy, &security, &NeverCancel, None, None, None)
-            .expect_err("changed result")
-            .code,
-        "staleSnapshot"
-    );
+    let stale = |page: u32, change: &str| {
+        let error = execute_local_search(
+            &ls_query(
+                serde_json::json!({"snapshot": snapshot, "page": page}),
+                Some(&request),
+            ),
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .expect_err(change);
+        assert_eq!(error.code, "staleSnapshot", "{change}");
+        assert!(
+            super::manifest::get(&snapshot, &policy.identity()).is_none(),
+            "{change}"
+        );
+    };
+    // An unmatched file that gains a match.
+    fs::write(root.path().join("d.txt"), "needle\n").expect("edit");
+    stale(2, "an unmatched file gained a match");
+    fs::write(root.path().join("d.txt"), "hay\n").expect("restore");
+    // A new matching file.
+    fs::write(root.path().join("a0.txt"), "needle\n").expect("new file");
+    stale(2, "a new matching file");
     fs::remove_file(root.path().join("a0.txt")).expect("cleanup");
+    // A matched file that changed: page 1 stores the restored walk's scan
+    // again once its writes settled.
+    settle();
     let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
         .expect("page 1 again");
     assert_eq!(first.source_snapshot.as_deref(), Some(snapshot.as_str()));
-    // A matched file that changed invalidates the stored scan.
+    assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
     fs::write(root.path().join("c.txt"), "needle\nneedle\n").expect("edit");
-    assert_eq!(
-        execute_local_search(&page(3), &policy, &security, &NeverCancel, None, None, None)
-            .expect_err("edited matched file")
-            .code,
-        "staleSnapshot"
-    );
+    stale(3, "an edited matched file");
 }
 
 /// A continuation never serves stored values from a file edited since
-/// the scan, even when the edit keeps its size and modification time.
+/// the scan, even when the edit keeps its size and modification time: one
+/// made after the page took the stored scan fails the stored digest the
+/// page re-hashes, one made before it drops the stored scan (on Unix its
+/// change time moved the walk's proof) and the rescan restarts.
 #[test]
 fn a_same_size_same_mtime_edit_restarts_instead_of_serving_old_values() {
     let root = tempfile::tempdir().expect("fixture directory");
     fs::write(root.path().join("a.ts"), "const needle = \"OLD_A\";\n").expect("fixture");
     let b = root.path().join("b.ts");
     fs::write(&b, "const needle = \"OLD_B\";\n").expect("fixture");
+    settle();
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "regex": "literal", "sort": "path", "include": ["*.ts"], "includeIgnored": true, "pageSize": 1}),
         None,
     );
-    let (_, _, page_two) = first_page(&request, &policy, &security);
-    rewrite_keeping_stamp(&b, "const needle = \"NEW_B\";\n");
-    match execute_local_search(
-        &page_two,
-        &policy,
-        &security,
-        &NeverCancel,
-        None,
-        None,
-        None,
-    ) {
-        Ok(result) => panic!("stale page served: {}", values(&result)),
+    let (_, snapshot, page_two) = first_page(&request, &policy, &security);
+    assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
+    let restarts = |page: Result<LocalSearchResult, crate::tools::result::ToolError>,
+                    case: &str| match page {
+        Ok(result) => panic!("{case}: stale page served: {}", values(&result)),
         Err(error) => {
-            assert_eq!(error.code, "staleSnapshot");
+            assert_eq!(error.code, "staleSnapshot", "{case}");
             let restart = error.next.expect("restart");
             assert!(
                 restart["restart"]["query"]["queries"][0]
                     .get("snapshot")
-                    .is_none()
+                    .is_none(),
+                "{case}"
             );
         }
+    };
+    restarts(
+        stored_page_after(&page_two, &policy, &security, None, || {
+            rewrite_keeping_stamp(&b, "const needle = \"NEW_B\";\n");
+        }),
+        "after the page took the stored scan",
+    );
+    if cfg!(unix) {
+        assert!(super::manifest::get(&snapshot, &policy.identity()).is_none());
     }
+    restarts(
+        execute_local_search(
+            &page_two,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        ),
+        "before the continuation",
+    );
     for view in ["files", "countMatches"] {
         fs::write(&b, "const needle = \"OLD_B\";\n").expect("fixture");
+        settle();
         let listed = ls_query(serde_json::json!({"resultView": view}), Some(&request));
-        let first =
-            execute_local_search(&listed, &policy, &security, &NeverCancel, None, None, None)
-                .expect("list page 1");
-        let next = ls_query(
-            serde_json::json!({"snapshot": first.source_snapshot.clone().expect("identity"), "page": 2}),
-            Some(&listed),
+        let (_, snapshot, next) = first_page(&listed, &policy, &security);
+        assert!(
+            super::manifest::get(&snapshot, &policy.identity()).is_some(),
+            "{view}"
         );
-        rewrite_keeping_stamp(&b, "const nEEdle = \"NEW_B\";\n");
+        let edit = || rewrite_keeping_stamp(&b, "const nEEdle = \"NEW_B\";\n");
+        match stored_page_after(&next, &policy, &security, None, edit) {
+            Ok(result) => panic!("{view}: stale page served: {}", values(&result)),
+            Err(error) => assert_eq!(error.code, "staleSnapshot", "{view}"),
+        }
         match execute_local_search(&next, &policy, &security, &NeverCancel, None, None, None) {
             Ok(result) => panic!("{view}: stale page served: {}", values(&result)),
             Err(error) => assert_eq!(error.code, "staleSnapshot", "{view}"),
@@ -1044,20 +1104,11 @@ fn a_same_size_same_mtime_edit_restarts_instead_of_serving_old_values() {
 }
 
 /// Every view's values are present in the bytes they were scanned from,
-/// so unchanged files keep reusing the stored scan: a matching file added
-/// after page 1 stays unseen on page 2 instead of restarting the search.
+/// so unchanged files keep reusing the stored scan; a matching file added
+/// after page 1 drops it, and page 2 restarts instead of hiding the file.
 #[test]
-fn every_view_keeps_reusing_its_scan_while_files_are_unchanged() {
-    let root = tempfile::tempdir().expect("fixture directory");
+fn every_view_reuses_its_scan_until_a_matching_file_is_added() {
     let long = format!("{} needle tail {}", "x".repeat(300), "y".repeat(300));
-    for name in ["a.txt", "b.txt", "c.txt"] {
-        fs::write(
-            root.path().join(name),
-            format!("head\r\nlet needle = 1;\r\n{long}\nneedle\nmid ✓ line\nneedle again ✓\nend\n"),
-        )
-        .expect("fixture");
-    }
-    let (policy, security) = policy_for(root.path());
     let views = [
         serde_json::json!({}),
         serde_json::json!({"contextLines": 2}),
@@ -1069,7 +1120,25 @@ fn every_view_keeps_reusing_its_scan_while_files_are_unchanged() {
         serde_json::json!({"resultView": "countMatches"}),
         serde_json::json!({"multiline": "on", "matchString": "needle\\nmid", "regex": "rust"}),
     ];
-    for (index, view) in views.iter().enumerate() {
+    // One settled fixture per view: an edit in one leaves the others' walks
+    // unchanged.
+    let roots = views
+        .iter()
+        .map(|_| {
+            let root = tempfile::tempdir().expect("fixture directory");
+            for name in ["a.txt", "b.txt", "c.txt"] {
+                fs::write(
+                    root.path().join(name),
+                    format!("head\r\nlet needle = 1;\r\n{long}\nneedle\nmid ✓ line\nneedle again ✓\nend\n"),
+                )
+                .expect("fixture");
+            }
+            root
+        })
+        .collect::<Vec<_>>();
+    settle();
+    for (view, root) in views.iter().zip(&roots) {
+        let (policy, security) = policy_for(root.path());
         let request = ls_query(
             serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "pageSize": 1, "sort": "path"}),
             None,
@@ -1082,13 +1151,16 @@ fn every_view_keeps_reusing_its_scan_while_files_are_unchanged() {
             .source_snapshot
             .clone()
             .unwrap_or_else(|| panic!("{view}: no continuation"));
-        let added = root.path().join(format!("a{index}.txt"));
-        fs::write(&added, "needle\n").expect("new file");
+        let page_two = ls_query(
+            serde_json::json!({"snapshot": snapshot, "page": 2}),
+            Some(&request),
+        );
+        assert!(
+            super::manifest::get(&snapshot, &policy.identity()).is_some(),
+            "{view}: stored"
+        );
         let second = execute_local_search(
-            &ls_query(
-                serde_json::json!({"snapshot": snapshot, "page": 2}),
-                Some(&request),
-            ),
+            &page_two,
             &policy,
             &security,
             &NeverCancel,
@@ -1098,13 +1170,25 @@ fn every_view_keeps_reusing_its_scan_while_files_are_unchanged() {
         )
         .unwrap_or_else(|e| panic!("{view}: stored scan not reused: {}", e.message));
         assert_eq!(second.files[0].path, "b.txt", "{view}");
-        fs::remove_file(added).expect("cleanup");
+        fs::write(root.path().join("a0.txt"), "needle\n").expect("new file");
+        let error = execute_local_search(
+            &page_two,
+            &policy,
+            &security,
+            &NeverCancel,
+            None,
+            None,
+            None,
+        )
+        .expect_err("a new matching file restarts page 2");
+        assert_eq!(error.code, "staleSnapshot", "{view}");
     }
 }
 
 /// A stored key-shaped value is redacted on its first page; after the
 /// source is swapped for innocuous text of the same size and time, the
-/// stored value must not be checked against the new text and shown.
+/// stored value must not be checked against the new text and shown, whether
+/// the swap lands after the page took the stored scan or before.
 #[test]
 fn a_stored_key_fragment_never_surfaces_after_a_stamp_preserving_swap() {
     let root = tempfile::tempdir().expect("fixture directory");
@@ -1117,12 +1201,14 @@ fn a_stored_key_fragment_never_surfaces_after_a_stamp_preserving_swap() {
     let key = root.path().join("b.ts");
     let old = format!("-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n");
     fs::write(&key, &old).expect("fixture");
+    settle();
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "QUJD", "regex": "literal", "sort": "path", "include": ["*.ts"], "includeIgnored": true, "pageSize": 1}),
         None,
     );
-    let (_, _, page_two) = first_page(&request, &policy, &security);
+    let (_, snapshot, page_two) = first_page(&request, &policy, &security);
+    assert!(super::manifest::get(&snapshot, &policy.identity()).is_some());
     let before = execute_local_search(
         &page_two,
         &policy,
@@ -1140,7 +1226,20 @@ fn a_stored_key_fragment_never_surfaces_after_a_stamp_preserving_swap() {
         "Z".repeat(body.len()),
         "// clean trailer".to_owned() + &" ".repeat("-----END PRIVATE KEY-----".len() - 16)
     );
-    rewrite_keeping_stamp(&key, &clean);
+    // Swapped after the page took the stored scan: the stored key file no
+    // longer hashes to its scan, so the page restarts.
+    let swapped = stored_page_after(&page_two, &policy, &security, None, || {
+        rewrite_keeping_stamp(&key, &clean);
+    });
+    match swapped {
+        Ok(result) => panic!("old key body served: {}", values(&result)),
+        Err(error) => assert_eq!(error.code, "staleSnapshot", "{}", error.message),
+    }
+    // Swapped before: the walk's proof drops the stored scan (on Unix its
+    // change time moved), and the rescan of the clean text restarts.
+    if cfg!(unix) {
+        assert!(super::manifest::get(&snapshot, &policy.identity()).is_none());
+    }
     match execute_local_search(
         &page_two,
         &policy,
@@ -1150,12 +1249,8 @@ fn a_stored_key_fragment_never_surfaces_after_a_stamp_preserving_swap() {
         None,
         None,
     ) {
-        Ok(result) => assert!(
-            !values(&result).contains(&body),
-            "old key body surfaced: {}",
-            values(&result)
-        ),
-        Err(error) => assert_eq!(error.code, "staleSnapshot"),
+        Ok(result) => panic!("old key body served: {}", values(&result)),
+        Err(error) => assert_eq!(error.code, "staleSnapshot", "{}", error.message),
     }
 }
 
@@ -2168,4 +2263,174 @@ fn context_windows_show_every_line_once_across_pages() {
             );
         }
     }
+}
+
+#[test]
+fn deferred_pages_equal_owned_pages_through_the_final_duplicate() {
+    let root = tempfile::tempdir().expect("fixture");
+    let body = (0..123)
+        .map(|i| match i % 4 {
+            0 => format!("// needle comment {i}\n"),
+            1 => format!("let needle_{i} = 1;\n"),
+            2 => "needle();\n".to_owned(),
+            _ => format!("é😀 needle {i} {}\n", "x".repeat(400)),
+        })
+        .collect::<String>();
+    let token = format!("{}{}", "ghp_", "1234567890abcdefghijklmnopqrstuvwxyzAB");
+    fs::write(
+        root.path().join("dense.rs"),
+        format!("{body}needle {token}\n"),
+    )
+    .expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    settle();
+    for fields in [
+        serde_json::json!({}),
+        serde_json::json!({"pageSize":1,"matchPageSize":7}),
+        serde_json::json!({"contextLines":2}),
+        serde_json::json!({"resultView":"matchOnly","unique":"count"}),
+    ] {
+        let base = ls_query(
+            serde_json::json!({"path":root.path(),"matchString":"needle","matchContentLength":40}),
+            None,
+        );
+        let mut request = ls_query(fields, Some(&base));
+        let mut pages = 0;
+        loop {
+            let compact = execute_local_search(
+                &request,
+                &policy,
+                &security,
+                &NeverCancel,
+                Some(1),
+                Some(2200),
+                None,
+            )
+            .expect("compact page");
+            let plain = ls_query(serde_json::json!({"snapshot":null}), Some(&request));
+            let mut original = super::super::executor::scan_query(
+                &plain,
+                &policy,
+                &NeverCancel,
+                Some(1),
+                Some(2200),
+            )
+            .expect("scan");
+            let mut options = original.search_options.clone();
+            options.defer_values = false;
+            original.parsed = super::super::executor::scan(
+                &plain,
+                &policy,
+                options,
+                &policy.identity(),
+                &NeverCancel,
+            )
+            .expect("owned scan")
+            .parsed;
+            original.reusable = None;
+            let owned = super::super::executor::page_of(
+                &plain,
+                &policy,
+                &security,
+                &NeverCancel,
+                Some(1),
+                original,
+                None,
+            )
+            .expect("owned page");
+            assert_eq!(values(&compact), values(&owned), "page {pages}");
+            assert_eq!(
+                serde_json::to_value(&compact.pagination).expect("paging"),
+                serde_json::to_value(&owned.pagination).expect("paging")
+            );
+            pages += 1;
+            assert!(pages < 150);
+            let next = compact
+                .next
+                .as_ref()
+                .and_then(|next| next.get("nextPage").or_else(|| next.get("nextMatchPage")))
+                .and_then(|next| next.get("query"));
+            let Some(next) = next else {
+                break;
+            };
+            request = ls_query(next["queries"][0].clone(), None);
+            let cached = super::super::executor::scan_query(
+                &request,
+                &policy,
+                &NeverCancel,
+                Some(1),
+                Some(2200),
+            )
+            .expect("cached continuation");
+            assert!(cached.digests.is_some(), "continuation reused stored scan");
+            assert_eq!(Some(cached.identity.as_str()), request.snapshot());
+        }
+        if request.result_view != LocalSearchQueryResultView::MatchOnly {
+            assert!(pages > 1);
+        }
+    }
+}
+
+#[test]
+#[ignore = "memory measurement: set SEARCH_MEMORY_CORPUS; optionally SEARCH_MEMORY_OWNED=1"]
+fn measure_dense_search_memory() {
+    let path =
+        std::path::PathBuf::from(std::env::var("SEARCH_MEMORY_CORPUS").expect("corpus path"));
+    let (policy, security) = policy_for(path.parent().expect("parent"));
+    let request = ls_query(
+        serde_json::json!({"path":path,"matchString":"needle"}),
+        None,
+    );
+    let result = if std::env::var_os("SEARCH_MEMORY_OWNED").is_some() {
+        let mut scan =
+            super::super::executor::scan_query(&request, &policy, &NeverCancel, Some(1), None)
+                .expect("compact scan");
+        let mut options = scan.search_options.clone();
+        options.defer_values = false;
+        // Drop the compact scan before the measured owned engine allocates.
+        scan.parsed.files.clear();
+        scan.parsed = super::super::executor::scan(
+            &request,
+            &policy,
+            options,
+            &policy.identity(),
+            &NeverCancel,
+        )
+        .expect("owned scan")
+        .parsed;
+        scan.reusable = None;
+        super::super::executor::page_of(
+            &request,
+            &policy,
+            &security,
+            &NeverCancel,
+            Some(1),
+            scan,
+            None,
+        )
+        .expect("owned page")
+    } else {
+        execute_local_search(
+            &request,
+            &policy,
+            &security,
+            &NeverCancel,
+            Some(1),
+            None,
+            None,
+        )
+        .expect("compact page")
+    };
+    assert_eq!(result.stats.matched_lines, Some(120_000));
+    let snapshot = result.source_snapshot.as_deref().expect("snapshot");
+    if std::env::var_os("SEARCH_MEMORY_OWNED").is_none() {
+        assert!(
+            super::manifest::get(snapshot, &policy.identity()).is_some(),
+            "large scan stored"
+        );
+    }
+    eprintln!(
+        "pages: {:?}; rows: {:?}",
+        result.pagination, result.stats.matched_lines
+    );
 }

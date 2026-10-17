@@ -7,7 +7,9 @@ use crate::signatures::extractor::{AST_EXECUTION_TIMEOUT, ParseFailure, parse_wi
 use crate::structural::macro_bodies::{
     MAX_MACRO_DEPTH, MacroBodies, is_body_candidate, parse_body,
 };
-use crate::structural::types::StructuralMatch;
+use crate::structural::types::{
+    FileMatches, StructuralDemand, StructuralDetailedMatch, StructuralMatch,
+};
 
 use super::line_index_support::to_structural_match_with_index;
 use crate::text::utf8_offsets::LineIndex;
@@ -76,6 +78,65 @@ impl MatchWithKind {
                 id: node.kind_id(),
             },
             matched,
+        }
+    }
+}
+
+/// What a matcher keeps of the matches it finds, by the caller's
+/// [`StructuralDemand`]: a match is built only when it is kept or priced.
+pub(in crate::structural) enum Found<'a> {
+    Matches(Vec<MatchWithKind>),
+    Priced(
+        &'a (dyn Fn(&StructuralDetailedMatch) -> u32 + Sync),
+        Vec<u32>,
+    ),
+    Counted(u32),
+}
+
+impl<'a> Found<'a> {
+    pub(in crate::structural) fn new(demand: StructuralDemand<'a>) -> Self {
+        match demand {
+            StructuralDemand::Matches => Self::Matches(Vec::new()),
+            StructuralDemand::Count => Self::Counted(0),
+            StructuralDemand::Priced(price) => Self::Priced(price, Vec::new()),
+        }
+    }
+
+    /// One match of `node`; `build` makes it only when this demand keeps
+    /// or prices it.
+    pub(super) fn push(&mut self, node: Node<'_>, build: impl FnOnce() -> StructuralMatch) {
+        match self {
+            Self::Matches(matches) => matches.push(MatchWithKind::new(node, build())),
+            Self::Priced(price, prices) => {
+                let found = MatchWithKind::new(node, build());
+                prices.push(price(&StructuralDetailedMatch::from_match(
+                    found.matched,
+                    found.node_kind,
+                )));
+            }
+            Self::Counted(count) => *count = count.saturating_add(1),
+        }
+    }
+
+    /// The kept matches (empty for a count or a price demand).
+    pub(in crate::structural) fn into_matches(self) -> Vec<MatchWithKind> {
+        match self {
+            Self::Matches(matches) => matches,
+            Self::Priced(..) | Self::Counted(_) => Vec::new(),
+        }
+    }
+
+    /// What a file keeps, as the detailed shape.
+    pub(in crate::structural) fn into_file_matches(self) -> FileMatches {
+        match self {
+            Self::Matches(matches) => FileMatches::Held(
+                matches
+                    .into_iter()
+                    .map(|m| StructuralDetailedMatch::from_match(m.matched, m.node_kind))
+                    .collect(),
+            ),
+            Self::Priced(_, prices) => FileMatches::Priced(prices),
+            Self::Counted(count) => FileMatches::Counted(count),
         }
     }
 }
@@ -292,9 +353,9 @@ pub(super) fn collect_kind_matches(
     language: &Language,
     macros: Option<&MacroBodies>,
     deadline: Instant,
-) -> Result<Vec<MatchWithKind>, ExecutionError> {
+    found: &mut Found<'_>,
+) -> Result<(), ExecutionError> {
     let line_index = LineIndex::tree_sitter(content);
-    let mut matches = Vec::new();
     visit_named_expanding_macros(
         root,
         content,
@@ -303,21 +364,19 @@ pub(super) fn collect_kind_matches(
         deadline,
         &mut |candidate, _, _| {
             if candidate.kind() == kind {
-                matches.push(MatchWithKind::new(
-                    candidate,
+                found.push(candidate, || {
                     to_structural_match_with_index(
                         candidate,
                         content,
                         &line_index,
                         HashMap::new(),
                         HashMap::new(),
-                    ),
-                ));
+                    )
+                });
             }
             Ok(())
         },
-    )?;
-    Ok(matches)
+    )
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

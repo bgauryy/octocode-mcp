@@ -15,7 +15,7 @@ use super::rest::{BodyWindows, Rest};
 use super::text::{body_matches, needle, paginate_text};
 use super::util::{map_comments, str_at};
 use super::window::{
-    Loaded, MAX_COLLECTION_BATCHES, MAX_FILE_BATCHES, MAX_PR_COMMIT_BATCHES, WindowSpec,
+    Batch, Loaded, MAX_COLLECTION_BATCHES, MAX_FILE_BATCHES, MAX_PR_COMMIT_BATCHES, WindowSpec,
     load_window, reconcile_collection_total, reconcile_file_totals,
 };
 use super::{HistoryItemRequest, Section, Sections, fetch, validation};
@@ -24,12 +24,12 @@ use crate::tools::result::ToolData;
 use octocode_github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
 use serde_json::{Map, Value, json};
 
-/// One PR collection: the whole list when GraphQL returned it complete,
-/// otherwise the REST window covering the requested public page.
+/// One PR collection: what GraphQL served (the whole list, or a first page
+/// it covers), otherwise the REST window covering the requested public page.
 async fn load_collection(
     transport: &GitHubTransport,
     wanted: bool,
-    graphql: Option<Vec<Value>>,
+    graphql: Option<Loaded>,
     segments: &[&str],
     spec: WindowSpec,
     keep: impl Fn(&Value) -> bool,
@@ -38,8 +38,8 @@ async fn load_collection(
     if !wanted {
         return Ok(None);
     }
-    if let Some(items) = graphql {
-        return Ok(Some(Loaded::complete(items)));
+    if let Some(served) = graphql {
+        return Ok(Some(served));
     }
     load_window(transport, segments, spec, keep, context)
         .await
@@ -52,8 +52,8 @@ pub(super) async fn pull_request(
     context: &RequestContext,
 ) -> Result<ToolData, ProviderError> {
     let wants = query.sections();
-    let (graphql, graphql_fallback) = fast_path(transport, query, context, &wants).await?;
     let plan = PrPlan::new(query)?;
+    let (graphql, graphql_fallback) = fast_path(transport, query, context).await?;
     let loads = load_pr(transport, query, context, &wants, &plan, graphql.as_ref()).await?;
     let head = str_at(&loads.raw, "/head/sha").map(str::to_owned);
     // A pin names the head by its SHA or an abbreviation of it.
@@ -123,12 +123,11 @@ async fn fast_path(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
-    wants: &Sections,
 ) -> Result<(Option<GraphqlPr>, Option<String>), ProviderError> {
     if !graphql_complete_collection_eligible(query) {
         return Ok((None, None));
     }
-    match graphql_pull_request(transport, query, context, wants).await {
+    match graphql_pull_request(transport, query, context).await {
         Ok(GraphqlOutcome::Served(pr)) => Ok((Some(*pr), None)),
         Ok(GraphqlOutcome::Unavailable) => Ok((None, None)),
         Ok(GraphqlOutcome::Failed(reason)) => Ok((None, Some(reason))),
@@ -183,27 +182,27 @@ struct PrLoads {
 }
 
 /// Requests that run before the collections: the PR itself, beside the
-/// first file batch, when a filtered file scan or a later comment page needs
-/// the PR's counts to read every batch at once.
+/// first batch of a file window that may need more than one batch (the PR's
+/// `changed_files` then sizes the rest, which load at once), or alone when a
+/// later comment page that `matchString` filters needs the PR's counts.
 async fn first_requests(
     transport: &GitHubTransport,
     context: &RequestContext,
     pulls: &[&str],
-    filtered_files: bool,
+    file_batch: Option<usize>,
     later_comments: bool,
-) -> Result<(Option<Value>, Option<Vec<Value>>), ProviderError> {
-    if filtered_files {
+) -> Result<(Option<Value>, Option<(usize, Batch)>), ProviderError> {
+    if let Some(batch) = file_batch {
         let files_path = [pulls, &["files"]].concat();
-        let batch = [
+        let page = [
             ("per_page", octocode_github::MAX_PER_PAGE.to_string()),
-            ("page", "1".to_owned()),
+            ("page", batch.to_string()),
         ];
-        let (raw, (files, more)) = tokio::try_join!(
+        let ((raw, _), files) = tokio::try_join!(
             fetch(transport, pulls, &[], context),
-            fetch(transport, &files_path, &batch, context),
+            fetch(transport, &files_path, &page, context),
         )?;
-        let whole = (!more).then(|| files.as_array().cloned()).flatten();
-        return Ok((Some(raw.0), whole));
+        return Ok((Some(raw), Some((batch, files))));
     }
     if later_comments {
         return Ok((Some(fetch(transport, pulls, &[], context).await?.0), None));
@@ -211,24 +210,26 @@ async fn first_requests(
     Ok((None, None))
 }
 
-/// The PR fetched before its collections, beside its first file batch, when
-/// they need its counts: a selected or match-filtered file scan cannot jump
-/// to a batch by index, nor can a later comment page that `matchString`
-/// filters; with the PR's counts in hand they read every batch at once.
-/// When the first file batch is the whole list (most PRs), a filtered read
-/// costs one round trip.
+/// The PR fetched before its collections, beside the first batch of its
+/// file window, when they need its counts: a selected or match-filtered file
+/// scan cannot jump to a batch by index, a page whose files cross a batch
+/// boundary needs the count to read its batches at once, and a later
+/// comment page that `matchString` filters cannot jump either. The held
+/// batch is the window's own first batch, never read again; when it ends
+/// the list (most PRs), the read costs one round trip.
 async fn prefetch(
     transport: &GitHubTransport,
     query: &HistoryItemRequest,
     context: &RequestContext,
     wants: &Sections,
     plan: &PrPlan,
+    files: &WindowSpec,
     graphql: Option<&GraphqlPr>,
-) -> Result<(Option<Value>, Option<Vec<Value>>), ProviderError> {
+) -> Result<(Option<Value>, Option<(usize, Batch)>), ProviderError> {
     if graphql.is_some() {
         return Ok((None, None));
     }
-    let filtered_files = wants.lists_files() && !plan.file_filter().is_trivial();
+    let file_batch = (wants.lists_files() && files.spans_batches()).then(|| files.first_batch());
     // Only a `matchString` filters comments; an unfiltered later page jumps
     // straight to its provider batch.
     let later_comments = (wants.has(Section::Comments) || wants.has(Section::ReviewComments))
@@ -241,7 +242,7 @@ async fn prefetch(
         "pulls",
         plan.number.as_str(),
     ];
-    first_requests(transport, context, &pulls, filtered_files, later_comments).await
+    first_requests(transport, context, &pulls, file_batch, later_comments).await
 }
 
 /// The PR itself: from GraphQL, the prefetch, or one REST read.
@@ -286,6 +287,7 @@ async fn load_pr(
         page_size,
         filtered,
         provider_total: None,
+        prefetched: None,
     };
     let (owner, repo, number) = (query.owner(), query.repo(), plan.number.as_str());
     let under_pulls = |leaf: &'static str| ["repos", owner, repo, "pulls", number, leaf];
@@ -293,13 +295,24 @@ async fn load_pr(
         ["files", "comments", "reviews", "commits"].map(under_pulls);
     let discussion_path = ["repos", owner, repo, "issues", number, "comments"];
     let complete = |kind: fn(&GraphqlPr) -> GraphqlCollection, map: fn(&Value) -> Vec<Value>| {
-        graphql
-            .filter(|g| kind(g) == GraphqlCollection::Complete)
-            .map(|g| map(&g.source))
+        graphql.and_then(|g| match kind(g) {
+            GraphqlCollection::Complete => Some(Loaded::complete(map(&g.source))),
+            GraphqlCollection::Partial => Some(Loaded::prefix(map(&g.source))),
+            GraphqlCollection::Unused | GraphqlCollection::Incomplete => None,
+        })
     };
-    let (raw_first, first_file_batch) =
-        prefetch(transport, query, context, wants, plan, graphql).await?;
-    let provider_count = |key: &str| provider_count(raw_first.as_ref(), key);
+    let mut files = WindowSpec {
+        page_size: file_page_size(query, wants.has(Section::Patches)),
+        ..spec(MAX_FILE_BATCHES, query.page(), !file_filter.is_trivial())
+    };
+    let (raw_first, file_batch) =
+        prefetch(transport, query, context, wants, plan, &files, graphql).await?;
+    // The PR's counts size the collections' batches: from the prefetch, or
+    // from the GraphQL header (which counts files and comments).
+    let counts = raw_first.as_ref().or(graphql.map(|g| &g.raw));
+    let provider_count = |key: &str| provider_count(counts, key);
+    files.provider_total = provider_count("changed_files");
+    files.prefetched = file_batch;
     let pulls = ["repos", owner, repo, "pulls", number];
     // Collections load concurrently; each derives its provider batches from
     // the public page cursor (no provider cursor leaks into continuations).
@@ -308,13 +321,9 @@ async fn load_pr(
         load_collection(
             transport,
             wants.lists_files(),
-            complete(|g| g.files, map_graphql_files).or(first_file_batch),
+            complete(|g| g.files, map_graphql_files),
             &files_path,
-            WindowSpec {
-                provider_total: provider_count("changed_files"),
-                page_size: file_page_size(query, wants.has(Section::Patches)),
-                ..spec(MAX_FILE_BATCHES, query.page(), !file_filter.is_trivial())
-            },
+            files,
             |value| file_filter.matches(value),
             context,
         ),

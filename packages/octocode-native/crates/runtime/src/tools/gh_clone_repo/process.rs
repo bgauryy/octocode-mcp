@@ -86,21 +86,12 @@ pub trait GitRunner: Send + Sync {
     }
 }
 
-/// Runtime environment names the isolated git keeps: its PATH plus the proxy
-/// and trust-store settings a corporate network needs. Nothing that weakens
-/// TLS (`GIT_SSL_NO_VERIFY`) or carries a credential passes.
-const PASSTHROUGH_ENV: &[&str] = &[
+/// Git's own runtime environment names the isolated git keeps besides the
+/// HTTP client's ([`octocode_io::http::NETWORK_ENV`]): its PATH and its own
+/// trust-store settings. Nothing that weakens TLS (`GIT_SSL_NO_VERIFY`) or
+/// carries a credential passes.
+const GIT_ENV: &[&str] = &[
     "PATH",
-    "HTTPS_PROXY",
-    "https_proxy",
-    "HTTP_PROXY",
-    "http_proxy",
-    "ALL_PROXY",
-    "all_proxy",
-    "NO_PROXY",
-    "no_proxy",
-    "SSL_CERT_FILE",
-    "SSL_CERT_DIR",
     "GIT_SSL_CAINFO",
     "GIT_SSL_CAPATH",
     "CURL_CA_BUNDLE",
@@ -108,10 +99,19 @@ const PASSTHROUGH_ENV: &[&str] = &[
     "SystemRoot",
 ];
 
+/// Every runtime environment name the isolated git keeps: [`GIT_ENV`] plus
+/// the proxy and trust-store settings a corporate network needs.
+fn passthrough_env() -> impl Iterator<Item = &'static str> {
+    GIT_ENV
+        .iter()
+        .chain(octocode_io::http::NETWORK_ENV)
+        .copied()
+}
+
 #[derive(Clone, Debug)]
 pub struct SystemGit {
     executable: PathBuf,
-    /// [`PASSTHROUGH_ENV`] values, read once from the runtime environment.
+    /// [`passthrough_env`] values, read once from the runtime environment.
     passthrough: Vec<(String, OsString)>,
 }
 
@@ -120,24 +120,22 @@ impl Default for SystemGit {
     fn default() -> Self {
         Self {
             executable: PathBuf::from("git"),
-            passthrough: PASSTHROUGH_ENV
-                .iter()
-                .filter_map(|name| Some(((*name).to_owned(), std::env::var_os(name)?)))
+            passthrough: passthrough_env()
+                .filter_map(|name| Some((name.to_owned(), std::env::var_os(name)?)))
                 .collect(),
         }
     }
 }
 
 impl SystemGit {
-    /// Git with the [`PASSTHROUGH_ENV`] subset of the runtime `env` (the
+    /// Git with the [`passthrough_env`] subset of the runtime `env` (the
     /// resolved config env, not the process's). PATH falls back to the
     /// process's when `env` has none, so git can still be found.
     pub fn with_env(env: &std::collections::BTreeMap<String, String>) -> Self {
-        let mut passthrough: Vec<(String, OsString)> = PASSTHROUGH_ENV
-            .iter()
+        let mut passthrough: Vec<(String, OsString)> = passthrough_env()
             .filter_map(|name| {
-                let value = env.get(*name).filter(|value| !value.is_empty())?;
-                Some(((*name).to_owned(), OsString::from(value)))
+                let value = env.get(name).filter(|value| !value.is_empty())?;
+                Some((name.to_owned(), OsString::from(value)))
             })
             .collect();
         if !passthrough.iter().any(|(name, _)| name == "PATH")

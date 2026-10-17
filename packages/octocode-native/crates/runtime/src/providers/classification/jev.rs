@@ -92,6 +92,46 @@ impl ClassificationProvider for Jev {
         validate_wire(request, response)
     }
 
+    fn validate_batch_answers(
+        &self,
+        request: &Value,
+        response: &Value,
+    ) -> Result<Vec<Result<Value, ProviderContractError>>, ProviderContractError> {
+        let questions = request
+            .get("questions")
+            .and_then(Value::as_object)
+            .ok_or_else(|| invalid_request("request.questions must be an object"))?;
+        let answers = response
+            .get("answers")
+            .and_then(Value::as_object)
+            .ok_or_else(|| invalid_response("response.answers must be an object"))?;
+        if answers.keys().any(|key| !questions.contains_key(key)) {
+            return Err(invalid_response(
+                "response contains an unexpected answer ID",
+            ));
+        }
+        // The same validator checks global metadata once, then each keyed
+        // answer. Projection omits state/assets, which response validation
+        // does not read, so large input bodies are never cloned here.
+        let mut projected =
+            json!({"model":response["model"],"usage":response["usage"],"answers":{}});
+        validate_wire(&json!({"questions":{}}), &projected)?;
+        (0..questions.len())
+            .map(|index| {
+                let key = self.batch_answer_key(index);
+                let question = questions
+                    .get(&key)
+                    .ok_or_else(|| invalid_request("batch question indexes must be contiguous"))?;
+                projected["answers"] =
+                    json!({key.clone():answers.get(&key).cloned().unwrap_or(Value::Null)});
+                let result =
+                    validate_wire(&json!({"questions":{key.clone():question}}), &projected)
+                        .map(|()| projected["answers"][&key].clone());
+                Ok(result)
+            })
+            .collect()
+    }
+
     fn validate_models(&self, response: &Value) -> Result<(), ProviderContractError> {
         let models = response
             .get("models")

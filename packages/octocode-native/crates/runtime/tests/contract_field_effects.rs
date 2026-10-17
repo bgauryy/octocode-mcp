@@ -280,3 +280,39 @@ fn field_effect_registry_records_all_supported_coverage_classes() {
         );
     }
 }
+
+#[test]
+fn every_tool_envelope_has_shared_engine_effect_coverage() {
+    let contract: Value = serde_json::from_str(contract_json()).expect("generated contract JSON");
+    let coverage: Value = serde_json::from_str(COVERAGE_JSON).expect("field coverage JSON");
+    let envelope = &coverage["envelope"];
+    let allowed = string_set(&coverage["coverageClasses"]);
+    let fields = envelope["fields"].as_object().expect("envelope fields");
+    let declared = fields.keys().cloned().collect::<BTreeSet<_>>();
+    for (name, classes) in fields {
+        let classes = string_set(classes);
+        assert!(!classes.is_empty() && classes.is_subset(&allowed), "{name}");
+        assert_ne!(classes, BTreeSet::from(["validated".into()]), "{name}");
+    }
+    let evidence = envelope["evidence"].as_array().expect("envelope evidence");
+    assert!(!evidence.is_empty());
+    for relative in evidence {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(relative.as_str().expect("evidence path"));
+        let source = std::fs::read_to_string(path).expect("envelope evidence exists");
+        assert!(source.contains("#[test]") || source.contains("#[tokio::test]"));
+    }
+    for tool in contract["tools"].as_array().expect("tools") {
+        let actual = tool["inputSchema"]["properties"]
+            .as_object()
+            .expect("envelope properties")
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            actual, declared,
+            "{} envelope coverage drifted",
+            tool["name"]
+        );
+    }
+}

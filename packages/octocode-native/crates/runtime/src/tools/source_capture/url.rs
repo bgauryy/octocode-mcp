@@ -323,13 +323,11 @@ fn decode(reply: &Reply) -> Result<(String, String), ClassificationError> {
     if octocode_engine::text::sniff(&reply.body) == octocode_engine::text::BinaryVerdict::Binary {
         return Err(unsupported("The page body is binary."));
     }
-    let body = String::from_utf8(reply.body.clone())
-        .map_err(|_| unsupported("The page body is not valid UTF-8."))?;
-    let body = body
-        .strip_prefix('\u{feff}')
-        .map(str::to_owned)
-        .unwrap_or(body);
-    Ok((media, body))
+    // The engine's one leading-BOM rule: a mark starting the body is not text.
+    let body = &reply.body[octocode_engine::text::bom_len(&reply.body)..];
+    let body =
+        std::str::from_utf8(body).map_err(|_| unsupported("The page body is not valid UTF-8."))?;
+    Ok((media, body.to_owned()))
 }
 
 fn unsupported(message: &str) -> ClassificationError {

@@ -25,6 +25,7 @@ pub(crate) struct DomainDispatcher {
     pub regex: LocalFetchRegex,
     pub(super) github_services: Arc<OnceLock<Result<github::GitHubServices, ProviderError>>>,
     pub(super) github_cache: GitHubContentCache,
+    pub(super) github_access: github::ResponseAccess,
     pub config: Arc<ConfigOutput>,
     /// Internal limits: the runtime's code constants.
     pub limits: crate::runtime::RuntimeLimits,
@@ -40,12 +41,118 @@ pub(crate) struct DomainDispatcher {
     pub evaluator: crate::tools::judgment::Evaluator,
     /// Registry answers for artifactSearch; `None` under memory storage.
     pub artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
+    /// The call set `responseLength`: rows fill their share of it, since no
+    /// read share fits them into the automatic page.
+    pub explicit_window: bool,
+}
+
+fn retained_access_error() -> crate::tools::judgment::ClassificationError {
+    crate::tools::judgment::ClassificationError::new(
+        "classificationContextUnavailable",
+        "The saved source access identity changed or could not be verified. No saved evidence was returned.",
+        "Check source access, then start a fresh request explicitly.",
+    )
 }
 
 impl DomainDispatcher {
-    /// Acquire binary evidence through the same GitHub credential, commit
+    pub(crate) fn retained_github_identity(
+        &self,
+        context: &ExecutionContext,
+    ) -> Result<Option<String>, crate::tools::judgment::ClassificationError> {
+        let observed = self
+            .github_access
+            .identity()
+            .map_err(|()| retained_access_error())?;
+        self.validate_retained_github_identity(observed.as_deref(), context)?;
+        Ok(observed)
+    }
+
+    pub(crate) fn validate_retained_github_identity(
+        &self,
+        expected: Option<&str>,
+        context: &ExecutionContext,
+    ) -> Result<(), crate::tools::judgment::ClassificationError> {
+        let check = || {
+            context.check().map_err(|error| {
+                crate::tools::judgment::ClassificationError::new(
+                    error.code(),
+                    error.to_string(),
+                    "Retry the request explicitly.",
+                )
+            })
+        };
+        check()?;
+        let Some(expected) = expected else {
+            return Ok(());
+        };
+        let identity = self.github_response_identity(context);
+        check()?;
+        if identity.as_ref().is_ok_and(|identity| identity == expected) {
+            Ok(())
+        } else {
+            Err(retained_access_error())
+        }
+    }
+
+    pub(super) fn github_response_identity(
+        &self,
+        context: &ExecutionContext,
+    ) -> Result<String, ProviderError> {
+        self.github_services
+            .get_or_init(|| {
+                github::GitHubServices::new(
+                    self.config.clone(),
+                    &self.limits,
+                    self.home.clone(),
+                    self.github_cache.clone(),
+                )
+            })
+            .as_ref()
+            .map_err(Clone::clone)?
+            .response_identity(context, &self.handle)
+    }
+
+    pub(crate) fn text_capture_limit() -> usize {
+        crate::tools::local_fetch::MAX_SOURCE_BYTES as usize
+    }
+
+    pub(crate) fn capture_local_text(
+        &self,
+        query: &Value,
+        context: &ExecutionContext,
+    ) -> Result<(String, PathBuf, String), crate::tools::judgment::ClassificationError> {
+        let parsed = serde_json::from_value(query.clone()).map_err(|_| {
+            crate::tools::judgment::ClassificationError::new(
+                "invalidClassificationContext",
+                "The local resource query could not be decoded.",
+                "Inspect the localFetch schema.",
+            )
+        })?;
+        let captured =
+            crate::tools::local_fetch::capture_text(&parsed, self.paths.as_ref(), context);
+        context.check().map_err(|error| {
+            crate::tools::judgment::ClassificationError::new(
+                error.code(),
+                error.to_string(),
+                "Retry the request explicitly.",
+            )
+        })?;
+        let captured = captured.map_err(|result| crate::tools::judgment::ClassificationError {
+            code: result
+                .error_code
+                .unwrap_or_else(|| "classificationContextUnavailable".into()),
+            message: result
+                .error
+                .unwrap_or_else(|| "The local source could not be captured.".into()),
+            hints: result.hints,
+            ..Default::default()
+        })?;
+        Ok((captured.text, captured.canonical, captured.snapshot))
+    }
+
+    /// Acquire source bytes through the same GitHub credential, commit
     /// resolution, byte cache and request budget as a file read.
-    pub(crate) fn capture_github_asset(
+    pub(crate) fn capture_github_content(
         &self,
         query: &Value,
         context: &ExecutionContext,
@@ -63,7 +170,15 @@ impl DomainDispatcher {
             })
             .as_ref()
             .map_err(Clone::clone)
-            .and_then(|services| services.capture_content(query, context, &self.handle, max_bytes));
+            .and_then(|services| {
+                services.capture_content(
+                    query,
+                    context,
+                    &self.handle,
+                    max_bytes,
+                    &self.github_access,
+                )
+            });
         acquired.map_err(|error| {
             let row = github::provider_error(error);
             crate::tools::judgment::ClassificationError {
@@ -73,7 +188,7 @@ impl DomainDispatcher {
                     .into(),
                 message: row.data["error"]
                     .as_str()
-                    .unwrap_or("The GitHub image could not be acquired.")
+                    .unwrap_or("The GitHub source could not be acquired.")
                     .into(),
                 failure: row.failure,
                 hints: row.data["hints"]
@@ -140,10 +255,13 @@ impl DomainDispatcher {
             Ok(services) => services.execute_query(
                 tool,
                 query,
-                context,
+                github::QueryExecution {
+                    context,
+                    handle: &self.handle,
+                    access: &self.github_access,
+                },
                 &self.security,
                 &self.regex,
-                &self.handle,
                 &self.paths,
                 &selection,
             ),
@@ -174,7 +292,7 @@ impl DomainDispatcher {
             })
             .as_ref()
             .ok();
-        let tags = services.map(|services| services.release_tags(context));
+        let tags = services.map(|services| services.release_tags(context, &self.github_access));
         let env = self.config.credential_env();
         let call = crate::tools::artifact_search::ArtifactCall {
             deadline: context.deadline,
@@ -270,15 +388,11 @@ impl DomainDispatcher {
         query: &Value,
         context: &ExecutionContext,
     ) -> Result<dispatch::DomainResult, ExecutionError> {
-        let query = query.clone();
-        let paths = self.paths.clone();
-        let security = self.security.clone();
-        let regex = self.regex;
-        let views = self.local_views.clone();
-        // Streamed listing pages are sized to fit one automatic response
-        // window, which every call of a walk shares (an explicit
-        // `responseLength` is per call, so it never moves a page cut).
-        let window = self.limits.auto_page_chars;
+        let window = local_page_chars(
+            tool,
+            self.explicit_window.then_some(context),
+            self.limits.auto_page_chars,
+        );
         let context = ExecutionContext {
             response_window: (window > 0).then_some(window),
             ..context.clone()
@@ -307,34 +421,30 @@ impl DomainDispatcher {
         // `lsp.prewarm`: `targeted` warms the server an offered lspSearch
         // call names; `all` also warms the file a read or search names.
         let prewarm_mode = self.config.resolved.lsp.prewarm;
-        let prewarm_query = (prewarm_mode == crate::config::LspPrewarm::All).then(|| query.clone());
-        let lsp = self.lsp_execution_config.clone();
-        let result = self.handle.block_on(async {
-            tokio::task::spawn_blocking(move || {
-                // lspSearch leads offered by local tools probe the runtime's
-                // resolved server settings, not the bare process env.
-                crate::tools::leads::lsp::with_lead_discovery(
-                    lsp.lead_discovery(&paths),
-                    lsp.lead_cache.clone(),
-                    || {
-                        dispatch::execute_local(
-                            tool,
-                            &query,
-                            &paths,
-                            &security,
-                            &context,
-                            &regex,
-                            &views,
-                            &rewrite,
-                            &topology,
-                            Some(&selection),
-                        )
-                    },
+        let prewarm_query = (prewarm_mode == crate::config::LspPrewarm::All).then_some(query);
+        let lsp = &self.lsp_execution_config;
+        // The row already runs on a blocking or scoped worker thread inside
+        // the runtime context ([`Self::execute`]): no further thread hop.
+        // lspSearch leads offered by local tools probe the runtime's resolved
+        // server settings, not the bare process env.
+        let result = crate::tools::leads::lsp::with_lead_discovery(
+            lsp.lead_discovery(&self.paths),
+            lsp.lead_cache.clone(),
+            || {
+                dispatch::execute_local(
+                    tool,
+                    query,
+                    &self.paths,
+                    &self.security,
+                    &context,
+                    &self.regex,
+                    &self.local_views,
+                    &rewrite,
+                    &topology,
+                    Some(&selection),
                 )
-            })
-            .await
-            .map_err(|_| ExecutionError::WorkerFailed)?
-        })?;
+            },
+        )?;
         // Start a language server in the background so a following
         // lspSearch finds a warm pooled client: for the file an offered
         // lspSearch call names, or (opt-in) the file a read or search names.
@@ -342,7 +452,7 @@ impl DomainDispatcher {
             .then(|| prewarm::lead_file(&result.data))
             .flatten();
         if let Some(file) = lead
-            .or_else(|| prewarm_query.and_then(|query| prewarm::anchor_file(&query, &result.data)))
+            .or_else(|| prewarm_query.and_then(|query| prewarm::anchor_file(query, &result.data)))
         {
             prewarm::schedule(
                 &self.handle,
@@ -353,5 +463,51 @@ impl DomainDispatcher {
             );
         }
         Ok(result)
+    }
+}
+
+/// The characters one local row's own pages fill. Streamed listing and walk
+/// pages are cut at the automatic response window, which every call of a
+/// walk shares (an explicit `responseLength` is per call, so it never moves
+/// a page cut). localFetch continues by offset: under an explicit window
+/// (`explicit`, the row's context) its windows fill the row's share of that
+/// page ([`ExecutionContext::row_page_chars`]) and page by its own
+/// continuation, never re-cut by the response pager. Under the automatic
+/// page the read share fits its rows instead.
+fn local_page_chars(
+    tool: ToolId,
+    explicit: Option<&ExecutionContext>,
+    auto_page_chars: usize,
+) -> usize {
+    match explicit {
+        Some(context) if tool == ToolId::LocalFetch => context.row_page_chars(auto_page_chars),
+        _ => auto_page_chars,
+    }
+}
+
+#[cfg(test)]
+mod page_chars_tests {
+    use super::*;
+
+    #[test]
+    fn local_fetch_fills_the_rows_share_of_an_explicit_window_only() {
+        let context = |response_window| ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: std::time::Instant::now() + std::time::Duration::from_secs(5),
+            walk_threads: None,
+            response_window,
+            github_credential: None,
+        };
+        let fetch = |window| local_page_chars(ToolId::LocalFetch, Some(&context(window)), 20_000);
+        assert_eq!(fetch(Some(5_000)), 5_000);
+        assert_eq!(fetch(Some(50_000)), 50_000);
+        assert_eq!(fetch(None), 20_000);
+        assert_eq!(local_page_chars(ToolId::LocalFetch, None, 20_000), 20_000);
+        for tool in [ToolId::LocalSearch, ToolId::StructureSearch] {
+            assert_eq!(
+                local_page_chars(tool, Some(&context(Some(5_000))), 20_000),
+                20_000
+            );
+        }
     }
 }

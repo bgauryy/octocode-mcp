@@ -22,6 +22,7 @@ pub(super) fn cursor(
     reusable: Option<super::manifest::Fresh>,
     policy_key: String,
     selection: Option<&str>,
+    cancelled: &dyn Fn() -> bool,
 ) -> (Option<Value>, bool) {
     let page = query.page().max(1);
     let match_page = query.match_page().max(1);
@@ -42,7 +43,7 @@ pub(super) fn cursor(
     if snapshot.is_some()
         && let Some(scan) = reusable
     {
-        super::manifest::put(result_identity.to_owned(), policy_key, scan);
+        super::manifest::put_checked(result_identity.to_owned(), policy_key, scan, cancelled);
     }
     // Leftover rows only count on the files this page shows: another page's
     // files are reached by `nextPage` (which restarts at matchPage 1). List
@@ -186,50 +187,40 @@ pub(super) fn build_next(
 /// Pagination fields (`page`, `matchPage`, `pageSize`, `matchPageSize`) only select
 /// from that result and stay out, so a continuation may change them while
 /// keeping its snapshot.
+///
+/// The result is hashed as it is encoded ([`super::packed::Identity`]), so
+/// proving a cursor costs one pass over the rows and keeps no copy of them.
 pub(super) fn fingerprint(
     query_key: &str,
     files: &[octocode_engine::types::TextSearchFile],
     stats: &octocode_engine::types::TextSearchStats,
 ) -> String {
-    let file_values = files
-        .iter()
-        .map(|f| {
-            let matches = f
-                .matches
-                .iter()
-                .map(|m| {
-                    let mut o = serde_json::Map::new();
-                    o.insert("line".into(), json!(m.line));
-                    o.insert("column".into(), json!(m.column));
-                    o.insert("value".into(), json!(m.value));
-                    o.insert("valueDigest".into(), json!(hex::encode(m.value_digest)));
-                    o.insert("byteOffset".into(), json!(m.byte_offset));
-                    o.insert("rank".into(), json!(m.rank));
-                    o.insert("originalChars".into(), json!(m.original_chars));
-                    o.insert("originalBytes".into(), json!(m.original_bytes));
-                    if let Some(c) = m.count {
-                        o.insert("count".into(), json!(c));
-                    }
-                    Value::Object(o)
-                })
-                .collect::<Vec<_>>();
-            json!({"path":f.path,"matchCount":f.match_count,"matches":matches,
-                "sourceDigest":f.source.map(|source| hex::encode(source.digest))})
-        })
-        .collect::<Vec<_>>();
-    let canonical = canonicalize_dropping_nulls(
-        json!([query_key,file_values,{"matchCount":stats.match_count.unwrap_or(0),"matchedLineCount":stats.matched_lines.unwrap_or(0),"fileCount":stats.files_matched.unwrap_or(files.len() as u32),"filesScanned":stats.files_searched.unwrap_or(0),"capped":stats.capped.unwrap_or(false),"capReason":stats.cap_reason,"errorCount":stats.error_count.filter(|n|*n>0),"firstError":stats.first_error} ]),
-    );
-    // v5 binds the source and complete value identities that determine
-    // page cuts and duplicate ranking, including text outside visible rows.
-    format!(
-        "{SNAPSHOT_SCHEME}{SNAPSHOT_VERSION}:{}",
-        crate::digest::json_sha256(&canonical)
-    )
+    let mut identity = super::packed::Identity::default();
+    identity.text(query_key).number(files.len() as u64);
+    for file in files {
+        identity.file(file);
+    }
+    identity
+        .optional(Some(stats.match_count.unwrap_or(0)))
+        .optional(Some(stats.matched_lines.unwrap_or(0)))
+        .optional(Some(
+            stats
+                .files_matched
+                .unwrap_or(u32::try_from(files.len()).unwrap_or(u32::MAX)),
+        ))
+        .optional(Some(stats.files_searched.unwrap_or(0)))
+        .number(u64::from(stats.capped.unwrap_or(false)))
+        .optional_text(stats.cap_reason.as_deref())
+        .optional(stats.error_count.filter(|count| *count > 0))
+        .optional_text(stats.first_error.as_deref());
+    // v6 binds what v5 bound (the source and complete value identities that
+    // determine page cuts and duplicate ranking, including text outside
+    // visible rows), hashed from a byte encoding instead of JSON.
+    format!("{SNAPSHOT_SCHEME}{SNAPSHOT_VERSION}:{}", identity.finish())
 }
 
 const SNAPSHOT_SCHEME: &str = "lexical-live-v";
-const SNAPSHOT_VERSION: u32 = 5;
+const SNAPSHOT_VERSION: u32 = 7;
 
 /// A `snapshot` no search could have issued: not `lexical-live-v<N>:` plus a
 /// SHA-256. That is input to correct; a well-formed snapshot of an older
@@ -303,9 +294,142 @@ pub(super) fn query_key(
         // The page cut: a continuation served under another response window
         // would cut other pages, so it restarts instead of skipping rows.
         fields.insert("pageChars".into(), json!(page_budget));
+        // Span rows are priced with `column` only while the response keeps
+        // it, which `extras` decides: that, too, cuts other pages.
+        fields.insert(
+            "spanColumns".into(),
+            json!(super::layout::shows_span_columns(q)),
+        );
     }
     crate::digest::json_sha256(&canonicalize_dropping_nulls(json!([
         root.to_string_lossy(),
         semantics
     ])))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use octocode_engine::types::{
+        SearchedSource, TextSearchFile, TextSearchMatch, TextSearchStats,
+    };
+
+    fn scan() -> (Vec<TextSearchFile>, TextSearchStats) {
+        let hit = |line: u32, value: &str| TextSearchMatch {
+            deferred: None,
+            line,
+            column: 3,
+            byte_offset: 3,
+            value: value.into(),
+            value_digest: [line as u8; 32],
+            count: None,
+            rank: Some(1),
+            original_chars: None,
+            original_bytes: None,
+        };
+        let files = vec![
+            TextSearchFile {
+                path: "src/a.rs".into(),
+                match_count: 2,
+                matches: vec![hit(1, "fn needle()"), hit(9, "needle();")],
+                source: Some(SearchedSource {
+                    size: 120,
+                    modified: Some(std::time::SystemTime::UNIX_EPOCH),
+                    digest: [1; 32],
+                }),
+            },
+            TextSearchFile {
+                path: "src/b.rs".into(),
+                match_count: 1,
+                matches: vec![hit(4, "needle")],
+                source: None,
+            },
+        ];
+        let stats = TextSearchStats {
+            match_count: Some(3),
+            matched_lines: Some(3),
+            files_matched: Some(2),
+            files_searched: Some(10),
+            ..TextSearchStats::default()
+        };
+        (files, stats)
+    }
+
+    /// The snapshot binds every collected field of every row, each file's
+    /// source digest and the totals, and nothing else: a source's size and
+    /// time alone (its bytes unchanged) keep it. It is a v7 snapshot a
+    /// later call accepts as well formed.
+    #[test]
+    fn the_snapshot_binds_every_row_field_and_no_stamp() {
+        let (files, stats) = scan();
+        let base = fingerprint("key", &files, &stats);
+        assert!(base.starts_with("lexical-live-v7:"), "{base}");
+        assert_eq!(fingerprint("key", &files, &stats), base);
+        let snapshot = serde_json::json!({"path": ".", "matchString": "x", "mainGoal": "t", "reasoning": "t", "snapshot": base});
+        let query: LocalSearchQuery = serde_json::from_value(snapshot).expect("query");
+        assert!(malformed_snapshot(&query).is_none());
+
+        type Edit = fn(&mut Vec<TextSearchFile>, &mut TextSearchStats);
+        let bound: [(&str, Edit); 18] = [
+            ("path", |f, _| f[0].path.push('x')),
+            ("matchCount", |f, _| f[0].match_count += 1),
+            ("line", |f, _| f[0].matches[0].line += 1),
+            ("column", |f, _| f[0].matches[0].column += 1),
+            ("byteOffset", |f, _| f[0].matches[0].byte_offset += 1),
+            ("value", |f, _| f[0].matches[0].value.push('x')),
+            ("valueDigest", |f, _| f[0].matches[0].value_digest[0] ^= 1),
+            ("rank", |f, _| f[0].matches[0].rank = Some(3)),
+            ("originalChars", |f, _| {
+                f[0].matches[0].original_chars = Some(9)
+            }),
+            ("originalBytes", |f, _| {
+                f[0].matches[0].original_bytes = Some(9)
+            }),
+            ("count", |f, _| f[0].matches[0].count = Some(1)),
+            ("sourceDigest", |f, _| {
+                if let Some(source) = &mut f[0].source {
+                    source.digest[0] ^= 1;
+                }
+            }),
+            ("source", |f, _| {
+                f[1].source = Some(SearchedSource {
+                    size: 0,
+                    modified: None,
+                    digest: [0; 32],
+                })
+            }),
+            ("rows", |f, _| {
+                let row = f[0].matches.remove(1);
+                f[1].matches.push(row);
+            }),
+            ("matchTotal", |_, s| s.match_count = Some(4)),
+            ("filesScanned", |_, s| s.files_searched = Some(11)),
+            ("capReason", |_, s| {
+                s.cap_reason = Some("maxCollectedFiles".into())
+            }),
+            ("firstError", |_, s| s.first_error = Some("denied".into())),
+        ];
+        for (field, edit) in bound {
+            let (mut files, mut stats) = scan();
+            edit(&mut files, &mut stats);
+            assert_ne!(fingerprint("key", &files, &stats), base, "{field}");
+        }
+        assert_ne!(fingerprint("key2", &files, &stats), base, "query key");
+        // Text boundaries cannot shift between fields.
+        let (mut shifted, _) = scan();
+        shifted[0].path = "src/a.r".into();
+        shifted[0].matches[0].value = "sfn needle()".into();
+        assert_ne!(fingerprint("key", &shifted, &stats), base);
+
+        let (mut stamped, _) = scan();
+        if let Some(source) = &mut stamped[0].source {
+            source.size = 999;
+            source.modified = None;
+        }
+        assert_eq!(fingerprint("key", &stamped, &stats), base, "stamps only");
+        // An error count of zero is no error, as before.
+        let mut zero = stats.clone();
+        zero.error_count = Some(0);
+        assert_eq!(fingerprint("key", &files, &zero), base);
+    }
 }

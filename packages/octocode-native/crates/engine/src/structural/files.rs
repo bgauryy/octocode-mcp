@@ -6,11 +6,14 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use super::language::AgLanguage;
-use super::octo::{ExecutionError, OctoCompiledMatcher, compile_diagnostic, compile_matcher};
+use super::octo::{
+    ExecutionError, Found, OctoCompiledMatcher, compile_diagnostic, compile_matcher,
+};
 use super::query::{Prefilter, StructuralQuery, invalid_query_explanation};
 use super::types::{
-    StructuralDetailedMatch, StructuralDiagnostic, StructuralSearchDetailedFileResult,
-    StructuralSearchFilesDetailedResult, StructuralSearchFilesOptions,
+    FileMatches, StructuralDemand, StructuralDetailedMatch, StructuralDiagnostic,
+    StructuralSearchDetailedFileResult, StructuralSearchFilesDetailedResult,
+    StructuralSearchFilesOptions,
 };
 use crate::error::{Error, Result as EngineResult};
 use crate::search::glob::Globs;
@@ -26,6 +29,7 @@ pub(crate) fn search_files_detailed(
 ) -> EngineResult<StructuralSearchFilesDetailedResult> {
     search_files(
         options,
+        StructuralDemand::Matches,
         &|_| true,
         &|path| extension_for_path(path).unwrap_or_default(),
         &|| false,
@@ -35,9 +39,12 @@ pub(crate) fn search_files_detailed(
 /// Detailed structural search with caller-owned descendant policy and a
 /// caller-selected parser for ambiguous paths. `admit` decides each walked
 /// entry before candidate accounting, literal prefilter reads, metadata
-/// reads, and source reads; file paths remain unchanged in diagnostics and
-/// match IDs. `stop` cancels the walk and the scan
-/// ([`crate::error::ErrorKind::Cancelled`]).
+/// reads, and source reads; it also sees every directory and every link the
+/// walk does not follow, whose verdict decides nothing. File paths remain
+/// unchanged in diagnostics and match IDs. `stop` cancels the walk and the scan
+/// ([`crate::error::ErrorKind::Cancelled`]). `demand` decides what each
+/// file keeps of its matches ([`StructuralDemand`]); counts and coverage
+/// are the same under every demand.
 ///
 /// An unset `max_files` caps nothing but the time: the scan evaluates
 /// candidates in chunks and stops at the first chunk boundary past
@@ -46,6 +53,7 @@ pub(crate) fn search_files_detailed(
 /// `max_files` is the caller's window and is never cut by time.
 pub fn search_files(
     options: StructuralSearchFilesOptions,
+    demand: StructuralDemand<'_>,
     admit: &(dyn Fn(&Path) -> bool + Sync),
     select_extension: &(dyn Fn(&Path) -> String + Sync),
     stop: &Stop<'_>,
@@ -53,6 +61,7 @@ pub fn search_files(
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         search_files_with_budget(
             options,
+            demand,
             admit,
             select_extension,
             stop,
@@ -69,6 +78,7 @@ pub fn search_files(
 /// [`search_files`] with its time budget (`None` evaluates every candidate).
 pub(crate) fn search_files_with_budget(
     options: StructuralSearchFilesOptions,
+    demand: StructuralDemand<'_>,
     admit: &(dyn Fn(&Path) -> bool + Sync),
     select_extension: &(dyn Fn(&Path) -> String + Sync),
     stop: &Stop<'_>,
@@ -145,6 +155,7 @@ pub(crate) fn search_files_with_budget(
         anchors: AnchorFilter::new(&prefilter).map_err(Error::new)?,
         matchers: compile_matchers(&candidate_files, select_extension, &query),
         max_file_bytes,
+        demand,
     };
     let started = std::time::Instant::now();
     let mut outcomes = Vec::with_capacity(candidate_files.len());
@@ -272,6 +283,7 @@ struct FileScan<'a> {
     anchors: Option<AnchorFilter>,
     matchers: CompiledMatchers,
     max_file_bytes: u64,
+    demand: StructuralDemand<'a>,
 }
 
 impl FileScan<'_> {
@@ -388,19 +400,15 @@ impl FileScan<'_> {
             }
         };
 
-        let matches: Vec<StructuralDetailedMatch> = match run(content) {
-            Ok(matches) => matches,
-            Err(error) => {
-                let diagnostic = error.diagnostic(&path_string);
-                return (
-                    Tally::None,
-                    skipped_file(path_string, "truncated", "executionLimit", diagnostic),
-                );
-            }
+        let mut found = Found::new(self.demand);
+        if let Err(error) = run(content, &mut found) {
+            let diagnostic = error.diagnostic(&path_string);
+            return (
+                Tally::None,
+                skipped_file(path_string, "truncated", "executionLimit", diagnostic),
+            );
         }
-        .into_iter()
-        .map(|m| StructuralDetailedMatch::from_match(m.matched, m.node_kind))
-        .collect();
+        let matches = found.into_file_matches();
         (
             Tally::Parsed(matches.len() as u32),
             StructuralSearchDetailedFileResult {
@@ -751,6 +759,12 @@ fn collect_files(
             let _ = admit(entry.path());
             continue;
         }
+        if entry.file_type().is_some_and(|ft| ft.is_symlink()) {
+            // The walk never follows a link; the caller sees it to disclose
+            // what it names, never as a candidate.
+            let _ = admit(entry.path());
+            continue;
+        }
         if !entry.file_type().is_some_and(|ft| ft.is_file()) || !admit(entry.path()) {
             continue;
         }
@@ -779,9 +793,64 @@ fn skipped_file(
         status: status.to_owned(),
         language_id: None,
         skipped_reason: Some(skipped_reason.to_owned()),
-        matches: Vec::new(),
+        matches: FileMatches::Held(Vec::new()),
         diagnostics: vec![diagnostic],
     }
+}
+
+/// One file's matches rebuilt for the page that shows them ([`file_matches`]).
+pub enum Rebuilt {
+    /// The scan's own matches, in its order.
+    Matches(Vec<StructuralDetailedMatch>),
+    /// The file no longer hashes to the scan's digest or no longer reads as
+    /// the scan read it.
+    Changed,
+    /// The scan's bytes did not finish matching this time (an execution
+    /// limit, such as the match deadline): its diagnostics say why.
+    Incomplete(Vec<StructuralDiagnostic>),
+}
+
+impl Rebuilt {
+    /// What matching the scan's own bytes gave: its matches, or the limit
+    /// that cut it (the same bytes and query only differ in time spent).
+    pub(super) fn of(result: super::StructuralSearchDetailedResult) -> Self {
+        if result.status == "ok" {
+            Self::Matches(result.matches)
+        } else {
+            Self::Incomplete(result.diagnostics)
+        }
+    }
+}
+
+/// The matches of one file a [`search_files`] scan evaluated, rebuilt for
+/// the page that shows them (a [`StructuralDemand::Priced`] scan kept only
+/// their prices): the file is read through the scan's bounded reader and
+/// matched with the same query under `extension`'s grammar, so the matches
+/// are the scan's own, in its order.
+pub fn file_matches(
+    path: &Path,
+    extension: &str,
+    pattern: Option<&str>,
+    rule: Option<&str>,
+    source_sha256: &str,
+    max_file_bytes: u64,
+) -> EngineResult<Rebuilt> {
+    std::panic::catch_unwind(|| {
+        let Ok(content) = read_source(path, max_file_bytes) else {
+            return Rebuilt::Changed;
+        };
+        if crate::digest::sha256(content.as_bytes()) != source_sha256 {
+            return Rebuilt::Changed;
+        }
+        Rebuilt::of(super::search_detailed(
+            &content,
+            &path.to_string_lossy(),
+            extension,
+            pattern,
+            rule,
+        ))
+    })
+    .map_err(|_| Error::new("structural file match failed on pathological input"))
 }
 
 // ── Structural rewrite file walker ──────────────────────────────────────────

@@ -431,8 +431,8 @@ fn c_family_function_names_come_from_the_declarator_not_the_return_type() {
 #[test]
 fn declarations_carry_the_comment_block_directly_above_them() {
     let doc_lines = |source: &str, path: &str| -> Vec<(String, Option<u64>)> {
-        let facts: serde_json::Value = serde_json::from_str(
-            &crate::signatures::extract_declarations(source, path).expect("facts"),
+        let facts: serde_json::Value = serde_json::to_value(
+            crate::signatures::extract_declarations_document(source, path).expect("facts"),
         )
         .expect("json");
         facts["declarations"]
@@ -475,8 +475,8 @@ fn declarations_carry_the_comment_block_directly_above_them() {
 #[test]
 fn csharp_outlines_namespaces_records_properties_and_delegates() {
     let source = "namespace Acme.Core\n{\n    /// <summary>A person.</summary>\n    public record Person(string Name);\n    public class Resolver\n    {\n        public int Count { get; set; }\n        public void Resolve() {}\n    }\n    public delegate void Handler();\n}\n";
-    let facts: serde_json::Value = serde_json::from_str(
-        &crate::signatures::extract_declarations(source, "a.cs").expect("facts"),
+    let facts: serde_json::Value = serde_json::to_value(
+        crate::signatures::extract_declarations_document(source, "a.cs").expect("facts"),
     )
     .expect("json");
     let rows = facts["declarations"]
@@ -548,8 +548,8 @@ fn go_type_declarations_emit_each_spec_once_without_self_parents() {
 #[test]
 fn functions_in_type_bodies_are_methods_in_every_grammar() {
     let kinds = |source: &str, path: &str| -> Vec<(String, String)> {
-        let facts: serde_json::Value = serde_json::from_str(
-            &crate::signatures::extract_declarations(source, path).expect("facts"),
+        let facts: serde_json::Value = serde_json::to_value(
+            crate::signatures::extract_declarations_document(source, path).expect("facts"),
         )
         .expect("json");
         facts["declarations"]

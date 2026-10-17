@@ -40,6 +40,8 @@ struct Streamed {
     last: usize,
     key_lines: usize,
     clipped_line: Option<usize>,
+    /// The source holds a NUL byte: binary, whatever its head showed.
+    binary: bool,
 }
 
 fn is_marker(head: &[u8], edge: &str) -> bool {
@@ -139,14 +141,16 @@ struct WindowLines {
 }
 
 impl WindowLines {
-    fn new(spans: &[(usize, usize)]) -> Self {
+    /// The windows of `spans`, streamed from a line start where the
+    /// private-key block state is `block`.
+    fn new(spans: &[(usize, usize)], block: KeyBlockState) -> Self {
         Self {
             held: spans
                 .iter()
                 .map(|&(first, last)| Held::new(first, last))
                 .collect(),
             head: Vec::new(),
-            block: KeyBlockState::default(),
+            block,
             shape: LineShapeScan::default(),
         }
     }
@@ -183,28 +187,83 @@ impl WindowLines {
     }
 }
 
-/// The streamed source as [`octocode_engine::digest::copy_hashed`] copies
-/// it: every piece is split at its newlines into [`WindowLines`], and a
-/// cancel ends the copy.
+/// Lines between two checkpoints of a [`StreamIndex`]: a later page streams
+/// at most this many lines before its window.
+const CHECKPOINT_LINES: usize = 4_096;
+
+/// Where a line starts in the source, and the private-key block state the
+/// lines before it leave.
+#[derive(Clone, Copy, Debug)]
+struct Checkpoint {
+    line: usize,
+    offset: u64,
+    block: KeyBlockState,
+}
+
+/// What one whole pass over a streamed source learned: its digest, line
+/// count, whether it holds a NUL byte, and a [`Checkpoint`] at every
+/// [`CHECKPOINT_LINES`]-th line from line 1. While the file keeps the
+/// settled stamp the pass was made under, a later page of the same version
+/// streams from the checkpoint before its window instead of the whole file.
+#[derive(Debug)]
+struct StreamIndex {
+    stamp: octocode_engine::graph::SourceStamp,
+    digest: String,
+    total_lines: usize,
+    binary: bool,
+    checkpoints: Vec<Checkpoint>,
+}
+
+/// Indexes of streamed sources by canonical path. The stamp (size, times,
+/// inode) recorded only for a file untouched for
+/// [`octocode_engine::graph::SourceStamp::SETTLE`] is the proof that the
+/// bytes, and so the digest, are unchanged, as the graph and LSP memos use
+/// it.
+static INDEXES: octocode_io::memo::Memo<std::path::PathBuf, StreamIndex> =
+    octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
+        max_entries: 16,
+        max_weight: 8 * 1024 * 1024,
+        keep_newest: false,
+    });
+
+/// The streamed source as it is copied: every piece is split at its
+/// newlines into [`WindowLines`], and a cancel ends the copy.
 struct LineSink<'a, C: CancellationCheck> {
     lines: WindowLines,
     /// The 1-based line the next byte belongs to.
     line: usize,
     /// Bytes seen on the current (unterminated) line.
     pending: bool,
+    /// Source offset of the next byte.
+    offset: u64,
+    /// The checkpoints a whole pass records ([`StreamIndex`]).
+    checkpoints: Option<Vec<Checkpoint>>,
+    binary: bool,
     cancel: &'a C,
 }
 
 impl<C: CancellationCheck> std::io::Write for LineSink<'_, C> {
     fn write(&mut self, chunk: &[u8]) -> std::io::Result<usize> {
         self.cancel.check().map_err(std::io::Error::other)?;
+        self.binary |= chunk.contains(&0);
         let mut rest = chunk;
         while !rest.is_empty() {
+            if !self.pending
+                && (self.line - 1).is_multiple_of(CHECKPOINT_LINES)
+                && let Some(points) = self.checkpoints.as_mut()
+            {
+                points.push(Checkpoint {
+                    line: self.line,
+                    offset: self.offset,
+                    block: self.lines.block,
+                });
+            }
             let (piece, newline) = match rest.iter().position(|byte| *byte == b'\n') {
                 Some(index) => (&rest[..=index], true),
                 None => (rest, false),
             };
             rest = &rest[piece.len()..];
+            self.offset += piece.len() as u64;
             self.pending = !newline;
             self.lines.push(piece, self.line);
             if newline {
@@ -220,6 +279,32 @@ impl<C: CancellationCheck> std::io::Write for LineSink<'_, C> {
     }
 }
 
+impl<C: CancellationCheck> LineSink<'_, C> {
+    /// The held windows once the stream ends, with the source's totals.
+    fn windows(self, digest: &str, total_lines: usize, binary: bool) -> Vec<Streamed> {
+        self.lines
+            .held
+            .into_iter()
+            .map(|held| Streamed {
+                digest: digest.to_owned(),
+                total_lines,
+                window: held.window,
+                first: held.first,
+                last: held.held_last.min(total_lines),
+                key_lines: held.key_lines,
+                clipped_line: held.clipped_line,
+                binary,
+            })
+            .collect()
+    }
+}
+
+fn seek(mut file: &std::fs::File, offset: u64) -> Result<(), String> {
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(offset))
+        .map(drop)
+        .map_err(|error| error.to_string())
+}
+
 /// Stream the opened source once from its start: hash all bytes, count
 /// lines like `line_count`, and keep lines `first..=last` (1-based) of every
 /// requested window. The handle is the one the read opened and stat'ed (never
@@ -228,41 +313,117 @@ fn stream(
     source: &std::fs::File,
     spans: &[(usize, usize)],
     cancel: &impl CancellationCheck,
-) -> Result<Vec<Streamed>, String> {
-    let mut file = source;
-    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(0))
-        .map_err(|error| error.to_string())?;
+) -> Result<(Vec<Streamed>, StreamIndex), String> {
+    seek(source, 0)?;
     let mut sink = LineSink {
-        lines: WindowLines::new(spans),
+        lines: WindowLines::new(spans, KeyBlockState::default()),
         line: 1,
         pending: false,
+        offset: 0,
+        checkpoints: Some(Vec::new()),
+        binary: false,
         cancel,
     };
-    let (_, digest) =
-        octocode_engine::digest::copy_hashed(file, &mut sink).map_err(|error| error.to_string())?;
-    let LineSink {
-        mut lines,
-        line,
-        pending,
-        ..
-    } = sink;
-    if pending {
-        lines.finish(line);
+    let (_, digest) = octocode_engine::digest::copy_hashed(source, &mut sink)
+        .map_err(|error| error.to_string())?;
+    if sink.pending {
+        sink.lines.finish(sink.line);
     }
-    let total_lines = if pending { line } else { line - 1 };
-    Ok(lines
-        .held
-        .into_iter()
-        .map(|held| Streamed {
-            digest: digest.clone(),
-            total_lines,
-            window: held.window,
-            first: held.first,
-            last: held.held_last.min(total_lines),
-            key_lines: held.key_lines,
-            clipped_line: held.clipped_line,
-        })
-        .collect())
+    let total_lines = if sink.pending {
+        sink.line
+    } else {
+        sink.line - 1
+    };
+    let index = StreamIndex {
+        stamp: octocode_engine::graph::SourceStamp::default(),
+        digest,
+        total_lines,
+        binary: sink.binary,
+        checkpoints: sink.checkpoints.take().unwrap_or_default(),
+    };
+    Ok((
+        sink.windows(&index.digest, total_lines, index.binary),
+        index,
+    ))
+}
+
+/// The windows of `spans` from the source `index` describes: streamed from
+/// the checkpoint before the first window through the last, with the
+/// index's digest and totals (the source is not hashed again).
+fn stream_indexed(
+    source: &std::fs::File,
+    spans: &[(usize, usize)],
+    cancel: &impl CancellationCheck,
+    index: &StreamIndex,
+) -> Result<Vec<Streamed>, String> {
+    let first = spans.iter().map(|span| span.0).min().unwrap_or(1);
+    let last = spans.iter().map(|span| span.1).max().unwrap_or(0);
+    let at = index
+        .checkpoints
+        .partition_point(|point| point.line <= first)
+        .saturating_sub(1);
+    let point = index.checkpoints.get(at).copied().unwrap_or(Checkpoint {
+        line: 1,
+        offset: 0,
+        block: KeyBlockState::default(),
+    });
+    seek(source, point.offset)?;
+    let mut sink = LineSink {
+        lines: WindowLines::new(spans, point.block),
+        line: point.line,
+        pending: false,
+        offset: point.offset,
+        checkpoints: None,
+        binary: false,
+        cancel,
+    };
+    let mut block = vec![0_u8; 64 * 1024];
+    let mut reader = source;
+    while sink.line <= last {
+        let read = match std::io::Read::read(&mut reader, &mut block) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.to_string()),
+        };
+        std::io::Write::write_all(&mut sink, &block[..read]).map_err(|error| error.to_string())?;
+    }
+    if sink.pending && sink.line <= last {
+        sink.lines.finish(sink.line);
+    }
+    Ok(sink.windows(&index.digest, index.total_lines, index.binary))
+}
+
+/// The windows of `spans` from `source` at `path`: from the source's index
+/// while `stamp` (the handle's settled stamp, taken before the read) still
+/// matches it, else by one whole pass, which indexes a source whose stamp
+/// held through the pass.
+fn read_windows(
+    source: &std::fs::File,
+    path: &Path,
+    stamp: Option<octocode_engine::graph::SourceStamp>,
+    spans: &[(usize, usize)],
+    cancel: &impl CancellationCheck,
+) -> Result<Vec<Streamed>, String> {
+    if let Some(stamp) = stamp
+        && let Some(hit) = INDEXES.get(path)
+        && hit.value.stamp == stamp
+    {
+        return stream_indexed(source, spans, cancel, &hit.value);
+    }
+    let (windows, mut index) = stream(source, spans, cancel)?;
+    let unchanged = source
+        .metadata()
+        .ok()
+        .as_ref()
+        .and_then(crate::tools::source::cache_stamp);
+    if let Some(stamp) = stamp.filter(|stamp| unchanged == Some(*stamp)) {
+        index.stamp = stamp;
+        let weight =
+            index.checkpoints.len() * std::mem::size_of::<Checkpoint>() + index.digest.len();
+        INDEXES.insert(path.to_path_buf(), index, weight, None);
+    }
+    Ok(windows)
 }
 
 /// A repair for a request a streamed window cannot serve.
@@ -307,12 +468,23 @@ pub(super) fn fetch_window(
     q: &LocalFetchQuery,
     path: &Path,
     source: &std::fs::File,
-    len: u64,
+    meta: &std::fs::Metadata,
     modified: Option<String>,
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
 ) -> LocalFetchResult {
+    let len = meta.len();
+    // Taken before any byte is read: a write during the pass changes it.
+    let stamp = crate::tools::source::cache_stamp(meta).filter(|_| {
+        octocode_engine::graph::SourceStamp::settled(meta, std::time::SystemTime::now()).is_some()
+    });
+    let source = Opened {
+        file: source,
+        path,
+        stamp,
+        len,
+    };
     if !q.match_strings().is_empty() {
         return match_needs_whole_file(q, len);
     }
@@ -329,9 +501,9 @@ pub(super) fn fetch_window(
         );
     }
     if q.has_ranges() && q.start_line().is_none() {
-        return fetch_ranges(q, path, source, len, modified, security, cancel, regex);
+        return fetch_ranges(q, &source, modified, security, cancel, regex);
     }
-    let mut result = stream_window(q, path, source, len, modified, security, cancel, regex);
+    let mut result = stream_window(q, &source, modified, security, cancel, regex);
     // The note is the same on every page: the read's first page states it.
     if result.status != "error" && q.offset().unwrap_or(0) == 0 {
         result.warnings.insert(0, streamed_warning(len));
@@ -403,21 +575,39 @@ fn window_span(q: &LocalFetchQuery) -> WindowSpan {
     }
 }
 
+/// The streamed source a read opened: its handle, canonical path, settled
+/// stamp (see [`read_windows`]) and length.
+struct Opened<'a> {
+    file: &'a std::fs::File,
+    path: &'a Path,
+    stamp: Option<octocode_engine::graph::SourceStamp>,
+    len: u64,
+}
+
+impl Opened<'_> {
+    fn windows(
+        &self,
+        spans: &[(usize, usize)],
+        cancel: &impl CancellationCheck,
+    ) -> Result<Vec<Streamed>, String> {
+        read_windows(self.file, self.path, self.stamp, spans, cancel)
+    }
+}
+
 /// One streamed line window (a range or a chunk).
-#[allow(clippy::too_many_arguments)]
 fn stream_window(
     q: &LocalFetchQuery,
-    path: &Path,
-    source: &std::fs::File,
-    len: u64,
+    source: &Opened<'_>,
     modified: Option<String>,
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
 ) -> LocalFetchResult {
     let span = window_span(q);
+    let (path, len) = (source.path, source.len);
     // One span streams exactly one window.
-    let streamed = stream(source, &[(span.first, span.last)], cancel)
+    let streamed = source
+        .windows(&[(span.first, span.last)], cancel)
         .and_then(|mut windows| windows.pop().ok_or_else(|| "no window streamed".to_owned()));
     match streamed {
         Ok(streamed) => serve_window(
@@ -452,35 +642,32 @@ fn serve_window(
     {
         return super::executor::stale_snapshot(q);
     }
-    let total = streamed.total_lines;
-    if !chunked && first > origin && first > requested_last.min(total) {
-        // A line offset past the range's end: the range restarts.
-        let mut result = LocalFetchResult::error(
-            q.path.to_string(),
-            "invalidPagination",
-            format!(
-                "Offset {} is past the end of lines {origin}-{requested_last}.",
-                first - origin
-            ),
-        );
-        let mut restart = q.clone();
-        restart.offset = None;
-        restart.snapshot = None;
-        result.next = Some(NextCalls {
-            restart: Some(FetchCall { query: restart }),
-            ..NextCalls::default()
-        });
-        result.total_lines = Some(total);
-        return result;
+    if streamed.binary {
+        return super::executor::refuse_binary(q, q.path.as_str());
     }
-    if first > total.max(1) || (total == 0 && first > 1) {
-        let mut result = restart_error(
+    let total = streamed.total_lines;
+    if !chunked && origin > total {
+        // A range starting past the file end, as an in-memory read refuses it.
+        return super::executor::extraction_error(
             q,
-            "invalidPagination",
-            format!("Line {first} is past the end of the file ({total} lines)."),
+            ExtractionError::new(
+                ExtractionErrorKind::InvalidInput,
+                format!("Requested lines start past the file end ({total} lines)"),
+            ),
+            total,
         );
-        result.total_lines = Some(total);
-        return result;
+    }
+    // A line offset past the read's last line (the range's, or the file's
+    // for a chunk) is the in-memory read's out-of-range page.
+    let read_total = if chunked {
+        total
+    } else {
+        requested_last.min(total) + 1 - origin
+    };
+    if (!chunked && first > requested_last.min(total))
+        || (chunked && (first > total.max(1) || (total == 0 && first > 1)))
+    {
+        return past_end_row(q, &streamed, read_total, len);
     }
     let held_last = streamed.last.max(streamed.first);
     let mut window_query = q.clone();
@@ -508,6 +695,7 @@ fn serve_window(
             modified,
             window: None,
             first_page_bytes: None,
+            interior: streamed.first > 1,
         },
         security,
         cancel,
@@ -569,18 +757,17 @@ fn serve_window(
 /// one streamed window read, joined with an omission marker between
 /// non-adjacent spans, as a whole-file read joins them. A span that does not
 /// fit one window page is read on its own, so the rejection names it and
-/// leads to that span's read.
-#[allow(clippy::too_many_arguments)]
+/// leads to that span's read (`readBoundedLines`) and to one read of every
+/// other requested range (`readOtherRanges`).
 fn fetch_ranges(
     q: &LocalFetchQuery,
-    path: &Path,
-    source: &std::fs::File,
-    len: u64,
+    source: &Opened<'_>,
     modified: Option<String>,
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
 ) -> LocalFetchResult {
+    let (path, len) = (source.path, source.len);
     let merged = crate::tools::line_spans::merge_spans(
         q.line_ranges()
             .into_iter()
@@ -601,12 +788,12 @@ fn fetch_ranges(
         .iter()
         .map(|(_, span)| (span.first, span.last))
         .collect::<Vec<_>>();
-    let streamed = match stream(source, &spans, cancel) {
+    let streamed = match source.windows(&spans, cancel) {
         Ok(streamed) => streamed,
         Err(error) => return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", error),
     };
     let mut parts = Vec::with_capacity(merged.len());
-    for ((one, span), streamed) in ones.into_iter().zip(streamed) {
+    for (index, ((one, span), streamed)) in ones.into_iter().zip(streamed).enumerate() {
         let (start, end) = (span.first, span.requested_last);
         let part = serve_window(
             &one,
@@ -623,14 +810,26 @@ fn fetch_ranges(
             return part;
         }
         if part.next.is_some() {
+            let others = merged
+                .iter()
+                .enumerate()
+                .filter(|(other, _)| *other != index)
+                .map(|(_, span)| *span)
+                .collect::<Vec<_>>();
+            let read_other_ranges = (!others.is_empty()).then(|| {
+                let mut rest = q.clone();
+                rest.set_line_spans(&others);
+                FetchCall { query: rest }
+            });
             return unsupported(
                 q,
                 len,
                 &format!(
-                    "lines {start}-{end} need more than one streamed window page, so these ranges cannot be served in one read. Read that span on its own (its pages continue it), and the other ranges in their own rows."
+                    "lines {start}-{end} need more than one streamed window page, so these ranges cannot be served in one read. Read that span on its own (its pages continue it), and the other ranges in their own read."
                 ),
                 NextCalls {
                     read_bounded_lines: Some(FetchCall { query: one }),
+                    read_other_ranges,
                     ..NextCalls::default()
                 },
             );
@@ -754,16 +953,43 @@ fn read_bounded(q: &LocalFetchQuery) -> NextCalls {
     }
 }
 
-/// An error row whose recovery restarts from the first line window.
-fn restart_error(q: &LocalFetchQuery, code: &str, message: String) -> LocalFetchResult {
-    let mut result = LocalFetchResult::error(q.path.to_string(), code, message);
-    let mut restart = line_chunk_query(q, 0);
-    restart.selection = None;
-    result.next = Some(NextCalls {
-        restart: Some(FetchCall { query: restart }),
-        ..NextCalls::default()
-    });
-    result
+/// A line offset past the end of the read's `read_total` lines: nothing
+/// returned, in the shape an in-memory read gives the same offset
+/// ([`super::executor::past_end`]), with the file's own facts.
+fn past_end_row(
+    q: &LocalFetchQuery,
+    streamed: &Streamed,
+    read_total: usize,
+    len: u64,
+) -> LocalFetchResult {
+    let mut warnings = Vec::new();
+    let next = super::executor::past_end(q, read_total, WindowUnit::Lines, &mut warnings);
+    let offset = q.offset().unwrap_or(0);
+    LocalFetchResult {
+        path: q.path.to_string(),
+        source_sha256: Some(streamed.digest.clone()),
+        content: Some(String::new()),
+        warnings,
+        total_lines: Some(streamed.total_lines),
+        source_bytes: usize::try_from(len).ok(),
+        returned_chars: Some(0),
+        returned_bytes: Some(0),
+        returned_lines: Some(0),
+        pagination: Some(Pagination {
+            unit: WindowUnit::Lines,
+            offset,
+            length: 0,
+            window: q.window_length().unwrap_or(WINDOW_LINES),
+            total_lines: read_total,
+            total_bytes: usize::try_from(len).unwrap_or(usize::MAX),
+            has_more: false,
+            next_offset: None,
+            resume_line: None,
+        }),
+        out_of_range: true,
+        next: Some(next),
+        ..LocalFetchResult::blank("success")
+    }
 }
 
 /// Map a window's positions, totals and digest back to the whole file.
@@ -871,13 +1097,14 @@ mod tests {
         let file = temp(b"a\nb\n");
         let source = opened(file.path());
         std::io::Read::read(&mut &source, &mut [0_u8; 3]).expect("sample");
-        let windows = stream(&source, &[(1, 2)], &NeverCancel).expect("stream");
+        let (windows, _) = stream(&source, &[(1, 2)], &NeverCancel).expect("stream");
         assert_eq!(windows[0].window, b"a\nb\n");
     }
 
     fn stream_one(path: &Path, first: usize, last: usize) -> Streamed {
         stream(&opened(path), &[(first, last)], &NeverCancel)
             .expect("stream")
+            .0
             .pop()
             .expect("window")
     }
@@ -889,7 +1116,7 @@ mod tests {
         let file = temp(
             b"a\n-----BEGIN RSA PRIVATE KEY-----\nSECRET\n-----END RSA PRIVATE KEY-----\nb\nc\n",
         );
-        let windows = stream(
+        let (windows, _) = stream(
             &opened(file.path()),
             &[(1, 1), (3, 3), (5, 6)],
             &NeverCancel,
@@ -923,6 +1150,53 @@ mod tests {
         file
     }
 
+    /// A streamed source shows line 1 without its leading BOM, as an
+    /// in-memory read does.
+    #[test]
+    fn a_streamed_source_hides_its_leading_bom() {
+        let mut source = "\u{feff}alpha\nbeta\n".to_owned().into_bytes();
+        source.extend(std::iter::repeat_n(b'z', 11 * 1024 * 1024));
+        let file = temp(&source);
+        let query: LocalFetchQuery =
+            serde_json::from_value(serde_json::json!({"path":file.path(),"ranges":["1-2"]}))
+                .expect("query");
+        let read = fetch_window(
+            &query,
+            file.path(),
+            &opened(file.path()),
+            &std::fs::metadata(file.path()).expect("meta"),
+            None,
+            &crate::security::ContentSecurity::new(),
+            &NeverCancel,
+            &LocalFetchRegex,
+        );
+        assert_eq!(read.content.as_deref(), Some("alpha\nbeta\n"), "{read:?}");
+    }
+
+    /// A streamed window that starts after line 1 keeps a U+FEFF its first
+    /// line begins with: only the file's first bytes hold its byte-order
+    /// mark.
+    #[test]
+    fn a_streamed_window_past_line_one_keeps_a_leading_feff() {
+        let mut source = "alpha\nbeta\n\u{feff}gamma\n".to_owned().into_bytes();
+        source.extend(std::iter::repeat_n(b'z', 11 * 1024 * 1024));
+        let file = temp(&source);
+        let query: LocalFetchQuery =
+            serde_json::from_value(serde_json::json!({"path":file.path(),"ranges":["3-3"]}))
+                .expect("query");
+        let read = fetch_window(
+            &query,
+            file.path(),
+            &opened(file.path()),
+            &std::fs::metadata(file.path()).expect("meta"),
+            None,
+            &crate::security::ContentSecurity::new(),
+            &NeverCancel,
+            &LocalFetchRegex,
+        );
+        assert_eq!(read.content.as_deref(), Some("\u{feff}gamma\n"), "{read:?}");
+    }
+
     #[test]
     fn a_copied_streamed_head_continuation_fills_its_bounded_window() {
         let mut source = "x\n".repeat(1_200).into_bytes();
@@ -935,7 +1209,7 @@ mod tests {
                 query,
                 file.path(),
                 &opened(file.path()),
-                source.len() as u64,
+                &std::fs::metadata(file.path()).expect("meta"),
                 None,
                 &crate::security::ContentSecurity::new(),
                 &NeverCancel,
@@ -997,6 +1271,7 @@ mod tests {
         let file = temp(b"a\nb\n");
         assert_eq!(
             stream(&opened(file.path()), &[(1, 2)], &Cancelled)
+                .map(drop)
                 .err()
                 .as_deref(),
             Some("deadline reached")
@@ -1048,6 +1323,128 @@ mod tests {
             "{window}"
         );
         assert_eq!(streamed.key_lines, 4);
+    }
+
+    /// Counts the copy blocks a stream writes (one check each).
+    struct Blocks(std::sync::atomic::AtomicUsize);
+    impl CancellationCheck for Blocks {
+        fn check(&self) -> Result<(), String> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// A later page of an indexed source streams from the checkpoint before
+    /// its window, not the whole file, and holds the same window: the
+    /// digest and totals of the whole pass, and a private-key block open
+    /// across the checkpoint still redacted.
+    #[test]
+    fn an_indexed_source_streams_a_later_window_from_its_checkpoint() {
+        let mut text = String::new();
+        for line in 1..=40_000 {
+            match line {
+                4_090 => text.push_str("-----BEGIN RSA PRIVATE KEY-----\n"),
+                4_091..=4_110 => text.push_str("SECRETSECRETSECRET\n"),
+                4_111 => text.push_str("-----END RSA PRIVATE KEY-----\n"),
+                _ => text.push_str(&format!("line {line}\n")),
+            }
+        }
+        let file = temp(text.as_bytes());
+        let source = opened(file.path());
+        let meta = source.metadata().expect("meta");
+        let stamp = crate::tools::source::cache_stamp(&meta);
+        assert!(stamp.is_some(), "the platform stamps files");
+        let path = file.path().canonicalize().expect("canonical");
+        let spans = [(4_100, 4_120), (39_990, 40_000)];
+        let whole = Blocks(Default::default());
+        let first = read_windows(&source, &path, stamp, &spans, &whole).expect("first");
+        let indexed = Blocks(Default::default());
+        let again = read_windows(&source, &path, stamp, &spans, &indexed).expect("again");
+        let full = whole.0.into_inner();
+        let partial = indexed.0.into_inner();
+        assert!(partial < full, "indexed {partial} blocks vs whole {full}");
+        for (a, b) in first.iter().zip(&again) {
+            assert_eq!(a.window, b.window);
+            assert_eq!(
+                (a.first, a.last, a.key_lines),
+                (b.first, b.last, b.key_lines)
+            );
+            assert_eq!((&a.digest, a.total_lines), (&b.digest, b.total_lines));
+        }
+        let held = String::from_utf8(again[0].window.clone()).expect("utf8");
+        assert!(!held.contains("SECRET"), "{held}");
+        assert!(held.contains("line 4112\n"), "{held}");
+        // The body lines in the window and the END marker.
+        assert_eq!(again[0].key_lines, 12);
+        // Another stamp is another version: the whole file streams again.
+        let other = Blocks(Default::default());
+        let moved = stamp.map(|stamp| octocode_engine::graph::SourceStamp {
+            size: stamp.size + 1,
+            ..stamp
+        });
+        read_windows(&source, &path, moved, &spans, &other).expect("other");
+        assert_eq!(other.0.into_inner(), full);
+    }
+
+    /// An offset past the end of a streamed read is the in-memory read's
+    /// out-of-range page (nothing returned, a restart), not an error.
+    #[test]
+    fn a_streamed_offset_past_the_end_is_an_out_of_range_page() {
+        let text = "x\n".repeat(50);
+        let file = temp(text.as_bytes());
+        let read = |query: serde_json::Value| {
+            let query: LocalFetchQuery = serde_json::from_value(query).expect("query");
+            fetch_window(
+                &query,
+                file.path(),
+                &opened(file.path()),
+                &std::fs::metadata(file.path()).expect("meta"),
+                None,
+                &crate::security::ContentSecurity::new(),
+                &NeverCancel,
+                &LocalFetchRegex,
+            )
+        };
+        for query in [
+            serde_json::json!({"path":file.path(),"offset":80}),
+            serde_json::json!({"path":file.path(),"ranges":["10-20"],"offset":30}),
+        ] {
+            let result = read(query);
+            assert_eq!(result.status, "success", "{result:?}");
+            assert!(result.out_of_range, "{result:?}");
+            assert_eq!(result.content.as_deref(), Some(""));
+            let restart = result.next.and_then(|next| next.restart).expect("restart");
+            assert_eq!(restart.query.offset, Some(0));
+            assert!(
+                result
+                    .warnings
+                    .iter()
+                    .any(|w| w.contains("is past the end"))
+            );
+        }
+        let past = read(serde_json::json!({"path":file.path(),"ranges":["90-95"]}));
+        assert_eq!(past.error_code.as_deref(), Some("invalidInput"), "{past:?}");
+    }
+
+    /// A NUL byte past the head sample makes a streamed source binary.
+    #[test]
+    fn a_streamed_source_with_a_late_nul_is_binary() {
+        let mut bytes = "x\n".repeat(20_000).into_bytes();
+        bytes.extend_from_slice(b"\0\x01tail\n");
+        let file = temp(&bytes);
+        let query: LocalFetchQuery =
+            serde_json::from_value(serde_json::json!({"path":file.path()})).expect("query");
+        let result = fetch_window(
+            &query,
+            file.path(),
+            &opened(file.path()),
+            &std::fs::metadata(file.path()).expect("meta"),
+            None,
+            &crate::security::ContentSecurity::new(),
+            &NeverCancel,
+            &LocalFetchRegex,
+        );
+        assert_eq!(result.error_code.as_deref(), Some("binaryFileUnsupported"));
     }
 
     #[test]

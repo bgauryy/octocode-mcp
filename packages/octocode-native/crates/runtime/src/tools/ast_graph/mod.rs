@@ -4,6 +4,7 @@ mod analysis;
 mod cargo;
 mod drift;
 mod edges;
+mod freshness;
 mod graph;
 mod linking;
 mod liveness;
@@ -17,8 +18,9 @@ mod types;
 /// Version of the [`types::BuiltGraph`] shape a stored graph was written
 /// with: bump it when the shape changes, so no older file is read. 2: call
 /// labels elide argument text, and only a graph the secret scanner passes
-/// is stored (version 1 files could hold raw call arguments).
-const GRAPH_SHAPE: u32 = 2;
+/// is stored (version 1 files could hold raw call arguments). 3: stored
+/// deflated.
+const GRAPH_SHAPE: u32 = 3;
 
 /// Host settings for graph linking and optional persistence. Each runtime
 /// supplies its own directory; memory-only runtimes never read or write it.

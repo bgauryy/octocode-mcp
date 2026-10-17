@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::graph::SourceStamp;
 use crate::lsp::spawn_limits;
 use crate::lsp::transport::{
     ClientRequestContext, JsonRpcConnection, ProgressTracker, Readiness,
@@ -89,6 +90,16 @@ const LSP_SERVER_ENV_ALLOWLIST: &[&str] = &[
     "SYSTEMROOT",
     "SystemRoot",
 ];
+// Read from the process, so declared there (`crate::process_env`).
+const _: () = {
+    let mut index = 0;
+    while index < LSP_SERVER_ENV_ALLOWLIST.len() {
+        assert!(crate::process_env::declares(
+            LSP_SERVER_ENV_ALLOWLIST[index]
+        ));
+        index += 1;
+    }
+};
 
 /// Give a spawned child process a bounded window to exit on its own (e.g.
 /// after an LSP `exit` notification) before escalating to a hard kill.
@@ -239,6 +250,82 @@ async fn executable_has_node_shebang(path: &str) -> Result<bool> {
     Ok(first_line.starts_with("#!") && first_line.contains("node"))
 }
 
+/// What the last successful sync of a document sent: the file it was read
+/// from, the digest of its text, and, once [`NativeLspClient::sync_open_documents`]
+/// has proven that text is still the file's, the file's settled stamp.
+#[derive(Clone, Debug)]
+struct Synced {
+    path: String,
+    digest: u64,
+    stamp: Option<SourceStamp>,
+}
+
+/// One open document compared with its file on disk.
+enum DiskCheck {
+    /// The file still holds the synced text; `stamp` lets a later check skip
+    /// the read.
+    Same {
+        uri: String,
+        digest: u64,
+        stamp: Option<SourceStamp>,
+    },
+    /// The file now holds other text.
+    Changed {
+        uri: String,
+        path: String,
+        content: String,
+        stamp: Option<SourceStamp>,
+    },
+    /// The file is gone, or no longer a readable UTF-8 file within the
+    /// source bound.
+    Gone { uri: String },
+}
+
+impl DiskCheck {
+    /// `synced` against its file now: `None` when its stamp proves the file
+    /// unchanged without reading it. The stat comes before the read, so a
+    /// write racing the read leaves a stamp the next check sees changed.
+    fn of(uri: String, synced: Synced) -> Option<Self> {
+        let Ok(meta) = std::fs::metadata(&synced.path) else {
+            return Some(Self::Gone { uri });
+        };
+        if synced.stamp.is_some() && SourceStamp::of(&meta) == synced.stamp {
+            return None;
+        }
+        let stamp = SourceStamp::settled(&meta, std::time::SystemTime::now());
+        let Some(content) =
+            crate::text::read_source(Path::new(&synced.path), super::MAX_LSP_SOURCE_BYTES)
+                .ok()
+                .and_then(|source| String::from_utf8(source.bytes).ok())
+        else {
+            return Some(Self::Gone { uri });
+        };
+        Some(if content_digest(&content) == synced.digest {
+            Self::Same {
+                uri,
+                digest: synced.digest,
+                stamp,
+            }
+        } else {
+            Self::Changed {
+                uri,
+                path: synced.path,
+                content,
+                stamp,
+            }
+        })
+    }
+}
+
+/// Digest of a document's text, compared to skip a resync of text the
+/// server already holds.
+fn content_digest(content: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// Bounded open-document lifecycle bookkeeping: `uri -> last sent version`
 /// plus LRU recency. Capped so a long session cannot grow the open-document set
 /// (and the mirrored server-side document memory) without bound. All state is
@@ -246,8 +333,8 @@ async fn executable_has_node_shebang(path: &str) -> Result<bool> {
 /// server; the async `didClose` for an evicted URI is issued by the caller.
 struct OpenDocuments {
     versions: HashMap<String, i32>,
-    /// Digest of the content the last successful sync sent, per URI.
-    digests: HashMap<String, u64>,
+    /// What the last successful sync sent, per URI.
+    synced: HashMap<String, Synced>,
     /// Recency order, least-recently-synced at the front.
     lru: VecDeque<String>,
     cap: usize,
@@ -257,7 +344,7 @@ impl OpenDocuments {
     fn new(cap: usize) -> Self {
         Self {
             versions: HashMap::new(),
-            digests: HashMap::new(),
+            synced: HashMap::new(),
             lru: VecDeque::new(),
             cap: cap.max(1),
         }
@@ -265,7 +352,7 @@ impl OpenDocuments {
 
     fn clear(&mut self) {
         self.versions.clear();
-        self.digests.clear();
+        self.synced.clear();
         self.lru.clear();
     }
 
@@ -283,7 +370,7 @@ impl OpenDocuments {
     /// evicted least-recently-used document (never the document being synced),
     /// which the caller must `didClose`.
     fn reserve(&mut self, uri: &str) -> (i32, Option<String>) {
-        self.digests.remove(uri);
+        self.synced.remove(uri);
         let version = self.versions.get(uri).copied().unwrap_or(0) + 1;
         self.versions.insert(uri.to_owned(), version);
         self.touch(uri);
@@ -312,7 +399,7 @@ impl OpenDocuments {
                 continue;
             }
             self.versions.remove(&candidate);
-            self.digests.remove(&candidate);
+            self.synced.remove(&candidate);
             return Some(candidate);
         }
         None
@@ -321,7 +408,7 @@ impl OpenDocuments {
     /// Undo a `reserve` whose notification failed to send, restoring the prior
     /// version (or removing the URI entirely for a failed first `didOpen`).
     fn rollback(&mut self, uri: &str, applied_version: i32) {
-        self.digests.remove(uri);
+        self.synced.remove(uri);
         if self.versions.get(uri).copied() != Some(applied_version) {
             return;
         }
@@ -336,7 +423,7 @@ impl OpenDocuments {
     /// The open version of `uri` when its last successful sync sent content
     /// with `digest`: the server already holds it, so no resync is needed.
     fn unchanged(&mut self, uri: &str, digest: u64) -> Option<i32> {
-        if self.digests.get(uri) != Some(&digest) {
+        if self.synced.get(uri).map(|synced| synced.digest) != Some(digest) {
             return None;
         }
         let version = self.version(uri)?;
@@ -344,12 +431,57 @@ impl OpenDocuments {
         Some(version)
     }
 
-    /// Remember the content digest a sync of `version` sent.
-    fn record(&mut self, uri: &str, version: i32, digest: u64) {
+    /// Remember what a sync of `version` sent: `path`'s text with `digest`.
+    fn record(&mut self, uri: &str, version: i32, path: &str, digest: u64) {
         if self.version(uri) == Some(version) {
-            self.digests.insert(uri.to_owned(), digest);
+            self.synced.insert(
+                uri.to_owned(),
+                Synced {
+                    path: path.to_owned(),
+                    digest,
+                    stamp: None,
+                },
+            );
         }
     }
+
+    /// Every document whose last sync completed, to compare with disk.
+    fn synced(&self) -> Vec<(String, Synced)> {
+        self.synced
+            .iter()
+            .map(|(uri, synced)| (uri.clone(), synced.clone()))
+            .collect()
+    }
+
+    /// The file's `stamp` once its text proved to be the synced `digest`
+    /// (a sync since then keeps its own).
+    fn stamp(&mut self, uri: &str, digest: u64, stamp: Option<SourceStamp>) {
+        if let Some(synced) = self
+            .synced
+            .get_mut(uri)
+            .filter(|synced| synced.digest == digest)
+        {
+            synced.stamp = stamp;
+        }
+    }
+
+    /// Drop `uri` from the open set; `true` when it was open.
+    fn forget(&mut self, uri: &str) -> bool {
+        self.synced.remove(uri);
+        self.lru.retain(|candidate| candidate != uri);
+        self.versions.remove(uri).is_some()
+    }
+}
+
+/// `didClose` for `uri`, dropping its push diagnostics first.
+async fn notify_close(connection: &JsonRpcConnection, uri: &str) -> Result<()> {
+    connection.clear_push_diagnostics(uri);
+    connection
+        .notify(
+            "textDocument/didClose",
+            json!({ "textDocument": { "uri": uri } }),
+        )
+        .await
 }
 
 #[derive(Clone)]
@@ -394,6 +526,11 @@ struct NativeLspClientInner {
     /// (with a `didClose`) once the cap is exceeded so the set cannot grow
     /// without bound over a long session.
     open_docs: StdMutex<OpenDocuments>,
+    /// Bumped each time the text of an open document changes on the server
+    /// (`didChange`, or `didClose` of a document whose file changed or went
+    /// away). Part of every cached response key: an answer given before the
+    /// change is never reused after it, whatever the caller's generation.
+    content_epoch: AtomicU64,
     /// Windows: owns the Job Object enforcing the server's memory cap; must
     /// outlive the child and be released only after the child is reaped
     /// (closing a kill-on-close job hard-kills the tree). Unit on Unix, where
@@ -494,6 +631,7 @@ impl NativeLspClient {
                 activity: Arc::new(AtomicUsize::new(0)),
                 sync_lock: Mutex::new(()),
                 open_docs: StdMutex::new(OpenDocuments::new(MAX_OPEN_DOCUMENTS)),
+                content_epoch: AtomicU64::new(0),
                 memory_cap_guard: StdMutex::new(None),
                 memory_watchdog: StdMutex::new(None),
                 resident_bytes: Arc::new(AtomicU64::new(0)),
@@ -582,7 +720,7 @@ impl NativeLspClient {
         // (e.g. a `node`/`rust-analyzer` resolved via PATH) still launch.
         command.env_clear();
         for &key in LSP_SERVER_ENV_ALLOWLIST {
-            if let Some(value) = std::env::var_os(key) {
+            if let Some(value) = crate::process_env::var_os(key) {
                 command.env(key, value);
             }
         }
@@ -1084,12 +1222,7 @@ impl NativeLspClient {
         // Content the server already holds is not sent again: a resync would
         // make the server re-analyze an unchanged document (and drop its
         // diagnostics) on every request.
-        let digest = {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            content.hash(&mut hasher);
-            hasher.finish()
-        };
+        let digest = content_digest(content);
         if self
             .inner
             .open_docs
@@ -1145,24 +1278,92 @@ impl NativeLspClient {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             match &notification {
-                Ok(()) => open_docs.record(&uri, next_version, digest),
+                Ok(()) => open_docs.record(&uri, next_version, &file_path, digest),
                 Err(_) => open_docs.rollback(&uri, next_version),
             }
+        }
+        if notification.is_ok() && next_version > 1 {
+            self.inner.content_epoch.fetch_add(1, Ordering::AcqRel);
         }
         // Close the document the cap evicted (if any) so both our bookkeeping
         // and the server's document set stay bounded. Best-effort: a stopped or
         // wedged connection makes this moot, and it must not mask the primary
         // notification result.
         if let Some(evicted_uri) = evicted {
-            connection.clear_push_diagnostics(&evicted_uri);
-            let _ = connection
-                .notify(
-                    "textDocument/didClose",
-                    json!({ "textDocument": { "uri": evicted_uri } }),
-                )
-                .await;
+            let _ = notify_close(&connection, &evicted_uri).await;
         }
         notification.map(|()| Some(next_version))
+    }
+
+    /// Bring every open document back in line with its file before a
+    /// request. The server answers from an open document's synced text, not
+    /// from disk, so a file edited after it was opened would otherwise keep
+    /// answering with its old lines whichever document the request names. A
+    /// document whose settled stamp still matches is not read; a changed one
+    /// is re-synced (`didChange`); one whose file is gone or unreadable is
+    /// closed, so the server reads the disk again.
+    async fn sync_open_documents(&self) -> Result<()> {
+        let synced = self
+            .inner
+            .open_docs
+            .lock()
+            .map_err(|_| Error::new("open_docs lock poisoned"))?
+            .synced();
+        if synced.is_empty() {
+            return Ok(());
+        }
+        let _activity = self.lease();
+        let checks = tokio::task::spawn_blocking(move || {
+            synced
+                .into_iter()
+                .filter_map(|(uri, synced)| DiskCheck::of(uri, synced))
+                .collect::<Vec<_>>()
+        })
+        .await
+        .map_err(|error| Error::new(format!("open document check failed: {error}")))?;
+        for check in checks {
+            let (uri, digest, stamp) = match check {
+                DiskCheck::Same { uri, digest, stamp } => (uri, digest, stamp),
+                DiskCheck::Changed {
+                    uri,
+                    path,
+                    content,
+                    stamp,
+                } => {
+                    self.sync_document(&path, &content).await?;
+                    (uri, content_digest(&content), stamp)
+                }
+                DiskCheck::Gone { uri } => {
+                    self.close_document(&uri).await?;
+                    continue;
+                }
+            };
+            self.inner
+                .open_docs
+                .lock()
+                .map_err(|_| Error::new("open_docs lock poisoned"))?
+                .stamp(&uri, digest, stamp);
+        }
+        Ok(())
+    }
+
+    /// Close the open document `uri` (its file is gone or unreadable), so
+    /// the server answers from its own view of the disk again.
+    async fn close_document(&self, uri: &str) -> Result<()> {
+        let _ordered = self.inner.sync_lock.lock().await;
+        let connection = self.connection_handle().await?;
+        let was_open = self
+            .inner
+            .open_docs
+            .lock()
+            .map_err(|_| Error::new("open_docs lock poisoned"))?
+            .forget(uri);
+        if !was_open {
+            return Ok(());
+        }
+        let closed = notify_close(&connection, uri).await;
+        self.inner.content_epoch.fetch_add(1, Ordering::AcqRel);
+        closed
     }
 
     /// Clones the connection handle out from under the lock, releasing the
@@ -1248,15 +1449,18 @@ impl NativeLspClient {
             .map(Arc::unwrap_or_clone)
     }
 
-    /// `method` under the current [`RESPONSE_SCOPE`]: a reused answer is
-    /// shared, not copied. A `settle` request keys its answer apart from
-    /// the plain one and waits `settle` only when it reaches the server.
+    /// `method` under the current [`RESPONSE_SCOPE`], once every open
+    /// document matches its file: a reused answer is shared, not copied,
+    /// and only one given since the open documents' text last changed is
+    /// reused. A `settle` request keys its answer apart from the plain one
+    /// and waits `settle` only when it reaches the server.
     async fn cached_request(
         &self,
         method: &str,
         params: Value,
         settle: Option<Duration>,
     ) -> Result<Arc<Value>> {
+        self.sync_open_documents().await?;
         let (reuse, generation) = RESPONSE_SCOPE
             .try_with(|scope| {
                 let scope = scope.borrow();
@@ -1270,7 +1474,8 @@ impl NativeLspClient {
             return self.send_request(method, params).await.map(Arc::new);
         }
         let variant = if settle.is_some() { "settled" } else { "" };
-        let key = format!("{generation}\u{0}{variant}\u{0}{method}\u{0}{params}");
+        let epoch = self.inner.content_epoch.load(Ordering::Acquire);
+        let key = format!("{generation}\u{0}{epoch}\u{0}{variant}\u{0}{method}\u{0}{params}");
         if reuse && let Some(hit) = self.inner.responses.get(&key) {
             return Ok(hit.value);
         }

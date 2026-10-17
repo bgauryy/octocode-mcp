@@ -228,7 +228,10 @@ impl GitHubTransport {
     /// served from the cache until the store's volatile TTL ends: no request,
     /// so no search spacing wait and no search rate-limit spend. A page
     /// `complete` rejects (GitHub's `incomplete_results`) is not stored: that
-    /// is exactly what a retry must not get back.
+    /// is exactly what a retry must not get back. Single flight: an identical
+    /// search already in flight (a sibling row of the batch) is waited for,
+    /// and its stored page answers this one, so the duplicate spends no
+    /// search quota and no spacing wait.
     pub(crate) async fn cached_search<T: Serialize + for<'de> Deserialize<'de>>(
         &self,
         namespace: &str,
@@ -237,10 +240,12 @@ impl GitHubTransport {
         invalid: &'static str,
         complete: impl Fn(&T) -> bool,
     ) -> Result<(T, Vec<u64>), ProviderError> {
-        if let Some(page) = self.cached_page(namespace, &spec, context).await? {
+        let (partition, key) = self.search_cache_slot(namespace, &spec, context)?;
+        let ticket = search_flights().join((partition.clone(), key.clone()));
+        let _turn = context.budget.wait(ticket.turn()).await?;
+        if let Some(page) = self.stored_page(&partition, &key).await {
             return Ok((page, Vec::new()));
         }
-        let (partition, key) = self.search_cache_slot(namespace, &spec, context)?;
         let response = self
             .execute(spec, context)
             .await
@@ -275,11 +280,19 @@ impl GitHubTransport {
         context: &RequestContext,
     ) -> Result<Option<T>, ProviderError> {
         let (partition, key) = self.search_cache_slot(namespace, spec, context)?;
-        Ok(self
-            .cache
-            .get(&partition, &key)
+        Ok(self.stored_page(&partition, &key).await)
+    }
+
+    /// The page stored in search slot `(partition, key)`.
+    async fn stored_page<T: for<'de> Deserialize<'de>>(
+        &self,
+        partition: &super::Partition,
+        key: &str,
+    ) -> Option<T> {
+        self.cache
+            .get(partition, key)
             .await
-            .and_then(|cached| serde_json::from_slice::<T>(&cached.bytes).ok()))
+            .and_then(|cached| serde_json::from_slice::<T>(&cached.bytes).ok())
     }
 
     /// The store slot of a search: the partition carries the endpoint and
@@ -558,6 +571,13 @@ impl OwnerSources {
     fn set(&self, key: (super::Partition, String), source: OwnerSource) {
         self.sources.insert(key, source, 1, None);
     }
+}
+
+/// The process's in-flight searches, one per `(credential, search slot)`.
+fn search_flights() -> &'static super::KeyedFlight<(super::Partition, String), ()> {
+    static FLIGHTS: super::KeyedFlight<(super::Partition, String), ()> =
+        super::KeyedFlight::transient();
+    &FLIGHTS
 }
 
 /// How long a read repository stays shared: long enough for one batch.

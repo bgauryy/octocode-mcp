@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::text::lexical as normalize_lexically;
 use std::path::{Path, PathBuf};
 
 mod cargo;
@@ -123,7 +124,7 @@ pub fn cargo_package_includes(file: &Path, limit: usize) -> Option<PackageInclud
                     }
                 }
                 IncludeArgument::Literal(target) => {
-                    let target = normalize_lexically(&path.parent().unwrap_or(path).join(target));
+                    let target = crate::text::lexical(&path.parent().unwrap_or(path).join(target));
                     if !target.starts_with(&package) && !includes.outside.contains(&target) {
                         includes.outside.push(target);
                     }
@@ -175,21 +176,6 @@ fn include_arguments(text: &str) -> Vec<IncludeArgument> {
         }
     }
     found
-}
-
-/// `path` with `.` and `..` components resolved without touching the disk.
-fn normalize_lexically(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                normalized.pop();
-            }
-            other => normalized.push(other),
-        }
-    }
-    normalized
 }
 
 /// The build script of the Cargo package at `package` (its manifest

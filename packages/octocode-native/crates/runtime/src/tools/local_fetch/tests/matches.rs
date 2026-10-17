@@ -287,10 +287,10 @@ fn unknown_and_whole_selection_recovery_reject_source_drift() {
     let next = first.next.expect("recovery");
     let recoveries = [
         (
-            next.unfiltered.expect("unknown chunks").query,
+            next.unfiltered_unknown.expect("unknown chunks").query,
             lines[1..].concat(),
         ),
-        (next.unfiltered2.expect("whole view").query, original),
+        (next.unfiltered.expect("whole view").query, original),
     ];
     for (recovery, expected) in &recoveries {
         assert!(recovery.clasify_context.is_none() && recovery.selection.is_none());
@@ -2078,5 +2078,307 @@ fn a_large_source_is_prepared_once_per_version() {
         scan.0.load(Ordering::Relaxed),
         2,
         "a new version is prepared again"
+    );
+}
+
+/// Rows of one batch reading the same large version at once prepare it
+/// once: the rest wait for the first preparation and share it, whether they
+/// read the same window or different ones.
+#[test]
+fn concurrent_rows_share_one_preparation() {
+    struct SlowKeys(AtomicUsize);
+    impl ContentScan for SlowKeys {
+        fn sanitize(
+            &self,
+            text: &str,
+            _: &Path,
+        ) -> Result<(String, Vec<String>), (String, String)> {
+            Ok((text.to_owned(), vec![]))
+        }
+        fn redact_key_blocks(&self, content: &str) -> (String, bool) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            // Long enough that every row arrives while the first prepares.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            crate::security::redact_private_key_blocks(content)
+        }
+    }
+    let t = Fixture::new();
+    let p = t.0.join("shared.txt");
+    let line = format!("{}\n", "x".repeat(79));
+    fs::write(&p, line.repeat(4_000)).expect("fixture");
+    let scan = SlowKeys(AtomicUsize::new(0));
+    let rows = [
+        q(&p),
+        q(&p),
+        qj(&p, serde_json::json!({"ranges": ["10-20"]})),
+        qj(
+            &p,
+            serde_json::json!({"matchString": "xx", "contextLines": 0}),
+        ),
+    ];
+    let start = std::sync::Barrier::new(rows.len());
+    let results = std::thread::scope(|scope| {
+        let workers = rows
+            .iter()
+            .map(|row| {
+                let (scan, start, paths) = (&scan, &start, Paths(t.0.clone()));
+                scope.spawn(move || {
+                    start.wait();
+                    execute_local_fetch(
+                        row,
+                        &paths,
+                        scan,
+                        &NeverCancel,
+                        &LocalFetchRegex,
+                        None,
+                        None,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        workers
+            .into_iter()
+            .map(|worker| worker.join().expect("row"))
+            .collect::<Vec<_>>()
+    });
+    assert!(
+        results.iter().all(|result| result.error.is_none()),
+        "{results:?}"
+    );
+    assert_eq!(scan.0.load(Ordering::Relaxed), 1, "one shared preparation");
+}
+
+/// A leading UTF-8 BOM is not text of line 1: a line-anchored pattern
+/// matches it there and line 1 shows without it, as localSearch does, in
+/// every dialect and in a plain read; the source size stays the file's.
+#[test]
+fn a_leading_bom_is_not_text_of_line_one() {
+    let t = Fixture::new();
+    let p = t.0.join("bom.txt");
+    fs::write(&p, "\u{feff}alpha\nbeta alpha\n").expect("fixture");
+    let paths = Paths(t.0.clone());
+    for regex in ["rust", "pcre2"] {
+        let r = fetch(
+            &qj(
+                &p,
+                serde_json::json!({"matchString": "^alpha", "regex": regex, "contextLines": 0}),
+            ),
+            &paths,
+        );
+        assert_eq!(r.matched_lines, vec![1], "{regex}: {r:?}");
+        assert_eq!(r.content.as_deref(), Some("alpha\n"), "{regex}");
+    }
+    let plain = fetch(&qj(&p, serde_json::json!({"fullContent": true})), &paths);
+    assert_eq!(
+        plain.content.as_deref(),
+        Some("alpha\nbeta alpha\n"),
+        "{plain:?}"
+    );
+    assert_eq!(plain.source_bytes, Some(20), "{plain:?}");
+    let r = fetch(
+        &qj(
+            &p,
+            serde_json::json!({"matchString": "alpha", "wholeWord": true, "contextLines": 0}),
+        ),
+        &paths,
+    );
+    assert_eq!(r.matched_lines, vec![1, 2], "{r:?}");
+}
+
+/// A match in a large source keeps its plain context windows: inlining a
+/// cut declaration's few lines never costs a whole-file declarations parse.
+#[test]
+fn a_large_source_match_does_not_parse_to_inline_a_cut_declaration() {
+    let t = Fixture::new();
+    let p = t.0.join("m.py");
+    let small: String = (2..=10).map(|i| format!("    s{i} = {i}\n")).collect();
+    let filler = "# filler line that only pads the module out\n".repeat(7_000);
+    fs::write(
+        &p,
+        format!(
+            "def small():\n{}{filler}",
+            small.replace("s3 = 3", "needle_small = 3")
+        ),
+    )
+    .expect("fixture");
+    let r = fetch(
+        &qj(
+            &p,
+            serde_json::json!({"matchString": "needle_small", "contextLines": 2}),
+        ),
+        &Paths(t.0.clone()),
+    );
+    assert_eq!(
+        r.source_line_ranges,
+        vec![LineRange { start: 1, end: 5 }],
+        "{r:?}"
+    );
+}
+
+/// A kept symbols view is served without scanning its source again.
+#[test]
+fn a_kept_symbols_view_is_served_without_a_rescan() {
+    struct Counting(AtomicUsize);
+    impl ContentScan for Counting {
+        fn sanitize(
+            &self,
+            text: &str,
+            _: &Path,
+        ) -> Result<(String, Vec<String>), (String, String)> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok((text.to_owned(), vec![]))
+        }
+    }
+    let store = crate::cache::Store::new(crate::cache::CacheConfig::default(), None);
+    let scan = Counting(AtomicUsize::new(0));
+    let source = "pub fn run() -> u8 {\n    1\n}\n";
+    let view = |scan: &Counting| {
+        super::executor::symbols_view(&store, source, "run.rs", Path::new("/fixture/run.rs"), scan)
+    };
+    let first = view(&scan);
+    let scans = scan.0.load(Ordering::SeqCst);
+    assert!(scans > 0);
+    let again = view(&scan);
+    assert!(std::sync::Arc::ptr_eq(&first, &again));
+    assert_eq!(scan.0.load(Ordering::SeqCst), scans, "a hit scans nothing");
+}
+
+/// A miss that already matched every pattern ignoring case does not run
+/// the same patterns again to count case-insensitive hits.
+#[test]
+fn an_insensitive_miss_runs_its_patterns_once() {
+    struct Counting(AtomicUsize);
+    impl RegexMatch for Counting {
+        fn matching_ranges(
+            &self,
+            pattern: &str,
+            case_sensitive: bool,
+            input: &str,
+        ) -> Result<RegexSpans, ExtractionError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            LocalFetchRegex.matching_ranges(pattern, case_sensitive, input)
+        }
+    }
+    let t = Fixture::new();
+    let p = t.0.join("a.txt");
+    fs::write(&p, "alpha\nbeta\n").expect("fixture");
+    let read = |case: &str| {
+        let regex = Counting(AtomicUsize::new(0));
+        let r = execute_local_fetch(
+            &qj(
+                &p,
+                serde_json::json!({"matchString": "gamma", "regex": "rust", "caseMode": case}),
+            ),
+            &Paths(t.0.clone()),
+            &Safe,
+            &NeverCancel,
+            &regex,
+            None,
+            None,
+        );
+        assert_eq!(r.status, "empty", "{r:?}");
+        regex.0.into_inner()
+    };
+    assert_eq!(read("insensitive"), 1);
+    assert_eq!(read("sensitive"), 2);
+}
+
+/// A classified read its input alone rules out is refused before the
+/// source is decoded or redacted, its lead bound to the version it saw.
+#[test]
+fn a_classified_read_with_an_unsupported_view_is_refused_before_any_scan() {
+    struct Counting(AtomicUsize);
+    impl ContentScan for Counting {
+        fn sanitize(
+            &self,
+            text: &str,
+            _: &Path,
+        ) -> Result<(String, Vec<String>), (String, String)> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok((text.to_owned(), vec![]))
+        }
+        fn redact_key_blocks(&self, content: &str) -> (String, bool) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            (content.to_owned(), false)
+        }
+    }
+    let t = Fixture::new();
+    let p = t.0.join("run.rs");
+    fs::write(&p, "pub fn run() {}\n").expect("fixture");
+    for fields in [
+        serde_json::json!({"minify": "standard"}),
+        serde_json::json!({"unit": "bytes"}),
+        serde_json::json!({"offset": 3}),
+    ] {
+        let mut fields = fields;
+        fields["clasifyContext"] = serde_json::json!({"classifiers": ["find run"]});
+        let scan = Counting(AtomicUsize::new(0));
+        let r = execute_local_fetch(
+            &qj(&p, fields.clone()),
+            &Paths(t.0.clone()),
+            &scan,
+            &NeverCancel,
+            &LocalFetchRegex,
+            None,
+            None,
+        );
+        assert_eq!(
+            r.error_code.as_deref(),
+            Some("invalidInput"),
+            "{fields}: {r:?}"
+        );
+        assert!(r.source_sha256.is_some());
+        assert_eq!(scan.0.into_inner(), 0, "{fields}");
+    }
+}
+
+/// `minify:"standard"` pages in the lines a raw read of the same selection
+/// pages in: the extracted lines of a `ranges` read, as the source lines
+/// of a whole-file read.
+#[test]
+fn a_standard_view_of_ranges_pages_in_the_extracted_lines() {
+    let t = Fixture::new();
+    let p = t.0.join("m.rs");
+    let text: String = (1..=30)
+        .map(|line| {
+            if line % 2 == 0 {
+                format!("// comment {line}\n")
+            } else {
+                format!("const V{line}: u8 = {line};\n")
+            }
+        })
+        .collect();
+    fs::write(&p, text).expect("fixture");
+    let r = fetch(
+        &qj(
+            &p,
+            serde_json::json!({"ranges": ["13-20"], "minify": "standard", "offset": 2, "length": 3}),
+        ),
+        &Paths(t.0.clone()),
+    );
+    let page = r.pagination.as_ref().expect("pagination");
+    assert_eq!((page.offset, page.total_lines), (2, 8), "{r:?}");
+    let first = r
+        .content
+        .as_deref()
+        .and_then(|content| content.split('\t').next())
+        .and_then(|line| line.parse::<usize>().ok())
+        .expect("gutter");
+    assert_eq!(first, 15, "{r:?}");
+}
+
+/// A NUL byte past the binary sniff's head sample makes the file binary.
+#[test]
+fn a_late_nul_byte_makes_an_in_memory_source_binary() {
+    let t = Fixture::new();
+    let p = t.0.join("late.txt");
+    let mut bytes = "text line\n".repeat(1_000).into_bytes();
+    bytes.extend_from_slice(b"\0\x01\x02tail\n");
+    fs::write(&p, bytes).expect("fixture");
+    let r = fetch(&q(&p), &Paths(t.0.clone()));
+    assert_eq!(
+        r.error_code.as_deref(),
+        Some("binaryFileUnsupported"),
+        "{r:?}"
     );
 }

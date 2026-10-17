@@ -18,6 +18,7 @@ use crate::tools::source_capture::{self, Captured};
 use serde_json::{Map, Value, json};
 
 mod recovery;
+pub(crate) mod sections;
 
 /// clasify's output facts: rows are keyed query results with their own shape.
 pub(crate) struct Output;
@@ -28,6 +29,17 @@ impl crate::tools::output::ToolOutput for Output {
     fn evidence_kind(&self, _query: &Value, _data: &Value) -> &'static str {
         "provider"
     }
+    fn collection_paths(&self) -> Option<&'static [&'static str]> {
+        Some(&[
+            "/resources",
+            "/resources/*/sections",
+            "/resources/*/sections/*/answers",
+            "/answers",
+        ])
+    }
+    fn first_fragment_fields(&self) -> &'static [&'static str] {
+        &["questions"]
+    }
     fn resource_major(&self) -> bool {
         true
     }
@@ -37,23 +49,6 @@ impl crate::tools::output::ToolOutput for Output {
 pub(crate) struct Receipts {
     pub structured: Value,
     pub failure: Option<FailureKind>,
-}
-
-/// Classification is nondeterministic and billed per evaluation, so a
-/// response window cannot replay a page of the original answers.
-pub(crate) fn reject_response_pagination(
-    input: &Value,
-) -> Result<(), crate::runtime::RuntimeError> {
-    if ["responseOffset", "responseLength", "responseSnapshot"]
-        .iter()
-        .any(|field| input.get(field).is_some())
-    {
-        return Err(crate::runtime::RuntimeError::new(
-            "unsupportedResponsePagination",
-            "clasify response pagination is unsupported: replay would repeat source capture and inference.",
-        ));
-    }
-    Ok(())
 }
 
 /// The largest state one row judges (`clasify.semanticPolicy.maxStateChars`).
@@ -81,6 +76,7 @@ enum Input {
     State(Value),
     Source(Value),
     Models,
+    Sections(Value),
 }
 
 /// A row contract validation admitted. The provider receives the validated
@@ -88,7 +84,9 @@ enum Input {
 /// which are semantic input (the contract tests keep the shapes aligned).
 fn parse(position: usize, row: &Value) -> Row {
     let questions = row["questions"].as_object();
-    let input = if row["operation"] == "models" {
+    let input = if row["operation"] == "sections" {
+        Input::Sections(row.clone())
+    } else if row["operation"] == "models" {
         Input::Models
     } else if row.get("state").is_some() {
         Input::State(row["state"].clone())
@@ -143,6 +141,7 @@ pub(crate) fn call(
     rows: &[Value],
     dispatcher: &DomainDispatcher,
     context: &ExecutionContext,
+    section_runtime: sections::Runtime<'_>,
 ) -> Result<Receipts, ExecutionError> {
     if !evaluator.is_configured() {
         return Err(ExecutionError::WorkerFailed);
@@ -150,14 +149,26 @@ pub(crate) fn call(
     let parsed = parse_rows(rows);
     let budget = evaluator.budget(context.deadline, context.cancellation.clone());
     let gate = evaluator.gate();
+    let section_budget = sections::Budget::new(dispatcher.limits.selection);
     let outcomes = std::thread::scope(|scope| {
         let tasks = parsed
             .iter()
             .map(|row| {
-                let (budget, gate) = (&budget, &gate);
+                let (budget, gate, section_budget) = (&budget, &gate, &section_budget);
                 scope.spawn(move || {
                     let _enter = dispatcher.handle.enter();
-                    evaluate_row(evaluator, row, dispatcher, context, budget, gate)
+                    if let Input::Sections(input) = &row.input {
+                        RowOutcome::Sections(sections::run(
+                            row,
+                            input,
+                            dispatcher,
+                            context,
+                            section_runtime,
+                            section_budget,
+                        ))
+                    } else {
+                        evaluate_row(evaluator, row, dispatcher, context, budget, gate)
+                    }
                 })
             })
             .collect::<Vec<_>>();
@@ -170,6 +181,8 @@ pub(crate) fn call(
     for outcome in outcomes.iter().filter_map(|outcome| outcome.as_ref().ok()) {
         if let RowOutcome::Judgment { judged, .. } = outcome {
             usage.add(judged);
+        } else if let RowOutcome::Sections(Ok(result)) = outcome {
+            usage.merge(&result.usage);
         }
     }
     evaluator.record(usage);
@@ -188,6 +201,13 @@ pub(crate) fn call(
                 output.push(match judged {
                     Ok(judged) => answered(row, judged, captured, assets),
                     Err(error) => failed(row, &error, captured.as_deref()),
+                });
+            }
+            RowOutcome::Sections(result) => {
+                kinds.push(result.as_ref().err().map(error_kind));
+                output.push(match result {
+                    Ok(outcome) => outcome.output,
+                    Err(error) => failed(row, &error, None),
                 });
             }
             RowOutcome::Models(result) => {
@@ -220,6 +240,7 @@ enum RowOutcome {
         assets: Option<Value>,
     },
     Models(Result<Value, ClassificationError>),
+    Sections(Result<sections::Outcome, ClassificationError>),
 }
 
 fn rejected(error: ClassificationError, captured: Option<Box<Captured>>) -> RowOutcome {
@@ -240,6 +261,16 @@ fn evaluate_row(
 ) -> RowOutcome {
     let max_chars = max_state_chars(row.long_context);
     let (state, captured) = match &row.input {
+        Input::Sections(_) => {
+            return rejected(
+                ClassificationError::new(
+                    "invalidClassificationRequest",
+                    "Section assessment requires its bounded session executor.",
+                    "Use the sections operation.",
+                ),
+                None,
+            );
+        }
         Input::Models => {
             return RowOutcome::Models(dispatcher.handle.block_on(evaluator.models(budget, gate)));
         }
@@ -393,6 +424,11 @@ pub(crate) fn unavailable_source_issues(
     let mut sources = Vec::new();
     if let Some(source) = query.get("source") {
         sources.push((source, vec!["source".to_owned()]));
+    }
+    if let Some(resources) = query["resources"].as_object() {
+        for (key, source) in resources {
+            sources.push((source, vec!["resources".into(), key.clone()]));
+        }
     }
     if let Some(assets) = query["assets"].as_object() {
         for (key, asset) in assets {

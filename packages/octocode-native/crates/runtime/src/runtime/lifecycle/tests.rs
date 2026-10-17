@@ -249,3 +249,66 @@ fn unrepresentable_timeout_is_rejected_not_a_panic_at_admission() {
     .expect("the longest timeout is valid");
     assert!(longest.admit("one".into()).is_ok());
 }
+
+/// A light request runs on its own slots while every walk slot is held, yet
+/// still counts toward the shared pending bound.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn light_requests_never_queue_behind_walks_and_share_the_pending_bound() {
+    let runtime = runtime();
+    let running = occupy(&runtime).await;
+    let admission = runtime
+        .admit("light".into())
+        .expect("admitted")
+        .with_cost(Cost::Light);
+    let served = tokio::time::timeout(
+        Duration::from_secs(5),
+        runtime.execute_blocking_admitted(admission, |_| Ok(7)),
+    )
+    .await
+    .expect("a light request does not wait for the walk slot");
+    assert_eq!(served, Ok(7));
+    // pending = 2: the running walk and one queued request fill it.
+    let queued = runtime.admit("queued".into()).expect("admitted");
+    assert!(matches!(
+        runtime
+            .admit("over".into())
+            .map(|a| a.with_cost(Cost::Light)),
+        Err(ExecutionError::Busy)
+    ));
+    drop(queued);
+    assert!(runtime.cancel("running"));
+    assert_eq!(running.await.expect("join"), Err(ExecutionError::Cancelled));
+    assert!(matches!(
+        RequestRuntime::new(RequestLimits {
+            light_concurrency: 0,
+            ..RequestLimits::default()
+        }),
+        Err(ExecutionError::InvalidLimits)
+    ));
+}
+
+/// Admitted work runs on a blocking thread in its caller's notice scope, so
+/// a warm server relays what a call's row work raises to that call alone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn admitted_work_raises_its_notices_in_the_callers_scope() {
+    let runtime = runtime();
+    let (call, bystander) = (
+        octocode_io::notice::Scope::default(),
+        octocode_io::notice::Scope::default(),
+    );
+    call.run(run(&runtime, "noticed", |_| {
+        octocode_io::notice::raise("lifecycle-test-row", "lifecycle-test-row: raised");
+        Ok(())
+    }))
+    .await
+    .expect("ran");
+    let of = |scope: &octocode_io::notice::Scope| {
+        scope
+            .notices()
+            .into_iter()
+            .filter(|text| text.starts_with("lifecycle-test-row"))
+            .count()
+    };
+    assert_eq!(of(&call), 1, "the call's own notice");
+    assert_eq!(of(&bystander), 0, "never another call's");
+}

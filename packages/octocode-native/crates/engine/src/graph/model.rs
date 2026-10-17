@@ -271,17 +271,21 @@ pub struct NodeId(pub String);
 
 impl NodeId {
     pub fn file(path: impl AsRef<str>) -> Self {
-        Self(format!("file:{}", normalize_path(path.as_ref())))
+        Self(format!("file:{}", trimmed_slash_path(path.as_ref())))
     }
 
     /// File-local declaration identity supplied by the syntax producer. This is
     /// not a canonical cross-file binding or a stable identity across edits.
     pub fn symbol(file: &str, local_id: &str) -> Self {
-        Self(format!("symbol:{}#{}", normalize_path(file), local_id))
+        Self(format!("symbol:{}#{}", trimmed_slash_path(file), local_id))
     }
 
     pub fn occurrence(file: &str, local_id: &str) -> Self {
-        Self(format!("occurrence:{}#{}", normalize_path(file), local_id))
+        Self(format!(
+            "occurrence:{}#{}",
+            trimmed_slash_path(file),
+            local_id
+        ))
     }
 }
 
@@ -394,7 +398,7 @@ impl CodeGraphBuilder {
         Self {
             graph: CodeGraphSnapshot {
                 snapshot: SnapshotMetadata {
-                    root: normalize_path(root.as_ref()),
+                    root: trimmed_slash_path(root.as_ref()),
                     facts_schema_version,
                     ..Default::default()
                 },
@@ -412,7 +416,7 @@ impl CodeGraphBuilder {
         path: impl AsRef<str>,
         digest: impl Into<String>,
     ) -> Result<NodeId, String> {
-        let path = normalize_path(path.as_ref());
+        let path = trimmed_slash_path(path.as_ref());
         self.graph
             .snapshot
             .files
@@ -437,7 +441,7 @@ impl CodeGraphBuilder {
         digest: impl Into<String>,
         facts: &GraphFactsDocument,
     ) -> Result<(), String> {
-        let path = normalize_path(path.as_ref());
+        let path = trimmed_slash_path(path.as_ref());
         let file_id = self.add_file(&path, digest)?;
         for declaration in &facts.declarations {
             let id = NodeId::symbol(&path, &declaration.id);
@@ -501,8 +505,8 @@ impl CodeGraphBuilder {
         relation: impl AsRef<str>,
         line: u32,
     ) -> Result<(), String> {
-        let from_path = normalize_path(from.as_ref());
-        let to_path = normalize_path(to.as_ref());
+        let from_path = trimmed_slash_path(from.as_ref());
+        let to_path = trimmed_slash_path(to.as_ref());
         let from_id = self.ensure_file(&from_path);
         let to_id = self.ensure_file(&to_path);
         let relation = relation.as_ref().to_owned();
@@ -621,8 +625,11 @@ impl CodeGraphBuilder {
     }
 }
 
-fn normalize_path(path: &str) -> String {
-    let mut normalized = path.replace('\\', "/");
+/// `path` in `/` form ([`crate::text::slash_path`]) without trailing
+/// slashes, keeping a root (`/`, `C:/`) whole: the one spelling a graph key
+/// gives a path.
+fn trimmed_slash_path(path: &str) -> String {
+    let mut normalized = crate::text::slash_path(std::path::Path::new(path));
     while normalized.ends_with('/')
         && normalized.len() > 1
         && normalized
@@ -641,9 +648,9 @@ mod tests {
 
     #[test]
     fn path_normalization_preserves_filesystem_roots() {
-        assert_eq!(normalize_path("/"), "/");
-        assert_eq!(normalize_path("C:\\"), "C:/");
-        assert_eq!(normalize_path("/workspace/"), "/workspace");
+        assert_eq!(trimmed_slash_path("/"), "/");
+        assert_eq!(trimmed_slash_path("C:\\"), "C:/");
+        assert_eq!(trimmed_slash_path("/workspace/"), "/workspace");
     }
 
     #[test]

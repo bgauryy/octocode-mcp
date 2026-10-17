@@ -54,7 +54,31 @@ pub fn execute_local_search(
     selection: Option<&crate::tools::selection::Runtime>,
 ) -> Result<LocalSearchResult, ToolError> {
     cancel.check().map_err(ToolError::cancelled)?;
-    let mut scan = scan_query(query, paths, cancel, walk_threads, response_window)?;
+    let scan = scan_query(query, paths, cancel, walk_threads, response_window)?;
+    page_of(
+        query,
+        paths,
+        security,
+        cancel,
+        walk_threads,
+        scan,
+        selection,
+    )
+}
+
+/// The page `query` asks for, cut from `scan` (fresh, or stored and proved
+/// unchanged when [`scan_query`] took it). Every file the page reads or
+/// shows is checked again here, so a file changed since then restarts the
+/// snapshot or is denied rather than shown.
+pub(super) fn page_of(
+    query: &LocalSearchQuery,
+    paths: &PathPolicy,
+    security: &ContentSecurity,
+    cancel: &impl CancellationCheck,
+    walk_threads: Option<u32>,
+    mut scan: Scanned,
+    selection: Option<&crate::tools::selection::Runtime>,
+) -> Result<LocalSearchResult, ToolError> {
     // The bytes a stored scan's secret check must read, or `None` when the
     // scan is fresh; a stored file whose digest is missing reads as changed.
     let digests = scan.digests.take();
@@ -74,6 +98,7 @@ pub fn execute_local_search(
         expected_digest: &expected_digest,
         security,
         cancel,
+        walk_threads,
     };
     let shaped = shape_page(
         &scope,
@@ -84,12 +109,17 @@ pub fn execute_local_search(
         &scan.identity,
     )?;
     let total_files = scan.parsed.files.len() as u32;
-    let reusable = scan.reusable.take().map(|value| super::manifest::Fresh {
-        value,
-        query_key: std::mem::take(&mut scan.query_key),
-        redaction: shaped.redaction,
-        skipped: Arc::clone(&scan.skipped),
-    });
+    let reusable = scan
+        .reusable
+        .take()
+        .zip(shaped.packed)
+        .map(|(walked, value)| super::manifest::Fresh {
+            value,
+            query_key: std::mem::take(&mut scan.query_key),
+            redaction: shaped.redaction,
+            skipped: Arc::clone(&scan.skipped),
+            walked,
+        });
     let selection_token = shaped
         .selection
         .as_ref()
@@ -102,7 +132,9 @@ pub fn execute_local_search(
         reusable,
         std::mem::take(&mut scan.policy_key),
         selection_token,
+        &|| cancel.check().is_err(),
     );
+    cancel.check().map_err(ToolError::cancelled)?;
     let rows = annotate_rows(
         &scope,
         &shaped.layout,
@@ -418,6 +450,7 @@ pub(super) fn file_paging(
 
 /// A cut page whose shown values are verified.
 pub(super) struct Shaped {
+    pub(super) packed: Option<super::packed::Packed>,
     pub(super) layout: Layout,
     pub(super) redacted: Redacted,
     /// What redacting the scan changed, for a stored scan's later pages.
@@ -451,6 +484,11 @@ pub(super) fn shape_page(
         ..
     } = *scope;
     let (mut redacted, redaction) = redact_scan(scope, parsed, stored_redaction)?;
+    let packed = if stored_redaction.is_none() {
+        super::manifest::pack_checked(parsed, &|| scope.cancel.check().is_err())
+    } else {
+        None
+    };
     order_files(query, &mut parsed.files);
     let selection =
         super::selection::select_hits(scope, parsed, selection, identity, &mut redacted)?;
@@ -468,6 +506,7 @@ pub(super) fn shape_page(
         (&mut cut, &mut outlines),
     )?;
     Ok(Shaped {
+        packed,
         layout,
         redacted,
         redaction,
@@ -524,9 +563,8 @@ pub(super) struct Scanned {
     pub(super) query_key: String,
     /// A stored scan's redaction to replay (see [`redact_scan`]).
     pub(super) stored_redaction: Option<Arc<Redaction>>,
-    /// A fresh scan, packed before any page shapes it, small enough to
-    /// store for this snapshot's later pages.
-    pub(super) reusable: Option<super::packed::Packed>,
+    /// A fresh walk offered for storage with the priced, unranked scan.
+    pub(super) reusable: Option<super::manifest::Walked>,
     /// The query's own walk, for probes over the same scope.
     pub(super) search_options: TextSearchOptions,
     pub(super) policy_key: String,
@@ -558,6 +596,7 @@ pub(super) fn scan_query(
         digests,
         skipped,
         stored,
+        walked,
     } = scan(query, paths, options, &policy_key, cancel)?;
     // Pages are cut from serialized sizes so a default-layout page, with
     // the row around it, fits one response window. Sized by the canonical
@@ -574,6 +613,7 @@ pub(super) fn scan_query(
         (Some(stored), Some(snapshot)) if stored.query_key == query_key => {
             (snapshot.to_owned(), stored.redaction)
         }
+        (Some(_), Some(_)) => return Err(stale_snapshot(query)),
         _ => (fingerprint(&query_key, &parsed.files, &parsed.stats), None),
     };
     // A cached scan is checked too: its identity comes from the submitted
@@ -585,10 +625,7 @@ pub(super) fn scan_query(
     {
         return Err(stale_snapshot(query));
     }
-    let reusable = digests
-        .is_none()
-        .then(|| super::manifest::pack(&parsed))
-        .flatten();
+    let reusable = walked;
     Ok(Scanned {
         validated,
         parsed,
@@ -708,7 +745,8 @@ pub(super) fn search_options(
         walk_threads,
         // A scan small enough to store for later pages keeps the digest of
         // each matched file from the read that searched it (see `manifest`).
-        digest_max_bytes: Some(super::manifest::MAX_SOURCE_BYTES),
+        digest_max_bytes: Some(u64::MAX),
+        defer_values: true,
     }
 }
 
@@ -724,6 +762,8 @@ pub(super) struct ScanOutput {
     pub(super) skipped: Arc<crate::policy::discovery::WalkSkips>,
     /// What was stored with a reused scan: its query key and redaction.
     pub(super) stored: Option<StoredDerived>,
+    /// What a fresh walk searched; `None` for a reused scan.
+    pub(super) walked: Option<super::manifest::Walked>,
 }
 
 /// What a stored scan's fresh page derived from it.
@@ -744,8 +784,9 @@ pub(super) fn scan(
     policy_key: &str,
     cancel: &impl CancellationCheck,
 ) -> Result<ScanOutput, ToolError> {
-    let (parsed, digests, withheld, derived) = if let Some(snapshot) = query.snapshot()
-        && let Some(stored) = super::manifest::get(snapshot, policy_key)
+    let (parsed, digests, withheld, derived, walked) = if let Some(snapshot) = query.snapshot()
+        && let Some(stored) =
+            super::manifest::get_checked(snapshot, policy_key, &|| cancel.check().is_err())
     {
         let derived = StoredDerived {
             query_key: stored.query_key,
@@ -756,6 +797,7 @@ pub(super) fn scan(
             Some(stored.digests),
             stored.skipped,
             Some(derived),
+            None,
         )
     } else {
         let walk = Arc::new(crate::policy::discovery::SearchWalk::new(
@@ -764,17 +806,31 @@ pub(super) fn scan(
             query.default_excludes.defaults(),
             options.include.as_deref().unwrap_or_default(),
         ));
-        let parsed = search_text_cancellable(options, walk.clone(), &|| cancel.check().is_err())
-            .map_err(|error| {
-                // A malformed glob or file type is caller input.
-                let code = match error.kind() {
-                    octocode_engine::error::ErrorKind::InvalidInput => "invalidInput",
-                    octocode_engine::error::ErrorKind::InvalidGlob => "invalidGlob",
-                    _ => "executionFailed",
-                };
-                ToolError::new(code, error.to_string())
-            })?;
-        (parsed, None, Arc::new(walk.skipped()), None)
+        let recorder = Arc::new(super::walked::Recorder::new(
+            Arc::clone(&walk),
+            paths.clone(),
+            std::path::PathBuf::from(&options.path),
+            query.include_ignored != Some(true),
+            super::manifest::MAX_BYTES,
+        ));
+        let parsed =
+            search_text_cancellable(options, recorder.clone(), &|| cancel.check().is_err())
+                .map_err(|error| {
+                    // A malformed glob or file type is caller input.
+                    let code = match error.kind() {
+                        octocode_engine::error::ErrorKind::InvalidInput => "invalidInput",
+                        octocode_engine::error::ErrorKind::InvalidGlob => "invalidGlob",
+                        _ => "executionFailed",
+                    };
+                    ToolError::new(code, error.to_string())
+                })?;
+        (
+            parsed,
+            None,
+            Arc::new(walk.skipped()),
+            None,
+            Some(recorder.walked()),
+        )
     };
     cancel.check().map_err(ToolError::cancelled)?;
     if parsed.files.is_empty()
@@ -788,6 +844,7 @@ pub(super) fn scan(
         digests,
         skipped: withheld,
         stored: derived,
+        walked,
     })
 }
 

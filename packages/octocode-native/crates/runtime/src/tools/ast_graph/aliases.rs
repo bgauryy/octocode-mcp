@@ -10,10 +10,8 @@
 //! file the scan did not read.
 
 use super::graph::{climb, dirname, join, join_within_root, normalize};
-use crate::{
-    policy::path::{PathPolicy, lexical},
-    security::ContentSecurity,
-};
+use crate::{policy::path::PathPolicy, security::ContentSecurity};
+use octocode_engine::text::lexical;
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -325,7 +323,9 @@ impl ResolveContext {
                 self.outer_ts_config = Some(Arc::new(reader.effective(&config)));
                 return;
             }
-            if directory.join("package.json").is_file() || directory.join(".git").exists() {
+            if directory.join("package.json").is_file()
+                || octocode_engine::search::repository::is_root(directory)
+            {
                 return;
             }
         }
@@ -348,7 +348,8 @@ impl ResolveContext {
     /// package's own `package.json` above the root (`#` subpath imports,
     /// self-referencing exports), mirroring the outer tsconfig lookup: the
     /// first manifest within the bounded ancestor walk governs the scan root,
-    /// its targets rebased onto the root; the walk stops at a `.git` boundary.
+    /// its targets rebased onto the root; the walk stops at a repository
+    /// root ([`octocode_engine::search::repository`]).
     fn load_outer_manifest(&mut self, reader: &ConfigReader<'_>) {
         if self.manifests.contains_key(".") {
             return;
@@ -366,7 +367,7 @@ impl ResolveContext {
                 else {
                     return;
                 };
-                let offset = offset.to_string_lossy().replace('\\', "/");
+                let offset = octocode_engine::text::slash_path(offset);
                 let manifest = Arc::new(Manifest::parse(".", &value).rebased(&offset));
                 if let Some(name) = value.get("name").and_then(Value::as_str) {
                     self.packages
@@ -376,7 +377,7 @@ impl ResolveContext {
                 self.manifests.insert(".".to_owned(), manifest);
                 return;
             }
-            if directory.join(".git").exists() {
+            if octocode_engine::search::repository::is_root(directory) {
                 return;
             }
         }

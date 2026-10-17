@@ -9,6 +9,7 @@
 //! or commit), and a selection larger than the state limit fails instead of
 //! being judged from its first part.
 pub(crate) mod assets;
+pub(crate) mod resource;
 pub(crate) mod url;
 
 use crate::response::rows;
@@ -118,12 +119,11 @@ struct Page {
     next: Option<Value>,
 }
 
-fn read_page(
+pub(super) fn prepare_source(
     id: ToolId,
     row: &Value,
     dispatcher: &DomainDispatcher,
-    context: &ExecutionContext,
-) -> Result<Page, ClassificationError> {
+) -> Result<Value, ClassificationError> {
     let tool = id.as_str();
     let mut prepared = crate::contracts::prepare_many_and_validate(tool, json!({"queries":[row]}))
         .map_err(|error| {
@@ -149,7 +149,17 @@ fn read_page(
             "Read an allowed path.",
         ));
     }
-    let prepared = Value::Object(checked.sanitized_params);
+    Ok(Value::Object(checked.sanitized_params))
+}
+
+fn read_page(
+    id: ToolId,
+    row: &Value,
+    dispatcher: &DomainDispatcher,
+    context: &ExecutionContext,
+) -> Result<Page, ClassificationError> {
+    let prepared = prepare_source(id, row, dispatcher)?;
+    let tool = id.as_str();
     context.check().map_err(|stop| {
         failure(
             match stop {

@@ -134,7 +134,7 @@ fn ingest_publishes_a_snapshot_under_the_workspace() {
     let out = ingest_fixture(dir.0.as_path(), None);
     assert_eq!(out.class, ExitClass::Success, "{}", out.value);
     let id = out.value["id"].as_str().expect("id");
-    assert!(id.ends_with("-app"), "{id}");
+    assert!(id.contains("-app-"), "{id}");
     let home = dir.0.as_path().join(".octocode").join("graph");
     assert_eq!(
         std::fs::read_to_string(home.join("latest")).expect("latest"),
@@ -911,7 +911,7 @@ fn impact_lists_inline_rust_test_functions() {
     assert_eq!(out.value["summary"]["testsToRun"], json!(["src/lib.rs"]));
 }
 
-// ── Graph quality acceptance tests (docs/engine/CODE_GRAPH.md § Validation) ─
+// ── Graph quality acceptance tests (docs/engine/CODE_GRAPH.md § Evaluation) ─
 
 /// A repository root (a `.git` marker) holding `files` under `app/`.
 fn git_app(files: &[(&str, &str)]) -> Fixture {
@@ -1820,4 +1820,476 @@ fn both_dead_code_engines_agree_on_one_fixture() {
         issues.value
     );
     assert_eq!(topo_unused, store_unused, "{topo}\n{}", issues.value);
+}
+
+fn ingest_root(dir: &Path, root: &Path, keep: Option<usize>, force: bool) -> GraphOutput {
+    ingest(
+        &IngestOptions {
+            path: root.to_path_buf(),
+            workspace: Some(dir.to_path_buf()),
+            keep,
+            force,
+            ..Default::default()
+        },
+        &policy(dir),
+        &ContentSecurity::new(),
+        &NeverCancel,
+        None,
+    )
+}
+
+fn stale_rows(dir: &Path) -> (Value, Value) {
+    let out = ask(dir, "stale", None, |_| {});
+    (out.value["fresh"].clone(), out.value["results"].clone())
+}
+
+/// A linking config (tsconfig, package.json, ...) beside the sources or up
+/// the repository is a build input: editing, adding or removing one makes
+/// the snapshot stale and stops ingest from reusing it, like a source edit.
+#[test]
+fn config_inputs_make_a_snapshot_stale_and_block_reuse() {
+    let dir = fixture();
+    dir.write("app/tsconfig.json", "{\"compilerOptions\":{}}");
+    dir.write("package.json", "{\"name\":\"repo\"}");
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    assert_eq!(stale_rows(dir.0.as_path()).0, json!(true));
+    assert_eq!(ingest_fixture(dir.0.as_path(), None).value["reused"], true);
+
+    dir.write(
+        "app/tsconfig.json",
+        "{\"compilerOptions\":{\"paths\":{\"@x/*\":[\"src/*\"]}}}",
+    );
+    assert_eq!(
+        stale_rows(dir.0.as_path()),
+        (
+            json!(false),
+            json!([{"file": "tsconfig.json", "status": "changed", "config": true}])
+        )
+    );
+    let rebuilt = ingest_fixture(dir.0.as_path(), None);
+    assert_ne!(rebuilt.value["reused"], true, "{}", rebuilt.value);
+    assert_eq!(stale_rows(dir.0.as_path()).0, json!(true));
+
+    dir.write(
+        "app/package.json",
+        "{\"name\":\"app\",\"main\":\"src/main.ts\"}",
+    );
+    std::fs::remove_file(dir.0.as_path().join("package.json")).expect("remove");
+    assert_eq!(
+        stale_rows(dir.0.as_path()).1,
+        json!([
+            {"file": "../package.json", "status": "missing", "config": true},
+            {"file": "package.json", "status": "added", "config": true},
+        ])
+    );
+    assert_ne!(ingest_fixture(dir.0.as_path(), None).value["reused"], true);
+}
+
+/// `stale` rescans the scope like ingest: a source added since ingest is
+/// reported, so the snapshot is never called fresh while a re-ingest would
+/// rebuild it.
+#[test]
+fn stale_reports_sources_added_since_ingest() {
+    let dir = fixture();
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    dir.write("app/src/z.ts", "export const z = 1;\n");
+    dir.write("app/src/deep/new/y.ts", "export const y = 1;\n");
+    let out = ask(dir.0.as_path(), "stale", None, |_| {});
+    assert_eq!(out.value["fresh"], false, "{}", out.value);
+    assert_eq!(
+        out.value["results"],
+        json!([
+            {"file": "src/deep/new/y.ts", "status": "added"},
+            {"file": "src/z.ts", "status": "added"},
+        ])
+    );
+    assert!(out.value["reingest"].is_string(), "{}", out.value);
+    assert_ne!(ingest_fixture(dir.0.as_path(), None).value["reused"], true);
+}
+
+/// A snapshot whose scan stopped at maxFiles cannot tell an added file
+/// from one past the cap, so it is never called fresh; its re-ingest keeps
+/// the snapshot's exclusions and raises maxFiles, the limit that cut it.
+#[test]
+fn a_truncated_snapshot_is_never_fresh() {
+    let dir = fixture();
+    let out = ingest(
+        &IngestOptions {
+            path: dir.0.as_path().join("app"),
+            workspace: Some(dir.0.as_path().to_path_buf()),
+            max_files: Some(2),
+            exclude_dir: vec!["gen".into()],
+            ..Default::default()
+        },
+        &policy(dir.0.as_path()),
+        &ContentSecurity::new(),
+        &NeverCancel,
+        None,
+    );
+    assert_eq!(out.value["scan"]["truncated"], true, "{}", out.value);
+    let stale = ask(dir.0.as_path(), "stale", None, |_| {});
+    assert_eq!(stale.value["fresh"], false, "{}", stale.value);
+    assert!(
+        stale.value["unchecked"]
+            .as_str()
+            .is_some_and(|why| why.contains("maxFiles (2)")),
+        "{}",
+        stale.value
+    );
+    let reingest = stale.value["reingest"].as_str().expect("reingest");
+    assert!(
+        reingest.ends_with(" --max-files 4 --exclude gen"),
+        "{reingest}"
+    );
+}
+
+/// The edge cap does not cut the file scan: a capped snapshot whose files
+/// were all scanned still reports files added since ingest, names no
+/// maxFiles cut, and is fresh once nothing changed.
+#[test]
+fn an_edge_capped_snapshot_still_checks_added_files() {
+    struct EdgeCap;
+    impl Drop for EdgeCap {
+        fn drop(&mut self) {
+            crate::tools::ast_graph::graph::EDGE_CAP
+                .with(|edges| edges.set(crate::tools::ast_graph::graph::MAX_GRAPH_EDGES));
+        }
+    }
+    crate::tools::ast_graph::graph::EDGE_CAP.with(|edges| edges.set(1));
+    let _restore = EdgeCap;
+    let dir = fixture();
+    let out = ingest_fixture(dir.0.as_path(), None);
+    assert_eq!(out.value["scan"]["edgesCapped"], true, "{}", out.value);
+    assert_eq!(out.value["scan"]["truncated"], false, "{}", out.value);
+    let fresh = ask(dir.0.as_path(), "stale", None, |_| {});
+    assert_eq!(fresh.value["fresh"], true, "{}", fresh.value);
+    assert!(fresh.value.get("reingest").is_none(), "{}", fresh.value);
+    dir.write("app/src/z.ts", "export const z = 1;\n");
+    let stale = ask(dir.0.as_path(), "stale", None, |_| {});
+    assert_eq!(
+        stale.value["results"],
+        json!([{"file": "src/z.ts", "status": "added"}]),
+        "{}",
+        stale.value
+    );
+    assert!(stale.value.get("unchecked").is_none(), "{}", stale.value);
+    let reingest = stale.value["reingest"].as_str().expect("reingest");
+    assert!(!reingest.contains("--max-files"), "{reingest}");
+}
+
+/// An export name of any length is text-scanned: a short name loaded
+/// dynamically (`mod.run(...)`) is a text reference, not "no reference".
+#[test]
+fn short_export_names_are_text_checked() {
+    let dir = fixture();
+    dir.write(
+        "app/src/main.ts",
+        "import { other } from './cmd';\nexport function main() {\n  return other();\n}\n",
+    );
+    dir.write(
+        "app/src/cmd.ts",
+        "export function other() { return 1; }\nexport function run() { return 2; }\n",
+    );
+    dir.write(
+        "app/src/loader.ts",
+        "export async function load(file: string) {\n  const mod = await import(file);\n  return mod.run(1);\n}\n",
+    );
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let all = ask(dir.0.as_path(), "issues", None, |o| {
+        o.detectors = vec!["unused-export".into()];
+        o.min_tier = Some(0);
+        o.limit = Some(500);
+    });
+    let row = all.value["results"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .find(|row| row["subject"] == "src/cmd.ts")
+        .cloned()
+        .unwrap_or_else(|| panic!("cmd.ts unused export: {}", all.value));
+    assert_eq!(row["evidence"]["exports"], json!(["run"]), "{row}");
+    assert_eq!(row["tier"], 60, "{row}");
+    assert_eq!(
+        row["evidence"]["mentionedIn"]["run"],
+        json!(["src/loader.ts:3"]),
+        "{row}"
+    );
+}
+
+/// Prose naming an export is not a reference to it: an export mentioned
+/// only in docs stays tier 90 with every prose mention as context, and an
+/// export a loader reaches keeps that code reference in `mentionedIn`
+/// however many docs sort before it.
+#[test]
+fn prose_mentions_never_hide_an_unused_export() {
+    let dir = fixture();
+    dir.write(
+        "app/src/main.ts",
+        "import { other } from './cmd';\nimport { helper } from './tool';\nexport function main() {\n  return other() + helper();\n}\n",
+    );
+    dir.write(
+        "app/src/cmd.ts",
+        "export function other() { return 1; }\nexport function run() { return 2; }\n",
+    );
+    dir.write(
+        "app/src/tool.ts",
+        "export function helper() { return 1; }\nexport function go() { return 2; }\n",
+    );
+    dir.write(
+        "app/src/loader.ts",
+        "export async function load(file: string) {\n  const mod = await import(file);\n  return mod.go(1);\n}\n",
+    );
+    for doc in ["a/README.md", "b/NOTES.md", "c/OPS.md", "d/MORE.md"] {
+        dir.write(
+            &format!("app/docs/{doc}"),
+            "# Usage\n\nThen run it, or go home.\n",
+        );
+    }
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let all = ask(dir.0.as_path(), "issues", None, |o| {
+        o.detectors = vec!["unused-export".into()];
+        o.min_tier = Some(0);
+        o.limit = Some(500);
+    });
+    let row = |subject: &str| {
+        all.value["results"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .find(|row| row["subject"] == subject)
+            .cloned()
+            .unwrap_or_else(|| panic!("{subject} unused export: {}", all.value))
+    };
+    let prose = json!([
+        "docs/a/README.md:3",
+        "docs/b/NOTES.md:3",
+        "docs/c/OPS.md:3",
+        "docs/d/MORE.md:3",
+    ]);
+    let cmd = row("src/cmd.ts");
+    assert_eq!(cmd["evidence"]["exports"], json!(["run"]), "{cmd}");
+    assert!(cmd["tier"].as_u64().is_some_and(|tier| tier >= 90), "{cmd}");
+    assert!(cmd["evidence"].get("mentionedIn").is_none(), "{cmd}");
+    assert_eq!(cmd["evidence"]["textMentions"]["run"], prose, "{cmd}");
+    let tool = row("src/tool.ts");
+    assert_eq!(tool["tier"], 60, "{tool}");
+    assert_eq!(
+        tool["evidence"]["mentionedIn"]["go"],
+        json!(["src/loader.ts:3"]),
+        "{tool}"
+    );
+    assert_eq!(tool["evidence"]["textMentions"]["go"], prose, "{tool}");
+}
+
+/// `--graph` takes an exact id, else the one root whose scope it names,
+/// else the one id containing it; anything that names several snapshots
+/// is ambiguous (exit 2, candidates listed), never a silent pick.
+#[test]
+fn graph_selection_is_exact_or_ambiguous() {
+    let dir = fixture();
+    let app = ingest_fixture(dir.0.as_path(), None);
+    let src = ingest_root(
+        dir.0.as_path(),
+        &dir.0.as_path().join("app/src"),
+        None,
+        false,
+    );
+    let (app_id, src_id) = (
+        app.value["id"].as_str().expect("id").to_owned(),
+        src.value["id"].as_str().expect("id").to_owned(),
+    );
+    let stats = |spec: &str| {
+        ask(dir.0.as_path(), "stats", None, |o| {
+            o.graph = Some(spec.into())
+        })
+    };
+    assert_eq!(
+        stats("app").value["graph"]["id"],
+        app_id.as_str(),
+        "scope app is exact"
+    );
+    assert_eq!(stats("app-src").value["graph"]["id"], src_id.as_str());
+    assert_eq!(stats(&app_id).value["graph"]["id"], app_id.as_str());
+    let ambiguous = stats("ap");
+    assert_eq!(
+        ambiguous.class,
+        ExitClass::InvalidInput,
+        "{}",
+        ambiguous.value
+    );
+    assert_eq!(
+        ambiguous.value["candidates"],
+        json!([app_id.clone(), src_id.clone()])
+    );
+    assert_eq!(
+        stats(&src_id["20".len()..]).value["graph"]["id"],
+        src_id.as_str(),
+        "a substring of exactly one id"
+    );
+}
+
+/// Snapshots are pruned per root: two roots whose names share one slug
+/// (`a-b` and `a/b`) never delete each other's snapshots, and their ids
+/// differ.
+#[test]
+fn prune_groups_snapshots_by_root_not_by_slug() {
+    let dir = fixture();
+    dir.write("a-b/x.ts", "export const x = 1;\n");
+    dir.write("a/b/y.ts", "export const y = 1;\n");
+    let dash = ingest_root(
+        dir.0.as_path(),
+        &dir.0.as_path().join("a-b"),
+        Some(1),
+        false,
+    );
+    let mut nested = Vec::new();
+    for _ in 0..3 {
+        let out = ingest_root(dir.0.as_path(), &dir.0.as_path().join("a/b"), Some(1), true);
+        assert_eq!(out.class, ExitClass::Success, "{}", out.value);
+        nested.push(out.value["id"].as_str().expect("id").to_owned());
+    }
+    let dash_id = dash.value["id"].as_str().expect("id");
+    assert!(!nested.contains(&dash_id.to_owned()), "{nested:?}");
+    let home = dir.0.as_path().join(".octocode").join("graph");
+    let left = list_snapshots(&home);
+    assert!(left.contains(&dash_id.to_owned()), "{left:?}");
+    assert_eq!(left.len(), 2, "one per root: {left:?}");
+}
+
+/// The manifest root is outside the graph digest, so a query checks it
+/// against the allowed roots before reading, hashing or scanning anything
+/// under it.
+#[test]
+fn a_manifest_root_outside_the_allowed_roots_is_refused() {
+    let dir = fixture();
+    let out = ingest_fixture(dir.0.as_path(), None);
+    let snapshot = PathBuf::from(out.value["dir"].as_str().expect("dir"));
+    let outside = crate::tools::test_support::Fixture::new();
+    outside.write("src/a.ts", "export const a = 1;\n");
+    let manifest_path = snapshot.join(MANIFEST_FILE);
+    let mut manifest: Value =
+        serde_json::from_slice(&std::fs::read(&manifest_path).expect("manifest")).expect("json");
+    manifest["root"] = json!(std::fs::canonicalize(outside.0.as_path()).expect("real"));
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).expect("json")).expect("tamper");
+    for op in ["stale", "issues", "stats"] {
+        let refused = ask(dir.0.as_path(), op, None, |_| {});
+        assert_eq!(
+            refused.value["errorCode"], "outsideAllowedRoots",
+            "{op}: {}",
+            refused.value
+        );
+        assert!(refused.value.get("results").is_none(), "{op}");
+    }
+}
+
+/// `impact --since` with nothing changed is an empty answer (exit 1) that
+/// says why, not an input error.
+#[test]
+fn impact_since_with_no_changes_is_empty() {
+    let dir = fixture();
+    let app = dir.0.as_path().join("app");
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&app)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+            .args(args)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    };
+    if !git(&["init", "-q"]) {
+        return; // git unavailable in this environment
+    }
+    assert!(git(&["add", "-A"]) && git(&["commit", "-qm", "base"]));
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let out = ask(dir.0.as_path(), "impact", None, |o| {
+        o.since = Some("HEAD".into())
+    });
+    assert_eq!(out.class, ExitClass::Empty, "{}", out.value);
+    assert_eq!(out.value["total"], 0, "{}", out.value);
+    assert_eq!(
+        out.value["summary"]["reason"], "no files changed since HEAD",
+        "{}",
+        out.value
+    );
+    let bare = ask(dir.0.as_path(), "impact", None, |_| {});
+    assert_eq!(bare.class, ExitClass::InvalidInput, "{}", bare.value);
+}
+
+/// The pages of an `issues` listing slice one listing: page 1 is truncated
+/// and the next page states the same total.
+#[test]
+fn issues_pages_slice_one_listing() {
+    let dir = issues_fixture();
+    assert_eq!(
+        ingest_fixture(dir.0.as_path(), None).class,
+        ExitClass::Success
+    );
+    let first = ask(dir.0.as_path(), "issues", None, |o| {
+        o.limit = Some(1);
+        o.min_tier = Some(0);
+    });
+    assert_eq!(first.value["truncated"], true, "{}", first.value);
+    let second = ask(dir.0.as_path(), "issues", None, |o| {
+        o.limit = Some(1);
+        o.offset = Some(1);
+        o.min_tier = Some(0);
+    });
+    assert_eq!(second.value["total"], first.value["total"]);
+}
+
+/// A workspace outside the allowed roots is refused with the shared
+/// path-policy code, as the scan root is.
+#[test]
+fn ingest_denials_share_the_path_policy_codes() {
+    let dir = fixture();
+    let outside = crate::tools::test_support::Fixture::new();
+    let denied = ingest(
+        &IngestOptions {
+            path: dir.0.as_path().join("app"),
+            workspace: Some(outside.0.as_path().to_path_buf()),
+            ..Default::default()
+        },
+        &policy(dir.0.as_path()),
+        &ContentSecurity::new(),
+        &NeverCancel,
+        None,
+    );
+    assert_eq!(
+        denied.value["errorCode"], "outsideAllowedRoots",
+        "{}",
+        denied.value
+    );
+    let scan = ingest(
+        &IngestOptions {
+            path: outside.0.as_path().to_path_buf(),
+            workspace: Some(dir.0.as_path().to_path_buf()),
+            ..Default::default()
+        },
+        &policy(dir.0.as_path()),
+        &ContentSecurity::new(),
+        &NeverCancel,
+        None,
+    );
+    assert_eq!(
+        scan.value["errorCode"], "outsideAllowedRoots",
+        "{}",
+        scan.value
+    );
 }

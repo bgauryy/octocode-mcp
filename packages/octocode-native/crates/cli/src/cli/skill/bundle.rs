@@ -65,12 +65,9 @@ impl EmbeddedSkill {
                 } else {
                     fs::symlink_metadata(entry.path())?
                 };
-                let relative = entry
-                    .path()
-                    .strip_prefix(root)
-                    .map_err(io::Error::other)?
-                    .to_string_lossy()
-                    .replace('\\', "/");
+                let relative = octocode_engine::text::slash_path(
+                    entry.path().strip_prefix(root).map_err(io::Error::other)?,
+                );
                 if metadata.is_dir() {
                     if !freshness {
                         found.insert(format!("{relative}/"), 0);
@@ -102,7 +99,7 @@ impl EmbeddedSkill {
             if !freshness {
                 let mut parent = Path::new(file.path).parent();
                 while let Some(path) = parent.filter(|path| !path.as_os_str().is_empty()) {
-                    expected.insert(format!("{}/", path.to_string_lossy().replace('\\', "/")), 0);
+                    expected.insert(format!("{}/", octocode_engine::text::slash_path(path)), 0);
                     parent = path.parent();
                 }
             }

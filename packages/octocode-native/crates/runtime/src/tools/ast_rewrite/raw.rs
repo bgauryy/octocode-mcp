@@ -21,6 +21,7 @@ pub(super) struct RawByteRange {
     pub(super) end: usize,
 }
 
+/// The matched node's span.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct RawRange {
@@ -51,7 +52,9 @@ pub(super) struct RawMatch {
     pub(super) text: String,
     pub(super) replacement: String,
     pub(super) range: RawRange,
-    pub(super) replacement_offsets: Option<RawByteRange>,
+    /// The span the replacement takes: the node span as the fixer adjusts
+    /// it (`expandStart`/`expandEnd`), else equal to `range.byte_offset`.
+    pub(super) replaced: RawByteRange,
     #[serde(default)]
     pub(super) meta_variables: RawMetaVariables,
 }

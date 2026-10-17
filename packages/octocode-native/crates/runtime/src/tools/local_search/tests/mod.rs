@@ -40,6 +40,35 @@ fn rewrite_keeping_stamp(path: &std::path::Path, content: &str) {
     );
 }
 
+/// Wait out the settle window of the fixture writes so far: a scan is
+/// stored for its later pages only when nothing its walk searched was
+/// written within it (see `manifest`).
+fn settle() {
+    std::thread::sleep(
+        octocode_engine::graph::SourceStamp::SETTLE + std::time::Duration::from_millis(200),
+    );
+}
+
+/// A continuation of `request` cut from the stored scan it took before
+/// `between` ran. The stored walk's proof held when the page took the scan,
+/// so `between` changes the tree in the window no stamp closes: after the
+/// proof, before the page reads or shows a file. What the page checks then
+/// (each read and shown file's read policy and stored digest) is all that
+/// stands between the change and the page.
+fn stored_page_after(
+    request: &LocalSearchQuery,
+    policy: &PathPolicy,
+    security: &ContentSecurity,
+    response_window: Option<usize>,
+    between: impl FnOnce(),
+) -> Result<LocalSearchResult, crate::tools::result::ToolError> {
+    let scan = super::executor::scan_query(request, policy, &NeverCancel, None, response_window)
+        .expect("scan");
+    assert!(scan.digests.is_some(), "the page took the stored scan");
+    between();
+    super::executor::page_of(request, policy, security, &NeverCancel, None, scan, None)
+}
+
 fn values(result: &LocalSearchResult) -> String {
     serde_json::to_string(&result.files).expect("files serialize")
 }

@@ -136,11 +136,6 @@ pub fn generated_file_pattern(name: &str) -> Option<String> {
         .map(|extension| format!("*{extension}"))
 }
 
-/// `path` with `/` separators.
-fn normalized(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 /// Credential-store locations matched by a path fragment rather than one
 /// directory name.
 const SENSITIVE_FRAGMENTS: &[(&str, &str)] = &[
@@ -152,7 +147,7 @@ const SENSITIVE_FRAGMENTS: &[(&str, &str)] = &[
 ];
 
 pub fn is_sensitive_path(path: &Path) -> bool {
-    let aliases = normalized(path);
+    let aliases = octocode_engine::text::slash_path(path);
     sensitive_directory(&aliases).is_some() || is_sensitive_file(&aliases)
 }
 
@@ -179,7 +174,7 @@ pub const WITHHELD_HINT: &str = "Do not retry or respell: the security path poli
 /// The error message for a requested path the security policy withholds:
 /// what it matched, and that nothing lifts it.
 pub fn withheld_message(display: &str, path: &Path) -> String {
-    let aliases = normalized(path);
+    let aliases = octocode_engine::text::slash_path(path);
     let matched = match sensitive_directory(&aliases) {
         Some(".git") if is_git_file(path, &aliases) => {
             "a `.git` file, the pointer a submodule or worktree keeps to its repository".to_owned()
@@ -223,7 +218,7 @@ impl Withheld {
             }
             return;
         }
-        let aliases = normalized(path);
+        let aliases = octocode_engine::text::slash_path(path);
         let own = aliases.rsplit('/').next().unwrap_or_default();
         match sensitive_directory(&aliases) {
             Some(".git") if !is_dir && own == ".git" => self.git_files += 1,
@@ -455,7 +450,7 @@ impl SearchWalk {
 
     /// `path` under the walk root, with `/` separators.
     fn shown(&self, path: &Path) -> String {
-        normalized(path.strip_prefix(&self.root).unwrap_or(path))
+        octocode_engine::text::slash_path(path.strip_prefix(&self.root).unwrap_or(path))
     }
 }
 

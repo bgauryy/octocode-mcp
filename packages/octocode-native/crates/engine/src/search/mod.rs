@@ -2,6 +2,7 @@ pub(crate) mod fs_query;
 pub mod glob;
 pub(crate) mod pcre2_ranges;
 pub(crate) mod relevance;
+pub mod repository;
 pub(crate) mod rust_ranges;
 pub(crate) mod text_parser;
 pub(crate) mod text_pattern;

@@ -54,7 +54,8 @@ pub struct QueryOptions {
     pub target: Option<String>,
     /// Second reference for `path`.
     pub to: Option<String>,
-    /// Snapshot directory, `graph.bin` path, id, or id substring.
+    /// Snapshot directory, `graph.bin` path, id, scope, or a substring of
+    /// exactly one id.
     pub graph: Option<String>,
     pub workspace: Option<PathBuf>,
     /// Edge kinds to follow (`contains`, `imports`, `calls`).
@@ -104,7 +105,7 @@ fn fail(code: &str, message: impl Into<String>) -> Failure {
     Box::new(GraphOutput::error(code, message))
 }
 
-fn locate(options: &QueryOptions, paths: &PathPolicy) -> Result<PathBuf, Failure> {
+fn locate(options: &QueryOptions) -> Result<PathBuf, Failure> {
     if let Some(spec) = options.graph.as_deref() {
         let path = PathBuf::from(spec);
         if path.is_file() {
@@ -114,16 +115,11 @@ fn locate(options: &QueryOptions, paths: &PathPolicy) -> Result<PathBuf, Failure
             return Ok(path);
         }
     }
-    let home = graph_home(options.workspace.as_deref(), paths)
+    let home = graph_home(options.workspace.as_deref())
         .map_err(|message| fail("workspaceRootInvalid", message))?;
     let ids = list_snapshots(&home);
     let chosen = match options.graph.as_deref() {
-        Some(spec) => ids
-            .iter()
-            .rev()
-            .find(|id| id.as_str() == spec)
-            .or_else(|| ids.iter().rev().find(|id| id.contains(spec)))
-            .cloned(),
+        Some(spec) => choose_snapshot(&home, &ids, spec)?,
         None => std::fs::read_to_string(home.join(LATEST_FILE))
             .ok()
             .map(|id| id.trim().to_owned())
@@ -150,11 +146,64 @@ fn locate(options: &QueryOptions, paths: &PathPolicy) -> Result<PathBuf, Failure
     })
 }
 
+/// The snapshot `spec` names among `ids` (oldest first): the id itself, else
+/// the newest snapshot of the one root whose scope is `spec`, else the one
+/// id containing `spec`. A scope or substring that names several roots or
+/// ids is ambiguous and lists them; it never picks one silently.
+fn choose_snapshot(home: &Path, ids: &[String], spec: &str) -> Result<Option<String>, Failure> {
+    if ids.iter().any(|id| id == spec) {
+        return Ok(Some(spec.to_owned()));
+    }
+    let manifests = ids
+        .iter()
+        .filter_map(|id| Some((id, super::read_manifest(&home.join(id))?)))
+        .collect::<Vec<_>>();
+    let scoped = manifests
+        .iter()
+        .filter(|(_, manifest)| manifest["scope"] == spec)
+        .collect::<Vec<_>>();
+    if !scoped.is_empty() {
+        // Newest snapshot of each root carrying that scope.
+        let mut newest = BTreeMap::<String, &String>::new();
+        for (id, manifest) in &scoped {
+            let root = manifest["root"].as_str().unwrap_or_default().to_owned();
+            newest.insert(root, id);
+        }
+        let candidates = newest.into_values().cloned().collect::<Vec<_>>();
+        return match candidates.as_slice() {
+            [only] => Ok(Some(only.clone())),
+            _ => Err(ambiguous_graph(spec, &candidates)),
+        };
+    }
+    let matching = ids
+        .iter()
+        .filter(|id| id.contains(spec))
+        .cloned()
+        .collect::<Vec<_>>();
+    match matching.as_slice() {
+        [] => Ok(None),
+        [only] => Ok(Some(only.clone())),
+        _ => Err(ambiguous_graph(spec, &matching)),
+    }
+}
+
+fn ambiguous_graph(spec: &str, candidates: &[String]) -> Failure {
+    let mut out = GraphOutput::error(
+        "invalidInput",
+        format!(
+            "{} graphs match {spec:?}; pass one exact id with --graph",
+            candidates.len()
+        ),
+    );
+    out.value["candidates"] = json!(candidates);
+    Box::new(out)
+}
+
 fn load(options: &QueryOptions, paths: &PathPolicy) -> Result<Graph, Failure> {
-    let dir = locate(options, paths)?;
+    let dir = locate(options)?;
     let dir = paths
         .validate(&dir)
-        .map_err(|error| fail("pathPolicyDenied", error.message))?
+        .map_err(|error| fail(error.local_error_code("pathPolicyDenied"), error.message))?
         .canonical;
     let manifest = std::fs::read(dir.join(MANIFEST_FILE))
         .ok()
@@ -172,6 +221,21 @@ fn load(options: &QueryOptions, paths: &PathPolicy) -> Result<Graph, Failure> {
         return Err(fail(
             "decode",
             "graph.bin does not match its manifest digest; re-run `octocode graph ingest`",
+        ));
+    }
+    // Every later read, hash, mention scan and `git -C` runs under the
+    // manifest's root, which its digest does not cover: it must be the
+    // canonical spelling of a directory inside the allowed roots.
+    let root = manifest["root"].as_str().unwrap_or_default();
+    let allowed = paths
+        .validate_output(root)
+        .map_err(|error| fail(error.local_error_code("pathPolicyDenied"), error.message))?;
+    if allowed.canonical != Path::new(root) {
+        return Err(fail(
+            "decode",
+            format!(
+                "{MANIFEST_FILE} root {root:?} is not a canonical path; re-run `octocode graph ingest`"
+            ),
         ));
     }
     let id = manifest["id"].as_str().unwrap_or_default().to_owned();
@@ -276,7 +340,7 @@ impl Graph {
         let relative = absolute
             .strip_prefix(root)
             .ok()
-            .map(|rel| rel.to_string_lossy().replace('\\', "/"));
+            .map(octocode_engine::text::slash_path);
         for key in [Some(trimmed.to_owned()), relative].into_iter().flatten() {
             if let Some(id) = self.t.by_key(&key).filter(admit) {
                 return Ok(id);
@@ -674,7 +738,7 @@ fn run(options: &QueryOptions, paths: &PathPolicy) -> Result<GraphOutput, GraphO
         "impact" => query.impact(),
         "issues" => query.issues(paths),
         "stale" => {
-            let (extra, page) = stale(g);
+            let (extra, page) = stale(g, paths);
             let mut out = run_page(options, g, extra, page);
             if out.value["fresh"] == true {
                 out.class = ExitClass::Success;
@@ -892,7 +956,7 @@ impl Query<'_> {
             let changed = git_changed(&root, rev)
                 .map_err(|message| GraphOutput::error("gitFailed", message))?;
             for path in changed {
-                if super::impact::is_global_config(&path) {
+                if super::super::freshness::is_global_config(&path) {
                     global.push((parent_of(&path).to_owned(), path));
                 } else if g.t.by_key(&path).is_some() {
                     refs.push(path);
@@ -902,15 +966,35 @@ impl Query<'_> {
             }
         }
         if refs.is_empty() && global.is_empty() {
-            let mut out = GraphOutput::error(
-                "invalidInput",
-                "`impact` needs a reference, --changed, or --since <rev>",
-            );
+            let Some(rev) = &options.since else {
+                return Err(GraphOutput::error(
+                    "invalidInput",
+                    "`impact` needs a reference, --changed, or --since <rev>",
+                ));
+            };
+            // A change set with nothing in the graph is an empty answer.
+            let mut summary = json!({
+                "since": rev,
+                "reason": if unmapped.is_empty() {
+                    format!("no files changed since {rev}")
+                } else {
+                    format!("no file changed since {rev} is in the graph")
+                },
+            });
             if !unmapped.is_empty() {
-                out.value["unmapped"] = json!(unmapped);
-                out.class = ExitClass::Empty;
+                summary["unmapped"] = json!(unmapped);
             }
-            return Err(out);
+            let mut extra = Map::new();
+            extra.insert("summary".into(), summary);
+            return Ok(run_page(
+                options,
+                g,
+                extra,
+                Page {
+                    total: 0,
+                    rows: Vec::new(),
+                },
+            ));
         }
         let mut seeds = Vec::new();
         for reference in &refs {
@@ -960,13 +1044,18 @@ impl Query<'_> {
         let scan_root = root.is_dir().then_some(root.as_path());
         let report = super::detect::run(&g.t, &detectors, scan_root).map_err(invalid)?;
         let min_tier = options.min_tier.unwrap_or(DEFAULT_MIN_TIER);
-        let keep = |f: &super::detect::Finding| {
+        let keep = |f: &&super::detect::Finding| {
             options.min_score.is_none_or(|min| f.score >= min) && f.tier >= min_tier
         };
         let total_before = report.findings.len();
-        let findings = report.findings.into_iter().filter(keep).collect::<Vec<_>>();
+        let findings = report
+            .findings
+            .iter()
+            .filter(keep)
+            .cloned()
+            .collect::<Vec<_>>();
         let mut extra = Map::new();
-        let mut summary = report.summary;
+        let mut summary = report.summary.clone();
         summary["minTier"] = json!(min_tier);
         summary["hiddenBelowTier"] = json!(total_before - findings.len());
         extra.insert("summary".into(), summary);
@@ -1499,33 +1588,62 @@ fn diagnostics(g: &Graph, filter: Option<&str>) -> Page {
     }
 }
 
-/// Compares recorded content digests with the files on disk. New files are
-/// not detected (that needs a rescan); re-ingest when anything changed.
-fn stale(g: &Graph) -> (Map<String, Value>, Page) {
+/// What changed under the snapshot's root since ingest: sources edited,
+/// removed or added, and linking configs (manifests, tsconfig, ...) edited,
+/// removed or added; the same check an ingest runs before reusing it.
+fn stale(g: &Graph, paths: &PathPolicy) -> (Map<String, Value>, Page) {
     let root = PathBuf::from(g.manifest["root"].as_str().unwrap_or_default());
-    let mut rows = Vec::new();
-    let stamps = g.t.stamps_by_node();
-    for (node, digest) in &g.t.digests {
-        let file = g.key(*node);
-        let status =
-            match super::source_matches(&root.join(file), g.t.str(*digest), stamps.get(node)) {
-                None => "missing",
-                Some(true) => continue,
-                Some(false) => "changed",
-            };
-        rows.push(json!({"file": file, "status": status}));
-    }
+    let freshness = super::snapshot_changes(paths, &root, &g.t, &g.manifest, false);
+    let rows = freshness
+        .changes
+        .into_iter()
+        .map(|change| {
+            let mut row = json!({"file": change.file, "status": change.status});
+            if change.config {
+                row["config"] = json!(true);
+            }
+            row
+        })
+        .collect::<Vec<_>>();
     let mut extra = Map::new();
     extra.insert("checked".into(), json!(g.t.digests.len()));
-    extra.insert("fresh".into(), json!(rows.is_empty()));
-    if !rows.is_empty() {
+    extra.insert(
+        "fresh".into(),
+        json!(rows.is_empty() && freshness.added_checked),
+    );
+    let scan = &g.manifest["scan"];
+    let max_files = scan["maxFiles"].as_u64();
+    if !freshness.added_checked {
         extra.insert(
-            "reingest".into(),
+            "unchecked".into(),
             json!(format!(
-                "octocode graph ingest {}",
-                quote(&root.to_string_lossy())
+                "files added since ingest: the snapshot's scan stopped at maxFiles ({})",
+                max_files.map_or_else(|| "?".to_owned(), |max| max.to_string())
             )),
         );
+    }
+    if !rows.is_empty() || !freshness.added_checked {
+        // The snapshot's own scope: a scan cut at maxFiles re-ingests with
+        // a larger one, the only limit a re-ingest can lift.
+        let mut command = format!("octocode graph ingest {}", quote(&root.to_string_lossy()));
+        let max_files = match max_files {
+            Some(max) if !freshness.added_checked => {
+                Some(max.saturating_mul(2).min(u64::from(u32::MAX)))
+            }
+            max => max.filter(|max| *max != u64::from(super::DEFAULT_MAX_FILES)),
+        };
+        if let Some(max) = max_files {
+            command.push_str(&format!(" --max-files {max}"));
+        }
+        for dir in scan["excludeDir"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            command.push_str(&format!(" --exclude {}", quote(dir)));
+        }
+        extra.insert("reingest".into(), json!(command));
     }
     (
         extra,

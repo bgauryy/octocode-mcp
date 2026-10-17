@@ -50,19 +50,60 @@ static SKIPS_SOURCE_CODE: LazyLock<Vec<bool>> = LazyLock::new(|| {
 });
 
 /// Patterns that take any value assigned to a credential-named key. Only the
-/// key's name says "credential", so a value that spells a code identifier
-/// (`"x-kubernetes-patch-merge-key": "resourceClaimName"`) names a field and
-/// is kept; a generated credential is never such a name.
+/// key's name says "credential", so a value that is not one is kept: a value
+/// that spells a code identifier
+/// (`"x-kubernetes-patch-merge-key": "resourceClaimName"`) names a field, and
+/// a hex digest keyed by a file path (`"bin/with_credentials.mjs": "<sha256>"`)
+/// is a checksum manifest entry. See [`assigns_a_credential`].
 const CREDENTIAL_ASSIGNMENT_PATTERNS: &[&str] =
     &["envVarSecrets", "dotenvSecretAssignment", "yamlSecretValue"];
 
-/// Index-aligned with PATTERNS: the pattern keeps identifier-shaped values.
-static KEEPS_IDENTIFIER_VALUES: LazyLock<Vec<bool>> = LazyLock::new(|| {
+/// Index-aligned with PATTERNS: the pattern keeps values that are not credentials.
+static KEEPS_NON_CREDENTIAL_VALUES: LazyLock<Vec<bool>> = LazyLock::new(|| {
     PATTERNS
         .iter()
         .map(|p| CREDENTIAL_ASSIGNMENT_PATTERNS.contains(&p.name))
         .collect()
 });
+
+/// Whether a credential-assignment match assigns a credential: its `secret`
+/// value is not an identifier name ([`is_identifier_name`]) and not a hex
+/// digest keyed by a file path ([`is_file_digest`]). `key` is the line's
+/// text before the value (ending in the key, its quotes and its operator).
+fn assigns_a_credential(key: &str, secret: &str) -> bool {
+    !is_identifier_name(secret) && !is_file_digest(key, secret)
+}
+
+/// Whether `secret` is a hex digest (MD5, SHA-1, SHA-256 or SHA-512 length)
+/// assigned to a key that names a file: a path whose last segment is a file
+/// name with an extension (`config\\credentials.yaml`), or a source file
+/// name (`with_credentials.mjs`). A checksum manifest maps files to digests,
+/// and a credential-named file is still a file; a credential under a key
+/// that is not a file name, a secret path (`secret/data/prod/datadog_api_key`)
+/// included, stays redacted whatever its shape.
+fn is_file_digest(key: &str, secret: &str) -> bool {
+    let digest = matches!(secret.len(), 32 | 40 | 64 | 128)
+        && secret.bytes().all(|byte| byte.is_ascii_hexdigit());
+    let name = key
+        .trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ':' | '=' | '>'))
+        .rsplit(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '{' | ',' | '('))
+        .next()
+        .unwrap_or_default();
+    digest
+        && ((name.contains(['/', '\\']) && has_file_extension(name)) || is_source_code_path(name))
+}
+
+/// Whether the last segment of `path` is a file name with an extension: a
+/// stem, then a dot and up to 10 ASCII letters or digits, a letter among them.
+fn has_file_extension(path: &str) -> bool {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    name.rsplit_once('.').is_some_and(|(stem, ext)| {
+        !stem.is_empty()
+            && (1..=10).contains(&ext.len())
+            && ext.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            && ext.bytes().any(|byte| byte.is_ascii_alphabetic())
+    })
+}
 
 /// Whether `value` is a camelCase or PascalCase name of two or more
 /// pronounceable words (`resourceClaimName`, `createdAt`, `ContainerPort`):
@@ -248,8 +289,18 @@ fn candidate_pattern_indices(content: &str) -> Vec<usize> {
     (0..PATTERNS.len()).filter(|&idx| seen[idx]).collect()
 }
 
-fn matching_pattern_indices(content: &str) -> Vec<usize> {
+/// Candidates that apply to `scope` ([`should_apply`]), checked before any
+/// pattern regex compiles: a pattern its file context rules out (the
+/// multi-millisecond Kubernetes Secret automaton outside YAML) is never built
+/// for that text, so a process pays only for the detectors its output reaches.
+fn applicable_candidates(content: &str, scope: Scope<'_>) -> Vec<usize> {
     let mut candidates = candidate_pattern_indices(content);
+    candidates.retain(|&idx| should_apply(idx, scope, content));
+    candidates
+}
+
+fn matching_pattern_indices(content: &str, scope: Scope<'_>) -> Vec<usize> {
+    let mut candidates = applicable_candidates(content, scope);
     candidates.retain(|&idx| pattern_regex(idx).is_match(content));
     candidates
 }
@@ -269,13 +320,13 @@ fn empty_result(content: &str) -> DetectResult {
 /// (`API_TOKEN = "…"`) keeps its identifier and quotes, so redacted source
 /// still reads, and parses, as the same statement. An alternation names one
 /// group per branch (`secret`, `secret_…`); the participating one is redacted.
-/// Only the secrets `redacts` accepts are redacted; a rejected match stays
-/// verbatim.
+/// Only the secrets `redacts` accepts (given the line's text before the
+/// secret, and the secret) are redacted; a rejected match stays verbatim.
 fn replace_secrets(
     regex: &regex::Regex,
     content: &str,
     replacement: &str,
-    redacts: impl Fn(&str) -> bool,
+    redacts: impl Fn(&str, &str) -> bool,
 ) -> String {
     let secret_groups: Vec<usize> = regex
         .capture_names()
@@ -294,7 +345,8 @@ fn replace_secrets(
                 .iter()
                 .find_map(|&index| captures.get(index))
                 .unwrap_or(whole);
-            if !redacts(secret.as_str()) {
+            let line_start = content[..whole.start()].rfind('\n').map_or(0, |at| at + 1);
+            if !redacts(&content[line_start..secret.start()], secret.as_str()) {
                 return whole.as_str().to_owned();
             }
             let line_breaks = secret
@@ -391,7 +443,7 @@ pub(crate) fn detect(content: &str, file_path: Option<&str>) -> DetectResult {
 
 /// [`detect`] for text of a known [`Scope`].
 pub(crate) fn detect_in(content: &str, scope: Scope<'_>) -> DetectResult {
-    let matched_indices = matching_pattern_indices(content);
+    let matched_indices = matching_pattern_indices(content, scope);
 
     if matched_indices.is_empty() {
         return empty_result(content);
@@ -401,14 +453,11 @@ pub(crate) fn detect_in(content: &str, scope: Scope<'_>) -> DetectResult {
     let mut secrets_detected = Vec::with_capacity(matched_indices.len());
 
     for idx in matched_indices {
-        if !should_apply(idx, scope, content) {
-            continue;
-        }
         let pattern = &PATTERNS[idx];
         let regex = pattern_regex(idx);
-        let keeps_names = KEEPS_IDENTIFIER_VALUES[idx];
-        let result = replace_secrets(regex, &sanitized, replacement_for(idx), |secret| {
-            !(keeps_names && is_identifier_name(secret))
+        let keeps_values = KEEPS_NON_CREDENTIAL_VALUES[idx];
+        let result = replace_secrets(regex, &sanitized, replacement_for(idx), |key, secret| {
+            !keeps_values || assigns_a_credential(key, secret)
         });
         if result != sanitized {
             secrets_detected.push(pattern.name.to_string());

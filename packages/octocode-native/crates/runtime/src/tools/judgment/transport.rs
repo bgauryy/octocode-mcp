@@ -28,9 +28,20 @@ const BACKOFF: octocode_github::Backoff = octocode_github::Backoff {
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 /// Runtimes whose clients stay cached; older entries are evicted.
 const MAX_CACHED_CLIENTS: usize = 8;
-/// The code of a request the open circuit refused: a consequence of earlier
-/// failures, never their cause.
+/// The code of a provider that could not answer: unreachable, timed out,
+/// failing (5xx), overloaded without a retry delay, or paused by the open
+/// circuit those failures led to. Unlike a refused credential or request,
+/// it says nothing about the caller's input: retrying later can succeed.
 pub(crate) const CIRCUIT_OPEN: &str = "classificationProviderUnavailable";
+
+/// Whether a classification error `code` says the provider could not answer
+/// now (rate limited, overloaded, unreachable, failing, paused by its
+/// circuit) rather than refusing this caller or request (a credential,
+/// quota, content or size error the caller must fix). Evidence a reader
+/// already has is never withheld for the former.
+pub(crate) fn is_transient(code: &str) -> bool {
+    matches!(code, CIRCUIT_OPEN | "classificationRateLimited")
+}
 
 fn is_loopback_endpoint(endpoint: &Url) -> bool {
     match endpoint.host() {
@@ -82,6 +93,9 @@ pub struct ClassificationError {
     pub provider_calls: u64,
     /// Usage reported before failure; absent when no response reported usage.
     pub(crate) reported_usage: Option<Box<ReportedUsage>>,
+    /// The open circuit refused the request: a consequence of earlier
+    /// failures, reported only when no cause was seen.
+    pub(crate) paused: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -196,7 +210,7 @@ pub(super) async fn wait<T>(
 
 fn transport_error() -> ClassificationError {
     ClassificationError::new(
-        "classificationProviderError",
+        CIRCUIT_OPEN,
         "Classification provider request failed or timed out.",
         "Check connectivity, certificates, proxy settings, and the configured API root.",
     )
@@ -213,30 +227,54 @@ fn send_error(error: &reqwest::Error) -> ClassificationError {
         return transport_error();
     };
     ClassificationError::new(
-        "classificationProviderError",
+        CIRCUIT_OPEN,
         format!("Classification provider request {what}."),
         "Check connectivity, certificates, proxy settings, and the configured API root.",
     )
 }
 
+/// A provider overloaded without naming a retry delay (503/529, or the
+/// vendor's `system_overloaded`).
+fn overloaded_error(status: u16) -> ClassificationError {
+    ClassificationError::new(
+        CIRCUIT_OPEN,
+        format!(
+            "Classification provider is overloaded or unavailable (HTTP {status}) and named no retry delay."
+        ),
+        "Check provider availability and OCTOCODE_CLASSIFICATION_API_HOST, then retry.",
+    )
+}
+
+/// A throttle: a 429 is rate limiting, a 503/529 with a delay is an
+/// overload; either states the delay it asked for.
 fn rate_limited(
     status: Option<u16>,
     retry_after: Option<Duration>,
     exceeds_deadline: bool,
 ) -> ClassificationError {
-    let source = status.map_or_else(
-        || "a shared provider cooldown is active".to_owned(),
-        |status| format!("the provider returned HTTP {status}"),
-    );
+    let (state, source) = match status {
+        None => (
+            "is rate limiting",
+            "a shared provider cooldown is active".to_owned(),
+        ),
+        Some(429) => (
+            "is rate limiting",
+            "the provider returned HTTP 429".to_owned(),
+        ),
+        Some(status) => (
+            "is overloaded",
+            format!("the provider returned HTTP {status}"),
+        ),
+    };
     let seconds = retry_after.map(|delay| delay.as_secs_f64().ceil().max(1.0));
     let message = match (seconds, exceeds_deadline) {
         (Some(seconds), true) => format!(
-            "Classification provider is rate limiting ({source}); the retry delay of about {seconds:.0}s exceeds the remaining deadline."
+            "Classification provider {state} ({source}); the retry delay of about {seconds:.0}s exceeds the remaining deadline."
         ),
-        (Some(seconds), false) => format!(
-            "Classification provider is rate limiting ({source}); retry after about {seconds:.0}s."
-        ),
-        (None, _) => format!("Classification provider is rate limiting ({source})."),
+        (Some(seconds), false) => {
+            format!("Classification provider {state} ({source}); retry after about {seconds:.0}s.")
+        }
+        (None, _) => format!("Classification provider {state} ({source})."),
     };
     let hint = seconds.map_or_else(
         || "Retry later.".to_owned(),
@@ -259,14 +297,17 @@ fn denied(reason: GateDenied) -> ClassificationError {
         ),
         GateDenied::RateLimited { retry_after } => rate_limited(None, Some(retry_after), true),
         GateDenied::QuotaExhausted => quota_exhausted(),
-        GateDenied::CircuitOpen { retry_after } => ClassificationError::new(
-            CIRCUIT_OPEN,
-            format!(
-                "Classification provider failed repeatedly; requests are paused for about {:.0}s.",
-                retry_after.as_secs_f64().ceil().max(1.0)
-            ),
-            "Check provider availability and OCTOCODE_CLASSIFICATION_API_HOST, then retry.",
-        ),
+        GateDenied::CircuitOpen { retry_after } => ClassificationError {
+            paused: true,
+            ..ClassificationError::new(
+                CIRCUIT_OPEN,
+                format!(
+                    "Classification provider failed repeatedly; requests are paused for about {:.0}s.",
+                    retry_after.as_secs_f64().ceil().max(1.0)
+                ),
+                "Check provider availability and OCTOCODE_CLASSIFICATION_API_HOST, then retry.",
+            )
+        },
     }
 }
 
@@ -290,6 +331,13 @@ fn status_error(status: reqwest::StatusCode, provider_body: Option<&Value>) -> C
         300..=399 => "Redirects are disabled; check OCTOCODE_CLASSIFICATION_API_HOST.",
         _ => "Check provider availability and OCTOCODE_CLASSIFICATION_API_HOST.",
     };
+    if status.is_server_error() || status == reqwest::StatusCode::REQUEST_TIMEOUT {
+        return ClassificationError::new(
+            CIRCUIT_OPEN,
+            format!("Classification provider returned HTTP {status}; response body omitted."),
+            hint,
+        );
+    }
     if error_type(provider_body) == Some("max_tokens_exceeded") {
         ClassificationError::new(
             "classificationStateTooLarge",
@@ -325,6 +373,9 @@ async fn error_body(response: reqwest::Response, budget: &RequestBudget) -> Opti
 
 enum Attempt {
     Done(Result<Value, ClassificationError>),
+    /// The open circuit refused the request: a consequence of the failures
+    /// before it, which the caller reports instead when it saw one.
+    Refused(ClassificationError),
     /// Retry after the delay; `error` is returned if no attempt remains or
     /// the delay does not fit the deadline.
     Retry {
@@ -347,6 +398,7 @@ async fn attempt(
 ) -> Attempt {
     let permit = match gate.acquire(budget).await {
         Ok(permit) => permit,
+        Err(reason @ GateDenied::CircuitOpen { .. }) => return Attempt::Refused(denied(reason)),
         Err(reason) => return Attempt::Done(Err(denied(reason))),
     };
     if let Err(error) = check_budget(budget) {
@@ -417,17 +469,27 @@ async fn failed_status(
         octocode_github::retry_after_delay(response.headers(), MAX_RETRY_AFTER, SystemTime::now());
     let body = error_body(response, budget).await;
     let class = octocode_github::classify_status(code);
-    // Throttles shrink the shared window and honour `Retry-After`.
-    let throttle = matches!(
-        class,
-        octocode_github::StatusClass::RateLimited | octocode_github::StatusClass::Overloaded
-    );
-    if throttle || is_overloaded(body.as_ref()) {
+    let overloaded =
+        class == octocode_github::StatusClass::Overloaded || is_overloaded(body.as_ref());
+    // A 429, or an overload that names its retry delay, is a throttle: it
+    // shrinks the shared window and every call honours the delay.
+    if class == octocode_github::StatusClass::RateLimited || (overloaded && requested.is_some()) {
         permit.throttled(requested);
         return Attempt::Retry {
             delay: BACKOFF.after(requested, attempt),
             error: rate_limited(Some(code), requested, false),
             throttle: Some(code),
+        };
+    }
+    // An overload without a delay says the provider is down, not that this
+    // caller sends too much: it is retried and counts toward the circuit,
+    // whose cooldown then pauses every chunk instead of each retrying it.
+    if overloaded {
+        permit.failed();
+        return Attempt::Retry {
+            delay: BACKOFF.after(None, attempt),
+            error: overloaded_error(code),
+            throttle: None,
         };
     }
     // Transient server failures are retried and count toward the circuit.
@@ -583,7 +645,7 @@ async fn request(
             )
             .await
             {
-                Attempt::Done(Err(error)) if error.code == CIRCUIT_OPEN => {
+                Attempt::Refused(error) => {
                     return Err(last_error.take().unwrap_or(error));
                 }
                 Attempt::Done(result) => return result,
@@ -937,11 +999,12 @@ mod tests {
                 "overload is an AIMD signal"
             );
         }
-        // Retries exhausted: the overload surfaces as rate limiting.
+        // Retries exhausted: an overload that names its delay is a throttle.
         let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(
                 ResponseTemplate::new(503)
+                    .insert_header("retry-after-ms", "1")
                     .set_body_json(json!({"detail":{"error_type":"system_overloaded"}})),
             )
             .expect(1)
@@ -951,7 +1014,66 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.code, "classificationRateLimited");
-        assert!(error.message.contains("HTTP 503"), "{}", error.message);
+        assert!(
+            error
+                .message
+                .contains("is overloaded (the provider returned HTTP 503)"),
+            "{}",
+            error.message
+        );
+    }
+
+    /// A 503/529 without a retry delay is the provider being down, not a
+    /// throttle: it is never called rate limiting, and it counts toward the
+    /// circuit, so after the threshold every further chunk fails fast
+    /// without reaching the provider (11 chunks sent 44 requests before).
+    #[tokio::test]
+    async fn an_overload_without_a_delay_opens_the_circuit_instead_of_throttling() {
+        for status in [503, 529] {
+            let server = MockServer::builder().start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+            let lease = fresh_gate(8);
+            let mut codes = Vec::new();
+            for _ in 0..5 {
+                let error = send(&server.uri(), Duration::from_secs(30), 1, &lease.fork())
+                    .await
+                    .unwrap_err();
+                assert!(
+                    !error.message.contains("rate limiting"),
+                    "{status}: {}",
+                    error.message
+                );
+                codes.push((error.code, error.message));
+            }
+            // Every call reports the provider unavailable: the ones that
+            // reached it with its failure, the refused ones as paused.
+            assert!(
+                codes.iter().all(|(code, _)| code == CIRCUIT_OPEN),
+                "{codes:?}"
+            );
+            assert!(
+                codes[..3]
+                    .iter()
+                    .all(|(_, message)| message.contains(&format!("HTTP {status}"))),
+                "{codes:?}"
+            );
+            assert!(
+                codes[3..]
+                    .iter()
+                    .all(|(_, message)| message.contains("paused")),
+                "{codes:?}"
+            );
+            let received = server.received_requests().await.unwrap_or_default().len();
+            assert_eq!(
+                received,
+                gate::CIRCUIT_THRESHOLD as usize,
+                "{status}: the open circuit stops the requests"
+            );
+            assert_eq!(lease.gate().effective_limit(), 8, "no throttle signal");
+        }
     }
 
     #[tokio::test]

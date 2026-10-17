@@ -296,7 +296,7 @@ pub(super) async fn resolve_lines<C: octocode_github::ConditionalCache>(
     found: &[CodeSearchItem],
     commit: Option<Result<String, ProviderError>>,
     context: &RequestContext,
-    security: &impl ContentScan,
+    security: &(impl ContentScan + Sync),
 ) -> Result<Option<Resolution>, ProviderError> {
     if items.is_empty() || !reads_lines(query) {
         return Ok(None);
@@ -347,7 +347,7 @@ async fn indexed_lines<C: octocode_github::ConditionalCache>(
     items: &[Value],
     found: &[CodeSearchItem],
     context: &RequestContext,
-    security: &impl ContentScan,
+    security: &(impl ContentScan + Sync),
 ) -> Result<Option<Resolution>, ProviderError> {
     // (repository, path) -> (indexed commit, blob SHA).
     let indexed: HashMap<(String, &str), (Option<String>, &str)> = found
@@ -443,7 +443,7 @@ async fn read_groups<C: octocode_github::ConditionalCache>(
     rows: usize,
     groups: Vec<(RepoCommit, Vec<Read>)>,
     context: &RequestContext,
-    security: &impl ContentScan,
+    security: &(impl ContentScan + Sync),
 ) -> Result<Resolution, ProviderError> {
     let goal = query.main_goal.as_ref().map_or("", |goal| goal.as_str());
     // Per group: the distinct paths read, and for each row the read it shares.

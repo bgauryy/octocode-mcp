@@ -245,6 +245,10 @@ async fn exact(
         artifact.source_ref = None;
         artifact.missing_ref = Some(head);
     }
+    // Without an attested or recorded commit, the upstream release tag pins
+    // the source, as for every registry that names no commit.
+    let name = artifact.name.clone();
+    super::release_ref::pin_release_tag(&mut artifact, &name, &version, client).await;
     artifact.version = Some(version);
     Ok(ArtifactProviderPage {
         registry: Some(trim_registry(&registry.base)),
@@ -338,8 +342,10 @@ fn not_found_page(registry: &ResolvedNpmRegistry) -> ArtifactProviderPage {
     page
 }
 
-/// The abbreviated packument (versions and dist-tags only); `None` when the
-/// package does not exist.
+/// The published versions of a package and its `latest` tag, from the
+/// abbreviated packument; `None` when the package does not exist. Only
+/// that view is decoded and cached: a large packument (typescript's is
+/// 8.7 MB) never lives in memory as a whole.
 async fn packument(
     encoded: &str,
     registry: &ResolvedNpmRegistry,
@@ -349,25 +355,74 @@ async fn packument(
     let url = registry_url(&registry.base, encoded)?;
     let authorization = registry.authorization_for(&url);
     client
-        .json(
+        .json_view(
             ArtifactType::Npm,
             url,
             true,
             authorization,
             dns_pin,
             NPM_INSTALL_JSON,
+            "versions",
+            version_view,
         )
         .await
 }
 
-fn published_versions(packument: &Value) -> (Vec<String>, Option<String>) {
-    let versions = packument
+/// `{versions: [...], latest}` of an abbreviated packument body, versions
+/// in the registry's order; the version manifests are skipped, never built
+/// into values.
+fn version_view(body: &[u8]) -> Option<Value> {
+    /// The keys of a JSON object, in order, without their values.
+    #[derive(Default)]
+    struct Keys(Vec<String>);
+    impl<'de> serde::Deserialize<'de> for Keys {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Visit;
+            impl<'de> serde::de::Visitor<'de> for Visit {
+                type Value = Keys;
+                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    formatter.write_str("an object")
+                }
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut map: A,
+                ) -> Result<Keys, A::Error> {
+                    let mut keys = Vec::new();
+                    while let Some(key) = map.next_key::<String>()? {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                        keys.push(key);
+                    }
+                    Ok(Keys(keys))
+                }
+            }
+            deserializer.deserialize_map(Visit)
+        }
+    }
+    #[derive(serde::Deserialize)]
+    struct Packument {
+        #[serde(default)]
+        versions: Keys,
+        #[serde(rename = "dist-tags", default)]
+        dist_tags: BTreeMap<String, Value>,
+    }
+    let packument: Packument = serde_json::from_slice(body).ok()?;
+    let latest = string(packument.dist_tags.get("latest"));
+    Some(serde_json::json!({ "versions": packument.versions.0, "latest": latest }))
+}
+
+fn published_versions(view: &Value) -> (Vec<String>, Option<String>) {
+    let versions = view
         .get("versions")
-        .and_then(Value::as_object)
-        .map(|versions| versions.keys().cloned().collect())
+        .and_then(Value::as_array)
+        .map(|versions| {
+            versions
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default();
-    let latest = string(packument.pointer("/dist-tags/latest"));
-    (versions, latest)
+    (versions, string(view.get("latest")))
 }
 
 /// A known package without the requested version: typed, with the nearest
@@ -915,6 +970,102 @@ mod tests {
             [format!("{INSTALL} /zod"), format!("{JSON} /zod/3.25.76")],
             "a range reads the abbreviated packument, then one manifest"
         );
+    }
+
+    /// A manifest without `gitHead` or provenance pins its source to the
+    /// upstream release tag, the fallback every registry that names no
+    /// commit takes; a recorded `gitHead` stays the ref without a tag check.
+    #[tokio::test]
+    async fn npm_without_a_recorded_commit_pins_the_upstream_release_tag() {
+        let mut headless = manifest("3.25.76", false);
+        headless
+            .as_object_mut()
+            .expect("manifest")
+            .remove("gitHead");
+        let http = routes(vec![("/zod/3.25.76", JSON, headless)]);
+        let tags = super::super::test_http::KnownTags::new(vec![
+            "colinhacks/zod@v3.25.76",
+            "colinhacks/zod@aaaaaaa1",
+        ]);
+        let budget = super::super::types::test_budget();
+        let client = RegistryClient {
+            tags: Some(&tags),
+            ..RegistryClient::uncached(&http, &budget)
+        };
+        let query = artifact_query(
+            json!({"ecosystem": "npm", "packageName": "zod", "version": "3.25.76"}),
+            None,
+        );
+        let registry = npm_registry("https://registry.npmjs.org/");
+        let page = super::npm(&query, &Default::default(), &registry, &client, false)
+            .await
+            .expect("lookup");
+        let item = &page.artifacts[0];
+        assert_eq!(item.source_ref.as_deref(), Some("v3.25.76"));
+        assert!(item.source_tag);
+        let with_head = routes(Vec::new());
+        let client = RegistryClient {
+            tags: Some(&tags),
+            ..RegistryClient::uncached(&with_head, &budget)
+        };
+        let checks = tags.seen().len();
+        let page = super::npm(&query, &Default::default(), &registry, &client, false)
+            .await
+            .expect("lookup");
+        assert_eq!(page.artifacts[0].source_ref.as_deref(), Some("aaaaaaa1"));
+        assert!(!page.artifacts[0].source_tag);
+        assert_eq!(
+            tags.seen()[checks..],
+            ["colinhacks/zod@aaaaaaa1"],
+            "only the gitHead is checked"
+        );
+        // A gitHead GitHub lacks is named, and the release tag pins instead.
+        let tag_only = super::super::test_http::KnownTags::new(vec!["colinhacks/zod@v3.25.76"]);
+        let client = RegistryClient {
+            tags: Some(&tag_only),
+            ..RegistryClient::uncached(&with_head, &budget)
+        };
+        let page = super::npm(&query, &Default::default(), &registry, &client, false)
+            .await
+            .expect("lookup");
+        let item = &page.artifacts[0];
+        assert_eq!(item.missing_ref.as_deref(), Some("aaaaaaa1"));
+        assert_eq!(item.source_ref.as_deref(), Some("v3.25.76"));
+    }
+
+    /// A range reads the abbreviated packument for its version list only:
+    /// that view (registry order, `latest`) is what is decoded and cached,
+    /// so a repeat resolves without the registry.
+    #[tokio::test]
+    async fn a_range_caches_only_the_version_view_of_the_packument() {
+        let view = super::version_view(
+            br#"{"name":"zod","dist-tags":{"latest":"4.6.5","next":"5.0.0-beta"},
+            "versions":{"3.22.0":{"dist":{"x":[1,2]}},"10.0.0":{},"4.6.5":{}},"modified":"x"}"#,
+        )
+        .expect("view");
+        assert_eq!(
+            view,
+            json!({"versions": ["3.22.0", "10.0.0", "4.6.5"], "latest": "4.6.5"})
+        );
+        let http = routes(vec![("/zod/latest", JSON, manifest("4.6.5", false))]);
+        let cache = super::super::ArtifactCache::new(None);
+        let budget = super::super::types::test_budget();
+        let client = RegistryClient {
+            cache: Some(&cache),
+            ..RegistryClient::uncached(&http, &budget)
+        };
+        let query = artifact_query(
+            json!({"ecosystem": "npm", "packageName": "zod", "version": "^3"}),
+            None,
+        );
+        let registry = npm_registry("https://registry.npmjs.org/");
+        for _ in 0..2 {
+            let page = super::npm(&query, &Default::default(), &registry, &client, false)
+                .await
+                .expect("range");
+            assert_eq!(page.artifacts[0].version.as_deref(), Some("3.25.76"));
+        }
+        assert_eq!(http.seen().len(), 2, "packument and manifest once each");
     }
 
     /// `dependencies` lists the required ones as `name@range`: npm repeats

@@ -169,7 +169,7 @@ function assertSubsequence(selected, baseline) {
 
 /** next.unfiltered strips classification and reproduces the ordinary walk without provider work. */
 async function assertRecovery(tool, row, baseline, overrides) {
-  const lead = row.next?.unfiltered2 ?? row.next?.unfiltered;
+  const lead = row.next?.unfiltered;
   assert.ok(lead, 'classified output exposes next.unfiltered');
   assert.equal(lead.tool, tool);
   const query = lead.query.queries[0];

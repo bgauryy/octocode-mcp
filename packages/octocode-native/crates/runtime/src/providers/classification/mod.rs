@@ -96,6 +96,15 @@ pub trait ClassificationProvider: Send + Sync {
         response: &Value,
     ) -> Result<(), ProviderContractError>;
 
+    /// Validate grouped answers independently in numeric question-index order.
+    /// Global metadata and unexpected identities fail the response; a missing
+    /// or malformed expected answer fails only its own question.
+    fn validate_batch_answers(
+        &self,
+        request: &Value,
+        response: &Value,
+    ) -> Result<Vec<Result<Value, ProviderContractError>>, ProviderContractError>;
+
     /// Validate model metadata without interpreting model names or dates.
     fn validate_models(&self, response: &Value) -> Result<(), ProviderContractError>;
 }

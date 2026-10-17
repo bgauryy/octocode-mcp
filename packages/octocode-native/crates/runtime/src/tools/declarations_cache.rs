@@ -1,31 +1,26 @@
-//! Reuse single-file extraction (and the rendered symbols view) across
-//! outline pages. Authorization and source
-//! decoding happen in the caller on every request; the key uses the decoded
-//! content, canonical path and the parser extension actually used (none for
-//! the file's own grammar), rather than mutable timestamps.
+//! One declarations parse per source version, shared by every reader of a
+//! file's declarations (outline pages, block reads, search hits, LSP
+//! narrowing) and kept typed: a reader never re-parses JSON. The rendered
+//! symbols view is kept here too. Authorization and source decoding happen
+//! in the caller on every request; the key uses the decoded content,
+//! canonical path and the parser extension actually used (none for the
+//! file's own grammar), rather than mutable timestamps.
 
 use crate::cache::{CacheClass, CacheConfig, CacheKey, Store};
+use octocode_engine::graph::GraphFactsDocument;
+use octocode_io::flight::KeyedFlight;
 use std::sync::{Arc, OnceLock};
 
-static CACHE: OnceLock<Store<String>> = OnceLock::new();
+static CACHE: OnceLock<Store<GraphFactsDocument>> = OnceLock::new();
 
-/// The declarations `extraction` produces for `source` at `canonical_path`,
-/// once per source version. `parser` is the extension whose grammar parses
-/// the source; `None` is the file's own. Every override keeps its own entry.
-pub(crate) fn extract(
-    source: &str,
-    canonical_path: &str,
-    parser: Option<&str>,
-    extraction: impl FnOnce() -> Option<String>,
-) -> Option<Arc<String>> {
-    // A parser extension never contains `/`, so `auto` cannot collide with one.
-    let parser = parser.map_or_else(|| "auto".to_owned(), |extension| format!("ext/{extension}"));
-    let key = CacheKey {
-        namespace: "ast-declarations".into(),
-        scope: format!("{parser}\0{canonical_path}"),
-        resource: crate::digest::sha256(source.as_bytes()),
-    };
-    let cache = CACHE.get_or_init(|| {
+/// One parse per key at a time: rows reading one file concurrently wait for
+/// the first parse and take its outcome (a failure too) from the slot,
+/// instead of parsing the file once each.
+static FLIGHT: KeyedFlight<CacheKey, Option<Option<Arc<GraphFactsDocument>>>> =
+    KeyedFlight::transient();
+
+fn cache() -> &'static Store<GraphFactsDocument> {
+    CACHE.get_or_init(|| {
         Store::new(
             CacheConfig {
                 max_entries: 128,
@@ -34,17 +29,77 @@ pub(crate) fn extract(
             },
             None,
         )
-    });
-    if let Some(hit) = cache.get(&key) {
+    })
+}
+
+/// The declarations parse of `source` at `canonical_path`, typed, once per
+/// source version. `parser` is the extension whose grammar parses the
+/// source; `None` is the file's own. Every override keeps its own entry.
+/// `extraction` returns the parse; `None` (no extractor, a timeout) is never
+/// kept as an outline.
+pub(crate) fn document(
+    source: &str,
+    canonical_path: &str,
+    parser: Option<&str>,
+    extraction: impl FnOnce() -> Option<GraphFactsDocument>,
+) -> Option<Arc<GraphFactsDocument>> {
+    // A parser extension never contains `/`, so `auto` cannot collide with one.
+    let parser = parser.map_or_else(|| "auto".to_owned(), |extension| format!("ext/{extension}"));
+    let key = CacheKey {
+        namespace: "ast-declarations".into(),
+        scope: format!("{parser}\0{canonical_path}"),
+        resource: crate::digest::sha256(source.as_bytes()),
+    };
+    if let Some(hit) = cache().get(&key) {
         return Some(hit.value);
     }
-    // Extraction can block or time out. Never hold the cache lock while
-    // parsing, and never retain failed extraction as a successful empty outline.
-    let raw = extraction()?;
-    let bytes = raw.len() + canonical_path.len() + key.resource.len();
-    // Keyed by the source digest, so an entry never goes stale. The stored
-    // value is the one returned: no copy, no second lookup.
-    Some(cache.put(key, raw, bytes, CacheClass::Immutable))
+    let ticket = FLIGHT.join(key.clone());
+    // Declarations parse in blocking row workers, never on an async worker.
+    let mut slot = ticket.blocking_turn();
+    if let Some(outcome) = slot.as_ref() {
+        return outcome.clone();
+    }
+    // The previous wave's parse may have landed between the lookup and the
+    // join.
+    if let Some(hit) = cache().get(&key) {
+        return Some(hit.value);
+    }
+    // Extraction can block or time out: never hold the cache lock while
+    // parsing (only this key's turn), and never retain a failed extraction
+    // past its wave.
+    let outcome = extraction().map(|document| {
+        let bytes = weight(&document) + canonical_path.len() + key.resource.len();
+        // Keyed by the source digest, so an entry never goes stale. The
+        // stored value is the one returned: no copy, no second lookup.
+        cache().put(key, document, bytes, CacheClass::Immutable)
+    });
+    *slot = Some(outcome.clone());
+    outcome
+}
+
+/// A parse's cache weight, estimated from what it holds (never by
+/// serializing it): a fixed cost per fact plus its free text.
+fn weight(document: &GraphFactsDocument) -> usize {
+    const DECLARATION: usize = 256;
+    const FACT: usize = 128;
+    let facts = document.imports.len()
+        + document.exports.len()
+        + document.calls.len()
+        + document.common_js.len()
+        + document.edges.len()
+        + document.modules.len()
+        + document.paths.len();
+    512 + document.declarations.len() * DECLARATION
+        + facts * FACT
+        + document.diagnostics.iter().map(String::len).sum::<usize>()
+        + document.error_lines.len() * 8
+}
+
+/// The declarations of `content` at `path` in the file's own grammar.
+pub(crate) fn file_document(content: &str, path: &str) -> Option<Arc<GraphFactsDocument>> {
+    document(content, path, None, || {
+        octocode_engine::signatures::extract_declarations_document(content, path)
+    })
 }
 
 /// One declaration of the engine outline, 1-based lines.
@@ -58,41 +113,26 @@ pub(crate) struct Declared {
     pub(crate) end: usize,
 }
 
+impl Declared {
+    fn of(declaration: &octocode_engine::graph::GraphFactDeclaration) -> Self {
+        let line = |zero_based: u32| zero_based as usize + 1;
+        Self {
+            name: declaration.name.clone(),
+            kind: declaration.kind.clone(),
+            doc_start: declaration.doc_line.map(line),
+            line: line(declaration.selection_range.start.line),
+            start: line(declaration.range.start.line),
+            end: line(declaration.range.end.line),
+        }
+    }
+}
+
 /// Every declaration the engine outlines, one-line ones included, in
 /// outline order; `None` when the file type has no outline.
 pub(crate) fn all_declarations(content: &str, path: &str) -> Option<Vec<Declared>> {
     // Shared with outline pages and search hits: one parse per file version.
-    let raw = crate::tools::declarations_cache::extract(content, path, None, || {
-        octocode_engine::portable::extract_declarations(content, path)
-    })?;
-    let facts: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let line = |declaration: &serde_json::Value, pointer: &str| {
-        declaration
-            .pointer(pointer)
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|line| usize::try_from(line).ok())
-            .map(|line| line + 1)
-    };
-    Some(
-        facts["declarations"]
-            .as_array()?
-            .iter()
-            .filter_map(|declaration| {
-                let start = line(declaration, "/range/start/line")?;
-                Some(Declared {
-                    name: declaration["name"].as_str().unwrap_or_default().to_owned(),
-                    kind: declaration["kind"].as_str().unwrap_or_default().to_owned(),
-                    doc_start: declaration["docLine"]
-                        .as_u64()
-                        .and_then(|line| usize::try_from(line).ok())
-                        .map(|line| line + 1),
-                    line: line(declaration, "/selectionRange/start/line").unwrap_or(start),
-                    start,
-                    end: line(declaration, "/range/end/line")?,
-                })
-            })
-            .collect(),
-    )
+    let document = file_document(content, path)?;
+    Some(document.declarations.iter().map(Declared::of).collect())
 }
 
 /// The symbols view of one source version: the outline, or why it has
@@ -142,15 +182,16 @@ pub(crate) fn symbols_store() -> &'static Store<SymbolsView> {
 }
 
 /// The `minify:"symbols"` view of `source` at `path` in `store`: rendered
-/// once per source version and reused by every outline page. A missing
-/// outline is a verdict of the same version, so it is kept too. `render`
-/// must build the view from redacted text: what it returns is kept, on
-/// disk too.
+/// once per source version and reused by every outline page; a hit costs
+/// no render and no redaction. A missing outline is a verdict of the same
+/// version, so it is kept too. `render` builds the view from redacted text
+/// (`Ok`: kept, on disk too), or, when the source could not be redacted,
+/// for this page only (`Err`: never kept).
 pub(crate) fn symbols_view(
     store: &Store<SymbolsView>,
     source: &str,
     path: &str,
-    render: impl FnOnce() -> SymbolsView,
+    render: impl FnOnce() -> Result<SymbolsView, SymbolsView>,
 ) -> Arc<SymbolsView> {
     let key = CacheKey {
         namespace: SYMBOLS_NAMESPACE.into(),
@@ -160,7 +201,10 @@ pub(crate) fn symbols_view(
     if let Some(hit) = store.get(&key) {
         return hit.value;
     }
-    let view = render();
+    let view = match render() {
+        Ok(view) => view,
+        Err(page_only) => return Arc::new(page_only),
+    };
     let bytes = view.outline.as_ref().map_or(0, String::len)
         + view.warning.as_ref().map_or(0, String::len)
         + view.redacted_lines.len() * 2 * std::mem::size_of::<usize>()
@@ -171,7 +215,8 @@ pub(crate) fn symbols_view(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract, symbols_store, symbols_view};
+    use super::{all_declarations, document, symbols_store, symbols_view};
+    use octocode_engine::graph::GraphFactsDocument;
     use octocode_engine::signatures::OutlineUnavailable;
 
     /// One render per source version, a missing outline included.
@@ -181,11 +226,11 @@ mod tests {
         let path = format!("symbols-cache-test-{}", std::process::id());
         let render = |outline| {
             calls.set(calls.get() + 1);
-            super::SymbolsView {
+            Ok(super::SymbolsView {
                 outline,
                 warning: None,
                 redacted_lines: Vec::new(),
-            }
+            })
         };
         let first = symbols_view(symbols_store(), "fn a() {}", &path, || {
             render(Ok("1\tfn a()".into()))
@@ -220,11 +265,11 @@ mod tests {
         let calls = Cell::new(0);
         let render = || {
             calls.set(calls.get() + 1);
-            super::SymbolsView {
+            Ok(super::SymbolsView {
                 outline: Ok("1\tfn a()\n".into()),
                 warning: Some("recovered".into()),
                 redacted_lines: vec![(1, 1)],
-            }
+            })
         };
         let first = super::symbols_view(&store(), "fn a() {}", "a.rs", render);
         let again = super::symbols_view(&store(), "fn a() {}", "a.rs", render);
@@ -233,21 +278,29 @@ mod tests {
     }
     use std::cell::Cell;
 
+    /// A parse named by `file`.
+    fn named(file: &str) -> Option<GraphFactsDocument> {
+        Some(GraphFactsDocument {
+            file: file.to_owned(),
+            ..GraphFactsDocument::default()
+        })
+    }
+
     #[test]
     fn content_path_and_parser_identity_control_reuse() {
         let calls = Cell::new(0);
         let parse = || {
             calls.set(calls.get() + 1);
-            Some("declarations".to_owned())
+            named("declarations")
         };
         let path = format!("cache-test-{}", std::process::id());
-        let first = extract("fn one() {}", &path, None, parse).unwrap();
-        let second = extract("fn one() {}", &path, None, parse).unwrap();
+        let first = document("fn one() {}", &path, None, parse).unwrap();
+        let second = document("fn one() {}", &path, None, parse).unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second));
         assert_eq!(calls.get(), 1);
-        extract("fn two() {}", &path, None, parse).unwrap();
-        extract("fn one() {}", &format!("{path}-other"), None, parse).unwrap();
-        extract("fn one() {}", &path, Some("cpp"), parse).unwrap();
+        document("fn two() {}", &path, None, parse).unwrap();
+        document("fn one() {}", &format!("{path}-other"), None, parse).unwrap();
+        document("fn one() {}", &path, Some("cpp"), parse).unwrap();
         assert_eq!(calls.get(), 4);
     }
 
@@ -258,19 +311,19 @@ mod tests {
         let calls = Cell::new(0);
         let parse = || {
             calls.set(calls.get() + 1);
-            Some(format!("declarations{}", calls.get()))
+            named(&format!("declarations{}", calls.get()))
         };
         let path = format!("override-cache-test-{}", std::process::id());
-        let py = extract("x = 1", &path, Some("py"), parse).unwrap();
-        let again = extract("x = 1", &path, Some("py"), parse).unwrap();
+        let py = document("x = 1", &path, Some("py"), parse).unwrap();
+        let again = document("x = 1", &path, Some("py"), parse).unwrap();
         assert!(std::sync::Arc::ptr_eq(&py, &again));
         assert_eq!(calls.get(), 1);
-        let rb = extract("x = 1", &path, Some("rb"), parse).unwrap();
-        assert_eq!(rb.as_str(), "declarations2");
-        let own = extract("x = 1", &path, None, parse).unwrap();
-        assert_eq!(own.as_str(), "declarations3");
-        let cpp = extract("x = 1", &path, Some("cpp"), parse).unwrap();
-        let again = extract("x = 1", &path, Some("cpp"), parse).unwrap();
+        let rb = document("x = 1", &path, Some("rb"), parse).unwrap();
+        assert_eq!(rb.file, "declarations2");
+        let own = document("x = 1", &path, None, parse).unwrap();
+        assert_eq!(own.file, "declarations3");
+        let cpp = document("x = 1", &path, Some("cpp"), parse).unwrap();
+        let again = document("x = 1", &path, Some("cpp"), parse).unwrap();
         assert!(std::sync::Arc::ptr_eq(&cpp, &again));
         assert_eq!(calls.get(), 4);
     }
@@ -278,12 +331,113 @@ mod tests {
     #[test]
     fn failed_extraction_is_not_cached() {
         let path = format!("failed-cache-test-{}", std::process::id());
-        assert!(extract("source", &path, None, || None).is_none());
+        assert!(document("source", &path, None, || None).is_none());
         assert_eq!(
-            extract("source", &path, None, || Some("retry".into()))
-                .as_deref()
-                .map(String::as_str),
-            Some("retry")
+            document("source", &path, None, || named("retry")).map(|parse| parse.file.clone()),
+            Some("retry".to_owned())
+        );
+    }
+
+    /// Rows reading one file at once parse it once: the others wait for the
+    /// first parse and share it (a failed one too, within its wave).
+    #[test]
+    fn concurrent_reads_of_one_version_parse_it_once() {
+        let path = format!("flight-cache-test-{}", std::process::id());
+        let parses = std::sync::atomic::AtomicUsize::new(0);
+        let gate = std::sync::Barrier::new(8);
+        let parse = || {
+            parses.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            named("shared")
+        };
+        let outcomes = std::thread::scope(|scope| {
+            let workers = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        gate.wait();
+                        document("fn shared() {}", &path, None, parse)
+                    })
+                })
+                .collect::<Vec<_>>();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().expect("worker"))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(parses.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let first = outcomes[0].as_ref().expect("parse");
+        assert!(outcomes.iter().all(|outcome| {
+            outcome
+                .as_ref()
+                .is_some_and(|parse| std::sync::Arc::ptr_eq(parse, first))
+        }));
+        // A failure is shared by its wave only: the next read parses again.
+        let failing = format!("{path}-failing");
+        let failures = std::sync::atomic::AtomicUsize::new(0);
+        let fail = || {
+            failures.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            None
+        };
+        let gate = std::sync::Barrier::new(4);
+        std::thread::scope(|scope| {
+            let workers = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        gate.wait();
+                        document("x", &failing, None, fail)
+                    })
+                })
+                .collect::<Vec<_>>();
+            for worker in workers {
+                assert!(worker.join().expect("worker").is_none());
+            }
+        });
+        assert!(failures.load(std::sync::atomic::Ordering::SeqCst) < 4);
+        assert!(document("x", &failing, None, || named("later")).is_some());
+    }
+
+    /// A reader on a thread inside a tokio runtime (a gh tool's `block_on`,
+    /// an entered handle; current-thread or multi-thread) takes its turn
+    /// without panicking, and shares the one parse.
+    #[test]
+    fn readers_inside_a_runtime_take_their_turn() {
+        let path = format!("runtime-cache-test-{}.rs", std::process::id());
+        let read = || super::file_document("fn inside() {}\n", &path);
+        let current = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+        assert!(current.block_on(async { read() }).is_some());
+        let multi = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .build()
+            .expect("runtime");
+        assert!(multi.block_on(async { read() }).is_some());
+        let _entered = multi.enter();
+        assert!(read().is_some());
+    }
+
+    /// The typed declarations come from the one cached parse, and that
+    /// parse is the engine's own declarations document.
+    #[test]
+    fn typed_declarations_and_the_engine_document_share_one_parse() {
+        let source = "/// Doc.\nfn first() {\n    1;\n}\nfn second() {}\n";
+        let path = format!("typed-cache-test-{}.rs", std::process::id());
+        let declared = all_declarations(source, &path).expect("declarations");
+        let spans = declared
+            .iter()
+            .map(|d| (d.name.as_str(), d.doc_start, d.line, d.start, d.end))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            spans,
+            [("first", Some(1), 2, 2, 4), ("second", None, 5, 5, 5)]
+        );
+        let cached =
+            document(source, &path, None, || panic!("the parse is cached")).expect("cached");
+        assert_eq!(
+            *cached,
+            octocode_engine::signatures::extract_declarations_document(source, &path)
+                .expect("engine")
         );
     }
 }

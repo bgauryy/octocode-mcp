@@ -87,23 +87,98 @@ pub(crate) fn leading_doc_line(lines: &[&str], start: usize, ext: &str) -> Optio
 /// Declarations-only facts for outlines: the light oxc path for JS/TS; other
 /// languages' single tree-sitter walk already costs about the same.
 #[must_use]
-pub fn extract_declarations(content: &str, file_path: &str) -> Option<String> {
+pub fn extract_declarations_document(
+    content: &str,
+    file_path: &str,
+) -> Option<crate::graph::GraphFactsDocument> {
     js_oxc::extract_declarations(content, file_path)
         .or_else(|| tree_sitter_declarations(content, file_path))
-        .and_then(|facts| serde_json::to_string(&facts).ok())
 }
 
-/// [`extract_declarations`] parsed with the grammar of `extension` (a
-/// `language` override) instead of the path's own: declarations only, no
+/// [`extract_declarations_document`] parsed with the grammar of `extension`
+/// (a `language` override) instead of the path's own: declarations only, no
 /// call or path facts.
 #[must_use]
-pub fn extract_declarations_with_extension(
+pub fn extract_declarations_document_with_extension(
     content: &str,
     file_path: &str,
     extension: &str,
-) -> Option<String> {
+) -> Option<crate::graph::GraphFactsDocument> {
     graph_facts::extract_declaration_facts_with_extension(content, file_path, extension)
-        .and_then(|facts| serde_json::to_string(&facts).ok())
+}
+
+/// The symbols outline of `content` ([`extract_signatures_inner`]) and its
+/// declarations-only facts ([`extract_declarations_document`]) from ONE
+/// tree-sitter parse wherever both read the same grammar; JS/TS
+/// declarations come from oxc, the outline from tree-sitter. Runs on the
+/// deep parser stack, like `portable::extract_signatures`.
+pub fn extract_signatures_with_declarations(
+    content: &str,
+    file_path: &str,
+) -> (
+    Result<String, OutlineUnavailable>,
+    Option<crate::graph::GraphFactsDocument>,
+) {
+    let (content, file_path) = (content.to_owned(), file_path.to_owned());
+    run_on_deep_stack(move || Some(signatures_with_declarations(&content, &file_path)))
+        .unwrap_or((Err(OutlineUnavailable::ParseFailed), None))
+}
+
+fn signatures_with_declarations(
+    content: &str,
+    file_path: &str,
+) -> (
+    Result<String, OutlineUnavailable>,
+    Option<crate::graph::GraphFactsDocument>,
+) {
+    if content.len() > MAX_PARSE_SIZE {
+        return (Err(OutlineUnavailable::TooLarge), None);
+    }
+    if let Some(declarations) = js_oxc::extract_declarations(content, file_path) {
+        return (
+            extract_signatures_inner(content, file_path),
+            Some(declarations),
+        );
+    }
+    let shared = std::panic::catch_unwind(|| {
+        let ext = extension_of(file_path, true, "txt");
+        let grammar = crate::text::file_extension::grammar_extension(content, &ext);
+        let entry = languages::find_entry(grammar).ok_or(OutlineUnavailable::UnsupportedLanguage);
+        // Each reader keeps the deadline it has alone; only the parse is shared.
+        let deadline = || std::time::Instant::now() + extractor::AST_EXECUTION_TIMEOUT;
+        let tree = entry
+            .ok()
+            .and_then(|entry| extractor::parse_before(content, &entry.language, deadline()));
+        let declarations = graph_facts::declaration_facts_from_tree(
+            content,
+            file_path,
+            grammar,
+            tree.as_ref(),
+            deadline(),
+        );
+        let skeleton = entry.and_then(|entry| {
+            let cfg = LangExtractConfig {
+                language: entry.language.clone(),
+                body_query: entry.body_query,
+            };
+            if entry.body_query.is_empty() {
+                return Err(OutlineUnavailable::UnsupportedLanguage);
+            }
+            let tree = tree.as_ref().ok_or(OutlineUnavailable::ParseFailed)?;
+            let kept = extractor::outline_from_tree(content, &cfg, tree, deadline())
+                .ok_or(OutlineUnavailable::ParseFailed)?;
+            renderer::render_skeleton(&kept, entry.comment_style)
+                .ok_or(OutlineUnavailable::NoDeclarations)
+        });
+        (skeleton, declarations)
+    });
+    match shared {
+        Ok((skeleton, declarations)) => (
+            skeleton.and_then(|skeleton| usable_outline(content, skeleton)),
+            declarations,
+        ),
+        Err(_) => (Err(OutlineUnavailable::ParseFailed), None),
+    }
 }
 
 /// [`tree_sitter_graph_facts`] without call facts (see
@@ -214,7 +289,12 @@ pub fn extract_signatures_inner(
         )
     })
     .unwrap_or(Err(OutlineUnavailable::ParseFailed))?;
+    usable_outline(content, skeleton)
+}
 
+/// `skeleton` as the outline of `content`, unless it is no smaller than the
+/// source or mostly over-long lines.
+fn usable_outline(content: &str, skeleton: String) -> Result<String, OutlineUnavailable> {
     // Return the source view when the rendered outline is no smaller. A file
     // with few body lines can grow once the outline includes line gutters.
     //
@@ -285,10 +365,39 @@ mod tests {
     /// A `language` override outlines declarations only: the same
     /// declarations as the full facts under that grammar, and no call facts.
     #[test]
+    fn signatures_with_declarations_equal_the_two_separate_extractions() {
+        for (path, source) in [
+            (
+                "lib.rs",
+                "use std::fmt;\n\npub struct Point { x: f64 }\n\nimpl Point {\n    pub fn norm(&self) -> f64 {\n        let squared = self.x * self.x;\n        squared.sqrt()\n    }\n}\n\nfn helper() -> u8 {\n    let value = 1;\n    value + 1\n}\n",
+            ),
+            (
+                "app.py",
+                "import os\n\nclass Box:\n    def size(self):\n        total = 0\n        for item in self.items:\n            total += 1\n        return total\n",
+            ),
+            (
+                "main.ts",
+                "export function run(value: number): number {\n  const doubled = value * 2;\n  return doubled + 1;\n}\nexport class Widget {\n  render() {\n    return 1;\n  }\n}\n",
+            ),
+            ("notes.txt", "plain text\n"),
+        ] {
+            let (outline, declarations) = extract_signatures_with_declarations(source, path);
+            let alone = crate::portable::extract_signatures(source, path);
+            assert_eq!(outline, alone, "{path}");
+            assert_eq!(
+                declarations.and_then(|facts| serde_json::to_value(facts).ok()),
+                extract_declarations_document(source, path)
+                    .and_then(|facts| serde_json::to_value(facts).ok()),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
     fn an_override_outlines_declarations_without_call_facts() {
         let source = "fn make() -> u8 { helper(); 1 }\nfn helper() {}\n";
-        let lean: serde_json::Value = serde_json::from_str(
-            &extract_declarations_with_extension(source, "script", "rs").expect("facts"),
+        let lean = serde_json::to_value(
+            extract_declarations_document_with_extension(source, "script", "rs").expect("facts"),
         )
         .expect("json");
         let full: serde_json::Value = serde_json::from_str(
@@ -536,8 +645,12 @@ export function useEffect(
 
     #[test]
     fn flow_js_declarations_list_the_exported_hooks_not_keywords() {
-        let raw = extract_declarations(FLOW_HOOKS, "ReactHooks.js").expect("declarations");
-        let names = declaration_names(&raw);
+        let names = extract_declarations_document(FLOW_HOOKS, "ReactHooks.js")
+            .expect("declarations")
+            .declarations
+            .into_iter()
+            .map(|declaration| declaration.name)
+            .collect::<Vec<_>>();
         for hook in [
             "useState",
             "useReducer",
@@ -776,21 +889,15 @@ export function useEffect(
     #[test]
     fn rust_declaration_ranges_cover_whole_items() {
         let source = "pub fn first(value: usize) -> usize {\n    let mut total = 0;\n    for step in 0..value {\n        total += step;\n    }\n    total\n}\n\npub struct Point;\n\nimpl Point {\n    pub fn origin() -> Self {\n        Point\n    }\n}\n";
-        let raw = extract_declarations(source, "src/lib.rs").expect("declarations");
-        let facts: serde_json::Value = serde_json::from_str(&raw).expect("json");
-        let spans: Vec<(String, u64, u64)> = facts["declarations"]
-            .as_array()
+        let spans: Vec<(String, u32, u32)> = extract_declarations_document(source, "src/lib.rs")
             .expect("declarations")
-            .iter()
+            .declarations
+            .into_iter()
             .map(|declaration| {
                 (
-                    declaration["name"].as_str().unwrap_or_default().to_owned(),
-                    declaration["range"]["start"]["line"]
-                        .as_u64()
-                        .unwrap_or(u64::MAX),
-                    declaration["range"]["end"]["line"]
-                        .as_u64()
-                        .unwrap_or(u64::MAX),
+                    declaration.name,
+                    declaration.range.start.line,
+                    declaration.range.end.line,
                 )
             })
             .collect();
@@ -828,19 +935,12 @@ pub fn second() -> usize {
 }
 ",
         );
-        let raw = extract_declarations(&body, "src/lib.rs").expect("declarations");
-        let facts: serde_json::Value = serde_json::from_str(&raw).expect("json");
-        let ranges: Vec<(u64, u64)> = facts["declarations"]
-            .as_array()
-            .expect("declarations")
+        let facts = extract_declarations_document(&body, "src/lib.rs").expect("declarations");
+        let ranges: Vec<(u32, u32)> = facts
+            .declarations
             .iter()
-            .map(|d| {
-                (
-                    d["range"]["start"]["line"].as_u64().unwrap_or(u64::MAX),
-                    d["range"]["end"]["line"].as_u64().unwrap_or(u64::MAX),
-                )
-            })
+            .map(|d| (d.range.start.line, d.range.end.line))
             .collect();
-        assert_eq!(ranges, vec![(0, 20), (22, 25)], "{raw}");
+        assert_eq!(ranges, vec![(0, 20), (22, 25)], "{facts:?}");
     }
 }

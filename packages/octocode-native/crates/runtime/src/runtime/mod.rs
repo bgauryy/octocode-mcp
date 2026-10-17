@@ -13,7 +13,6 @@ mod lifecycle;
 mod limits;
 mod maintenance;
 mod row_indices;
-mod source_identity;
 mod tool_output;
 
 pub use crate::tools::result::FailureKind;
@@ -21,7 +20,7 @@ pub use engine::{Channel, HostOptions, RuntimeError, ToolOutcome, ToolRuntime};
 pub use exit::ExitClass;
 pub(crate) use exit::failure_kind;
 pub use lifecycle::{
-    DEFAULT_TIMEOUT, ExecutionContext, ExecutionError, RequestAdmission, RequestLimits,
+    Cost, DEFAULT_TIMEOUT, ExecutionContext, ExecutionError, RequestAdmission, RequestLimits,
     RequestRuntime,
 };
 pub use limits::{CloneLimits, RuntimeLimits, SelectionLimits};

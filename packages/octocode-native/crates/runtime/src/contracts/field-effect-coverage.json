@@ -8,6 +8,38 @@
     "workflow-metadata",
     "security-policy"
   ],
+  "envelope": {
+    "evidence": [
+      "tests/runtime_page_replay.rs",
+      "tests/runtime_clasify.rs",
+      "tests/runtime_batch_indices.rs"
+    ],
+    "fields": {
+      "queries": [
+        "consumed"
+      ],
+      "responseLength": [
+        "consumed",
+        "output-control",
+        "continuation"
+      ],
+      "responseOffset": [
+        "consumed",
+        "output-control",
+        "continuation"
+      ],
+      "responseScope": [
+        "consumed",
+        "output-control",
+        "continuation"
+      ],
+      "responseSnapshot": [
+        "consumed",
+        "continuation",
+        "security-policy"
+      ]
+    }
+  },
   "tools": {
     "clasify": {
       "evidence": [
@@ -17,11 +49,16 @@
         "src/tools/judgment/transport.rs",
         "tests/runtime_clasify.rs",
         "src/tools/source_capture/assets.rs",
-        "tests/runtime_clasify_media.rs"
+        "tests/runtime_clasify_media.rs",
+        "src/tools/clasify/sections.rs",
+        "src/tools/source_sections.rs",
+        "src/tools/source_capture/mod.rs"
       ],
       "variants": [
         "evaluate",
-        "models"
+        "models",
+        "sections",
+        "sectionsResume"
       ],
       "discriminators": {
         "questions{}.type": [
@@ -31,7 +68,8 @@
           "score"
         ],
         "operation": [
-          "models"
+          "models",
+          "sections"
         ],
         "assets{}.type": [
           "image"
@@ -161,13 +199,58 @@
         "assets{}.source.url": [
           "consumed",
           "security-policy"
+        ],
+        "resources": [
+          "consumed"
+        ],
+        "resources{}.query": [
+          "consumed"
+        ],
+        "resources{}.query.fullContent": [
+          "consumed",
+          "forwarded"
+        ],
+        "resources{}.query.owner": [
+          "forwarded"
+        ],
+        "resources{}.query.path": [
+          "forwarded",
+          "security-policy"
+        ],
+        "resources{}.query.ranges": [
+          "consumed",
+          "forwarded"
+        ],
+        "resources{}.query.ref": [
+          "consumed",
+          "forwarded"
+        ],
+        "resources{}.query.repo": [
+          "forwarded"
+        ],
+        "resources{}.query.snapshot": [
+          "forwarded",
+          "continuation"
+        ],
+        "resources{}.tool": [
+          "consumed"
+        ],
+        "resources{}.url": [
+          "consumed",
+          "security-policy"
+        ],
+        "assessment": [
+          "consumed",
+          "continuation",
+          "security-policy"
         ]
       }
     },
     "ghSearchRepo": {
       "evidence": [
         "src/tools/gh_search_repo/mod.rs",
-        "tests/runtime_github.rs"
+        "tests/runtime_github.rs",
+        "src/response/extras.rs"
       ],
       "variants": [
         "ghSearchRepo"
@@ -228,7 +311,8 @@
           "forwarded"
         ],
         "sort": [
-          "forwarded"
+          "forwarded",
+          "output-control"
         ],
         "stars": [
           "forwarded"
@@ -508,7 +592,8 @@
       "evidence": [
         "src/tools/gh_search_history/tests/terms.rs",
         "src/tools/gh_search_history/tests/provider.rs",
-        "tests/runtime_github_history.rs"
+        "tests/runtime_github_history.rs",
+        "src/response/extras.rs"
       ],
       "variants": [
         "commit",
@@ -572,7 +657,8 @@
           "forwarded"
         ],
         "sort": [
-          "forwarded"
+          "forwarded",
+          "output-control"
         ],
         "state": [
           "forwarded"
@@ -707,6 +793,10 @@
         ]
       },
       "fields": {
+        "cursor": [
+          "forwarded",
+          "continuation"
+        ],
         "ecosystem": [
           "forwarded"
         ],

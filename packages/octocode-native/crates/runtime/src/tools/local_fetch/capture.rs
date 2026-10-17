@@ -1,0 +1,183 @@
+use super::{LocalFetchQuery, LocalFetchResult, MAX_SOURCE_BYTES, PathAccess, executor};
+use crate::tools::cancel::CancellationCheck;
+use std::io::Read;
+use std::path::PathBuf;
+
+#[derive(Debug)]
+pub(crate) struct CapturedText {
+    pub text: String,
+    pub canonical: PathBuf,
+    pub snapshot: String,
+}
+
+pub(crate) fn capture_text(
+    query: &LocalFetchQuery,
+    paths: &impl PathAccess,
+    cancel: &impl CancellationCheck,
+) -> Result<CapturedText, Box<LocalFetchResult>> {
+    let failure = |code: &str, message: String| {
+        Box::new(LocalFetchResult::error(
+            query.path.to_string(),
+            code,
+            message,
+        ))
+    };
+    let check = || cancel.check().map_err(|error| failure("cancelled", error));
+    check()?;
+    let (validated, file, metadata) = executor::resolve_file(query, paths)?;
+    let too_large = || {
+        failure(
+            "classificationContextTooLarge",
+            format!(
+                "Complete source capture exceeds the {MAX_SOURCE_BYTES}-byte limit; no sections were assessed. Use a smaller text resource."
+            ),
+        )
+    };
+    if metadata.len() > MAX_SOURCE_BYTES {
+        return Err(too_large());
+    }
+    let mut reader = file.take(MAX_SOURCE_BYTES + 1);
+    let mut bytes = Vec::new();
+    let mut buffer = [0; 8192];
+    loop {
+        check()?;
+        let count = reader
+            .read(&mut buffer)
+            .map_err(|error| failure("fileReadFailed", error.to_string()))?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+        if bytes.len() as u64 > MAX_SOURCE_BYTES {
+            return Err(too_large());
+        }
+    }
+    check()?;
+    if bytes.contains(&0)
+        || octocode_engine::text::sniff(&bytes) == octocode_engine::text::BinaryVerdict::Binary
+    {
+        return Err(Box::new(executor::refuse_binary(query, &validated.display)));
+    }
+    let snapshot = crate::digest::sha256(&bytes);
+    if let Some(expected) = query.snapshot.as_deref()
+        && **expected != snapshot
+    {
+        return Err(Box::new(executor::stale_snapshot(query)));
+    }
+    let text = String::from_utf8(bytes).map_err(|_| {
+        failure(
+            "classificationContextUnavailable",
+            "The source is not valid UTF-8 text; no sections were assessed. Use a text representation with known encoding.".into(),
+        )
+    })?;
+    Ok(CapturedText {
+        text,
+        canonical: validated.canonical,
+        snapshot,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::cancel::NeverCancel;
+
+    struct CancelAfterFirst(std::sync::atomic::AtomicUsize);
+    impl CancellationCheck for CancelAfterFirst {
+        fn check(&self) -> Result<(), String> {
+            if self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                Ok(())
+            } else {
+                Err("cancelled".into())
+            }
+        }
+    }
+
+    #[test]
+    fn capture_preserves_complete_source_bytes_and_rejects_stale_snapshots() {
+        let root = tempfile::tempdir().expect("root");
+        let file = root.path().join("source.txt");
+        let source = "α\r\nSECRET\n🙂\n";
+        std::fs::write(&file, source).expect("write");
+        let paths = super::super::tests::Paths(root.path().into());
+        let mut query = super::super::tests::q(&file);
+        query.ranges = vec!["2-2".parse().expect("range")];
+        let captured = capture_text(&query, &paths, &NeverCancel).expect("capture");
+        assert_eq!(captured.text, source);
+        assert_eq!(captured.canonical, file.canonicalize().expect("canonical"));
+        assert_eq!(captured.snapshot, crate::digest::sha256(source.as_bytes()));
+        query.snapshot = Some(captured.snapshot.parse().expect("snapshot"));
+        assert!(capture_text(&query, &paths, &NeverCancel).is_ok());
+        std::fs::write(&file, "changed").expect("change");
+        assert_eq!(
+            capture_text(&query, &paths, &NeverCancel)
+                .unwrap_err()
+                .error_code
+                .as_deref(),
+            Some("staleSnapshot")
+        );
+    }
+
+    #[test]
+    fn capture_refuses_binary_invalid_utf8_oversize_and_cancelled_sources() {
+        let root = tempfile::tempdir().expect("root");
+        let file = root.path().join("source.txt");
+        let paths = super::super::tests::Paths(root.path().into());
+        let query = super::super::tests::q(&file);
+        let mut binary = vec![b'a'; 9000];
+        binary.push(0);
+        for (bytes, code) in [
+            (binary, "binaryFileUnsupported"),
+            (vec![b'a', 0xff], "classificationContextUnavailable"),
+        ] {
+            std::fs::write(&file, bytes).expect("write");
+            assert_eq!(
+                capture_text(&query, &paths, &NeverCancel)
+                    .unwrap_err()
+                    .error_code
+                    .as_deref(),
+                Some(code)
+            );
+        }
+        std::fs::File::create(&file)
+            .expect("file")
+            .set_len(MAX_SOURCE_BYTES + 1)
+            .expect("size");
+        assert_eq!(
+            capture_text(&query, &paths, &NeverCancel)
+                .unwrap_err()
+                .error_code
+                .as_deref(),
+            Some("classificationContextTooLarge")
+        );
+        std::fs::write(&file, "text").expect("write");
+        let cancel = CancelAfterFirst(std::sync::atomic::AtomicUsize::new(0));
+        assert_eq!(
+            capture_text(&query, &paths, &cancel)
+                .unwrap_err()
+                .error_code
+                .as_deref(),
+            Some("cancelled")
+        );
+    }
+
+    #[test]
+    fn capture_enforces_the_workspace_path_policy_and_regular_files() {
+        let root = tempfile::tempdir().expect("root");
+        let outside = tempfile::NamedTempFile::new().expect("outside");
+        let paths = crate::policy::path::PathPolicy::new(crate::policy::path::PathPolicyConfig {
+            workspace_root: Some(root.path().into()),
+            ..Default::default()
+        })
+        .expect("policy");
+        assert!(
+            capture_text(
+                &super::super::tests::q(outside.path()),
+                &paths,
+                &NeverCancel
+            )
+            .is_err()
+        );
+        assert!(capture_text(&super::super::tests::q(root.path()), &paths, &NeverCancel).is_err());
+    }
+}

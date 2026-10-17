@@ -450,8 +450,7 @@ export async function walk(ctx, spec, query, options = {}) {
 
 export async function recoverUnfiltered(ctx, spec, response, options = {}) {
   const leads = pages(dataOf(response));
-  const lead = leads.find(row => row.kind === 'unfiltered2') ??
-    leads.find(row => row.kind === 'unfiltered');
+  const lead = leads.find(row => row.kind === 'unfiltered');
   assert.ok(lead, 'classified output exposes next.unfiltered');
   const before = ctx.calls();
   const run = await walkLeads(

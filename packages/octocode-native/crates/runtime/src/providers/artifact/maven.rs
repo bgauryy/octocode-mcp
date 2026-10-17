@@ -41,6 +41,13 @@ mod patterns {
     pattern!(exclusions, r"(?s)<exclusions>.*?</exclusions>");
     pattern!(scope, r"<scope>\s*([^<]+?)\s*</scope>");
     pattern!(optional, r"<optional>\s*([^<]+?)\s*</optional>");
+    pattern!(parent, r"(?s)<parent>(.*?)</parent>");
+    pattern!(properties, r"(?s)<properties>(.*?)</properties>");
+    pattern!(
+        property,
+        r"<([A-Za-z0-9_.\-]+)>\s*([^<]*?)\s*</([A-Za-z0-9_.\-]+)>"
+    );
+    pattern!(reference, r"\$\{([^}]+)\}");
 
     /// The bounded set of `<tag>value</tag>` fields extracted from
     /// `maven-metadata.xml`. Unknown tags return `None` (the `regex` crate has
@@ -66,12 +73,16 @@ pub(crate) async fn maven(
     }
     let offset = state.offset.unwrap_or(0);
     let size = query.page_size();
+    // Central answers rows only at `start=0`: a page is the slice of one
+    // window from the first row that ends with the page, within the rows
+    // one answer serves.
+    let rows_through = offset.saturating_add(size as u64).min(REACHABLE_END);
     let url = endpoint(
         "https://central.sonatype.com/solrsearch/select",
         &[
             ("q", Some(solr_terms(&query.terms()))),
-            ("rows", Some(size.to_string())),
-            ("start", Some(offset.to_string())),
+            ("rows", Some(rows_through.to_string())),
+            ("start", Some("0".into())),
             ("wt", Some("json".into())),
         ],
     )?;
@@ -91,6 +102,8 @@ pub(crate) async fn maven(
         ArtifactType::Maven,
     )?
     .iter()
+    .skip(usize::try_from(offset).unwrap_or(usize::MAX))
+    .take(size)
     .map(|value| {
         let row = object_for(value, ArtifactType::Maven)?;
         let group = required(row.get("g"), ArtifactType::Maven)?;
@@ -124,6 +137,14 @@ pub(crate) async fn maven(
         registry: None,
     })
 }
+
+/// Central's search answers no row for any `start` past 0 while it still
+/// counts every match (`q=yaml&start=20` → numFound 87, 0 docs), but one
+/// answer serves up to the contract's `pageSize` maximum of rows
+/// (`rows=100` → all 87; measured 2026-10-16): the rows a discovery reaches
+/// end here.
+pub(super) const REACHABLE_END: u64 =
+    crate::tools::id::query_limits::artifact_search::PAGE_SIZE_MAXIMUM as u64;
 
 /// Keyword terms as a Central search query: the words ANDed, or the
 /// artifactId they spell hyphen-joined (`jackson databind` finds
@@ -217,20 +238,13 @@ async fn exact(
         if let Some(pom) = pom? {
             artifact.repository = pom.repository;
             artifact.dependencies = Some(pom.dependencies);
+            artifact.unresolved_properties = pom.unresolved;
         }
         artifact.published_at = published_at;
         // Maven names no commit; an upstream tag of this release pins the
         // lead (a `-jre`/`-android` classifier is not part of the tag).
-        if let Some(repository) = artifact.repository.as_deref() {
-            artifact.source_ref = super::release_ref::github_release_tag(
-                repository,
-                name,
-                release_version(&version),
-                client,
-            )
+        super::release_ref::pin_release_tag(&mut artifact, name, release_version(&version), client)
             .await;
-            artifact.source_tag = artifact.source_ref.is_some();
-        }
     }
     Ok(ArtifactProviderPage::single(artifact))
 }
@@ -281,6 +295,8 @@ struct Pom {
     repository: Option<String>,
     /// Required runtime dependencies (see [`required_dependencies`]).
     dependencies: Vec<String>,
+    /// Properties those dependencies name that this POM does not define.
+    unresolved: Vec<String>,
 }
 
 /// The versioned POM's facts. Enrichment is best-effort: a missing POM or
@@ -314,26 +330,30 @@ async fn read_pom(
         .captures(&clean)
         .and_then(|capture| capture.get(1))
         .and_then(|block| first_url(block.as_str()));
+    let (dependencies, unresolved) = required_dependencies(&clean);
     Ok(Some(Pom {
         repository: scm_url
             .or_else(|| first_url(&clean))
             .and_then(|value| super::util::canonical_repository(&value)),
-        dependencies: required_dependencies(&clean),
+        dependencies,
+        unresolved,
     }))
 }
 
 /// The project's own `<dependencies>` as `groupId:artifactId[:version]`
-/// (the version as written, absent when a parent or BOM manages it):
-/// compile and runtime scope only, never `<optional>true</optional>`.
-/// Managed, build-plugin, profile and reporting dependencies are not the
-/// project's requirements.
-fn required_dependencies(pom: &str) -> Vec<String> {
+/// (absent when a parent or BOM manages the version): compile and runtime
+/// scope only, never `<optional>true</optional>`. Managed, build-plugin,
+/// profile and reporting dependencies are not the project's requirements.
+/// A `${…}` the POM defines ([`pom_properties`]) is resolved; one it does
+/// not (a parent POM's property) stays as written and is returned beside
+/// the list, so it is stated, never guessed.
+fn required_dependencies(pom: &str) -> (Vec<String>, Vec<String>) {
     let project = patterns::inherited_blocks().replace_all(pom, "");
     let Some(block) = patterns::dependencies()
         .captures(&project)
         .and_then(|capture| capture.get(1))
     else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let tag = |pattern: &regex::Regex, text: &str| {
         pattern
@@ -341,7 +361,9 @@ fn required_dependencies(pom: &str) -> Vec<String> {
             .and_then(|capture| capture.get(1))
             .map(|value| value.as_str().trim().to_owned())
     };
-    patterns::dependency()
+    let properties = pom_properties(&project);
+    let mut unresolved = Vec::new();
+    let dependencies = patterns::dependency()
         .captures_iter(block.as_str())
         .filter_map(|capture| {
             let entry = patterns::exclusions().replace_all(capture.get(1)?.as_str(), "");
@@ -356,11 +378,100 @@ fn required_dependencies(pom: &str) -> Vec<String> {
                 tag(patterns::artifact_id(), &entry)?
             );
             Some(match tag(patterns::version(), &entry) {
-                Some(version) => format!("{coordinate}:{version}"),
+                Some(version) => {
+                    let version = resolve_properties(&version, &properties, &mut unresolved);
+                    format!("{coordinate}:{version}")
+                }
                 None => coordinate,
             })
         })
-        .collect()
+        .collect();
+    (dependencies, unresolved)
+}
+
+/// The properties a POM defines for itself: its `<properties>` entries and
+/// its own coordinates (`project.version`, `project.groupId`, …; a version
+/// or group it inherits is its parent's, `project.parent.*`).
+fn pom_properties(project: &str) -> std::collections::BTreeMap<String, String> {
+    let tag = |pattern: &regex::Regex, text: &str| {
+        pattern
+            .captures(text)
+            .and_then(|capture| capture.get(1))
+            .map(|value| value.as_str().trim().to_owned())
+    };
+    let mut properties = std::collections::BTreeMap::new();
+    if let Some(block) = patterns::properties()
+        .captures(project)
+        .and_then(|capture| capture.get(1))
+    {
+        for capture in patterns::property().captures_iter(block.as_str()) {
+            if capture.get(1).map(|open| open.as_str())
+                == capture.get(3).map(|close| close.as_str())
+            {
+                properties.insert(capture[1].to_owned(), capture[2].to_owned());
+            }
+        }
+    }
+    let parent = patterns::parent()
+        .captures(project)
+        .and_then(|capture| capture.get(1))
+        .map(|block| block.as_str().to_owned());
+    // The project's own coordinates sit outside every nested block.
+    let own = [
+        patterns::parent(),
+        patterns::properties(),
+        patterns::dependencies(),
+    ]
+    .into_iter()
+    .fold(project.to_owned(), |text, block| {
+        block.replace_all(&text, "").into_owned()
+    });
+    for (field, pattern) in [
+        ("version", patterns::version()),
+        ("groupId", patterns::group_id()),
+        ("artifactId", patterns::artifact_id()),
+    ] {
+        let inherited = parent.as_deref().and_then(|parent| tag(pattern, parent));
+        if let Some(value) = inherited.clone() {
+            properties.insert(format!("project.parent.{field}"), value);
+        }
+        if let Some(value) = tag(pattern, &own).or(inherited) {
+            properties.insert(format!("project.{field}"), value.clone());
+            properties.entry(field.to_owned()).or_insert(value);
+        }
+    }
+    properties
+}
+
+/// `text` with each `${name}` the POM defines replaced (a property naming
+/// another resolves too); names it does not define stay and are added to
+/// `unresolved` once.
+fn resolve_properties(
+    text: &str,
+    properties: &std::collections::BTreeMap<String, String>,
+    unresolved: &mut Vec<String>,
+) -> String {
+    let mut resolved = text.to_owned();
+    // Bounded: a property cycle stops here instead of expanding forever.
+    for _ in 0..8 {
+        let next = patterns::reference().replace_all(&resolved, |capture: &regex::Captures<'_>| {
+            properties
+                .get(&capture[1])
+                .cloned()
+                .unwrap_or_else(|| capture[0].to_owned())
+        });
+        if next == resolved {
+            break;
+        }
+        resolved = next.into_owned();
+    }
+    for capture in patterns::reference().captures_iter(&resolved) {
+        let name = capture[0].to_owned();
+        if !unresolved.contains(&name) {
+            unresolved.push(name);
+        }
+    }
+    resolved
 }
 
 /// The day Central received `group:name:version`, from its version search
@@ -482,6 +593,58 @@ mod tests {
                 .map(|(_, value)| value.into_owned());
             assert_eq!(q.as_deref(), Some(expected), "{keywords}");
         }
+    }
+
+    /// A Central double for `q=yaml`: 87 matches, rows only from start 0,
+    /// as many as `rows` asks.
+    fn yaml_central() -> RouteHttp {
+        (1..=super::REACHABLE_END).fold(RouteHttp::new(), |http, rows| {
+            let docs = (0..rows.min(87))
+                .map(|n| json!({"g": "g", "a": format!("a{n}"), "latestVersion": "1"}))
+                .collect::<Vec<_>>();
+            http.json(
+                &format!("/solrsearch/select?q=yaml&rows={rows}&start=0&wt=json"),
+                json!({"response": {"numFound": 87, "docs": docs}}),
+            )
+        })
+    }
+
+    /// Central serves no row past start 0, yet every match within one
+    /// answer is reachable: 20-row pages walk all 87 rows, each page sliced
+    /// from a start-0 answer, then stop.
+    #[tokio::test]
+    async fn maven_pages_walk_every_row_central_serves_from_its_first() {
+        let http = yaml_central();
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        let mut names = Vec::new();
+        let mut state = ArtifactProviderState::default();
+        for page in 1.. {
+            let query = artifact_query(
+                json!({"ecosystem": ArtifactType::Maven, "keywords": ["yaml"],
+                    "pageSize": 20, "page": page}),
+                None,
+            );
+            let served = maven(&query, &state, &client).await.expect("page");
+            assert_eq!(served.terminal_limit, None, "page {page}");
+            names.extend(served.artifacts.into_iter().map(|row| row.name));
+            let Some(next) = served.next_state else {
+                break;
+            };
+            state = next;
+        }
+        let unique = names.iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!((names.len(), unique.len()), (87, 87), "{names:?}");
+        assert!(
+            http.seen()
+                .iter()
+                .filter(|seen| seen.url.path() == "/solrsearch/select")
+                .all(|seen| seen
+                    .url
+                    .query_pairs()
+                    .any(|(key, value)| key == "start" && value == "0")),
+            "every request starts at 0"
+        );
     }
 
     #[tokio::test]
@@ -706,5 +869,63 @@ mod tests {
         assert_eq!(err.code, "invalidInput");
         assert!(err.message.starts_with("packageName "), "{err:?}");
         assert!(http.seen().is_empty());
+    }
+
+    /// Dependency versions written as `${…}` resolve from the POM's own
+    /// `<properties>` and coordinates (`project.version`, a property naming
+    /// another); a property it does not define (a parent POM's) stays as
+    /// written and is named once, never guessed.
+    #[tokio::test]
+    async fn maven_dependency_properties_resolve_or_are_named() {
+        let pom = r#"<project>
+            <parent><groupId>com.google.guava</groupId><artifactId>guava-parent</artifactId><version>33.7.1-jre</version></parent>
+            <artifactId>guava</artifactId>
+            <properties><base>2.0</base><jsr.version>${base}.1</jsr.version></properties>
+            <dependencies>
+              <dependency><groupId>com.google.guava</groupId><artifactId>failureaccess</artifactId><version>${failureaccess.version}</version></dependency>
+              <dependency><groupId>com.google.guava</groupId><artifactId>sibling</artifactId><version>${project.version}</version></dependency>
+              <dependency><groupId>com.google.code.findbugs</groupId><artifactId>jsr305</artifactId><version>${jsr.version}</version></dependency>
+              <dependency><groupId>x</groupId><artifactId>again</artifactId><version>${failureaccess.version}</version></dependency>
+            </dependencies>
+        </project>"#;
+        let item = exact_with(&guava(pom)).await;
+        assert_eq!(
+            item.dependencies,
+            Some(vec![
+                "com.google.guava:failureaccess:${failureaccess.version}".to_owned(),
+                "com.google.guava:sibling:33.7.1-jre".to_owned(),
+                "com.google.code.findbugs:jsr305:2.0.1".to_owned(),
+                "x:again:${failureaccess.version}".to_owned(),
+            ])
+        );
+        assert_eq!(item.unresolved_properties, ["${failureaccess.version}"]);
+    }
+
+    /// Maven metadata and POMs are XML answers cached like JSON ones: a
+    /// repeated exact lookup asks the registry nothing.
+    #[tokio::test]
+    async fn maven_xml_answers_are_cached() {
+        let http = guava("<project><url>https://github.com/google/guava</url></project>");
+        let cache = super::super::ArtifactCache::new(None);
+        let b = test_budget();
+        let client = RegistryClient {
+            cache: Some(&cache),
+            ..RegistryClient::uncached(&http, &b)
+        };
+        for _ in 0..2 {
+            let page = maven(&guava_query(), &ArtifactProviderState::default(), &client)
+                .await
+                .expect("maven exact");
+            assert_eq!(
+                page.artifacts[0].repository.as_deref(),
+                Some("https://github.com/google/guava")
+            );
+        }
+        let xml = http
+            .seen()
+            .iter()
+            .filter(|seen| seen.accept == "application/xml")
+            .count();
+        assert_eq!(xml, 2, "metadata and POM once each");
     }
 }

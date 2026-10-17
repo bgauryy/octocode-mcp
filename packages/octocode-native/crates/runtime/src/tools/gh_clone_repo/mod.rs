@@ -367,13 +367,13 @@ struct Plan<'a> {
 }
 
 impl Plan<'_> {
-    /// The cache entry of `branch`, once the path policy admits it.
-    fn target(&self, branch: &str) -> Result<PathBuf, CloneError> {
+    /// The cache entry of `commit`, once the path policy admits it.
+    fn target(&self, commit: &str) -> Result<PathBuf, CloneError> {
         let clone_dir = cache::clone_dir(
             &self.context.config.cache_home,
             &self.query.owner,
             &self.query.repo,
-            branch,
+            commit,
             self.sparse_key.as_deref(),
             self.depth,
             &self.host,
@@ -385,12 +385,12 @@ impl Plan<'_> {
         Ok(clone_dir)
     }
 
-    /// The identity a checkout of `branch` records and a hit must match.
-    fn identity<'b>(&'b self, branch: &'b str) -> cache::Identity<'b> {
+    /// The identity a checkout of `commit` records and a hit must match.
+    fn identity<'b>(&'b self, commit: &'b str) -> cache::Identity<'b> {
         cache::Identity {
             owner: &self.query.owner,
             repo: &self.query.repo,
-            branch,
+            commit,
             sparse_key: self.sparse_key.as_deref(),
             depth: self.depth,
         }
@@ -400,9 +400,10 @@ impl Plan<'_> {
         self.query.force_refresh.unwrap_or(false)
     }
 
-    /// The row of a checkout of `branch` at `clone_dir`: a served cache hit
-    /// (`cached`); a fresh checkout clears the flag.
-    fn result(&self, branch: &str, clone_dir: &Path, hit: CacheHit) -> CloneResult {
+    /// The row of a checkout of `commit` at `clone_dir`: a served cache hit
+    /// (`cached`); a fresh checkout clears the flag. `run` names the ref
+    /// that was asked for.
+    fn result(&self, commit: &str, clone_dir: &Path, hit: CacheHit) -> CloneResult {
         let bytes = hit
             .size
             .unwrap_or_else(|| cache::checked_out_size(clone_dir));
@@ -420,7 +421,7 @@ impl Plan<'_> {
                 cached: true,
                 commit_sha: hit.commit_sha,
                 verified: hit.verified,
-                resolved_ref: branch.to_owned(),
+                resolved_ref: commit.to_owned(),
                 requested_paths: paths.map(<[String]>::to_vec),
                 history_depth: (self.depth > 1).then_some(self.depth),
                 cloned_at,
@@ -455,10 +456,14 @@ fn execute_clone(
     };
     authorize_home(context)?;
     // `run` pins every row to a commit before it gets here.
-    let Some(reference) = query.ref_.as_deref() else {
+    let Some(reference) = query
+        .ref_
+        .as_deref()
+        .filter(|reference| octocode_github::is_full_sha(reference))
+    else {
         return Err(CloneError::new(
             "invalidInput",
-            "ref must name the commit to check out",
+            "ref must name the full commit SHA to check out",
         ));
     };
     let clone_dir = plan.target(reference)?;
@@ -528,9 +533,7 @@ fn cache_hit(
     let Ok(commit_sha) = git::read_head(context, clone_dir) else {
         return Ok(None);
     };
-    if octocode_github::is_full_sha(identity.branch)
-        && commit_sha != identity.branch.to_ascii_lowercase()
-    {
+    if commit_sha != identity.commit.to_ascii_lowercase() {
         return Ok(None);
     }
     // A modified cache no longer holds the fetched revision. Do not replace
@@ -605,8 +608,8 @@ fn publish_stage(
     Ok(meta)
 }
 
-/// Check out `reference` into `stage` and verify it: every sparse path
-/// exists, and a requested commit is the checked-out HEAD. Returns the
+/// Check out the commit `reference` into `stage` and verify it: every
+/// sparse path exists, and the commit is the checked-out HEAD. Returns the
 /// checked-out commit.
 fn checkout_stage(plan: &Plan<'_>, reference: &str, stage: &Path) -> Result<String, CloneError> {
     let context = plan.context;
@@ -630,7 +633,7 @@ fn checkout_stage(plan: &Plan<'_>, reference: &str, stage: &Path) -> Result<Stri
         }
     }
     let commit_sha = git::read_head(context, stage)?;
-    if octocode_github::is_full_sha(reference) && commit_sha != reference.to_ascii_lowercase() {
+    if commit_sha != reference.to_ascii_lowercase() {
         return Err(CloneError::new(
             "commitMismatch",
             format!("Checkout HEAD {commit_sha} does not match requested commit {reference}."),
@@ -666,8 +669,11 @@ fn write_stage_meta(
             ));
         }
     }
-    // The size of a clean checkout cannot change: record it once.
-    meta.checkout_bytes = Some(cache::checked_out_size(stage));
+    // The size of a clean checkout cannot change: record it once, the
+    // checked-out files for the row and the whole entry for eviction.
+    let checkout = cache::checked_out_size(stage);
+    meta.checkout_bytes = Some(checkout);
+    meta.size_bytes = Some(checkout.saturating_add(cache::git_dir_size(stage)));
     cache::write_meta(stage, &meta)?;
     Ok(meta)
 }

@@ -12,9 +12,8 @@ use std::time::{Duration, Instant};
 
 mod admission;
 
-/// Version 6 adds candidate pages: a plan judges a pool of the ordinals,
-/// and the unjudged rest opens the next candidate page.
-const VERSION: u8 = 6;
+/// Version 7 keeps permanently oversized states out of candidate-page pools.
+const VERSION: u8 = 7;
 
 #[derive(Clone)]
 pub(crate) struct Runtime {
@@ -70,6 +69,7 @@ impl From<&str> for JudgeFailure {
 }
 
 pub(crate) struct JudgeCall<'a> {
+    pub usage: &'a mut crate::tools::judgment::stats::ClassificationUsage,
     pub candidates: &'a [Candidate],
     pub admitted: &'a [usize],
     pub classifiers: &'a [String],
@@ -95,6 +95,10 @@ impl Candidate {
             state,
             evidence_chars,
         }
+    }
+
+    fn fits_budget(&self, limits: SelectionLimits) -> bool {
+        self.state.is_some() && limits.max_candidates > 0 && self.evidence_chars <= limits.max_chars
     }
 }
 
@@ -209,6 +213,38 @@ pub(crate) struct Outcome {
 }
 
 impl Outcome {
+    /// Whether the provider could not answer for this view, on this page or
+    /// on the page whose plan this one replays (its receipt is
+    /// `unavailable` for a [transient](crate::tools::judgment::transport::is_transient)
+    /// code): nothing was judged, and every candidate is shown as found.
+    pub(crate) fn provider_unavailable(&self) -> bool {
+        self.receipt.status == SelectionStatus::Unavailable
+            && self
+                .receipt
+                .reason
+                .as_deref()
+                .is_some_and(crate::tools::judgment::transport::is_transient)
+    }
+
+    /// The ordinals of `total` candidates the view shows, ascending: the
+    /// selected ones, or every one this page considers when the provider
+    /// was unavailable.
+    pub(crate) fn shown(&self, total: usize) -> Vec<usize> {
+        if self.provider_unavailable() {
+            (0..total)
+                .filter(|&ordinal| self.considers(ordinal))
+                .collect()
+        } else {
+            self.selected.clone()
+        }
+    }
+
+    /// Whether the view leaves evidence out, so its unfiltered lead reaches
+    /// more than the view shows.
+    pub(crate) fn leaves_out(&self) -> bool {
+        self.receipt.selected_items < self.receipt.total_items && !self.provider_unavailable()
+    }
+
     /// Whether this candidate page judged `ordinal` (or left it unjudged);
     /// an ordinal outside its pool was judged by an earlier candidate page.
     pub(crate) fn considers(&self, ordinal: usize) -> bool {
@@ -246,13 +282,54 @@ pub(crate) enum Failure {
     Stale,
     Cancelled,
     /// The provider failed every judged candidate: the row reports this
-    /// error, its `unavailable` receipt and an unfiltered lead.
+    /// error, its `unavailable` receipt and an unfiltered lead, unless the
+    /// failure is transient ([`unless_transient`]).
     Provider(Box<ProviderFailure>),
 }
 
 pub(crate) struct ProviderFailure {
     pub error: ProviderError,
-    pub receipt: Selection,
+    /// The finished `unavailable` outcome: nothing judged, its plan
+    /// recording the provider's code, so a later page replays it without
+    /// another provider call.
+    pub outcome: Outcome,
+}
+
+/// A provider that cannot answer now never withholds evidence the reader
+/// already has: [`select`]'s failure for a
+/// [transient](crate::tools::judgment::transport::is_transient) code
+/// becomes its finished `unavailable` outcome, whose view shows every
+/// candidate ([`Outcome::shown`]), with the error the row warns with
+/// ([`unclassified_warning`]). A refused credential, quota, content or size
+/// error stays the failure: the caller must fix it, so it is never masked as
+/// a page.
+pub(crate) fn unless_transient(
+    selected: Result<Outcome, Failure>,
+) -> Result<(Outcome, Option<ProviderError>), Failure> {
+    match selected {
+        Err(Failure::Provider(failure))
+            if crate::tools::judgment::transport::is_transient(&failure.error.code) =>
+        {
+            let ProviderFailure { error, outcome } = *failure;
+            Ok((outcome, Some(error)))
+        }
+        selected => selected.map(|outcome| (outcome, None)),
+    }
+}
+
+/// The warning of a view shown unfiltered because the provider could not
+/// answer: `subject` names the view ("this search"), `shown` what is shown
+/// ("its hits are"); the provider's code, message and hints follow.
+pub(crate) fn unclassified_warning(error: &ProviderError, subject: &str, shown: &str) -> String {
+    let mut note = format!(
+        "clasifyContext could not classify {subject} ({}: {}); {shown} shown unfiltered.",
+        error.code, error.message
+    );
+    for hint in &error.hints {
+        note.push(' ');
+        note.push_str(hint);
+    }
+    note
 }
 
 impl ProviderFailure {
@@ -267,7 +344,7 @@ impl ProviderFailure {
         crate::tools::result::ToolError {
             hints,
             next: Some(Box::new(json!({ "unfiltered": unfiltered }))),
-            selection: Some(Box::new(self.receipt)),
+            selection: Some(Box::new(self.outcome.receipt)),
             ..crate::tools::result::ToolError::new(code, message)
         }
     }
@@ -393,7 +470,7 @@ pub(crate) fn apply_sanitized_rows(
                 Candidate::new(has_text.then_some(state))
             })
             .collect::<Vec<_>>();
-        let outcome = match select_scoped(
+        let (outcome, provider) = match unless_transient(select_scoped(
             Some(runtime),
             query,
             &source,
@@ -402,8 +479,8 @@ pub(crate) fn apply_sanitized_rows(
             None,
             SelectionScope::ProviderPage,
             SelectionUnit::Files,
-        ) {
-            Ok(outcome) => outcome,
+        )) {
+            Ok(selected) => selected,
             Err(Failure::Cancelled) => return Err(crate::runtime::ExecutionError::Cancelled),
             Err(Failure::Provider(failure)) => {
                 row["status"] = json!("error");
@@ -423,10 +500,10 @@ pub(crate) fn apply_sanitized_rows(
                 continue;
             }
         };
+        let shown = outcome.shown(values.len());
         let mut values = values.into_iter().map(Some).collect::<Vec<_>>();
         data["files"] = Value::Array(
-            outcome
-                .selected
+            shown
                 .iter()
                 .filter_map(|&i| values.get_mut(i).and_then(Option::take))
                 .collect(),
@@ -434,14 +511,30 @@ pub(crate) fn apply_sanitized_rows(
         data["selection"] = serde_json::to_value(&outcome.receipt).unwrap_or(Value::Null);
         strip_plan_from_tool_continuations(data, tool);
         // The unfiltered page reaches what selection left out; a page that
-        // kept every candidate (or had none) leaves nothing out.
-        if outcome.receipt.selected_items < outcome.receipt.total_items {
+        // kept every candidate (or had none, or shows every one because the
+        // provider could not answer) leaves nothing out.
+        if outcome.leaves_out() {
             if !data["next"].is_object() {
                 data["next"] = json!({});
             }
             data["next"]["unfiltered"] = provider_page_unfiltered(tool, query);
         }
+        if let Some(token) = outcome.next_candidates(tool) {
+            let mut next_query = query.clone();
+            next_query["selection"] = json!(token);
+            if !data["next"].is_object() {
+                data["next"] = json!({});
+            }
+            data["next"]["nextCandidatePage"] =
+                crate::tools::result::Continuation::new(tool, next_query).build();
+        }
         tool.output().finish_selection(data, query);
+        if let Some(error) = &provider {
+            crate::tools::paging::push_warnings(
+                data,
+                [unclassified_warning(error, "this page", "its files are")],
+            );
+        }
         let response_row = if queries.len() == 1 {
             Some(&mut *response_query)
         } else {
@@ -465,6 +558,7 @@ fn unavailable_receipt(total: usize, reason: &str) -> Value {
         excluded_items: 0,
         unknown_items: total,
         reason: Some(reason.into()),
+        usage: None,
     })
     .unwrap_or(Value::Null)
 }
@@ -605,12 +699,20 @@ impl Plan {
         }))
     }
 
-    /// Records every eligible ordinal outside `admitted` as unjudged.
-    fn mark_unjudged(&mut self, candidates: &[Candidate], admitted: &[usize]) {
+    /// Records deferred ordinals that can fit a fresh page's budget.
+    fn mark_unjudged(
+        &mut self,
+        candidates: &[Candidate],
+        admitted: &[usize],
+        limits: SelectionLimits,
+    ) {
         let admitted = admitted.iter().copied().collect::<HashSet<_>>();
         let mut runs: Vec<[u32; 2]> = Vec::new();
         for (ordinal, candidate) in candidates.iter().enumerate() {
-            if candidate.state.is_none() || admitted.contains(&ordinal) || !self.in_pool(ordinal) {
+            if !candidate.fits_budget(limits)
+                || admitted.contains(&ordinal)
+                || !self.in_pool(ordinal)
+            {
                 continue;
             }
             let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
@@ -700,6 +802,7 @@ impl Plan {
             unknown_items: size - self.selected.len() as i64 - self.excluded.len() as i64,
             total_items: size,
             reason: self.reason.clone(),
+            usage: None,
         };
         let encode =
             |plan: &Plan| URL_SAFE_NO_PAD.encode(serde_json::to_vec(plan).unwrap_or_default());
@@ -801,6 +904,17 @@ pub(crate) fn select_scoped(
     scope: SelectionScope,
     unit: SelectionUnit,
 ) -> Result<Outcome, Failure> {
+    let finish = |plan: Plan, usage: &crate::tools::judgment::stats::ClassificationUsage| {
+        let mut outcome = plan.finish();
+        if query["extras"]
+            .as_array()
+            .is_some_and(|extras| extras.iter().any(|extra| extra == "stats"))
+        {
+            outcome.receipt.usage = Some(usage.output());
+        }
+        outcome
+    };
+    let mut usage = crate::tools::judgment::stats::ClassificationUsage::default();
     let limits = runtime.map_or(
         SelectionLimits {
             max_candidates: 0,
@@ -817,7 +931,7 @@ pub(crate) fn select_scoped(
             .filter(|plan| plan.valid(&bound, candidates.len(), scope, unit))
             .ok_or(Failure::Stale)?;
         if !plan.opens {
-            return Ok(plan.finish());
+            return Ok(finish(plan, &usage));
         }
         pool = plan.pool;
     }
@@ -838,7 +952,7 @@ pub(crate) fn select_scoped(
             SelectionStatus::Unavailable
         };
         plan.reason = Some(reason.into());
-        return Ok(plan.finish());
+        return Ok(finish(plan, &usage));
     }
     let mut admitted = Vec::new();
     let mut chars = 0usize;
@@ -850,7 +964,7 @@ pub(crate) fn select_scoped(
         if admitted.len() == limits.max_candidates {
             break;
         }
-        if candidate.state.is_some()
+        if candidate.fits_budget(limits)
             && candidate.evidence_chars <= limits.max_chars.saturating_sub(chars)
         {
             chars += candidate.evidence_chars;
@@ -862,18 +976,27 @@ pub(crate) fn select_scoped(
         .enumerate()
         .filter(|(ordinal, candidate)| candidate.state.is_some() && plan.in_pool(*ordinal))
         .count();
-    let omitted_reason = match (eligible < pool_size, admitted.len() < eligible) {
-        (true, true) => "candidateEligibilityAndBudget",
-        (true, false) => "candidateIneligible",
-        _ => "candidateBudget",
+    let oversized = candidates.iter().enumerate().any(|(ordinal, candidate)| {
+        plan.in_pool(ordinal)
+            && candidate.state.is_some()
+            && candidate.evidence_chars > limits.max_chars
+    });
+    let omitted_reason = if oversized {
+        "candidateStateTooLarge"
+    } else {
+        match (eligible < pool_size, admitted.len() < eligible) {
+            (true, true) => "candidateEligibilityAndBudget",
+            (true, false) => "candidateIneligible",
+            _ => "candidateBudget",
+        }
     };
-    plan.mark_unjudged(candidates, &admitted);
+    plan.mark_unjudged(candidates, &admitted, limits);
     if admitted.is_empty() {
         plan.reason = Some(omitted_reason.into());
-        return Ok(plan.finish());
+        return Ok(finish(plan, &usage));
     }
     let Some(runtime) = runtime else {
-        return Ok(plan.finish());
+        return Ok(finish(plan, &usage));
     };
     let context = &query["clasifyContext"];
     let classifiers = context["classifiers"]
@@ -885,6 +1008,7 @@ pub(crate) fn select_scoped(
         .collect::<Option<Vec<_>>>()
         .ok_or(Failure::Stale)?;
     let outcomes = runtime.judge.select(JudgeCall {
+        usage: &mut usage,
         candidates,
         admitted: &admitted,
         classifiers: &classifiers,
@@ -945,11 +1069,11 @@ pub(crate) fn select_scoped(
             plan.reason = Some(error.code.clone());
             return Err(Failure::Provider(Box::new(ProviderFailure {
                 error,
-                receipt: plan.finish().receipt,
+                outcome: finish(plan, &usage),
             })));
         }
     }
-    Ok(plan.finish())
+    Ok(finish(plan, &usage))
 }
 
 #[cfg(test)]
@@ -1172,6 +1296,134 @@ mod tests {
         assert!(structured["results"][0]["data"].get("ranking").is_none());
         assert!(response_query.get("selection").is_some());
         assert!(response_query.get("ranking").is_none());
+    }
+
+    #[test]
+    fn provider_candidate_pages_cover_the_same_page_and_refuse_source_drift() {
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let mut runtime = test_runtime(
+            std::sync::Arc::new(SelectedJudge(calls.clone())),
+            executor.handle().clone(),
+        );
+        runtime.limits.max_candidates = 2;
+        runtime.limits.max_chars = 1_024;
+        let mut files: Vec<Value> = (0..5)
+            .map(|i| json!({"path":format!("{i}.rs"),"lines":[format!("1\tfn candidate_{i}() {{}}")]}))
+            .collect();
+        files.push(json!({"path":"oversized.rs","lines":["x".repeat(2_000)]}));
+        let original = json!({"results":[{"index":0,"data":{
+            "owner":"o","repo":"r","files":files,
+            "next":{"nextPage":{"tool":"ghSearchCode","query":{"queries":[{
+                "owner":"o","repo":"r","keywords":["fn"],"page":4
+            }]}}}
+        }}]});
+        let mut query = json!({"owner":"o","repo":"r","page":3,"keywords":["fn"],
+            "clasifyContext":{"classifiers":["Does this define a function?"]}});
+        let mut seen = HashSet::new();
+        let mut first_next = None;
+        for page in 0..3 {
+            let mut output = original.clone();
+            apply_sanitized_rows(
+                ToolId::GhSearchCode,
+                &mut output,
+                std::slice::from_ref(&query),
+                &[0],
+                &mut query.clone(),
+                &runtime,
+            )
+            .expect("candidate page");
+            let data = &output["results"][0]["data"];
+            for file in data["files"].as_array().expect("selected files") {
+                assert!(seen.insert(file["path"].as_str().unwrap().to_owned()));
+            }
+            assert_eq!(data["next"]["nextPage"]["query"]["queries"][0]["page"], 4);
+            if page == 0 {
+                assert_eq!(data["selection"]["totalItems"], 6);
+                assert_eq!(data["selection"]["unknownItems"], 4);
+                assert_eq!(data["selection"]["reason"], "candidateStateTooLarge");
+                assert!(data["next"]["unfiltered"].is_object());
+            }
+            let next = data["next"]["nextCandidatePage"]["query"]["queries"][0].clone();
+            if page < 2 {
+                assert_eq!(next["page"], 3);
+                assert!(next["selection"].is_string());
+                first_next.get_or_insert_with(|| next.clone());
+                query = next;
+            } else {
+                assert!(next.is_null(), "oversized evidence cannot loop forever");
+            }
+        }
+        assert_eq!(seen.len(), 5);
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        let query = first_next.expect("continuation");
+        let mut changed = original;
+        changed["results"][0]["data"]["files"][0]["lines"] = json!(["1\tchanged"]);
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut changed,
+            std::slice::from_ref(&query),
+            &[0],
+            &mut query.clone(),
+            &runtime,
+        )
+        .expect("typed stale error");
+        assert_eq!(changed["results"][0]["data"]["errorCode"], "staleSnapshot");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "drift cannot trigger inference"
+        );
+    }
+
+    #[test]
+    fn inline_usage_is_opt_in_and_plan_replay_reports_no_new_spend() {
+        struct UsageJudge;
+        impl SelectionJudge for UsageJudge {
+            fn identity(&self) -> Value {
+                json!({"test":"usage"})
+            }
+            fn select(&self, call: JudgeCall<'_>) -> Judgments {
+                call.usage
+                    .add_record(&json!({"provider_calls":2,"input_tokens":10,"output_tokens":3}));
+                Ok(call
+                    .admitted
+                    .iter()
+                    .map(|&i| (i, Decision::Selected))
+                    .collect())
+            }
+        }
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let runtime = test_runtime(std::sync::Arc::new(UsageJudge), executor.handle().clone());
+        let query = json!({"extras":["stats"],"clasifyContext":{"classifiers":["Does this state the fact?"]}});
+        let candidates = vec![Candidate::new(Some(json!("the fact")))];
+        let run = |query: &Value, token: Option<&str>| {
+            select(
+                Some(&runtime),
+                query,
+                "source",
+                token,
+                &candidates,
+                None,
+                SelectionUnit::Files,
+            )
+            .ok()
+            .expect("selection")
+        };
+        let fresh = run(&query, None);
+        let usage = serde_json::to_value(&fresh.receipt.usage).unwrap();
+        assert_eq!(usage["calls"], 2);
+        assert_eq!(usage["knownUsageCalls"], 1);
+        assert_eq!(usage["unknownUsageCalls"], 1);
+        assert_eq!(usage["inputTokens"], 10);
+        let replay = run(&query, Some(&fresh.token));
+        let usage = serde_json::to_value(&replay.receipt.usage).unwrap();
+        assert_eq!(usage["calls"], 0);
+        assert_eq!(usage["inputTokens"], 0);
+        assert_eq!(replay.selected, fresh.selected);
+        let mut compact = query;
+        compact.as_object_mut().unwrap().remove("extras");
+        assert!(run(&compact, Some(&fresh.token)).receipt.usage.is_none());
     }
 
     struct FailedJudge;
@@ -1405,6 +1657,95 @@ mod tests {
         );
     }
 
+    /// A provider that cannot answer now (down, overloaded, unreachable)
+    /// never withholds a provider page that succeeded: every file is shown
+    /// under an `unavailable` receipt naming the provider's code, the row
+    /// warns with its error and hint, no unfiltered lead repeats the page,
+    /// and the response pager's replay of the recorded plan asks no provider.
+    #[test]
+    fn a_provider_that_is_down_shows_the_whole_page_as_unavailable() {
+        struct Down(std::sync::Arc<AtomicUsize>);
+        impl SelectionJudge for Down {
+            fn identity(&self) -> Value {
+                json!({"backend":"down"})
+            }
+            fn select(&self, _call: JudgeCall<'_>) -> Judgments {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(JudgeFailure::Provider(ProviderError {
+                    code: crate::tools::judgment::transport::CIRCUIT_OPEN.into(),
+                    message: "Classification provider returned HTTP 503 Service Unavailable".into(),
+                    hints: vec!["Retry later.".into()],
+                }))
+            }
+        }
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let runtime = test_runtime(
+            std::sync::Arc::new(Down(calls.clone())),
+            executor.handle().clone(),
+        );
+        let query = json!({"owner":"o","repo":"r","keywords":["retry"],
+            "clasifyContext":{"classifiers":["Does it state when retries stop?"]}});
+        let page = || {
+            json!({"results":[{"index":0,"data":{"files":[
+                {"path":"a.rs","matches":[{"line":1,"value":"FIRST_BODY"}]},
+                {"path":"b.rs","matches":[{"line":2,"value":"SECOND_BODY"}]}
+            ]}}]})
+        };
+        let mut output = page();
+        let mut response_query = query.clone();
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut output,
+            std::slice::from_ref(&query),
+            &[0],
+            &mut response_query,
+            &runtime,
+        )
+        .expect("a provider that is down is a row outcome");
+        let row = &output["results"][0];
+        assert_ne!(row["status"], "error", "{row}");
+        let data = &row["data"];
+        let paths = data["files"]
+            .as_array()
+            .expect("files")
+            .iter()
+            .map(|file| file["path"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(paths, [json!("a.rs"), json!("b.rs")], "{data}");
+        assert_eq!(data["selection"]["status"], "unavailable");
+        assert_eq!(
+            data["selection"]["reason"],
+            crate::tools::judgment::transport::CIRCUIT_OPEN
+        );
+        assert_eq!(data["selection"]["unknownItems"], 2);
+        let warnings = data["warnings"].to_string();
+        assert!(
+            warnings.contains("HTTP 503") && warnings.contains("shown unfiltered"),
+            "{data}"
+        );
+        assert!(data["next"].get("unfiltered").is_none(), "{data}");
+        let token = response_query["selection"].clone();
+        assert!(token.is_string(), "the plan replays: {response_query}");
+        // The response pager replays the recorded plan: no provider call.
+        let mut replayed_query = query.clone();
+        replayed_query["selection"] = token;
+        let mut replay = page();
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut replay,
+            std::slice::from_ref(&replayed_query),
+            &[0],
+            &mut replayed_query.clone(),
+            &runtime,
+        )
+        .expect("replay");
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "one provider call");
+        let data = &replay["results"][0]["data"];
+        assert_eq!(data["selection"]["status"], "unavailable", "{data}");
+        assert_eq!(data["files"].as_array().map(Vec::len), Some(2), "{data}");
+    }
+
     struct SelectedJudge(std::sync::Arc<AtomicUsize>);
     impl SelectionJudge for SelectedJudge {
         fn identity(&self) -> Value {
@@ -1470,7 +1811,10 @@ mod tests {
         .unwrap_or_else(|_| panic!("budgeted order"));
         assert_eq!(outcome.selected, [0, 2]);
         assert_eq!(outcome.receipt.status, SelectionStatus::Partial);
-        assert_eq!(outcome.receipt.reason.as_deref(), Some("candidateBudget"));
+        assert_eq!(
+            outcome.receipt.reason.as_deref(),
+            Some("candidateStateTooLarge")
+        );
         assert_eq!(outcome.receipt.selected_items, 2);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
@@ -2081,6 +2425,88 @@ mod tests {
             SelectionScope::SelectedView,
             SelectionUnit::Files
         ));
+    }
+
+    #[test]
+    fn oversized_candidate_is_terminal_unknown_without_provider_work() {
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let runtime = test_runtime(
+            std::sync::Arc::new(SelectedJudge(calls.clone())),
+            executor.handle().clone(),
+        );
+        let candidates = [Candidate::new(Some(json!({
+            "content": "x".repeat(runtime.limits.max_chars)
+        })))];
+        let outcome = select(
+            Some(&runtime),
+            &json!({"clasifyContext":{"classifiers":["find evidence"]}}),
+            "source",
+            None,
+            &candidates,
+            None,
+            SelectionUnit::Chunks,
+        )
+        .unwrap_or_else(|_| panic!("oversized candidate"));
+        assert!(outcome.next_candidates(ToolId::LocalFetch).is_none());
+        assert!(outcome.unjudged.is_empty());
+        assert_eq!(outcome.receipt.status, SelectionStatus::Partial);
+        assert_eq!(
+            outcome.receipt.reason.as_deref(),
+            Some("candidateStateTooLarge")
+        );
+        assert_eq!(outcome.receipt.unknown_items, 1);
+        assert_eq!(outcome.receipt.excluded_items, 0);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn candidate_pages_skip_oversized_states_but_judge_every_fitting_state_once() {
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let mut runtime = test_runtime(
+            std::sync::Arc::new(SelectedJudge(calls.clone())),
+            executor.handle().clone(),
+        );
+        runtime.limits.max_candidates = 1;
+        runtime.limits.max_chars = 64;
+        let candidates = [
+            Candidate::new(Some(json!({"content":"first"}))),
+            Candidate::new(Some(json!({"content":"x".repeat(64)}))),
+            Candidate::new(Some(json!({"content":"second"}))),
+            Candidate::new(None),
+        ];
+        let query = json!({"clasifyContext":{"classifiers":["find evidence"]}});
+        let run = |prior| {
+            select(
+                Some(&runtime),
+                &query,
+                "source",
+                prior,
+                &candidates,
+                None,
+                SelectionUnit::Files,
+            )
+            .unwrap_or_else(|_| panic!("mixed candidate page"))
+        };
+        let first = run(None);
+        assert_eq!(first.selected, [0]);
+        assert_eq!(first.unjudged, [2]);
+        assert_eq!(
+            first.receipt.reason.as_deref(),
+            Some("candidateStateTooLarge")
+        );
+        assert_eq!(first.receipt.unknown_items, 3);
+        assert!(first.excluded.is_empty());
+        let next = first
+            .next_candidates(ToolId::LocalSearch)
+            .expect("fitting candidate page");
+        let last = run(Some(next));
+        assert_eq!(last.selected, [2]);
+        assert!(last.next_candidates(ToolId::LocalSearch).is_none());
+        assert_eq!(last.receipt.total_items, 1);
+        assert_eq!(last.receipt.status, SelectionStatus::Complete);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     /// Candidate pages: each judges the budget's worth of what the page

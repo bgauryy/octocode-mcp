@@ -2,79 +2,12 @@
 //! Windows retain original line anchors and never split a source line.
 use crate::security::scan::ContentScan;
 use crate::tools::selection::Candidate;
+use crate::tools::source_sections::{LineEdges, line_edges};
 use serde_json::json;
 use std::ops::Range;
 use std::path::Path;
 
 const TARGET_CHARS: usize = 2_048;
-
-/// Where a source's declarations put chunk edges: the windows of bounded
-/// declarations (each one chunk), and the lines where any declaration
-/// starts (with its documentation) or ends.
-#[derive(Default)]
-struct Edges {
-    windows: Vec<Range<usize>>,
-    starts: std::collections::HashSet<usize>,
-    ends: std::collections::HashSet<usize>,
-}
-
-fn declaration_edges(text: &str, path: &Path, max_chars: usize) -> Edges {
-    let Some(declarations) =
-        crate::tools::declarations_cache::all_declarations(text, &path.to_string_lossy())
-    else {
-        return Edges::default();
-    };
-    let mut prefix = vec![0usize];
-    for line in text.split_inclusive('\n') {
-        prefix.push(
-            prefix
-                .last()
-                .copied()
-                .unwrap_or_default()
-                .saturating_add(line.chars().count()),
-        );
-    }
-    let first_line = |declaration: &crate::tools::declarations_cache::Declared| {
-        declaration
-            .doc_start
-            .unwrap_or(declaration.start)
-            .min(declaration.start)
-    };
-    let starts = declarations.iter().map(first_line).collect();
-    let ends = declarations
-        .iter()
-        .map(|declaration| declaration.end)
-        .collect();
-    let mut ranges = declarations
-        .iter()
-        .filter(|declaration| {
-            matches!(
-                declaration.kind.as_str(),
-                "function" | "method" | "constructor" | "property"
-            )
-        })
-        .filter_map(|declaration| {
-            let start = first_line(declaration);
-            (start > 0
-                && declaration.end >= start
-                && declaration.end < prefix.len()
-                && prefix[declaration.end] - prefix[start - 1] <= max_chars)
-                .then_some(start..declaration.end + 1)
-        })
-        .collect::<Vec<_>>();
-    ranges.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| b.end.cmp(&a.end)));
-    let mut windows: Vec<Range<usize>> = Vec::new();
-    for range in ranges {
-        if windows.last().is_none_or(|last| last.end <= range.start) {
-            windows.push(range);
-        }
-    }
-    Edges {
-        windows,
-        starts,
-        ends,
-    }
-}
 
 pub(super) struct Chunk {
     bytes: Range<usize>,
@@ -116,8 +49,8 @@ pub(super) fn chunks(
     } else {
         source
     };
-    let edges = outline.map_or_else(Edges::default, |outline| {
-        declaration_edges(
+    let edges = outline.map_or_else(LineEdges::default, |outline| {
+        line_edges(
             outline,
             path,
             runtime.map_or(
@@ -217,10 +150,17 @@ pub(crate) struct Chosen {
     unknown_ranges: Vec<String>,
     /// The ranges read fewer source lines than the whole view holds.
     narrower: bool,
+    /// The provider's error when it could not answer for this page: the
+    /// view is shown unfiltered under an `unavailable` receipt.
+    provider: Option<crate::tools::selection::ProviderError>,
 }
 
 impl Chosen {
-    pub(super) fn new(outcome: crate::tools::selection::Outcome, chunks: &[Chunk]) -> Self {
+    pub(super) fn new(
+        outcome: crate::tools::selection::Outcome,
+        provider: Option<crate::tools::selection::ProviderError>,
+        chunks: &[Chunk],
+    ) -> Self {
         let judged = outcome
             .selected
             .iter()
@@ -252,6 +192,7 @@ impl Chosen {
                 .map(|(start, end)| format!("{start}-{end}"))
                 .collect(),
             narrower: unknown_lines < view_lines.len(),
+            provider,
         }
     }
 
@@ -262,8 +203,17 @@ impl Chosen {
             .next_candidates(crate::tools::id::ToolId::LocalFetch)
     }
 
-    /// The first-page note on chunks the candidate budget left unjudged.
+    /// The first-page note: the provider's error when the view is shown
+    /// unfiltered because it could not answer, else the chunks the
+    /// candidate budget left unjudged.
     pub(super) fn disclosure(&self) -> Option<String> {
+        if let Some(error) = &self.provider {
+            return Some(crate::tools::selection::unclassified_warning(
+                error,
+                "this read",
+                "its content is",
+            ));
+        }
         self.next_candidates()?;
         let total = self.outcome.receipt.total_items;
         let unjudged = self.outcome.unjudged.len();
@@ -327,6 +277,15 @@ impl Chosen {
     /// them, so the row stays within the response window it was cut for.
     pub(super) fn row_chars(&self, query: &serde_json::Value) -> usize {
         use crate::tools::stream_page::json_chars;
+        let receipt = serde_json::to_value(&self.outcome.receipt)
+            .as_ref()
+            .map_or(0, json_chars);
+        // `"selection":` and the like around the values.
+        const KEYS: usize = 100;
+        if !self.outcome.leaves_out() {
+            // No unfiltered or candidate-page lead: the view leaves nothing out.
+            return json_chars(&json!(self.outcome.token)) + receipt + KEYS;
+        }
         let whole = crate::tools::selection::unfiltered_row(query, &[]);
         let unknown = self
             .unknown_reads(query)
@@ -336,12 +295,7 @@ impl Chosen {
         let candidates = self
             .next_candidates()
             .map_or(0, |token| json_chars(query) + json_chars(&json!(token)));
-        let receipt = serde_json::to_value(&self.outcome.receipt)
-            .as_ref()
-            .map_or(0, json_chars);
-        // `"selection":`, `"unfiltered":{"tool":…,"query":{"queries":[…]}}`
-        // and the like around the values.
-        const KEYS: usize = 100;
+        // `"unfiltered":{"tool":…,"query":{"queries":[…]}}` and the like.
         let calls = 2 + usize::from(candidates > 0) + self.unknown_reads(query).len();
         json_chars(&json!(self.outcome.token))
             + receipt
@@ -402,11 +356,11 @@ pub(super) fn project(text: &str, chunks: &[Chunk], order: &[usize]) -> (String,
 
 /// Separates selected chunks that are not adjacent in the source.
 fn unselected_marker(start: usize, end: usize) -> String {
-    if start == end {
-        format!("... [line {start} not selected] ...\n")
-    } else {
-        format!("... [lines {start}-{end} not selected] ...\n")
-    }
+    crate::tools::numbered::omission_marker(
+        start,
+        end,
+        crate::tools::numbered::Omitted::NotSelected,
+    )
 }
 
 #[cfg(test)]
@@ -854,7 +808,10 @@ mod tests {
         )
         .unwrap_or_else(|_| panic!("budgeted order"));
         assert_eq!(skipped.receipt.status, SelectionStatus::Partial);
-        assert_eq!(skipped.receipt.reason.as_deref(), Some("candidateBudget"));
+        assert_eq!(
+            skipped.receipt.reason.as_deref(),
+            Some("candidateStateTooLarge")
+        );
         assert_eq!(skipped.receipt.selected_items, 0);
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(
@@ -874,7 +831,10 @@ mod tests {
         )
         .unwrap_or_else(|_| panic!("partial order"));
         assert_eq!(partial.receipt.status, SelectionStatus::Partial);
-        assert_eq!(partial.receipt.reason.as_deref(), Some("candidateBudget"));
+        assert_eq!(
+            partial.receipt.reason.as_deref(),
+            Some("candidateStateTooLarge")
+        );
         assert_eq!(partial.receipt.selected_items, 1);
         assert_eq!(partial.receipt.total_items, 4);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -941,7 +901,7 @@ mod tests {
             receipt.status,
             crate::contracts::tool_types::SelectionStatus::Partial
         );
-        assert_eq!(receipt.reason.as_deref(), Some("candidateBudget"));
+        assert_eq!(receipt.reason.as_deref(), Some("candidateStateTooLarge"));
         assert_eq!(receipt.unknown_items, 4);
         assert_eq!(receipt.excluded_items, 0);
         assert!(selected.content.as_deref().unwrap_or_default().is_empty());
@@ -969,6 +929,68 @@ mod tests {
         }
         assert_eq!(contents, text);
         assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn oversized_line_terminates_selection_and_unfiltered_recovers_all_bytes() {
+        use crate::tools::cancel::NeverCancel;
+        use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        for surrounding in [false, true] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let mut runtime = budget_runtime(executor.handle().clone(), calls.clone());
+            runtime.limits = crate::runtime::RuntimeLimits::DEFAULT.selection;
+            let large_line = format!("{}\n", "x".repeat(140_000));
+            let text = if surrounding {
+                format!("first evidence\n{large_line}second evidence\n")
+            } else {
+                large_line
+            };
+            let query: LocalFetchQuery = serde_json::from_value(json!({
+                "path":"source.txt", "fullContent":true,
+                "clasifyContext":{"classifiers":["Find evidence"]}
+            }))
+            .unwrap();
+            let read = |query: &LocalFetchQuery| {
+                super::super::executor::process_fetched_content_selected(
+                    query,
+                    text.as_bytes(),
+                    Path::new("source.txt"),
+                    "source.txt",
+                    &SourceFacts::default(),
+                    &ContentSecurity::new(),
+                    &NeverCancel,
+                    &LocalFetchRegex,
+                    Some(&runtime),
+                )
+            };
+            let selected = read(&query);
+            assert_ne!(selected.status, "error", "{selected:?}");
+            let receipt = selected.selection.as_ref().expect("receipt");
+            assert_eq!(receipt.unknown_items, 1);
+            assert_eq!(receipt.excluded_items, 0);
+            assert_eq!(receipt.selected_items, if surrounding { 2 } else { 0 });
+            assert_eq!(receipt.reason.as_deref(), Some("candidateStateTooLarge"));
+            let next = selected.next.expect("raw recovery");
+            assert!(next.next_candidate_page.is_none());
+            let mut query = next.unfiltered.expect("whole view").query;
+            let mut recovered = String::new();
+            let mut pages = 0;
+            loop {
+                let page = read(&query);
+                assert_ne!(page.status, "error", "{page:?}");
+                assert!(page.selection.is_none());
+                recovered.push_str(page.content.as_deref().unwrap_or_default());
+                pages += 1;
+                assert!(pages < 50, "raw recovery makes progress");
+                let Some(next) = page.next.and_then(|next| next.continue_window) else {
+                    break;
+                };
+                query = next.query;
+            }
+            assert_eq!(recovered, text);
+            assert_eq!(calls.load(Ordering::SeqCst), usize::from(surrounding));
+        }
     }
 
     #[test]
@@ -1122,10 +1144,15 @@ mod tests {
     }
 
     /// Judges a chunk by its words: `keep` selected, `drop` excluded, else
-    /// unknown; `fail` fails every candidate at the provider.
+    /// unknown; `fail` fails every candidate at the provider with that code:
+    /// a refused credential ([`REFUSED`]) or a provider that is down
+    /// ([`DOWN`]).
     struct WordJudge {
-        fail: bool,
+        fail: Option<&'static str>,
     }
+
+    const REFUSED: Option<&str> = Some("classificationProviderError");
+    const DOWN: Option<&str> = Some(crate::tools::judgment::transport::CIRCUIT_OPEN);
 
     impl SelectionJudge for WordJudge {
         fn identity(&self) -> serde_json::Value {
@@ -1133,11 +1160,16 @@ mod tests {
         }
 
         fn select(&self, call: JudgeCall<'_>) -> crate::tools::selection::Judgments {
-            if self.fail {
+            if let Some(code) = self.fail {
+                let status = if Some(code) == REFUSED {
+                    "401 Unauthorized"
+                } else {
+                    "503 Service Unavailable"
+                };
                 return Err(crate::tools::selection::JudgeFailure::Provider(
                     crate::tools::selection::ProviderError {
-                        code: "classificationProviderError".into(),
-                        message: "Classification provider returned HTTP 401 Unauthorized".into(),
+                        code: code.into(),
+                        message: format!("Classification provider returned HTTP {status}"),
                         hints: vec!["Check OCTOCODE_CLASSIFICATION_API and account access.".into()],
                     },
                 ));
@@ -1164,9 +1196,23 @@ mod tests {
         }
     }
 
-    fn word_read(fail: bool) -> crate::tools::local_fetch::LocalFetchResult {
+    fn word_read(fail: Option<&'static str>) -> crate::tools::local_fetch::LocalFetchResult {
+        word_read_with(
+            json!({}),
+            fail,
+            &crate::tools::local_fetch::SourceFacts::default(),
+        )
+    }
+
+    /// The five-chunk word source read with `extra` query fields under
+    /// `facts`.
+    fn word_read_with(
+        extra: serde_json::Value,
+        fail: Option<&'static str>,
+        facts: &crate::tools::local_fetch::SourceFacts,
+    ) -> crate::tools::local_fetch::LocalFetchResult {
         use crate::tools::cancel::NeverCancel;
-        use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
+        use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex};
         let executor = tokio::runtime::Runtime::new().unwrap();
         let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
         runtime.judge = Arc::new(WordJudge { fail });
@@ -1176,17 +1222,20 @@ mod tests {
             .iter()
             .map(|word| format!("{word} {}\n", "x".repeat(1_500)))
             .collect::<String>();
-        let query: LocalFetchQuery = serde_json::from_value(json!({
+        let mut query = json!({
             "path":"source.txt", "fullContent":true,
             "clasifyContext":{"classifiers":["Is it kept?"]}
-        }))
-        .unwrap();
+        });
+        for (key, value) in extra.as_object().into_iter().flatten() {
+            query[key] = value.clone();
+        }
+        let query: LocalFetchQuery = serde_json::from_value(query).unwrap();
         super::super::executor::process_fetched_content_selected(
             &query,
             text.as_bytes(),
             Path::new("source.txt"),
             "source.txt",
-            &SourceFacts::default(),
+            facts,
             &ContentSecurity::new(),
             &NeverCancel,
             &LocalFetchRegex,
@@ -1204,7 +1253,7 @@ mod tests {
         use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
         let executor = tokio::runtime::Runtime::new().unwrap();
         let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
-        runtime.judge = Arc::new(WordJudge { fail: false });
+        runtime.judge = Arc::new(WordJudge { fail: None });
         runtime.limits.max_chars = 1_000_000;
         let text = (0..400)
             .map(|n| {
@@ -1259,8 +1308,8 @@ mod tests {
     }
 
     #[test]
-    fn unfiltered_reads_exactly_the_unknown_chunks_beside_the_whole_view() {
-        let result = word_read(false);
+    fn unfiltered_unknown_reads_exactly_the_unknown_chunks_beside_the_whole_view() {
+        let result = word_read(None);
         let receipt = result.selection.as_ref().expect("receipt");
         assert_eq!(
             (
@@ -1271,13 +1320,13 @@ mod tests {
             (2, 1, 2)
         );
         let next = result.next.expect("recovery");
-        let unknown = next.unfiltered.expect("unknown chunks").query;
+        let unknown = next.unfiltered_unknown.expect("unknown chunks").query;
         assert_eq!(
             serde_json::to_value(&unknown.ranges).unwrap(),
             json!(["3-4"])
         );
         assert!(unknown.clasify_context.is_none() && unknown.full_content.is_none());
-        let whole = next.unfiltered2.expect("whole view").query;
+        let whole = next.unfiltered.expect("whole view").query;
         assert!(whole.clasify_context.is_none());
         assert_eq!(whole.full_content, Some(true));
         assert!(whole.ranges.is_empty());
@@ -1294,7 +1343,7 @@ mod tests {
         use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex, SourceFacts};
         let executor = tokio::runtime::Runtime::new().unwrap();
         let mut runtime = budget_runtime(executor.handle().clone(), Arc::new(AtomicUsize::new(0)));
-        runtime.judge = Arc::new(WordJudge { fail: false });
+        runtime.judge = Arc::new(WordJudge { fail: None });
         runtime.limits.max_chars = 1_000_000;
         runtime.limits.max_candidates = max;
         let query: LocalFetchQuery = serde_json::from_value(query.clone()).unwrap();
@@ -1372,8 +1421,9 @@ mod tests {
         );
     }
 
-    /// Unknown chunks past one row's `ranges` are not dropped: `unfiltered`
-    /// reads the first ranges and `unfiltered3`, … read the rest.
+    /// Unknown chunks past one row's `ranges` are not dropped:
+    /// `unfilteredUnknown` reads the first ranges and `unfilteredUnknown2`,
+    /// … read the rest.
     #[test]
     fn every_unknown_range_has_a_read_past_one_row() {
         let words = (0..30)
@@ -1385,7 +1435,11 @@ mod tests {
         let result = budgeted_read(&text, &query, 64);
         let next = serde_json::to_value(result.next.expect("leads")).unwrap();
         let mut ranges = Vec::new();
-        for name in ["unfiltered", "unfiltered3", "unfiltered4"] {
+        for name in [
+            "unfilteredUnknown",
+            "unfilteredUnknown2",
+            "unfilteredUnknown3",
+        ] {
             for row in next[name]["query"]["queries"]
                 .as_array()
                 .into_iter()
@@ -1400,7 +1454,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(ranges, expected, "{next}");
         assert_eq!(
-            next["unfiltered2"]["query"]["queries"][0]["fullContent"],
+            next["unfiltered"]["query"]["queries"][0]["fullContent"],
             true
         );
     }
@@ -1445,7 +1499,7 @@ mod tests {
 
     #[test]
     fn a_provider_failing_every_chunk_fails_the_read_with_its_typed_error() {
-        let result = word_read(true);
+        let result = word_read(REFUSED);
         assert_eq!(
             result.error_code.as_deref(),
             Some("classificationProviderError")
@@ -1474,5 +1528,70 @@ mod tests {
             .expect("unfiltered")
             .query;
         assert!(recovery.clasify_context.is_none());
+    }
+
+    /// A provider that cannot answer (down, overloaded, unreachable) never
+    /// withholds a read that succeeded: the whole view is shown under an
+    /// `unavailable` receipt naming the provider's code, the warning states
+    /// its error and hint, no unfiltered lead repeats the view, and a later
+    /// page replays that plan without another provider call.
+    #[test]
+    fn a_provider_that_is_down_shows_the_unfiltered_view_as_unavailable() {
+        let result = word_read(DOWN);
+        assert!(result.error_code.is_none(), "{result:?}");
+        let receipt = result.selection.as_ref().expect("receipt");
+        assert_eq!(
+            receipt.status,
+            crate::contracts::tool_types::SelectionStatus::Unavailable
+        );
+        assert_eq!(receipt.reason.as_deref(), DOWN);
+        assert_eq!((receipt.total_items, receipt.unknown_items), (5, 5));
+        let content = result.content.as_deref().expect("the view is shown");
+        for word in ["keep", "drop", "maybe"] {
+            assert!(content.contains(word), "{word} is shown: {content}");
+        }
+        assert_eq!(content.lines().count(), 5, "every chunk, no marker");
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("HTTP 503")
+                    && warning.contains("shown unfiltered")
+                    && warning.contains("OCTOCODE_CLASSIFICATION_API")),
+            "{:?}",
+            result.warnings
+        );
+        let next = result.next.as_ref();
+        assert!(
+            next.is_none_or(|next| next.unfiltered.is_none() && next.next_candidate_page.is_none()),
+            "the view is the unfiltered read: {next:?}"
+        );
+        // Paged one chunk at a time, the recorded plan replays on the next
+        // page: the provider (now answering) is not asked, so the view stays
+        // unavailable and whole.
+        let facts = crate::tools::local_fetch::SourceFacts {
+            window: Some(2_048),
+            ..crate::tools::local_fetch::SourceFacts::default()
+        };
+        let first = word_read_with(json!({}), DOWN, &facts);
+        let next = first
+            .next
+            .and_then(|next| next.continue_window)
+            .expect("a next page")
+            .query;
+        assert!(next.selection.is_some(), "the plan rides the next page");
+        let replay = word_read_with(
+            serde_json::to_value(&next).expect("next query"),
+            None,
+            &facts,
+        );
+        assert_eq!(
+            replay.selection.as_ref().map(|receipt| receipt.status),
+            Some(crate::contracts::tool_types::SelectionStatus::Unavailable)
+        );
+        assert!(
+            replay.error_code.is_none() && replay.content.as_deref().is_some_and(|t| !t.is_empty()),
+            "the next page is shown: {replay:?}"
+        );
     }
 }

@@ -23,9 +23,8 @@ use super::macro_bodies::MacroBodies;
 use super::query::Prefilter;
 use crate::text::utf8_offsets::LineIndex;
 use line_index_support::{to_structural_match, to_structural_match_with_index};
-use matching::{
-    CandidateVisitor, CaptureEnv, MatchWithKind, collect_kind_matches, visit_named_expanding_macros,
-};
+use matching::{CandidateVisitor, CaptureEnv, collect_kind_matches, visit_named_expanding_macros};
+pub(super) use matching::{Found, MatchWithKind};
 use pattern::CompiledPattern;
 pub use pattern::PatternDeclaration;
 pub use rule::RULE_INVALID;
@@ -39,8 +38,20 @@ use rule::RULE_PARSE_COUNT;
 #[cfg(test)]
 use super::types::StructuralMatch;
 
+/// A compiled query: matches one source into what the caller's [`Found`]
+/// keeps.
 pub(super) type OctoCompiledMatcher =
-    Box<dyn Fn(&str) -> Result<Vec<MatchWithKind>, ExecutionError> + Send + Sync>;
+    Box<dyn Fn(&str, &mut Found<'_>) -> Result<(), ExecutionError> + Send + Sync>;
+
+/// Every match `run` finds in `content`, materialized.
+pub(super) fn all_matches(
+    run: &OctoCompiledMatcher,
+    content: &str,
+) -> Result<Vec<MatchWithKind>, ExecutionError> {
+    let mut found = Found::new(super::types::StructuralDemand::Matches);
+    run(content, &mut found)?;
+    Ok(found.into_matches())
+}
 
 /// The declaration `pattern` spells in `lang` ([`CompiledPattern::declaration`]).
 pub(super) fn pattern_declaration(lang: &AgLanguage, pattern: &str) -> Option<PatternDeclaration> {
@@ -92,44 +103,43 @@ fn compile_matcher_inner(
     };
     let macros = MacroBodies::for_language(&language, anchors);
     match query.parts() {
-        (Some(pattern), None) if is_document_probe(pattern) => Ok(Box::new(move |content| {
-            let deadline = match_deadline(content);
-            parse_tree_with_deadline(&language, content, deadline).map(|tree| {
+        (Some(pattern), None) if is_document_probe(pattern) => {
+            Ok(Box::new(move |content, found| {
+                let deadline = match_deadline(content);
+                let tree = parse_tree_with_deadline(&language, content, deadline)?;
                 let root = tree.root_node();
-                vec![MatchWithKind::new(
-                    root,
-                    to_structural_match(root, content, HashMap::new(), HashMap::new()),
-                )]
-            })
-        })),
+                found.push(root, || {
+                    to_structural_match(root, content, HashMap::new(), HashMap::new())
+                });
+                Ok(())
+            }))
+        }
         (Some(pattern), None) => {
             let compiled = CompiledPattern::new(lang, pattern)?;
-            Ok(Box::new(move |content| {
+            Ok(Box::new(move |content, found| {
                 let deadline = match_deadline(content);
                 if compiled.is_special() {
-                    return compiled.find_special_matches(content, deadline);
+                    return compiled.find_special_matches(content, deadline, found);
                 }
 
                 let tree = parse_tree_with_deadline(compiled.language(), content, deadline)?;
                 let line_index = LineIndex::tree_sitter(content);
-                let mut matches = Vec::new();
                 let visit: &mut CandidateVisitor<'_> = &mut |candidate, _, _| {
                     if !compiled.matches_candidate(candidate) {
                         return Ok(());
                     }
                     let mut captures = CaptureEnv::default();
                     if compiled.matches(candidate, content, &mut captures, deadline)? {
-                        let (values, ranges) = captures.into_maps();
-                        matches.push(MatchWithKind::new(
-                            candidate,
+                        found.push(candidate, || {
+                            let (values, ranges) = captures.into_maps();
                             to_structural_match_with_index(
                                 candidate,
                                 content,
                                 &line_index,
                                 values,
                                 ranges,
-                            ),
-                        ));
+                            )
+                        });
                     }
                     Ok(())
                 };
@@ -140,15 +150,14 @@ fn compile_matcher_inner(
                     macros.as_ref(),
                     deadline,
                     visit,
-                )?;
-                Ok(matches)
+                )
             }))
         }
         (None, Some(_)) => {
             let compiled = CompiledRule::compile(lang, query.parsed_rule()?)?;
             let language = lang.tree_sitter_language();
             if let Some(kind) = compiled.simple_kind().map(str::to_owned) {
-                return Ok(Box::new(move |content| {
+                return Ok(Box::new(move |content, found| {
                     let deadline = match_deadline(content);
                     let tree = parse_tree_with_deadline(&language, content, deadline)?;
                     collect_kind_matches(
@@ -158,14 +167,14 @@ fn compile_matcher_inner(
                         &language,
                         macros.as_ref(),
                         deadline,
+                        found,
                     )
                 }));
             }
-            Ok(Box::new(move |content| {
+            Ok(Box::new(move |content, found| {
                 let deadline = match_deadline(content);
                 let tree = parse_tree_with_deadline(&language, content, deadline)?;
                 let line_index = LineIndex::tree_sitter(content);
-                let mut matches = Vec::new();
                 visit_named_expanding_macros(
                     tree.root_node(),
                     content,
@@ -183,22 +192,20 @@ fn compile_matcher_inner(
                         };
                         let mut captures = CaptureEnv::default();
                         if compiled.matches(candidate, Some(ancestors), &document, &mut captures)? {
-                            let (values, ranges) = captures.into_maps();
-                            matches.push(MatchWithKind::new(
-                                candidate,
+                            found.push(candidate, || {
+                                let (values, ranges) = captures.into_maps();
                                 to_structural_match_with_index(
                                     candidate,
                                     content,
                                     &line_index,
                                     values,
                                     ranges,
-                                ),
-                            ));
+                                )
+                            });
                         }
                         Ok(())
                     },
-                )?;
-                Ok(matches)
+                )
             }))
         }
         _ => unreachable!("StructuralQuery validates the query shape"),

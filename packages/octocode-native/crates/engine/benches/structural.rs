@@ -13,9 +13,8 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use octocode_engine::portable::{
-    extract_declarations, extract_graph_facts, structural_search_detailed,
-};
+use octocode_engine::portable::{extract_graph_facts, structural_search_detailed};
+use octocode_engine::signatures::extract_declarations_document;
 
 /// Build a realistic TypeScript module of roughly `blocks` service methods,
 /// each with a `console.log(...)` call site the pattern will match, plus enough
@@ -83,14 +82,10 @@ fn bench_exported_declarations(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count));
         group.bench_with_input(BenchmarkId::from_parameter(count), &source, |b, source| {
             b.iter(|| {
-                let result = extract_declarations(black_box(source), "exports.ts")
+                let facts = extract_declarations_document(black_box(source), "exports.ts")
                     .expect("valid exported declarations");
-                let facts: serde_json::Value = serde_json::from_str(&result).expect("facts");
-                assert_eq!(
-                    facts["declarations"].as_array().unwrap().len(),
-                    count as usize
-                );
-                black_box(result)
+                assert_eq!(facts.declarations.len(), count as usize);
+                black_box(facts)
             });
         });
     }

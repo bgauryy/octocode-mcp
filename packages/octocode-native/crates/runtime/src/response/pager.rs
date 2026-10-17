@@ -2,6 +2,7 @@
 //! pages (`row_pages`) of the structured envelope, with their
 //! executable continuations.
 
+use base64::Engine as _;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -20,6 +21,29 @@ pub struct ResponsePageOptions {
     /// only MCP renders it.
     #[serde(skip_deserializing)]
     pub render_text: Option<bool>,
+    #[serde(skip)]
+    pub(crate) saved: Option<SavedResponse>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SavedResponse {
+    pub key: [u8; 32],
+    pub expires_at: String,
+    pub storage: &'static str,
+    pub replayed: bool,
+}
+
+impl SavedResponse {
+    fn snapshot(&self, raw: &str) -> String {
+        let (kind, digest) = raw.rsplit_once(':').unwrap_or((raw, ""));
+        let digest = hex::decode(digest).unwrap_or_default();
+        let base64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        format!(
+            "saved-v1:{}:{kind}:{}",
+            base64.encode(self.key),
+            base64.encode(digest)
+        )
+    }
 }
 
 impl ResponsePageOptions {
@@ -33,33 +57,48 @@ impl ResponsePageOptions {
         self.response_scope.as_deref() == Some("rows") && self.response_length.is_some()
     }
 
+    /// The caller windows the response: `responseLength` is set. An offset or
+    /// snapshot alone continues on the automatic window, so it never lifts
+    /// the automatic page (nor the read share sized from it).
     pub(crate) fn explicit(&self) -> bool {
         self.response_length.is_some()
-            || self.response_offset.is_some()
-            || self.response_snapshot.is_some()
     }
 
     /// Apply the runtime's automatic page budget (`auto_page_chars`) when
     /// the caller did not page explicitly. Implicit pages are whole rows so
     /// both text and structuredContent carry the page: MCP clients that read
     /// only structuredContent would otherwise see an emptied `results`.
-    /// Returns whether automatic pagination was enabled.
+    /// The envelope is sized first: one past the budget pages without
+    /// drawing its text; otherwise `render` draws it, and a text past the
+    /// budget pages too. Returns the text the response still needs (none for
+    /// row pages, which carry their own JSON).
     pub fn auto_paginate(
         &mut self,
-        rendered_text: Option<&str>,
         structured: &Value,
         budget: usize,
-    ) -> bool {
+        render: impl FnOnce() -> Option<String>,
+    ) -> Option<String> {
         if self.explicit() || budget == 0 {
-            return false;
+            return render();
         }
-        let oversized = rendered_text.is_some_and(|text| text.encode_utf16().count() > budget)
-            || crate::tools::stream_page::json_chars(structured) > budget;
-        if oversized {
-            self.response_scope = Some("rows".into());
-            self.response_length = Some(budget);
+        if crate::tools::stream_page::json_chars(structured) > budget {
+            self.page_rows(budget);
+            return None;
         }
-        oversized
+        let text = render();
+        if text
+            .as_deref()
+            .is_some_and(|text| text.encode_utf16().count() > budget)
+        {
+            self.page_rows(budget);
+            return None;
+        }
+        text
+    }
+
+    fn page_rows(&mut self, budget: usize) {
+        self.response_scope = Some("rows".into());
+        self.response_length = Some(budget);
     }
 }
 
@@ -229,8 +268,11 @@ impl ResponsePager {
             return Err(ResponseError::Cancelled);
         }
         pagination.next = continuation(input, &pagination);
-        if pagination.should_emit() {
-            envelope.insert("responsePagination".into(), pagination_value(&pagination)?);
+        if pagination.should_emit() || is_saved_replay(&input.options) {
+            envelope.insert(
+                "responsePagination".into(),
+                pagination_value(&pagination, &input.options)?,
+            );
         }
         let text = serde_json::to_string(&envelope).map_err(|_| ResponseError::Unserializable)?;
         Ok(text_response(text, envelope, input.is_error))
@@ -253,7 +295,7 @@ impl ResponsePager {
             return Err(ResponseError::Cancelled);
         }
         let mut windowed = Map::new();
-        windowed.insert("results".into(), Value::Array(Vec::new()));
+        windowed.insert(rows_key(&input.tool).into(), Value::Array(Vec::new()));
         // A restart page carries a diagnostic message, not envelope
         // bytes — keep it out of the concatenable window.
         let restarting = page
@@ -267,8 +309,11 @@ impl ResponsePager {
         if let Some(mut pagination) = page.pagination {
             pagination.scope = "structuredContent".into();
             pagination.next = continuation(input, &pagination);
-            if pagination.should_emit() {
-                windowed.insert("responsePagination".into(), pagination_value(&pagination)?);
+            if pagination.should_emit() || is_saved_replay(&input.options) {
+                windowed.insert(
+                    "responsePagination".into(),
+                    pagination_value(&pagination, &input.options)?,
+                );
             }
         }
         Ok(text_response(page.text, windowed, input.is_error))
@@ -296,7 +341,7 @@ impl ResponsePager {
                 .unwrap_or(self.config.max_rendered_bytes)
                 .min(max_response_length(&input.tool));
             let oversized_row = structured
-                .get("results")
+                .get(rows_key(&input.tool))
                 .and_then(Value::as_array)
                 .is_some_and(|rows| {
                     rows.iter()
@@ -324,7 +369,7 @@ impl ResponsePager {
             let whole =
                 pagination.char_offset == 0 && !pagination.has_more && pagination.restart.is_none();
             if !whole {
-                if let Some(results) = structured.get_mut("results") {
+                if let Some(results) = structured.get_mut(rows_key(&input.tool)) {
                     *results = Value::Array(Vec::new());
                 }
                 structured.remove("shared");
@@ -332,8 +377,11 @@ impl ResponsePager {
                 // which has one channel) must still see this page's window.
                 structured.insert("responseWindow".into(), json!(page.text));
             }
-            if pagination.should_emit() {
-                structured.insert("responsePagination".into(), pagination_value(&pagination)?);
+            if pagination.should_emit() || is_saved_replay(&input.options) {
+                structured.insert(
+                    "responsePagination".into(),
+                    pagination_value(&pagination, &input.options)?,
+                );
             }
         }
         Ok(text_response(page.text, structured, input.is_error))
@@ -357,8 +405,29 @@ fn continuation(input: &ResponseInput, pagination: &ResponsePagination) -> Optio
     build_continuation(&input.tool, &input.query, &input.options, pagination)
 }
 
-fn pagination_value(pagination: &ResponsePagination) -> Result<Value, ResponseError> {
-    serde_json::to_value(pagination).map_err(|_| ResponseError::Unserializable)
+fn pagination_value(
+    pagination: &ResponsePagination,
+    options: &ResponsePageOptions,
+) -> Result<Value, ResponseError> {
+    let mut value = serde_json::to_value(pagination).map_err(|_| ResponseError::Unserializable)?;
+    if let Some(saved) = &options.saved {
+        value["snapshot"] = json!(saved.snapshot(&pagination.snapshot));
+        if let Some(expected) = &pagination.expected_snapshot {
+            value["expectedSnapshot"] = json!(saved.snapshot(expected));
+        }
+        value["expiresAt"] = json!(saved.expires_at);
+        value["storage"] = json!(saved.storage);
+        value["replayed"] = json!(saved.replayed);
+    }
+    Ok(value)
+}
+
+fn is_saved_replay(options: &ResponsePageOptions) -> bool {
+    options.saved.as_ref().is_some_and(|saved| saved.replayed)
+}
+
+fn rows_key(tool: &str) -> &'static str {
+    crate::tools::id::ToolId::from_name(tool).map_or("results", |tool| tool.output().rows_key())
 }
 
 /// Per-row fields that describe how a call was served (e.g. cache warmth),
@@ -531,15 +600,15 @@ fn build_continuation(
 ) -> Option<Value> {
     let tool = crate::tools::id::ToolId::from_name(tool)?;
     let next_offset = page.next_char_offset.filter(|_| page.has_more)?;
-    let queries = query
-        .get("queries")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_else(|| vec![query.clone()]);
-    // The runtime passes a flat query for one row and an envelope for a batch.
-    // Keep the rows flat so the continuation can be submitted unchanged.
     let mut continuation = Map::new();
-    continuation.insert("queries".into(), Value::Array(queries));
+    if request.saved.is_none() && page.restart == Some(true) {
+        let queries = query
+            .get("queries")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_else(|| vec![query.clone()]);
+        continuation.insert("queries".into(), Value::Array(queries));
+    }
     if let Some(length) = request.response_length {
         continuation.insert("responseLength".into(), json!(length));
     }
@@ -547,7 +616,12 @@ fn build_continuation(
         continuation.insert("responseScope".into(), json!(scope));
     }
     continuation.insert("responseOffset".into(), json!(next_offset));
-    if page.restart != Some(true) {
+    if let Some(saved) = &request.saved {
+        continuation.insert(
+            "responseSnapshot".into(),
+            json!(saved.snapshot(&page.snapshot)),
+        );
+    } else if page.restart != Some(true) {
         continuation.insert("responseSnapshot".into(), json!(page.snapshot));
     }
     Some(crate::tools::result::Continuation::input(tool, Value::Object(continuation)).build())
@@ -637,11 +711,49 @@ mod tests {
             "items": (0..100).map(|line| json!({"line": line, "value": "quoted \"evidence\""})).collect::<Vec<_>>()
         }}]});
         let mut options = ResponsePageOptions::default();
-        assert!(options.auto_paginate(Some("compact summary"), &structured, 1_000));
-        assert!(options.rows_scope());
+        let text = options.auto_paginate(&structured, 1_000, || {
+            panic!("an envelope past the budget pages without drawing its text")
+        });
+        assert!(text.is_none() && options.rows_scope());
         let mut options = ResponsePageOptions::default();
-        assert!(options.auto_paginate(Some(&"😀".repeat(600)), &json!({"results": []}), 1_000));
-        assert!(options.rows_scope());
+        let text = options.auto_paginate(&json!({"results": []}), 1_000, || Some("😀".repeat(600)));
+        assert!(text.is_none() && options.rows_scope());
+        let mut options = ResponsePageOptions::default();
+        let text = options.auto_paginate(&json!({"results": []}), 1_000, || Some("fits".into()));
+        assert_eq!(text.as_deref(), Some("fits"));
+        assert!(!options.rows_scope());
+    }
+
+    /// An offset or snapshot without a length is not an explicit window: the
+    /// response keeps the automatic page, so it can never be served unpaged
+    /// past the contract's `responseLength` maximum.
+    #[test]
+    fn an_offset_or_snapshot_alone_keeps_the_automatic_page() {
+        let structured = json!({"results": [{"index": 0, "data": {"content": "x".repeat(5_000)}}]});
+        for mut options in [
+            ResponsePageOptions {
+                response_offset: Some(0),
+                ..Default::default()
+            },
+            ResponsePageOptions {
+                response_snapshot: Some("response-rows-v1:x".into()),
+                ..Default::default()
+            },
+        ] {
+            assert!(!options.explicit());
+            assert!(options.auto_paginate(&structured, 1_000, || None).is_none());
+            assert!(options.rows_scope());
+            assert_eq!(options.response_length, Some(1_000));
+        }
+        let mut windowed = options(3_000);
+        assert!(windowed.explicit());
+        let text = windowed.auto_paginate(&structured, 1_000, || Some("drawn".into()));
+        assert_eq!(
+            text.as_deref(),
+            Some("drawn"),
+            "an explicit window keeps its own length"
+        );
+        assert_eq!(windowed.response_length, Some(3_000));
     }
 
     #[test]
@@ -694,6 +806,7 @@ mod tests {
                         response_snapshot: snapshot.clone(),
                         response_scope: None,
                         render_text: None,
+                        saved: None,
                     },
                 );
                 let page = result.pagination.expect("pagination");
@@ -720,6 +833,7 @@ mod tests {
                 response_snapshot: Some(snapshot),
                 response_scope: None,
                 render_text: None,
+                saved: None,
             },
         );
         assert_eq!(split.pagination.expect("page").restart, Some(true));
@@ -731,6 +845,7 @@ mod tests {
                 response_snapshot: Some("response-v1:stale".into()),
                 response_scope: None,
                 render_text: None,
+                saved: None,
             },
         );
         assert_eq!(changed.pagination.expect("page").changed, Some(true));
@@ -747,6 +862,7 @@ mod tests {
             response_snapshot: snapshot,
             response_scope: Some("structured".into()),
             render_text: None,
+            saved: None,
         }
     }
 
@@ -930,7 +1046,7 @@ mod tests {
     }
 
     #[test]
-    fn prepares_both_channels_and_preserves_requested_extras() {
+    fn prepares_both_channels_with_compact_snapshot_continuation() {
         let pager = ResponsePager::new(ResponsePagerConfig::default());
         let result = pager
             .prepare(
@@ -948,10 +1064,9 @@ mod tests {
             .expect("page");
         assert_eq!(result.content.len(), 1);
         let next = &result.structured_content["responsePagination"]["next"]["query"];
-        // A continuation is the complete input: `{queries:[row]}`.
-        assert_eq!(
-            next["queries"][0],
-            json!({"path":"a", "mainGoal":"g", "reasoning":"r", "extras":["stats"]})
+        assert!(
+            next.get("queries").is_none(),
+            "saved reads do not repeat input"
         );
         assert!(
             next["responseSnapshot"]
@@ -962,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn bulk_continuations_preserve_queries_and_pass_output_contract() {
+    fn continuations_preserve_queries_only_when_starting_a_new_execution() {
         let pager = ResponsePager::new(ResponsePagerConfig::default());
         let queries = json!([
             {"path":"/repo/a.ts", "mainGoal": "test", "reasoning":"read both", "extras":["stats","receipts"], "fullContent":true},
@@ -976,6 +1091,7 @@ mod tests {
                 response_snapshot: Some("response-v1:stale".into()),
                 response_scope: None,
                 render_text: None,
+                saved: None,
             },
         ] {
             let restarting = options.response_offset.is_some();
@@ -996,14 +1112,23 @@ mod tests {
             crate::contracts::validate_output("localFetch", &result.structured_content)
                 .expect("continuation must satisfy the public output contract");
             let next = &result.structured_content["responsePagination"]["next"]["query"];
-            assert_eq!(next["queries"], queries);
-            let prepared = crate::contracts::prepare_many_and_validate("localFetch", next.clone())
-                .expect("continuation must be accepted as a new tool call");
-            assert_eq!(prepared.len(), 2);
-            for (prepared, original) in prepared.iter().zip(queries.as_array().expect("queries")) {
-                for (field, value) in original.as_object().expect("query") {
-                    assert_eq!(&prepared[field], value);
+            crate::contracts::validate("localFetch", next.clone())
+                .expect("continuation must satisfy the public input contract");
+            if restarting {
+                assert_eq!(next["queries"], queries);
+                let prepared =
+                    crate::contracts::prepare_many_and_validate("localFetch", next.clone())
+                        .expect("restart is a new tool call");
+                assert_eq!(prepared.len(), 2);
+                for (prepared, original) in
+                    prepared.iter().zip(queries.as_array().expect("queries"))
+                {
+                    for (field, value) in original.as_object().expect("query") {
+                        assert_eq!(&prepared[field], value);
+                    }
                 }
+            } else {
+                assert!(next.get("queries").is_none());
             }
             assert_eq!(next["responseLength"], 8);
             assert_eq!(next["responseSnapshot"].is_null(), restarting);
@@ -1055,6 +1180,7 @@ mod tests {
                 response_snapshot: Some("response-v1:stale".into()),
                 response_scope: None,
                 render_text: None,
+                saved: None,
             },
         );
         let stale_page = stale.pagination.expect("page");
@@ -1203,6 +1329,7 @@ mod tests {
                                 response_snapshot: snapshot,
                                 response_scope: Some(scope.into()),
                                 render_text: None,
+                                saved: None,
                             },
                         },
                         &CancellationToken::new(),
@@ -1261,6 +1388,7 @@ mod tests {
                                 response_snapshot: snapshot,
                                 response_scope: Some(scope.into()),
                                 render_text: None,
+                                saved: None,
                             },
                         },
                         &CancellationToken::new(),

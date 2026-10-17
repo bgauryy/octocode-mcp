@@ -283,6 +283,62 @@ fn directory_scans_disclose_policy_withheld_entries() {
     checks::assert_absent(&symbols, "store.ts");
 }
 
+/// A link inside the workspace is never followed by a directory scan: a
+/// scope whose sources sit only behind links says so, with localSearch's
+/// wording, instead of an empty outline or a `languageRequired` that blames
+/// the grammar.
+#[cfg(unix)]
+#[test]
+fn directory_scans_disclose_in_workspace_links_they_do_not_follow() {
+    let root = Fixture::new();
+    root.write(
+        "real/skill/run.ts",
+        "register(linked);\nexport function shown() {}\n",
+    );
+    std::fs::create_dir_all(root.0.join("links")).expect("links dir");
+    std::os::unix::fs::symlink(root.0.join("real/skill"), root.0.join("links/skill"))
+        .expect("dir link");
+    std::os::unix::fs::symlink(
+        root.0.join("real/skill/run.ts"),
+        root.0.join("links/run.ts"),
+    )
+    .expect("file link");
+    let notice = "2 entries withheld by path policy: 2 symlinks not followed.";
+    let scope = root.0.join("links");
+    let matched = run(
+        &root.0,
+        json!({"operation":"match","path":scope,"pattern":"register($A)"}),
+    )
+    .expect("no languageRequired behind links");
+    assert_eq!(matched["warnings"], json!([notice]), "{matched}");
+    let typed = run(
+        &root.0,
+        json!({"operation":"match","path":scope,"language":"typescript","pattern":"register($A)"}),
+    )
+    .expect("typed match");
+    assert!(
+        typed["warnings"]
+            .as_array()
+            .is_some_and(|w| w.contains(&json!(notice))),
+        "{typed}"
+    );
+    let symbols = run(&root.0, json!({"operation":"symbols","path":scope})).expect("symbols");
+    assert!(
+        symbols["warnings"]
+            .as_array()
+            .is_some_and(|w| w.contains(&json!(notice))),
+        "{symbols}"
+    );
+    // A scope with no file at all names no grammar to set either.
+    std::fs::create_dir_all(root.0.join("empty")).expect("empty dir");
+    let empty = run(
+        &root.0,
+        json!({"operation":"match","path":root.0.join("empty"),"pattern":"register($A)"}),
+    )
+    .expect("an empty scope is no languageRequired");
+    assert_eq!(empty["matchCount"], 0, "{empty}");
+}
+
 #[test]
 fn directory_prefilter_skips_are_aggregated_once() {
     let root = Fixture::new();

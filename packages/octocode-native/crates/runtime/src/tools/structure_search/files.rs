@@ -113,7 +113,8 @@ struct Row {
     name: String,
     size: i64,
     modified: f64,
-    lines: usize,
+    /// Its line count, under `sort:lines` only.
+    lines: Option<Lines>,
     /// The walked entry, for the continuation pages' change check.
     source: std::path::PathBuf,
     /// Its size and time as the walk read them (the stored walk's stamp).
@@ -224,7 +225,7 @@ pub fn execute_files(
         budget,
     );
     if !stored && pages.len() > 1 {
-        super::memo::put(snapshot.clone(), policy, &validated.canonical, &walk);
+        super::memo::put(snapshot.clone(), policy, paths, &validated.canonical, &walk);
     }
     let mut out = files_page(
         q,
@@ -368,6 +369,7 @@ fn walk_files(
         super::max_walk()
     };
     let discovery = paths.discovery_walk();
+    let filtered = q.filtered();
     let mut native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             time_budget: walking.budget(),
@@ -387,12 +389,12 @@ fn walk_files(
             // Only an entry these filters could list makes absence unproven;
             // a replayed entry was counted by the window this one resumes.
             let fresh = visit == Visit::Fresh;
-            if fresh
-                && !allowed
-                && (show_hidden || !dot)
-                && probe.could_list(path)
-                && super::reports_withheld(path)
-            {
+            let unseen = if allowed {
+                super::WalkLeft::unfollowed(path, file_type, filtered)
+            } else {
+                probe.could_list(path)
+            };
+            if fresh && unseen && (show_hidden || !dot) && super::reports_withheld(path) {
                 left.record_withheld(path);
             }
             if !allowed {
@@ -410,21 +412,55 @@ fn walk_files(
     )
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
+    // The line sort's key, counted for every file it ranks (a probe only
+    // counts entries and ranks none) within the walk's time budget, measured
+    // from the count's start so a walk that spent its own budget still ranks
+    // what it walked. Counting is part of the walk: a budget spent before
+    // every file is counted cuts the walk at the first uncounted one
+    // ([`cut_walk_before`]), and `next.continueWalk` resumes there.
+    let lines = if sort == "lines" && bound.is_none() {
+        let (lines, cut) = count_lines(
+            &native
+                .entries
+                .iter()
+                .map(|e| (e.entry_type != "directory").then(|| std::path::Path::new(&e.path)))
+                .collect::<Vec<_>>(),
+            paths,
+            cancel,
+            walking
+                .budget()
+                .map(|budget| std::time::Instant::now() + budget),
+        )?;
+        if let Some(at) = cut {
+            cut_walk_before(&mut native, at);
+        }
+        lines
+    } else {
+        vec![None; native.entries.len()]
+    };
+    let mut lines = lines;
     let window = super::end_window(&mut native, requested, q.scan_offset(), sort == "path");
-    let count_lines = sort == "lines";
+    // `end_window` keeps a walk-order prefix: the counts of its entries.
+    lines.truncate(native.entries.len());
     // A directory root is the listing itself, never one of its rows.
     let mut rows = native
         .entries
         .iter()
-        .filter(|e| {
+        .zip(lines)
+        .filter(|(e, _)| {
             !(e.entry_type == "directory"
                 && (e.relative_path.is_empty() || std::path::Path::new(&e.path) == root))
         })
-        .map(|e| make_row(e, root, security, &detail, count_lines, paths, cancel))
-        .collect::<Result<Vec<_>, ToolError>>()?;
+        .map(|(e, lines)| {
+            // The modified sort's own key shows whatever the detail.
+            let modified_shown = detail == "full" || sort == "modified";
+            make_row(e, root, security, modified_shown, lines)
+        })
+        .collect::<Vec<_>>();
     sort_rows(&mut rows, &sort);
     let mut walk = super::Walked::finish(native, rows, requested, q.scan_offset(), left, security);
     walk.meta.time_window = window;
+    walk.meta.ranked = sort != "path";
     // Path order groups like `tree`: `path`'s own entries first, then each
     // directory once, in walk order (the sort is stable). Other sorts keep
     // their order, so a directory may open several groups.
@@ -517,7 +553,7 @@ fn files_page(
                     &row.display_name,
                     row.kind,
                     Some(row.size),
-                    (lines > 0).then_some(lines),
+                    lines.shown_in_details(),
                     Some(row.modified.round() as i64),
                 )
             } else {
@@ -625,12 +661,9 @@ fn make_row(
     e: &FileSystemEntry,
     root: &std::path::Path,
     security: &ContentSecurity,
-    detail: &str,
-    count_lines: bool,
-    paths: &PathPolicy,
-    cancel: &dyn CancellationCheck,
-) -> Result<Row, ToolError> {
-    let full = detail == "full";
+    modified_shown: bool,
+    lines: Option<Lines>,
+) -> Row {
     // Rows name paths relative to the walked root, like `tree`: `""` is the
     // root itself, which a directory root lists as `.`.
     let is_root = e.relative_path.is_empty() || std::path::Path::new(&e.path) == root;
@@ -655,24 +688,19 @@ fn make_row(
     };
     let dir = dir.to_owned();
     let modified = e.modified_ms.unwrap_or(0.0);
-    let lines = if count_lines && kind != "directory" {
-        line_count(std::path::Path::new(&e.path), paths, cancel)?
-    } else {
-        0
-    };
     let entry = entry_text(
         name,
         kind,
         e.size.filter(|_| kind != "directory"),
         // The line sort's own key, counted for every file it ranks, shows
         // whatever the detail.
-        (count_lines && kind != "directory").then_some(lines),
+        lines,
         // Whole epoch milliseconds: a float would print as `…737.0`.
         e.modified_ms
-            .filter(|_| full)
+            .filter(|_| modified_shown)
             .map(|modified| modified.round() as i64),
     );
-    Ok(Row {
+    Row {
         dir,
         entry,
         display_name: name.to_owned(),
@@ -687,7 +715,7 @@ fn make_row(
             let seen = super::memo::Seen::walked(std::path::Path::new(&e.path), e);
             (seen.size, seen.modified)
         },
-    })
+    }
 }
 /// Characters the deferred detail fields add to one entry at most:
 /// `, totalLines=<usize>` and `, modifiedMs=<i64>`, 33 each.
@@ -698,14 +726,15 @@ const ROW_LAYOUT: &str = "workspaceRelativeDirGroups";
 
 /// One listed entry inside its directory group: the name, `/` after a
 /// directory, then ` (<fields>)` naming the size in bytes (every non-directory
-/// entry), `symlink`, `totalLines=N` and `modifiedMs=N` as they apply. The
+/// entry), `symlink`, the line count ([`Lines::field`]) and `modifiedMs=N` as
+/// they apply. The
 /// fields never contain ` (`, so the last ` (` of an entry ending in `)`
 /// opens them, whatever the name holds.
 pub(super) fn entry_text(
     name: &str,
     kind: &str,
     size: Option<i64>,
-    line_count: Option<usize>,
+    line_count: Option<Lines>,
     modified_ms: Option<i64>,
 ) -> String {
     let mut text = name.to_owned();
@@ -720,7 +749,7 @@ pub(super) fn entry_text(
         fields.push("symlink".to_owned());
     }
     if let Some(lines) = line_count {
-        fields.push(format!("totalLines={lines}"));
+        fields.push(lines.field());
     }
     if let Some(modified) = modified_ms {
         fields.push(format!("modifiedMs={modified}"));
@@ -733,7 +762,7 @@ pub(super) fn entry_text(
 
 fn sort_rows(r: &mut [Row], sort: &str) {
     r.sort_by(|a, b| match sort {
-        "lines" => b.lines.cmp(&a.lines),
+        "lines" => Lines::rank(a.lines).cmp(&Lines::rank(b.lines)),
         "size" => b.size.cmp(&a.size),
         "name" => a.name.cmp(&b.name),
         // Component-wise, the walk order: `a/x` before `a-b/x`.
@@ -742,11 +771,141 @@ fn sort_rows(r: &mut [Row], sort: &str) {
         _ => std::path::Path::new(&a.path).cmp(std::path::Path::new(&b.path)),
     })
 }
+/// A file's line count as a listing shows it: counted, or why not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Lines {
+    Counted(usize),
+    /// Binary content (the one binary definition: the leading-byte sniff, or
+    /// a NUL anywhere) has no lines to count.
+    Binary,
+    /// The file could not be read (gone, denied, a read error): its count
+    /// is unknown, not zero.
+    Unreadable,
+}
+
+impl Lines {
+    /// The entry field: `totalLines=N`, or the reason there is none.
+    fn field(self) -> String {
+        match self {
+            Self::Counted(lines) => format!("totalLines={lines}"),
+            Self::Binary => "binary".to_owned(),
+            Self::Unreadable => "unreadable".to_owned(),
+        }
+    }
+
+    /// The field a details listing shows: none for a file without lines.
+    pub(super) fn shown_in_details(self) -> Option<Self> {
+        (self != Self::Counted(0)).then_some(self)
+    }
+
+    /// The line sort's key: counted files by count, most first, then the
+    /// files without a count, then directories.
+    fn rank(lines: Option<Self>) -> (u8, std::cmp::Reverse<usize>) {
+        match lines {
+            Some(Self::Counted(lines)) => (0, std::cmp::Reverse(lines)),
+            Some(Self::Binary) => (1, std::cmp::Reverse(0)),
+            Some(Self::Unreadable) => (2, std::cmp::Reverse(0)),
+            None => (3, std::cmp::Reverse(0)),
+        }
+    }
+}
+
+/// Line-count workers opening files at once. Each validates, opens and
+/// reads files, and kernel time grows with concurrent openers while wall
+/// time levels off: over 2,280 files (warm cache, 12 cores, macOS) 4 workers
+/// took 38-42 ms wall and 0.13 s sys, 12 workers 54-57 ms and 0.55-0.62 s.
+const FILE_OPEN_WORKERS: usize = 4;
+
+/// Workers for counting `entries` files ([`crate::tools::workers::workers`]),
+/// at most [`FILE_OPEN_WORKERS`].
+fn line_count_workers(entries: usize) -> usize {
+    crate::tools::workers::workers(None, entries, Some(FILE_OPEN_WORKERS))
+}
+
+/// The line counts of `files` (`None`: a directory, never counted), on
+/// [`line_count_workers`]: each worker takes the next file until none is
+/// left or `deadline` passes (the first file is always counted, so a cut
+/// walk still advances). With the deadline passed first, also the index of
+/// the first file left uncounted: the counts are a prefix of `files` up to
+/// it.
+fn count_lines(
+    files: &[Option<&std::path::Path>],
+    paths: &PathPolicy,
+    cancel: &dyn CancellationCheck,
+    deadline: Option<std::time::Instant>,
+) -> Result<(Vec<Option<Lines>>, Option<usize>), ToolError> {
+    let workers = line_count_workers(files.len());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let first_file = files.iter().position(Option::is_some);
+    let counted = std::thread::scope(|scope| {
+        let tasks = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut counted = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(file) = files.get(index) else {
+                            return Ok(counted);
+                        };
+                        let Some(path) = file else { continue };
+                        let late = Some(index) != first_file
+                            && deadline.is_some_and(|at| std::time::Instant::now() >= at);
+                        let lines = if late {
+                            None
+                        } else {
+                            Some(line_count(path, paths, cancel)?)
+                        };
+                        counted.push((index, lines));
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        tasks
+            .into_iter()
+            .map(|task| {
+                task.join().unwrap_or_else(|_| {
+                    Err(ToolError::new(
+                        "executionFailed",
+                        "A line-count worker failed.",
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, ToolError>>()
+    })?;
+    let mut lines = vec![None; files.len()];
+    let mut cut = None::<usize>;
+    for (index, count) in counted.into_iter().flatten() {
+        match count {
+            Some(count) => lines[index] = Some(count),
+            None => cut = Some(cut.map_or(index, |at| at.min(index))),
+        }
+    }
+    if let Some(at) = cut {
+        lines.truncate(at);
+    }
+    Ok((lines, cut))
+}
+
+/// End the walk before `native.entries[at]`, as its time budget does: the
+/// entry and every one after it in walk order are uninspected, and
+/// `next.continueWalk` resumes there.
+fn cut_walk_before(native: &mut octocode_engine::types::FileSystemQueryResult, at: usize) {
+    let Some(first) = native.entries.get(at) else {
+        return;
+    };
+    native.time_cut = Some(first.relative_path.clone());
+    native.walk_position = first.walk_position.saturating_sub(1);
+    native.entries.truncate(at);
+    // The window ends before the walk's own end, so not at its ceiling.
+    native.was_capped = false;
+    native.total_discovered = u32::try_from(at).unwrap_or(u32::MAX);
+}
+
 pub(super) fn line_count(
     path: &std::path::Path,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
-) -> Result<usize, ToolError> {
+) -> Result<Lines, ToolError> {
     use std::io::Read;
     #[cfg(test)]
     LINE_COUNT_READS.with(|reads| reads.set(reads.get() + 1));
@@ -754,10 +913,10 @@ pub(super) fn line_count(
     // Revalidate immediately before reading: discovery authorization is not
     // permission to follow a subsequently changed link or open a special file.
     let Ok(validated) = paths.validate_read(path) else {
-        return Ok(0);
+        return Ok(Lines::Unreadable);
     };
     let Ok(mut file) = std::fs::File::open(validated.canonical) else {
-        return Ok(0);
+        return Ok(Lines::Unreadable);
     };
     let mut buffer = [0_u8; 16 * 1024];
     // Newlines terminate lines; a non-empty final line without one still counts.
@@ -766,16 +925,25 @@ pub(super) fn line_count(
     loop {
         cancel.check().map_err(ToolError::cancelled)?;
         match file.read(&mut buffer) {
-            Ok(0) => return Ok(lines + usize::from(last_byte.is_some_and(|b| b != b'\n'))),
+            Ok(0) => {
+                return Ok(Lines::Counted(
+                    lines + usize::from(last_byte.is_some_and(|b| b != b'\n')),
+                ));
+            }
             Ok(bytes) => {
-                lines += buffer[..bytes]
-                    .iter()
-                    .filter(|byte| **byte == b'\n')
-                    .count();
-                last_byte = buffer[..bytes].last().copied();
+                let read = &buffer[..bytes];
+                if (last_byte.is_none()
+                    && octocode_engine::text::sniff(read)
+                        == octocode_engine::text::BinaryVerdict::Binary)
+                    || read.contains(&0)
+                {
+                    return Ok(Lines::Binary);
+                }
+                lines += read.iter().filter(|byte| **byte == b'\n').count();
+                last_byte = read.last().copied();
             }
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(_) => return Ok(0),
+            Err(_) => return Ok(Lines::Unreadable),
         }
     }
 }
@@ -920,6 +1088,82 @@ mod tests {
         assert_eq!(retry["page"], 1, "{out}");
         assert!(retry.get("includeIgnored").is_none(), "{out}");
         assert!(retry.get("snapshot").is_none(), "{out}");
+    }
+
+    /// Line counting has the walk's time budget: past the deadline no file
+    /// but the first is counted, and the counts are the prefix before the
+    /// first uncounted file (the walk is cut there); a directory is never
+    /// counted.
+    #[test]
+    fn line_counts_stop_at_the_deadline_as_a_prefix() {
+        let root = tempfile::tempdir().expect("root");
+        let file = root.path().join("a.rs");
+        std::fs::write(&file, "x\ny\n").expect("file");
+        let paths = crate::tools::test_support::workspace_policy(root.path());
+        let files = [None, Some(file.as_path()), None, Some(file.as_path())];
+        let never = &crate::tools::cancel::NeverCancel;
+        let (counted, cut) = count_lines(&files, &paths, never, None).expect("count");
+        assert_eq!(
+            counted,
+            [None, Some(Lines::Counted(2)), None, Some(Lines::Counted(2))]
+        );
+        assert_eq!(cut, None);
+        // The first file is counted whatever the deadline: a cut walk
+        // still advances.
+        let (late, cut) =
+            count_lines(&files, &paths, never, Some(std::time::Instant::now())).expect("count");
+        assert_eq!(late, [None, Some(Lines::Counted(2)), None]);
+        assert_eq!(cut, Some(3));
+    }
+
+    /// Line counting opens files on a bounded pool: at most
+    /// [`FILE_OPEN_WORKERS`] at once whatever the core count, never more
+    /// than there are entries, and always one.
+    #[test]
+    fn line_count_workers_are_bounded() {
+        assert_eq!(line_count_workers(0), 1);
+        assert_eq!(line_count_workers(1), 1);
+        let many = line_count_workers(10_000);
+        assert!((1..=FILE_OPEN_WORKERS).contains(&many), "{many}");
+    }
+
+    /// A count cut ends the walk before the first uncounted entry, as the
+    /// walk's own time budget does: the window keeps the entries before it,
+    /// names it as the time cut, and resumes the walk right there.
+    #[test]
+    fn a_count_cut_ends_the_walk_before_the_first_uncounted_entry() {
+        let entry = |name: &str, position: u32| FileSystemEntry {
+            path: name.to_owned(),
+            relative_path: name.to_owned(),
+            name: name.to_owned(),
+            entry_type: "file".to_owned(),
+            size: Some(1),
+            modified_ms: None,
+            modified_time: None,
+            accessed_ms: None,
+            permissions: None,
+            extension: None,
+            depth: 0,
+            walk_position: position,
+        };
+        let mut native = octocode_engine::types::FileSystemQueryResult {
+            entries: vec![entry("a.rs", 3), entry("b.rs", 5), entry("c.rs", 9)],
+            total_discovered: 3,
+            was_capped: true,
+            skipped: 0,
+            permission_denied: 0,
+            ignored: 0,
+            warnings: Vec::new(),
+            pruned_dirs: Vec::new(),
+            time_cut: None,
+            walk_position: 9,
+        };
+        cut_walk_before(&mut native, 1);
+        assert_eq!(native.entries.len(), 1);
+        assert_eq!(native.time_cut.as_deref(), Some("b.rs"));
+        assert_eq!(native.walk_position, 4, "the resume inspects b.rs first");
+        assert!(!native.was_capped);
+        assert_eq!(native.total_discovered, 1);
     }
 
     #[test]

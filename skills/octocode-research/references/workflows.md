@@ -12,6 +12,7 @@ Load when the source or task is known: local checkout, remote repository or pack
 - No bodies needed: files or count view; one file's hits: one `localFetch` with `matchString`.
   `npx octocode localSearch '{"path":"src","matchString":"createCache|withCache","regex":"rust","resultView":"files"}'`
 - Broad content exploration: `clasifyContext` can select matched evidence before host reading. An unread file's contents need `clasify.source` or a classified `localFetch`; path/count results do not reveal them. Use the [route decision](clasify.md#choose-the-route).
+- Shared questions across regions of several unread files: use [section assessment](clasify.md#assess-sections-across-resources) when the live schema exposes it, then read deciding targets at their returned source version.
 - `repair` in `hints` regex fix: confirm it still searches what you meant.
 - `structureSearch files` stops at `maxEntries`: follow `next.expandScan`. Rows group by `dir`: path = `root`/`dir`/name; ` (n)` = bytes.
 - Absence claim: set `noIgnore` (and `hidden` on `tree`).

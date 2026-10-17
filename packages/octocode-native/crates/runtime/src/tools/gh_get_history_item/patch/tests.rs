@@ -1315,3 +1315,56 @@ fn a_page_whose_patches_fit_has_no_summary_beside_later_pages() {
     assert!(row.get("fileSummary").is_none(), "{row}");
     assert_eq!(row["files"][0]["path"], "src/a.rs", "{row}");
 }
+
+/// A long patch line keeps every keyword window at the keyword itself,
+/// whatever lowercasing does to the bytes before it: `İ` (+1 byte) and `ẞ`
+/// (−1) cancel to an equal length yet shift every offset, a lone `İ` or
+/// `ẞ` changes the length, and combining marks, a final `Σ` and emoji ride
+/// along. No window is dropped or moved.
+#[test]
+fn clipped_patch_lines_keep_keyword_windows_in_any_script() {
+    let pad = "x".repeat(300);
+    for prefix in [
+        "İéxẞ ",
+        "DİYARBAKIR İstanbul ı I ",
+        "STRAẞE straße ẞ ",
+        "e\u{301}cole Ё\u{308} a\u{30a}\u{301} ",
+        "ΟΔΟΣ Σ σ ",
+        "👍🏽 👩‍👩‍👧 🎉 ",
+    ] {
+        let line = format!("+{prefix}{pad} NeedleOne {pad} {prefix}NEEDLEONE {pad}\n");
+        let clipped = clip_line(&line, "needleone");
+        assert_eq!(
+            clipped.matches("NeedleOne").count(),
+            1,
+            "{prefix}: {clipped}"
+        );
+        assert_eq!(
+            clipped.matches("NEEDLEONE").count(),
+            1,
+            "{prefix}: {clipped}"
+        );
+        assert!(
+            clipped.contains(&format!(" {prefix}NEEDLEONE ")),
+            "{clipped}"
+        );
+        assert!(
+            clipped.starts_with('+') && clipped.ends_with('\n'),
+            "{clipped}"
+        );
+        // Every cut states what it left out; the kept text is the line's own.
+        let kept: usize = clipped
+            .split("[… ")
+            .enumerate()
+            .map(|(index, part)| {
+                if index == 0 {
+                    part.chars().count()
+                } else {
+                    let (count, rest) = part.split_once(" chars …]").expect("cut");
+                    count.parse::<usize>().expect("count") + rest.chars().count()
+                }
+            })
+            .sum();
+        assert_eq!(kept, line.chars().count(), "{prefix}: {clipped}");
+    }
+}

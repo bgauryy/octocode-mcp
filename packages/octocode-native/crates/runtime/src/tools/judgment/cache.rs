@@ -6,9 +6,10 @@
 //! questions, resolved asset bytes and capability options; any change misses.
 //! Only the digest is stored as the key. Entries expire after
 //! [`TTL`] so an aliased model's update is picked up.
-use super::{ClassificationError, EvaluationInput, Judged};
+use super::{EvaluationInput, Judged, QuestionOutcomes};
 use crate::cache::{CacheClass, CacheConfig, CacheKey, Store};
-use octocode_github::{KeyedFlight, Partition};
+use octocode_github::Partition;
+use octocode_io::flight::KeyedFlight;
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -17,12 +18,12 @@ const NAMESPACE: &str = "judgment/v2";
 const MAX_ENTRIES: usize = 256;
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 const DISK_BYTES: u64 = 64 * 1024 * 1024;
-const TTL: Duration = Duration::from_secs(30 * 60);
+pub(super) const TTL: Duration = Duration::from_secs(30 * 60);
 
 pub(super) struct Judgments {
     store: Store<Judged>,
     /// A turn's slot holds the provider failure of its wave, if any.
-    pub(super) flight: KeyedFlight<String, Option<ClassificationError>>,
+    pub(super) flight: KeyedFlight<String, Option<QuestionOutcomes>>,
 }
 
 impl Judgments {

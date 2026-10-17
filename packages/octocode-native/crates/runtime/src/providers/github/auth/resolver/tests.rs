@@ -160,6 +160,39 @@ async fn request_credentials_resolve_once_per_host_until_rejected() {
     assert_eq!(backend.calls().len(), 8, "inspection never reads the memo");
 }
 
+/// A remembered `gh` (or stored) selection has no refresh time of its own,
+/// so it lives one [`MEMO_TTL`]: a long-lived host sees `gh auth switch`,
+/// a logout, or a rotated token, instead of sending the old token forever.
+#[tokio::test]
+async fn a_remembered_credential_is_selected_again_after_the_memo_ttl() {
+    let mut backend = Backend::new(None);
+    let auth = authentication(None);
+    let request = async |auth: &Authentication, backend: &Backend| {
+        auth.resolve_with("github.com", AuthMode::Request, &budget(), backend)
+            .await
+            .unwrap()
+    };
+    assert_eq!(request(&auth, &backend).await.unwrap().token(), "gh-token");
+    // `gh auth switch`: within the TTL the memo answers.
+    backend.gh = Some("switched-token");
+    assert_eq!(request(&auth, &backend).await.unwrap().token(), "gh-token");
+    let age = |auth: &Authentication| {
+        let mut memo = auth.memo.lock().unwrap();
+        let entry = memo.get_mut("github.com").unwrap();
+        entry.at = entry.at.checked_sub(MEMO_TTL).unwrap();
+    };
+    age(&auth);
+    assert_eq!(
+        request(&auth, &backend).await.unwrap().token(),
+        "switched-token"
+    );
+    // `gh auth logout`: past the TTL the request runs as no credential.
+    backend.gh = None;
+    age(&auth);
+    assert!(request(&auth, &backend).await.is_none());
+    assert_eq!(backend.calls(), ["load", "gh", "load", "gh", "load", "gh"]);
+}
+
 #[tokio::test]
 async fn environment_is_lazy_and_host_scoped() {
     let auth = authentication(Some("env-token"));
@@ -338,4 +371,30 @@ async fn rejected_expired_stored_token_refreshes() {
     assert_eq!(next.token(), "refreshed-token");
     assert_eq!(next.source_label(), "platform");
     assert_eq!(backend.calls(), ["load", "refresh"]);
+}
+
+#[tokio::test]
+async fn saved_response_inspection_rejects_known_rejected_credentials_and_honors_budget() {
+    let auth = authentication(Some("env-token"));
+    let credential = ResolvedCredential::new("env-token", CredentialSource::Environment);
+    let first = auth
+        .inspect_response_identity("github.com", &budget())
+        .await
+        .unwrap();
+    assert_eq!(
+        first,
+        octocode_github::Partition::new("github.com", Some(credential.secret())).identity()
+    );
+    auth.reject("github.com", Some(&credential));
+    let rejected = auth
+        .inspect_response_identity("github.com", &budget())
+        .await
+        .unwrap_err();
+    assert_eq!(rejected.kind, ProviderErrorKind::Authentication);
+    let expired = RequestBudget::with_timeout(Duration::ZERO, 1024);
+    assert!(
+        auth.inspect_response_identity("github.com", &expired)
+            .await
+            .is_err()
+    );
 }

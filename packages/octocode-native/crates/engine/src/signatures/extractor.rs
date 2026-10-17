@@ -241,9 +241,20 @@ pub(crate) fn extract(content: &str, cfg: &LangExtractConfig) -> Option<Vec<(usi
 /// the rest.
 pub fn extract_outline(content: &str, cfg: &LangExtractConfig) -> Option<Vec<(usize, String)>> {
     let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
-    // One parse serves the kept lines and the import runs.
     let tree = parse_before(content, &cfg.language, deadline)?;
-    let kept = kept_lines(content, cfg, &tree, deadline, 65_536, true)?;
+    outline_from_tree(content, cfg, &tree, deadline)
+}
+
+/// [`extract_outline`] from `tree`, a parse of `content` in `cfg`'s grammar:
+/// one parse serves the kept lines and the import runs (and, through
+/// `extract_signatures_with_declarations`, the declarations too).
+pub(crate) fn outline_from_tree(
+    content: &str,
+    cfg: &LangExtractConfig,
+    tree: &Tree,
+    deadline: Instant,
+) -> Option<Vec<(usize, String)>> {
+    let kept = kept_lines(content, cfg, tree, deadline, 65_536, true)?;
     Some(collapse_import_runs(kept, &import_runs(tree.root_node())))
 }
 

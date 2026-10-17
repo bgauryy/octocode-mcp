@@ -8,7 +8,7 @@
 //! as it is: the output contract checks exactly what a client receives.
 use crate::tools::id::ToolId;
 use serde_json::{Map, Value};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 /// Row-level fields a response may state once in `shared`. They are never
 /// hoisted from entries, so a shared key has exactly one origin.
@@ -78,62 +78,59 @@ fn can_share_field(tool: ToolId, key: &str, value: &Value) -> bool {
 
 /// Every field some array-entry schema of `tool`'s output contract
 /// requires: hoisting one would remove it from entries whose schema demands
-/// it. Derived once per tool from the embedded contract.
+/// it. Derived once per tool from that tool's contract entry.
 pub(crate) fn required_entry_fields(tool: ToolId) -> &'static BTreeSet<String> {
-    static REQUIRED: std::sync::OnceLock<HashMap<ToolId, BTreeSet<String>>> =
-        std::sync::OnceLock::new();
-    static NONE: BTreeSet<String> = BTreeSet::new();
-    REQUIRED
-        .get_or_init(|| {
-            ToolId::ALL
-                .into_iter()
-                .filter_map(|id| {
-                    let schema = &super::tool_contract(id).ok()?["outputSchema"];
-                    let mut required = BTreeSet::new();
-                    let mut walk = EntryWalk {
-                        defs: &schema["$defs"],
-                        seen: std::collections::HashSet::new(),
-                        required: &mut required,
-                    };
-                    walk.visit(schema, false);
-                    Some((id, required))
-                })
-                .collect()
-        })
-        .get(&tool)
-        .unwrap_or(&NONE)
+    static REQUIRED: PerTool = [const { std::sync::OnceLock::new() }; ToolId::ALL.len()];
+    per_tool(&REQUIRED, tool, |schema| {
+        let mut required = BTreeSet::new();
+        let mut walk = EntryWalk {
+            defs: &schema["$defs"],
+            seen: std::collections::HashSet::new(),
+            required: &mut required,
+        };
+        walk.visit(schema, false);
+        required
+    })
 }
 
 fn required_row_fields(tool: ToolId) -> &'static BTreeSet<String> {
-    static REQUIRED: std::sync::OnceLock<HashMap<ToolId, BTreeSet<String>>> =
-        std::sync::OnceLock::new();
-    static NONE: BTreeSet<String> = BTreeSet::new();
-    REQUIRED
-        .get_or_init(|| {
-            ToolId::ALL
-                .into_iter()
-                .filter_map(|id| {
-                    let schema = &super::tool_contract(id).ok()?["outputSchema"];
-                    let defs = &schema["$defs"];
-                    let mut required = BTreeSet::new();
-                    for array in super::property_schemas(schema, defs, id.output().rows_key()) {
-                        for row in super::item_schemas(array, defs) {
-                            for data in super::property_schemas(row, defs, "data") {
-                                let mut walk = EntryWalk {
-                                    defs,
-                                    seen: std::collections::HashSet::new(),
-                                    required: &mut required,
-                                };
-                                walk.visit(data, true);
-                            }
-                        }
-                    }
-                    Some((id, required))
-                })
-                .collect()
-        })
-        .get(&tool)
-        .unwrap_or(&NONE)
+    static REQUIRED: PerTool = [const { std::sync::OnceLock::new() }; ToolId::ALL.len()];
+    per_tool(&REQUIRED, tool, |schema| {
+        let defs = &schema["$defs"];
+        let mut required = BTreeSet::new();
+        for array in super::property_schemas(schema, defs, tool.output().rows_key()) {
+            for row in super::item_schemas(array, defs) {
+                for data in super::property_schemas(row, defs, "data") {
+                    let mut walk = EntryWalk {
+                        defs,
+                        seen: std::collections::HashSet::new(),
+                        required: &mut required,
+                    };
+                    walk.visit(data, true);
+                }
+            }
+        }
+        required
+    })
+}
+
+/// One field table per tool, indexed by [`ToolId::index`].
+type PerTool = [std::sync::OnceLock<BTreeSet<String>>; ToolId::ALL.len()];
+
+/// `tool`'s table in `tables`, built on first use by `build` from that
+/// tool's output schema only (see [`super::tool_contract`]): a response
+/// never parses the contracts of tools it does not answer for. A tool the
+/// contract lacks has no fields.
+fn per_tool(
+    tables: &'static PerTool,
+    tool: ToolId,
+    build: impl FnOnce(&Value) -> BTreeSet<String>,
+) -> &'static BTreeSet<String> {
+    tables[tool.index()].get_or_init(|| {
+        super::tool_contract(tool)
+            .map(|contract| build(&contract["outputSchema"]))
+            .unwrap_or_default()
+    })
 }
 
 /// One output schema's walk: inside an array's `items` (through references

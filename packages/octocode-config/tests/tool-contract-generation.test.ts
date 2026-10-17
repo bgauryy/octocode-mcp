@@ -138,9 +138,12 @@ describe('generated tool types', () => {
     // Briefs are optional: a bare row and a briefed row both type-check.
     const query: ToolQuery<'localFetch'> = { path: '/tmp/a.ts' };
     const briefed: ToolQuery<'localFetch'> = { path: '/tmp/a.ts', mainGoal: 'Read the file.', reasoning: 'Read the file' };
-    const input: ToolInput<'localFetch'> = { queries: [query, briefed] };
+    const input = { queries: [query, briefed] } satisfies ToolInput<'localFetch'>;
+    const saved = { responseSnapshot: 'saved', responseOffset: 1 } satisfies ToolInput<'localFetch'>;
     const output = { results: [] } satisfies Partial<ToolOutput<'localFetch'>>;
     expect(input.queries[0]?.path).toBe('/tmp/a.ts');
+    expect(saved.responseSnapshot).toBe('saved');
+    expect(saved).not.toHaveProperty('queries');
     expect(output.results).toEqual([]);
   });
 

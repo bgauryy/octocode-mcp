@@ -810,13 +810,11 @@ fn spell(
 /// `path` relative to `root`, through `../` for a path above it: a row
 /// never prints an absolute path.
 fn below(root: &Path, path: &Path) -> String {
-    let relative = root
-        .ancestors()
+    root.ancestors()
         .enumerate()
         .find_map(|(up, base)| {
             let rest = path.strip_prefix(base).ok()?;
-            Some("../".repeat(up) + &rest.to_string_lossy())
+            Some("../".repeat(up) + &octocode_engine::text::slash_path(rest))
         })
-        .unwrap_or_else(|| path.to_string_lossy().into_owned());
-    relative.replace('\\', "/")
+        .unwrap_or_else(|| octocode_engine::text::slash_path(path))
 }

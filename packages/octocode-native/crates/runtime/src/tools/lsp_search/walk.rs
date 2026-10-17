@@ -754,7 +754,9 @@ const CLASS_KIND: u64 = 5;
 /// and parsed off the async worker through the shared declarations cache,
 /// however many class callers it holds.
 #[derive(Default)]
-pub(super) struct ClassFacts(HashMap<String, Option<Value>>);
+pub(super) struct ClassFacts(
+    HashMap<String, Option<std::sync::Arc<octocode_engine::graph::GraphFactsDocument>>>,
+);
 
 impl ClassFacts {
     /// [`narrowed_class_caller`] of an incoming `edge`; `None` for any other
@@ -776,22 +778,11 @@ impl ClassFacts {
                     // The parse is shared with outline pages and search hits:
                     // one parse per file version.
                     tokio::task::spawn_blocking(move || {
-                        crate::tools::declarations_cache::extract(
-                            &source.content,
-                            &file,
-                            None,
-                            || {
-                                octocode_engine::portable::extract_declarations(
-                                    &source.content,
-                                    &file,
-                                )
-                            },
-                        )
+                        crate::tools::declarations_cache::file_document(&source.content, &file)
                     })
                     .await
                     .ok()
                     .flatten()
-                    .and_then(|json| serde_json::from_str(&json).ok())
                 }
                 _ => None,
             };
@@ -806,7 +797,11 @@ impl ClassFacts {
 /// holds every call site, so its range and read lead fit the call. `facts`
 /// are the declarations of the class's file. The walk itself keeps the
 /// server's item. `None` when nothing narrower holds them.
-pub(super) fn narrowed_class_caller(node: &Value, sites: &[Value], facts: &Value) -> Option<Value> {
+pub(super) fn narrowed_class_caller(
+    node: &Value,
+    sites: &[Value],
+    facts: &octocode_engine::graph::GraphFactsDocument,
+) -> Option<Value> {
     if node.get("kind").and_then(Value::as_u64) != Some(CLASS_KIND) {
         return None;
     }
@@ -820,11 +815,11 @@ pub(super) fn narrowed_class_caller(node: &Value, sites: &[Value], facts: &Value
         line(node, "/range/start/line")?,
         line(node, "/range/end/line")?,
     );
-    let member = facts["declarations"]
-        .as_array()?
+    let member = facts
+        .declarations
         .iter()
         .filter_map(|declaration| {
-            let kind = match declaration["kind"].as_str()? {
+            let kind = match declaration.kind.as_str() {
                 "constructor" => 9,
                 "method" => 6,
                 "property" => 7,
@@ -832,8 +827,8 @@ pub(super) fn narrowed_class_caller(node: &Value, sites: &[Value], facts: &Value
                 _ => return None,
             };
             let span = (
-                line(declaration, "/range/start/line")?,
-                line(declaration, "/range/end/line")?,
+                u64::from(declaration.range.start.line),
+                u64::from(declaration.range.end.line),
             );
             (span != class
                 && class.0 <= span.0
@@ -845,12 +840,12 @@ pub(super) fn narrowed_class_caller(node: &Value, sites: &[Value], facts: &Value
         .min_by_key(|(size, _, _)| *size)?;
     let (_, kind, declaration) = member;
     Some(json!({
-        "name": declaration["name"],
+        "name": declaration.name,
         "kind": kind,
         "detail": node.get("name"),
         "uri": node.get("uri"),
-        "range": declaration["range"],
-        "selectionRange": declaration.get("selectionRange").unwrap_or(&declaration["range"]),
+        "range": declaration.range,
+        "selectionRange": declaration.selection_range,
     }))
 }
 

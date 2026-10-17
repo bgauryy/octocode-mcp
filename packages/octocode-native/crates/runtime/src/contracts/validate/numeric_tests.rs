@@ -94,7 +94,9 @@ fn untyped_input_state_keeps_its_float_representation() {
     let before = state.to_string();
     let rows = prepare_many_and_validate(
         "clasify",
-        json!({"queries":[{"state":state,"questions":{"check":{"type":"noul"}}}]}),
+        json!({"queries":[{"state":state,"questions":{"check":{
+            "type":"noul","instructions":"The state contains numeric evidence."
+        }}}]}),
     )
     .expect("untyped state is accepted");
     assert_eq!(rows[0]["state"].to_string(), before);

@@ -10,8 +10,6 @@
 //! while nothing it scanned changed.
 use super::types::BuiltGraph;
 use octocode_io::memo::{Memo, MemoLimits};
-use std::collections::BTreeSet;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -92,6 +90,18 @@ pub(super) fn get(key: &str, disk: Option<&Path>) -> Option<Arc<BuiltGraph>> {
     }))
 }
 
+/// The JSON text of a stored graph file (tests).
+#[cfg(test)]
+pub(super) fn stored_text(path: &Path) -> String {
+    use std::io::Read;
+    let packed = std::fs::read(path).expect("stored graph");
+    let mut text = String::new();
+    flate2::read::DeflateDecoder::new(packed.as_slice())
+        .read_to_string(&mut text)
+        .expect("deflated JSON");
+    text
+}
+
 pub(super) fn put(key: String, graph: Arc<BuiltGraph>, disk: Option<&Path>) {
     let Some(stamp) = file_stamp(&graph) else {
         return;
@@ -113,14 +123,16 @@ pub(super) fn put(key: String, graph: Arc<BuiltGraph>, disk: Option<&Path>) {
     });
 }
 
-/// The disk tier: one JSON file per graph key, the newest few kept.
+/// The disk tier: one deflated JSON file per graph key, the newest few
+/// kept. Graph JSON repeats paths and names on every fact, so it deflates
+/// about tenfold.
 mod disk {
     use super::BuiltGraph;
     use std::path::{Path, PathBuf};
 
     /// Graphs kept on disk; the oldest go first.
     const KEPT: usize = 4;
-    /// Largest stored graph read back (a graph near the edge cap).
+    /// Largest stored graph read back, inflated (a graph near the edge cap).
     const MAX_BYTES: usize = 256 << 20;
 
     /// One stored graph. The build names the shape it was written with, so
@@ -142,11 +154,20 @@ mod disk {
     }
 
     fn file(dir: &Path, key: &str) -> PathBuf {
-        dir.join(format!("{}.json", crate::digest::sha256(key.as_bytes())))
+        dir.join(format!("{}.json.z", crate::digest::sha256(key.as_bytes())))
     }
 
     pub(super) fn read(dir: &Path, key: &str) -> Option<(BuiltGraph, u64)> {
-        let bytes = crate::tools::source::read_bounded(&file(dir, key), MAX_BYTES).ok()?;
+        use std::io::Read;
+        let packed = crate::tools::source::read_bounded(&file(dir, key), MAX_BYTES).ok()?;
+        let mut bytes = Vec::new();
+        flate2::read::DeflateDecoder::new(packed.as_slice())
+            .take(MAX_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .ok()?;
+        if bytes.len() > MAX_BYTES {
+            return None;
+        }
         let stored = serde_json::from_slice::<Stored<BuiltGraph>>(&bytes).ok()?;
         (stored.build == build() && stored.key == key).then_some((stored.graph, stored.stamp))
     }
@@ -171,23 +192,58 @@ mod disk {
             let _ = std::fs::remove_file(file(dir, key));
             return;
         }
+        let packed = {
+            use std::io::Write;
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+            match encoder.write_all(&bytes).and_then(|()| encoder.finish()) {
+                Ok(packed) => packed,
+                Err(_) => return,
+            }
+        };
         if std::fs::create_dir_all(dir).is_err() {
             return;
         }
-        if octocode_io::atomic::write_atomic(&file(dir, key), &bytes, false).is_err() {
+        if octocode_io::atomic::write_atomic(&file(dir, key), &packed, false).is_err() {
             return;
         }
         prune(dir);
     }
 
-    /// Whether the secret scanner flags any of `bytes`, or the text holds a
-    /// private-key marker (a block whose newlines JSON escaped). The scanner
-    /// takes bounded text, so a large graph is scanned in windows that
-    /// overlap by more than any secret it matches spans.
-    fn holds_secret(bytes: &[u8]) -> bool {
+    /// The distinct string values of serialized JSON `bytes`, still
+    /// escaped, one per line. Every graph fact is a string (a name, path,
+    /// specifier or call label), so whatever a source held sits inside one
+    /// of them, and a path repeated across thousands of facts is kept once.
+    fn distinct_strings(bytes: &[u8]) -> String {
+        let mut seen = std::collections::HashSet::new();
+        let mut text = String::new();
+        let mut at = 0;
+        while let Some(open) = bytes[at..].iter().position(|byte| *byte == b'"') {
+            let start = at + open + 1;
+            let mut end = start;
+            while end < bytes.len() && bytes[end] != b'"' {
+                end += if bytes[end] == b'\\' { 2 } else { 1 };
+            }
+            let end = end.min(bytes.len());
+            if let Ok(value) = std::str::from_utf8(&bytes[start..end])
+                && seen.insert(value)
+            {
+                text.push_str(value);
+                text.push('\n');
+            }
+            at = (end + 1).min(bytes.len());
+        }
+        text
+    }
+
+    /// Whether the secret scanner flags any distinct string of `bytes`, or
+    /// one holds a private-key marker (a block whose newlines JSON escaped).
+    /// The scanner takes bounded text, so the strings are scanned in windows
+    /// that overlap by more than any secret it matches spans.
+    pub(super) fn holds_secret(bytes: &[u8]) -> bool {
         const WINDOW: usize = 1 << 20;
         const OVERLAP: usize = 8 << 10;
-        let text = String::from_utf8_lossy(bytes);
+        let text = distinct_strings(bytes);
         if text.contains("PRIVATE KEY") {
             return true;
         }
@@ -217,7 +273,12 @@ mod disk {
         };
         let mut files = entries
             .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+            // Every visible regular file here is a stored graph (an older
+            // release's `.json` too); hidden ones are in-flight atomic writes.
+            .filter(|entry| {
+                entry.file_type().is_ok_and(|kind| kind.is_file())
+                    && !entry.file_name().to_string_lossy().starts_with('.')
+            })
             .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
             .collect::<Vec<_>>();
         files.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
@@ -227,13 +288,11 @@ mod disk {
     }
 }
 
-/// Name, size and modification time of every entry of each directory
-/// that holds a scanned file (and of the root's ancestors inside its
-/// repository): this covers the
-/// scanned files, files added or removed beside them, and the manifests,
-/// tsconfig and ignore files linking reads.
+/// The stamp of every directory the graph's build read (see
+/// [`super::freshness::scope_dirs`]): the scanned files, files added or
+/// removed beside them, and the manifests, tsconfig and ignore files linking
+/// reads.
 fn file_stamp(graph: &BuiltGraph) -> Option<u64> {
-    let mut dirs = BTreeSet::from([graph.root.clone()]);
     let files = graph.nodes.keys().map(String::as_str).chain(
         graph
             .diagnostics
@@ -241,51 +300,10 @@ fn file_stamp(graph: &BuiltGraph) -> Option<u64> {
             .filter(|d| d.code == "scan-skip")
             .map(|d| d.file.as_str()),
     );
-    for file in files {
-        let mut rest = file;
-        while let Some((dir, _)) = rest.rsplit_once('/') {
-            if !dirs.insert(graph.root.join(dir)) {
-                break;
-            }
-            rest = dir;
-        }
-    }
-    // Outer manifests and ignore files are read up to the repository root.
-    if let Some(repository) = graph.root.ancestors().find(|dir| dir.join(".git").exists()) {
-        dirs.extend(
-            graph
-                .root
-                .ancestors()
-                .skip(1)
-                .take_while(|dir| dir.starts_with(repository))
-                .map(Path::to_path_buf),
-        );
-    }
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    for dir in dirs {
-        dir.hash(&mut hasher);
-        let entries = std::fs::read_dir(&dir).ok()?;
-        let mut stats = entries
-            .collect::<Result<Vec<_>, _>>()
-            .ok()?
-            .into_iter()
-            // Git's own bookkeeping changes on every git command.
-            .filter(|entry| entry.file_name() != ".git")
-            .map(|entry| {
-                let meta = entry.metadata().ok()?;
-                Some((entry.file_name(), crate::tools::source::cache_stamp(&meta)?))
-            })
-            .collect::<Option<Vec<_>>>()?;
-        stats.sort_by(|a, b| a.0.cmp(&b.0));
-        for (name, stamp) in stats {
-            name.hash(&mut hasher);
-            stamp.size.hash(&mut hasher);
-            stamp.modified_ns.hash(&mut hasher);
-            stamp.changed_ns.hash(&mut hasher);
-            stamp.inode.hash(&mut hasher);
-        }
-    }
-    Some(hasher.finish())
+    super::freshness::dir_stamp(
+        &graph.root,
+        &super::freshness::scope_dirs(&graph.root, files),
+    )
 }
 
 #[cfg(test)]
@@ -455,6 +473,58 @@ mod tests {
         assert_eq!(other_process(disk.path().to_path_buf()), Some(1));
         std::fs::write(root.path().join("b.ts"), "export const b = 1;\n").expect("sibling");
         assert_eq!(other_process(disk.path().to_path_buf()), None);
+    }
+
+    /// The secret check reads each distinct string once, escaped as stored:
+    /// a token anywhere, even in a repeated or escaped value, keeps the
+    /// graph off the disk; ordinary facts pass.
+    #[test]
+    fn the_stored_secret_check_reads_every_distinct_string() {
+        const TOKEN: &str = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789";
+        let clean = serde_json::to_vec(&serde_json::json!({
+            "facts": [{"file": "src/a.ts", "name": "save"}, {"file": "src/a.ts", "name": "load"}],
+        }))
+        .expect("json");
+        assert!(!disk::holds_secret(&clean));
+        let token = serde_json::to_vec(&serde_json::json!({
+            "facts": [{"specifier": format!("x\"{TOKEN}")}, {"specifier": format!("x\"{TOKEN}")}],
+        }))
+        .expect("json");
+        assert!(disk::holds_secret(&token));
+        let key = serde_json::to_vec(&serde_json::json!({
+            "text": "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----"
+        }))
+        .expect("json");
+        assert!(disk::holds_secret(&key));
+    }
+
+    /// A stored graph is deflated JSON that reads back whole.
+    #[test]
+    fn a_stored_graph_is_deflated_and_reads_back() {
+        let root = tempfile::tempdir().expect("root");
+        let disk = tempfile::tempdir().expect("disk");
+        std::fs::write(root.path().join("a.ts"), "export const a = 1;\n").expect("source");
+        let mut graph = BuiltGraph {
+            root: root.path().to_path_buf(),
+            ..BuiltGraph::default()
+        };
+        for index in 0..200 {
+            graph.nodes.insert(
+                format!("a_module_with_a_long_name_{index}.ts"),
+                Default::default(),
+            );
+        }
+        put("deflated".into(), Arc::new(graph), Some(disk.path()));
+        let files = std::fs::read_dir(disk.path())
+            .expect("disk")
+            .map(|entry| entry.expect("entry").path())
+            .collect::<Vec<_>>();
+        assert_eq!(files.len(), 1);
+        let text = stored_text(&files[0]);
+        let packed = std::fs::metadata(&files[0]).expect("meta").len() as usize;
+        assert!(packed * 4 < text.len(), "{packed} vs {}", text.len());
+        let (read, _) = disk::read(disk.path(), "deflated").expect("reads back");
+        assert_eq!(read.nodes.len(), 200);
     }
 
     /// Graphs are kept while their elements fit one budget: a graph near the

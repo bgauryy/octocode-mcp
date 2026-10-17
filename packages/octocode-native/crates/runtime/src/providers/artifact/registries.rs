@@ -91,11 +91,9 @@ pub(crate) async fn pypi(
         .collect::<Vec<_>>()
         .into();
     // PyPI names no commit; an upstream tag for this release pins the lead.
-    if let (Some(repository), Some(version)) = (&artifact.repository, &artifact.version) {
-        artifact.source_ref =
-            super::release_ref::github_release_tag(repository, &artifact.name, version, client)
-                .await;
-        artifact.source_tag = artifact.source_ref.is_some();
+    if let Some(version) = artifact.version.clone() {
+        let name = artifact.name.clone();
+        super::release_ref::pin_release_tag(&mut artifact, &name, &version, client).await;
     }
     Ok(ArtifactProviderPage::single(artifact))
 }
@@ -345,6 +343,49 @@ async fn crate_release(
     Ok(Some(artifact))
 }
 
+/// A crate's latest release from its metadata plus the one version record
+/// crates.io names its default (`include=default_version`): the highest
+/// stable version, else the highest prerelease, else the highest yanked
+/// one, which the row then marks yanked. The same row the crate document
+/// gives, without downloading every version. `None` when the crate is
+/// unknown or names no default, so the crate-document read decides.
+async fn crate_default_release(
+    name: &str,
+    client: &RegistryClient<'_>,
+) -> Result<Option<ArtifactItem>, ArtifactError> {
+    let url = parse_url(&format!(
+        "https://crates.io/api/v1/crates/{}?include=default_version",
+        super::util::encode_component(name)
+    ))?;
+    let Some(response) = client
+        .json(ArtifactType::Crates, url, true, None, None, JSON)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let body = object_for(&response, ArtifactType::Crates)?;
+    let row = object_for(
+        body.get("crate")
+            .ok_or_else(|| super::util::invalid(ArtifactType::Crates))?,
+        ArtifactType::Crates,
+    )?;
+    let default = row.get("default_version").and_then(Value::as_str);
+    let Some(entry) = body
+        .get("versions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|entry| default.is_some() && entry.get("num").and_then(Value::as_str) == default)
+    else {
+        return Ok(None);
+    };
+    // This view counts no versions (`max_version` is "0.0.0"): the
+    // version is the default entry's.
+    let mut artifact = crate_item(row)?;
+    apply_crate_version(&mut artifact, entry);
+    Ok(Some(artifact))
+}
+
 /// The commit a GitHub-hosted crate version was packaged from (cargo's VCS
 /// info, with the crate's directory in the repository), else its upstream
 /// release tag.
@@ -363,9 +404,8 @@ async fn crate_source_ref(artifact: &mut ArtifactItem, client: &RegistryClient<'
         artifact.repository_directory = directory.filter(|directory| !directory.is_empty());
         return;
     }
-    artifact.source_ref =
-        super::release_ref::github_release_tag(&repository, &artifact.name, &version, client).await;
-    artifact.source_tag = artifact.source_ref.is_some();
+    let name = artifact.name.clone();
+    super::release_ref::pin_release_tag(artifact, &name, &version, client).await;
 }
 
 /// The runtime dependency count of a crate version: normal, non-optional
@@ -426,9 +466,15 @@ pub(crate) async fn crates(
     client: &RegistryClient<'_>,
 ) -> Result<ArtifactProviderPage, ArtifactError> {
     if let Some(name) = query.bare_package_name() {
-        if let Some(VersionSpec::Exact(version)) = query.version().map(VersionSpec::parse)
-            && let Some(mut artifact) = crate_release(name, &version, client).await?
-        {
+        let release = match query.version().map(VersionSpec::parse) {
+            Some(VersionSpec::Exact(version)) => crate_release(name, &version, client).await?,
+            None => crate_default_release(name, client).await?,
+            Some(VersionSpec::Tag(tag)) if tag == "latest" => {
+                crate_default_release(name, client).await?
+            }
+            Some(_) => None,
+        };
+        if let Some(mut artifact) = release {
             crate_release_facts(&mut artifact, client).await;
             return Ok(ArtifactProviderPage::single(artifact));
         }
@@ -735,31 +781,35 @@ pub(crate) async fn go(
     }
     // pkg.go.dev pages by opaque token only: page N follows the tokens of
     // the N-1 pages before it, each the same size, so pages tile the list.
-    let mut token: Option<String> = None;
-    let mut hop = 1;
-    let data = loop {
-        let url = endpoint(
-            "https://pkg.go.dev/v1/search",
-            &[
-                ("q", Some(terms(query))),
-                ("limit", Some(query.page_size().to_string())),
-                ("token", token.clone()),
-            ],
-        )?;
-        let response = client
-            .json(ArtifactType::Go, url, false, None, None, JSON)
-            .await?
-            .ok_or_else(|| super::util::invalid(ArtifactType::Go))?;
-        let data = object_for(&response, ArtifactType::Go)?.clone();
-        if hop >= state.page.unwrap_or(1) {
-            break data;
-        }
-        let Some(next) = string(data.get("nextPageToken")) else {
-            return Ok(ArtifactProviderPage::empty(total(data.get("total"))));
-        };
-        token = Some(next);
-        hop += 1;
+    // Each next page's `cursor` carries the token that starts it, so
+    // following `nextPage` reads one page with no server-side state. A page
+    // without a usable cursor walks from the deepest page whose start the
+    // registry cache remembers.
+    let page = state.page.unwrap_or(1);
+    let supplied = state
+        .token
+        .as_deref()
+        .and_then(|cursor| go_token(&go_page_key(query, page), cursor))
+        .filter(|_| page > 1);
+    let served = match supplied {
+        // A token the registry no longer honors (`invalidInput`, a 4xx)
+        // falls back to the walk, which reaches the same rows.
+        Some(token) => match go_search(query, Some(token.to_owned()), client).await {
+            Err(error) if error.code == "invalidInput" => None,
+            other => Some(other?),
+        },
+        None => None,
     };
+    let data = match served {
+        Some(data) => data,
+        None => match go_walk(query, page, client).await? {
+            (data, true) => data,
+            (end, false) => return Ok(ArtifactProviderPage::empty(total(end.get("total")))),
+        },
+    };
+    if let Some(next) = string(data.get("nextPageToken")) {
+        client.remember_cursor(&go_page_key(query, page + 1), &next);
+    }
     let data = &data;
     let artifacts = rows(
         data.get("items")
@@ -790,14 +840,92 @@ pub(crate) async fn go(
     .collect::<Result<Vec<_>, ArtifactError>>()?;
     Ok(ArtifactProviderPage {
         artifacts,
-        next_state: string(data.get("nextPageToken")).map(|_| ArtifactProviderState {
-            page: Some(state.page.unwrap_or(1) + 1),
+        next_state: string(data.get("nextPageToken")).map(|token| ArtifactProviderState {
+            page: Some(page + 1),
+            token: Some(go_cursor(&go_page_key(query, page + 1), &token)),
             ..Default::default()
         }),
         total: total(data.get("total")),
         terminal_limit: None,
         registry: None,
     })
+}
+
+/// The identity of one Go discovery page's start: its terms, page size and
+/// page. The cache remembers each start's token under it, and a cursor is
+/// bound to it.
+fn go_page_key(query: &ArtifactSearchQuery, page: u64) -> String {
+    format!("go:search:{}:{}:{page}", query.page_size(), terms(query))
+}
+
+/// A pkg.go.dev token as the wire cursor of the page `key` names: the token
+/// behind a digest of that page's identity, so a cursor copied onto another
+/// query or page is ignored (that page walks) instead of serving rows that
+/// are not its own.
+fn go_cursor(key: &str, token: &str) -> String {
+    format!("{}.{token}", go_cursor_binding(key))
+}
+
+/// The token of a cursor bound to the page `key` names; `None` for a cursor
+/// bound to any other page.
+fn go_token<'a>(key: &str, cursor: &'a str) -> Option<&'a str> {
+    cursor
+        .strip_prefix(go_cursor_binding(key).as_str())?
+        .strip_prefix('.')
+        .filter(|token| !token.is_empty())
+}
+
+fn go_cursor_binding(key: &str) -> String {
+    use sha2::Digest;
+    hex::encode(&sha2::Sha256::digest(key.as_bytes())[..8])
+}
+
+/// One pkg.go.dev search page: the first, or the one `token` starts.
+async fn go_search(
+    query: &ArtifactSearchQuery,
+    token: Option<String>,
+    client: &RegistryClient<'_>,
+) -> Result<serde_json::Map<String, Value>, ArtifactError> {
+    let url = endpoint(
+        "https://pkg.go.dev/v1/search",
+        &[
+            ("q", Some(terms(query))),
+            ("limit", Some(query.page_size().to_string())),
+            ("token", token),
+        ],
+    )?;
+    let response = client
+        .json(ArtifactType::Go, url, false, None, None, JSON)
+        .await?
+        .ok_or_else(|| super::util::invalid(ArtifactType::Go))?;
+    Ok(object_for(&response, ArtifactType::Go)?.clone())
+}
+
+/// Search page `page` reached by following tokens from the deepest page
+/// whose start the cache remembers (else page 1), remembering each start
+/// on the way, and whether it was reached: the results can end before it
+/// (then the last page read, for its total).
+async fn go_walk(
+    query: &ArtifactSearchQuery,
+    page: u64,
+    client: &RegistryClient<'_>,
+) -> Result<(serde_json::Map<String, Value>, bool), ArtifactError> {
+    let (mut hop, mut token) = (2..=page)
+        .rev()
+        .find_map(|hop| Some((hop, Some(client.cursor(&go_page_key(query, hop))?))))
+        .unwrap_or((1, None));
+    loop {
+        let data = go_search(query, token, client).await?;
+        if hop >= page {
+            return Ok((data, true));
+        }
+        let Some(next) = string(data.get("nextPageToken")) else {
+            return Ok((data, false));
+        };
+        client.remember_cursor(&go_page_key(query, hop + 1), &next);
+        token = Some(next);
+        hop += 1;
+    }
 }
 
 /// A module path in the module proxy's case encoding: each upper-case letter
@@ -993,6 +1121,11 @@ fn packagist_entries<'a>(
         .unwrap_or(&[]))
 }
 
+/// A gem row. The exact (`gems/<name>.json`) document also states the
+/// release day and the runtime dependencies (`name requirement`); a search
+/// row names neither, so both stay unknown there. A source link into a
+/// GitHub tree (`…/tree/v8.1.4`) is split into the repository, its
+/// directory, and the release ref it names (the registry's claim).
 fn gem(row: &serde_json::Map<String, Value>) -> Result<ArtifactItem, ArtifactError> {
     let name = required(row.get("name"), ArtifactType::Rubygems)?;
     let mut artifact = ArtifactItem::new(
@@ -1007,13 +1140,44 @@ fn gem(row: &serde_json::Map<String, Value>) -> Result<ArtifactItem, ArtifactErr
     artifact.description = string(row.get("info"));
     artifact.license = license(row.get("licenses"));
     artifact.homepage = safe_url(row.get("homepage_uri"));
-    artifact.repository = repository_url(row.get("source_code_uri")).or_else(|| {
+    let link = string(row.get("source_code_uri")).or_else(|| {
         row.get("metadata")
             .and_then(Value::as_object)
-            .and_then(|value| repository_url(value.get("source_code_uri")))
+            .and_then(|value| string(value.get("source_code_uri")))
     });
+    if let Some(link) = link {
+        artifact.repository = super::util::github_repository(&link)
+            .or_else(|| super::util::canonical_repository(&link));
+        artifact.repository_directory = super::util::github_repo_dir(&link);
+        artifact.source_ref = artifact
+            .version
+            .as_deref()
+            .and_then(|version| super::util::release_ref_in(&link, version));
+    }
+    artifact.published_at = date_prefix(row.get("version_created_at"));
+    artifact.dependencies = row
+        .get("dependencies")
+        .and_then(|dependencies| dependencies.get("runtime"))
+        .and_then(Value::as_array)
+        .map(|runtime| {
+            runtime
+                .iter()
+                .filter_map(|dependency| {
+                    let name = string(dependency.get("name"))?;
+                    Some(match string(dependency.get("requirements")) {
+                        Some(requirement) => format!("{name} {requirement}"),
+                        None => name,
+                    })
+                })
+                .collect()
+        });
     Ok(artifact)
 }
+
+/// Rows rubygems.org serves per search page: fixed, whatever `per_page`
+/// asks (its API docs; 30 measured 2026-10-16). A discovery page's offset
+/// names its API page and the rows within it directly.
+const RUBYGEMS_PAGE_ROWS: usize = 30;
 
 pub(crate) async fn rubygems(
     query: &ArtifactSearchQuery,
@@ -1036,13 +1200,12 @@ pub(crate) async fn rubygems(
             ArtifactType::Rubygems,
         )?)?));
     }
-    // rubygems.org ignores per-page sizing (a fixed number of rows per API
-    // page), so the item offset picks the API page and the rows within it,
-    // and a page that crosses an API page boundary reads the next one.
+    // A page that crosses an API page boundary reads the next one; a short
+    // API page is the last.
     let size = query.page_size();
     let offset = state.offset.unwrap_or(0) as usize;
-    let mut api_page = 1;
-    let mut skip = offset;
+    let mut api_page = offset / RUBYGEMS_PAGE_ROWS + 1;
+    let mut skip = offset % RUBYGEMS_PAGE_ROWS;
     let mut artifacts = Vec::new();
     let mut more = false;
     loop {
@@ -1058,24 +1221,30 @@ pub(crate) async fn rubygems(
             .await?
             .ok_or_else(|| super::util::invalid(ArtifactType::Rubygems))?;
         let fetched = rows(&response, ArtifactType::Rubygems)?;
-        if fetched.is_empty() {
-            break;
-        }
-        if skip >= fetched.len() {
-            skip -= fetched.len();
-            api_page += 1;
-            continue;
+        if fetched.len() > RUBYGEMS_PAGE_ROWS {
+            // Offsets would name the wrong rows: fail loudly, never skip.
+            return Err(ArtifactError::new(
+                "providerError",
+                format!(
+                    "rubygems answered {} rows on one search page, more than the {RUBYGEMS_PAGE_ROWS} its paging is computed from.",
+                    fetched.len()
+                ),
+            ));
         }
         let wanted = size - artifacts.len();
         for row in fetched.iter().skip(skip).take(wanted) {
             artifacts.push(gem(object_for(row, ArtifactType::Rubygems)?)?);
         }
-        skip = 0;
+        let last = fetched.len() < RUBYGEMS_PAGE_ROWS;
         if artifacts.len() == size {
-            // A full page may have more after it; a later empty page ends.
-            more = true;
+            // Rows left on this API page, or a full one, may continue.
+            more = fetched.len() > skip + wanted || !last;
             break;
         }
+        if last {
+            break;
+        }
+        skip = 0;
         api_page += 1;
     }
     let next_state = (more && !artifacts.is_empty()).then(|| ArtifactProviderState {
@@ -1359,7 +1528,7 @@ mod tests {
     fn serde_crate_document() -> Value {
         json!({
             "crate": {"name": "serde", "max_stable_version": "1.0.228",
-                "description": "serialization", "homepage": "https://serde.rs",
+                "default_version": "1.0.228", "description": "serialization", "homepage": "https://serde.rs",
                 "repository": "https://github.com/serde-rs/serde"},
             "versions": [
                 {"num": "1.0.228", "created_at": "2025-09-27T00:00:00Z", "yanked": false, "license": "MIT OR Apache-2.0", "rust_version": "1.61"},
@@ -1527,13 +1696,18 @@ mod tests {
             Some("1.0.100"),
             "yanked 1.0.200 is skipped"
         );
-        // The crate document resolves every version; only the resolved
-        // version's dependency count is a second read.
+        // The latest reads the default version's view and the range the
+        // crate document; only the resolved version's dependency count is
+        // a second read.
         assert!(
             http.targets()
                 .iter()
                 .filter(|path| path.starts_with("/api/"))
-                .all(|path| path == "/api/v1/crates/serde" || path.ends_with("/dependencies"))
+                .all(|path| path == "/api/v1/crates/serde"
+                    || path == "/api/v1/crates/serde?include=default_version"
+                    || path.ends_with("/dependencies")),
+            "{:?}",
+            http.targets()
         );
         // A version the registry does not know reads the crate document for
         // its nearest versions.
@@ -1596,6 +1770,81 @@ mod tests {
     ) -> Result<ArtifactProviderPage, ArtifactError> {
         let client = RegistryClient::uncached(http, budget);
         crates(query, &ArtifactProviderState::default(), &client).await
+    }
+
+    /// An unpinned or `latest` lookup reads the crate's default version
+    /// view, never the document listing every version, and returns the row
+    /// that document gives. The default is crates.io's: the highest stable
+    /// version, else the highest prerelease, else a yanked one, marked.
+    #[tokio::test]
+    async fn an_unpinned_crate_reads_only_its_default_version() {
+        let slim = |default: &str, entry: Value| {
+            json!({
+                "crate": {"name": "serde", "max_stable_version": null, "max_version": "0.0.0",
+                    "default_version": default, "description": "serialization",
+                    "homepage": "https://serde.rs", "repository": "https://github.com/serde-rs/serde"},
+                "versions": [entry]
+            })
+        };
+        let document = serde_crate_document();
+        let stable = slim("1.0.228", document["versions"][0].clone());
+        let b = test_budget();
+        let whole = RouteHttp::routes(vec![("/api/v1/crates/serde", document.clone())]);
+        let from_document =
+            crate_lookup(&whole, &b, &versioned(ArtifactType::Crates, "serde", "*"))
+                .await
+                .expect("document row")
+                .artifacts
+                .remove(0);
+        for query in [
+            exact_query(ArtifactType::Crates, "serde"),
+            versioned(ArtifactType::Crates, "serde", "latest"),
+        ] {
+            let http = RouteHttp::routes(vec![(
+                "/api/v1/crates/serde?include=default_version",
+                stable.clone(),
+            )]);
+            let row = crate_lookup(&http, &b, &query)
+                .await
+                .expect("latest")
+                .artifacts
+                .remove(0);
+            assert_eq!(row, from_document);
+            assert!(
+                !http
+                    .targets()
+                    .iter()
+                    .any(|target| target == "/api/v1/crates/serde"),
+                "{:?}",
+                http.targets()
+            );
+        }
+        for (default, entry, yanked) in [
+            (
+                "2.0.0-rc.1",
+                json!({"num": "2.0.0-rc.1", "created_at": "2026-01-02T00:00:00Z", "yanked": false}),
+                None,
+            ),
+            (
+                "0.3.0",
+                json!({"num": "0.3.0", "created_at": "2020-01-02T00:00:00Z", "yanked": true}),
+                Some(true),
+            ),
+        ] {
+            let http = RouteHttp::routes(vec![(
+                "/api/v1/crates/serde?include=default_version",
+                slim(default, entry),
+            )]);
+            let row = crate_lookup(&http, &b, &exact_query(ArtifactType::Crates, "serde"))
+                .await
+                .expect("default")
+                .artifacts
+                .remove(0);
+            assert_eq!(
+                (row.version.as_deref(), row.yanked),
+                (Some(default), yanked)
+            );
+        }
     }
 
     /// An exact version reads its own record and the crate's metadata, not
@@ -2030,5 +2279,317 @@ mod tests {
             go_proxy_escape("github.com/BurntSushi/toml"),
             "github.com/!burnt!sushi/toml"
         );
+    }
+
+    fn discovery(artifact_type: ArtifactType, fields: Value) -> ArtifactSearchQuery {
+        let mut query = json!({"ecosystem": artifact_type, "keywords": ["json"]});
+        for (key, value) in fields.as_object().into_iter().flatten() {
+            query[key] = value.clone();
+        }
+        artifact_query(query, None)
+    }
+
+    /// `count` rubygems search rows named `gem<first>`…
+    fn gem_rows(first: usize, count: usize) -> Value {
+        Value::Array(
+            (first..first + count)
+                .map(|n| json!({"name": format!("gem{n}"), "version": "1.0.0"}))
+                .collect(),
+        )
+    }
+
+    /// A rubygems discovery page reads the API pages its offset names
+    /// directly (30 rows each): page 3 of 50 starts at row 100, API page 4
+    /// row 10, and never re-reads pages 1–3. An API page with more rows
+    /// than that fails loudly instead of misplacing every later page.
+    #[tokio::test]
+    async fn rubygems_pages_read_only_the_api_pages_their_offset_names() {
+        let search = |page: usize| format!("/api/v1/search.json?query=json&page={page}");
+        let http = RouteHttp::new()
+            .json(&search(4), gem_rows(90, 30))
+            .json(&search(5), gem_rows(120, 30))
+            .json(&search(6), gem_rows(150, 12));
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        let query = discovery(ArtifactType::Rubygems, json!({"page": 3}));
+        let state = super::super::ArtifactProviderState {
+            offset: Some(100),
+            ..Default::default()
+        };
+        let page = rubygems(&query, &state, &client).await.expect("page 3");
+        assert_eq!(http.targets(), [search(4), search(5)]);
+        let names = page
+            .artifacts
+            .iter()
+            .map(|row| row.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), 50);
+        assert_eq!((names[0], names[49]), ("gem100", "gem149"));
+        assert_eq!(page.next_state.and_then(|next| next.offset), Some(150));
+        // The short last API page ends the results.
+        let state = super::super::ArtifactProviderState {
+            offset: Some(150),
+            ..Default::default()
+        };
+        let last = rubygems(&query, &state, &client).await.expect("last page");
+        assert_eq!(http.targets()[2..], [search(6)]);
+        assert_eq!(last.artifacts.len(), 12);
+        assert_eq!(last.next_state, None);
+        let oversized = RouteHttp::always(gem_rows(0, 31));
+        let client = RegistryClient::uncached(&oversized, &b);
+        let error = rubygems(&query, &Default::default(), &client)
+            .await
+            .expect_err("31 rows");
+        assert_eq!(error.code, "providerError");
+        assert!(error.message.contains("31 rows"), "{}", error.message);
+    }
+
+    /// An exact gem row states its release day and runtime dependencies;
+    /// a source link into a GitHub tree is the repository root, with the
+    /// release ref it names.
+    #[tokio::test]
+    async fn rubygems_exact_rows_state_the_release_day_dependencies_and_repository() {
+        let http = RouteHttp::always(json!({
+            "name": "rails", "version": "8.1.4", "info": "Full-stack web framework",
+            "licenses": ["MIT"], "version_created_at": "2026-09-24T14:22:14.180Z",
+            "source_code_uri": "https://github.com/rails/rails/tree/v8.1.4",
+            "dependencies": {"development": [{"name": "dev", "requirements": ">= 0"}],
+                "runtime": [{"name": "actioncable", "requirements": "= 8.1.4"},
+                    {"name": "bundler", "requirements": ">= 1.15.0"}]}
+        }));
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        let page = rubygems(
+            &exact_query(ArtifactType::Rubygems, "rails"),
+            &Default::default(),
+            &client,
+        )
+        .await
+        .expect("rails");
+        let item = &page.artifacts[0];
+        assert_eq!(item.published_at.as_deref(), Some("2026-09-24"));
+        assert_eq!(
+            item.dependencies,
+            Some(vec![
+                "actioncable = 8.1.4".to_owned(),
+                "bundler >= 1.15.0".to_owned()
+            ])
+        );
+        assert_eq!(
+            item.repository.as_deref(),
+            Some("https://github.com/rails/rails")
+        );
+        assert_eq!(item.source_ref.as_deref(), Some("v8.1.4"));
+        assert_eq!(item.repository_directory, None);
+        // A search row names neither: both stay unknown.
+        let row = gem(json!({"name": "x", "version": "1"})
+            .as_object()
+            .expect("row"))
+        .expect("row");
+        assert_eq!((row.dependencies, row.published_at), (None, None));
+        let monorepo = gem(json!({"name": "x", "version": "1",
+            "source_code_uri": "https://github.com/o/r/tree/main/gems/x"})
+        .as_object()
+        .expect("row"))
+        .expect("row");
+        assert_eq!(
+            monorepo.repository.as_deref(),
+            Some("https://github.com/o/r")
+        );
+        assert_eq!(monorepo.repository_directory.as_deref(), Some("gems/x"));
+        assert_eq!(monorepo.source_ref, None, "a branch is no release ref");
+    }
+
+    /// Go pages by opaque token: each served page remembers the token that
+    /// starts the next, so following `nextPage` reads one page (not every
+    /// page before it), and a deeper jump walks from the deepest page known.
+    #[tokio::test]
+    async fn go_next_pages_start_from_the_remembered_token() {
+        let item = |n: usize| json!({"packagePath": format!("example.com/p{n}")});
+        let search = |token: Option<&str>| match token {
+            None => "/v1/search?q=json&limit=2".to_owned(),
+            Some(token) => format!("/v1/search?q=json&limit=2&token={token}"),
+        };
+        let http = RouteHttp::new()
+            .json(
+                &search(None),
+                json!({"items": [item(1), item(2)], "nextPageToken": "t2", "total": 9}),
+            )
+            .json(
+                &search(Some("t2")),
+                json!({"items": [item(3), item(4)], "nextPageToken": "t3", "total": 9}),
+            )
+            .json(
+                &search(Some("t3")),
+                json!({"items": [item(5), item(6)], "nextPageToken": "t4", "total": 9}),
+            )
+            .json(
+                &search(Some("t4")),
+                json!({"items": [item(7), item(8)], "total": 9}),
+            );
+        let cache = super::super::ArtifactCache::new(None);
+        let b = test_budget();
+        let client = RegistryClient {
+            cache: Some(&cache),
+            ..RegistryClient::uncached(&http, &b)
+        };
+        let page_of = |page: u64| {
+            (
+                discovery(ArtifactType::Go, json!({"page": page, "pageSize": 2})),
+                ArtifactProviderState {
+                    page: Some(page),
+                    ..Default::default()
+                },
+            )
+        };
+        let (query, state) = page_of(1);
+        let first = go(&query, &state, &client).await.expect("page 1");
+        let cursor = first.next_state.and_then(|next| next.token);
+        assert_eq!(
+            cursor
+                .as_deref()
+                .and_then(|cursor| go_token(&go_page_key(&query, 2), cursor)),
+            Some("t2")
+        );
+        let seen = http.targets().len();
+        let (query, state) = page_of(2);
+        let second = go(&query, &state, &client).await.expect("page 2");
+        assert_eq!(second.artifacts[0].name, "example.com/p3");
+        assert_eq!(http.targets()[seen..], [search(Some("t2"))], "one request");
+        // Page 4 walks from page 3, the deepest page whose start is known.
+        let seen = http.targets().len();
+        let (query, state) = page_of(4);
+        let fourth = go(&query, &state, &client).await.expect("page 4");
+        assert_eq!(fourth.artifacts[0].name, "example.com/p7");
+        assert_eq!(fourth.next_state, None);
+        assert_eq!(
+            http.targets()[seen..],
+            [search(Some("t3")), search(Some("t4"))]
+        );
+    }
+
+    /// pkg.go.dev search pages of two rows (`p1`…`p8`), tokens `t2`…`t4`.
+    fn go_pages() -> RouteHttp {
+        let item = |n: usize| json!({"packagePath": format!("example.com/p{n}")});
+        let search = |token: &str| format!("/v1/search?q=json&limit=2&token={token}");
+        RouteHttp::new()
+            .json(
+                "/v1/search?q=json&limit=2",
+                json!({"items": [item(1), item(2)], "nextPageToken": "t2", "total": 8}),
+            )
+            .json(
+                &search("t2"),
+                json!({"items": [item(3), item(4)], "nextPageToken": "t3", "total": 8}),
+            )
+            .json(
+                &search("t3"),
+                json!({"items": [item(5), item(6)], "nextPageToken": "t4", "total": 8}),
+            )
+            .json(
+                &search("t4"),
+                json!({"items": [item(7), item(8)], "total": 8}),
+            )
+    }
+
+    fn go_page(page: u64, cursor: Option<String>) -> (ArtifactSearchQuery, ArtifactProviderState) {
+        (
+            discovery(ArtifactType::Go, json!({"page": page, "pageSize": 2})),
+            ArtifactProviderState {
+                page: Some(page),
+                token: cursor,
+                ..Default::default()
+            },
+        )
+    }
+
+    /// The cursor a page hands its next page is all that page needs: with no
+    /// registry cache (memory mode, a new daemon, a gap past the cache's
+    /// lifetime), page 4 is one request, not a walk from page 1.
+    #[tokio::test]
+    async fn a_go_cursor_serves_its_page_in_one_request_without_a_cache() {
+        let http = go_pages();
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        let (query, state) = go_page(3, None);
+        let third = go(&query, &state, &client).await.expect("page 3 walks");
+        assert_eq!(third.artifacts[0].name, "example.com/p5");
+        let cursor = third.next_state.and_then(|next| next.token);
+        assert!(
+            cursor.as_deref().is_some_and(|cursor| cursor != "t4"),
+            "{cursor:?}"
+        );
+        let seen = http.targets().len();
+        let (query, state) = go_page(4, cursor);
+        let fourth = go(&query, &state, &client).await.expect("page 4");
+        assert_eq!(fourth.artifacts[0].name, "example.com/p7");
+        assert_eq!(
+            http.targets()[seen..],
+            ["/v1/search?q=json&limit=2&token=t4"],
+            "one request"
+        );
+        assert_eq!(fourth.next_state, None);
+    }
+
+    /// A cursor that is not its page's, or one the registry rejects, is no
+    /// shortcut: the page walks and serves exactly the rows it owns.
+    #[tokio::test]
+    async fn a_foreign_or_rejected_go_cursor_walks_to_the_same_rows() {
+        let other = discovery(
+            ArtifactType::Go,
+            json!({"keywords": ["yaml"], "pageSize": 2}),
+        );
+        for cursor in [
+            // Bound to another query's page 3.
+            go_cursor(&go_page_key(&other, 3), "t2"),
+            // Bound to page 2 of this query, copied onto page 3.
+            go_cursor(&go_page_key(&go_page(2, None).0, 2), "t2"),
+            // This page's, but the registry no longer honors it (404).
+            go_cursor(&go_page_key(&go_page(3, None).0, 3), "expired"),
+            "not-a-cursor".to_owned(),
+        ] {
+            let http = go_pages();
+            let b = test_budget();
+            let client = RegistryClient::uncached(&http, &b);
+            let (query, state) = go_page(3, Some(cursor.clone()));
+            let third = go(&query, &state, &client).await.expect("page 3");
+            let names = third
+                .artifacts
+                .iter()
+                .map(|row| row.name.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(names, ["example.com/p5", "example.com/p6"], "{cursor}");
+            assert!(
+                http.targets()
+                    .iter()
+                    .any(|target| target == "/v1/search?q=json&limit=2&token=t2"),
+                "walked: {cursor}"
+            );
+        }
+    }
+
+    /// A found release tag is a release fact: the same release looked up
+    /// again checks no tag on GitHub.
+    #[tokio::test]
+    async fn found_release_tags_are_remembered() {
+        let http = RouteHttp::routes(vec![
+            ("/pypi/requests/json", pypi_project()),
+            ("/pypi/requests/2.31.0/json", pypi_release("2.31.0")),
+        ]);
+        let tags = KnownTags::new(vec!["psf/requests@v2.31.0"]);
+        let cache = super::super::ArtifactCache::new(None);
+        let b = test_budget();
+        let client = RegistryClient {
+            http: &http,
+            budget: &b,
+            cache: Some(&cache),
+            tags: Some(&tags),
+        };
+        let query = versioned(ArtifactType::Pypi, "requests", "2.31.0");
+        for _ in 0..2 {
+            let page = pypi(&query, &client).await.expect("exact");
+            assert_eq!(page.artifacts[0].source_ref.as_deref(), Some("v2.31.0"));
+            assert!(page.artifacts[0].source_tag);
+        }
+        assert_eq!(tags.seen(), ["psf/requests@v2.31.0"], "one tag check");
     }
 }

@@ -746,10 +746,7 @@ fn observed_paths(
         .iter()
         .map(|skip| {
             Ok(LocalSearchSkippedPath {
-                path: skip
-                    .entry
-                    .to_string_lossy()
-                    .replace('\\', "/")
+                path: octocode_engine::text::slash_path(&skip.entry)
                     .try_into()
                     .map_err(skipped_path_error)?,
                 cause: skipped_cause(skip.cause),
@@ -857,37 +854,123 @@ pub(super) fn identifier_variants(term: &str) -> Option<Vec<String>> {
         words.join("-"),
     ];
     variants.retain(|variant| variant != term);
+    variants.sort_unstable();
     variants.dedup();
     (!variants.is_empty()).then_some(variants)
 }
 
-/// A bounded files-only walk over the query's own scope and walk (its
-/// default excludes included, as the `findSimilar` lead runs it) for
-/// `variants`: how many files hold one (0 when the walk failed or found
-/// none), and whether the deadline cut the walk (the count is then a floor).
-fn variant_files(
+/// Shortest identifier probed for one-edit spellings: a shorter one is one
+/// edit from too many unrelated names to name.
+const MIN_SPELLING_CHARS: usize = 4;
+
+/// Every identifier one edit from `term`: a char deleted, substituted or
+/// inserted, or two adjacent chars swapped. Substituted and inserted chars
+/// are lowercase letters, digits and `_`, and uppercase letters when `term`
+/// has one. Sorted, without `term`; `None` when `term` is not an ASCII
+/// identifier (`[A-Za-z_][A-Za-z0-9_]*`) of at least [`MIN_SPELLING_CHARS`].
+pub(super) fn one_edit_spellings(term: &str) -> Option<Vec<String>> {
+    let identifier = |text: &str| {
+        text.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if term.len() < MIN_SPELLING_CHARS || !identifier(term) {
+        return None;
+    }
+    let chars = term.chars().collect::<Vec<_>>();
+    let alphabet = ('a'..='z')
+        .chain('0'..='9')
+        .chain(['_'])
+        .chain(('A'..='Z').filter(|_| chars.iter().any(char::is_ascii_uppercase)))
+        .collect::<Vec<_>>();
+    let mut spellings = std::collections::BTreeSet::new();
+    let mut edited = |edit: &dyn Fn(&mut Vec<char>)| {
+        let mut spelling = chars.clone();
+        edit(&mut spelling);
+        spellings.insert(spelling.into_iter().collect::<String>());
+    };
+    for at in 0..chars.len() {
+        edited(&|s: &mut Vec<char>| {
+            s.remove(at);
+        });
+        if at + 1 < chars.len() {
+            edited(&|s: &mut Vec<char>| s.swap(at, at + 1));
+        }
+        for &c in &alphabet {
+            edited(&|s: &mut Vec<char>| s[at] = c);
+        }
+    }
+    for at in 0..=chars.len() {
+        for &c in &alphabet {
+            edited(&|s: &mut Vec<char>| s.insert(at, c));
+        }
+    }
+    spellings.remove(term);
+    spellings.retain(|spelling| identifier(spelling));
+    Some(spellings.into_iter().collect())
+}
+
+/// What one spelling probe found: files holding a case-style variant, and
+/// each one-edit spelling found with the files holding it.
+#[derive(Default)]
+struct Spellings {
+    variant_files: usize,
+    near: std::collections::BTreeMap<String, usize>,
+    near_files: usize,
+    /// The deadline cut the walk: every count is a floor.
+    cut: bool,
+}
+
+/// One bounded walk over the query's own scope and walk (its default
+/// excludes included, as the `findSimilar` lead runs it) for `variants`
+/// anywhere in a line and `near` spellings as whole words, naming which
+/// occur in which files.
+fn probe_spellings(
     mut options: TextSearchOptions,
     variants: &[String],
+    near: &[String],
     paths: &PathPolicy,
     defaults: bool,
     cancel: &impl CancellationCheck,
-) -> (usize, bool) {
-    options.pattern = variants
-        .iter()
-        .map(|variant| regex::escape(variant))
-        .collect::<Vec<_>>()
-        .join("|");
+) -> Spellings {
+    let alternation = |terms: &[String]| {
+        terms
+            .iter()
+            .map(|term| regex::escape(term))
+            .collect::<Vec<_>>()
+            .join("|")
+    };
+    options.pattern = [
+        (!variants.is_empty()).then(|| alternation(variants)),
+        (!near.is_empty()).then(|| format!(r"\b(?:{})\b", alternation(near))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("|");
     options.fixed_string = Some(false);
     options.perl_regex = Some(false);
     options.case_sensitive = Some(true);
     options.case_insensitive = Some(false);
-    options.files_only = Some(true);
+    options.whole_word = Some(false);
+    options.files_only = Some(false);
     options.files_without_match = Some(false);
     options.count_lines_per_file = Some(false);
     options.count_matches_per_file = Some(false);
-    options.only_matching = Some(false);
+    // Each file's distinct spans name what it holds.
+    options.only_matching = Some(true);
+    options.unique = Some(true);
+    options.count_unique = Some(false);
     options.invert_match = Some(false);
+    options.multiline = Some(false);
     options.context_lines = Some(0);
+    options.max_snippet_chars = variants
+        .iter()
+        .chain(near)
+        .map(|term| u32::try_from(term.len()).unwrap_or(u32::MAX))
+        .max();
+    options.sort = Some("path".into());
     options.digest_max_bytes = None;
     let walk = Arc::new(crate::policy::discovery::SearchWalk::new(
         paths.clone(),
@@ -898,19 +981,44 @@ fn variant_files(
     let started = std::time::Instant::now();
     let deadline = crate::tools::empty_walk::probe_budget();
     let cut = std::sync::atomic::AtomicBool::new(false);
-    let count = search_text_cancellable(options, walk, &|| {
+    let found = search_text_cancellable(options, walk, &|| {
         let late = started.elapsed() > deadline;
         if late {
             cut.store(true, std::sync::atomic::Ordering::Relaxed);
         }
         cancel.check().is_err() || late
     })
-    .map_or(0, |found| found.files.len());
-    (count, cut.load(std::sync::atomic::Ordering::Relaxed))
+    .map(|found| found.files)
+    .unwrap_or_default();
+    let mut spellings = Spellings {
+        cut: cut.load(std::sync::atomic::Ordering::Relaxed),
+        ..Spellings::default()
+    };
+    for file in found {
+        let holds = |terms: &[String]| {
+            file.matches
+                .iter()
+                .filter(|span| terms.binary_search(&span.value).is_ok())
+                .map(|span| span.value.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        if !holds(variants).is_empty() {
+            spellings.variant_files += 1;
+        }
+        let held = holds(near);
+        if !held.is_empty() {
+            spellings.near_files += 1;
+        }
+        for spelling in held {
+            *spellings.near.entry(spelling.to_owned()).or_default() += 1;
+        }
+    }
+    spellings
 }
 
-/// The same search over the identifier's case-style variants.
-fn variants_lead(query: &LocalSearchQuery, variants: &[String]) -> Value {
+/// The same search over other spellings of the identifier: its case-style
+/// variants anywhere, or the near spellings found as whole words.
+fn variants_lead(query: &LocalSearchQuery, variants: &[String], whole_word: bool) -> Value {
     let mut lead = restart_fields(query);
     if let Some(fields) = lead.as_object_mut() {
         let pattern = variants
@@ -921,6 +1029,9 @@ fn variants_lead(query: &LocalSearchQuery, variants: &[String]) -> Value {
         fields.insert("matchString".into(), json!(pattern));
         fields.insert("regex".into(), json!("rust"));
         fields.remove("caseMode");
+        if whole_word {
+            fields.insert("wholeWord".into(), json!(true));
+        }
     }
     Continuation::new(ToolId::LocalSearch, lead).build()
 }
@@ -934,8 +1045,9 @@ fn regex_lead(query: &LocalSearchQuery) -> Value {
     Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
-/// An empty search for a compound identifier: say when its other case
-/// styles match, so a spelling miss does not read as absence.
+/// An empty search for an identifier: say when its other case styles
+/// match, or else spellings one edit away (a typo), so a spelling miss does
+/// not read as absence. One walk probes both.
 pub(super) fn disclose_variants(
     query: &LocalSearchQuery,
     paths: &PathPolicy,
@@ -950,29 +1062,48 @@ pub(super) fn disclose_variants(
     {
         return;
     }
-    let Some(variants) = identifier_variants(&query.match_string) else {
+    let variants = identifier_variants(&query.match_string).unwrap_or_default();
+    let mut near = one_edit_spellings(&query.match_string).unwrap_or_default();
+    // A case style one edit away (`parse_config` → `parse-config`) is
+    // named as a variant.
+    near.retain(|spelling| variants.binary_search(spelling).is_err());
+    if variants.is_empty() && near.is_empty() {
         return;
-    };
-    let (count, cut) = variant_files(
+    }
+    let found = probe_spellings(
         options.clone(),
         &variants,
+        &near,
         paths,
         query.default_excludes.defaults(),
         cancel,
     );
-    if count == 0 {
+    let floor = if found.cut { "at least " } else { "" };
+    let (hint, lead) = if found.variant_files > 0 {
+        (
+            format!(
+                "No match for {}; its other spellings match in {floor}{} file(s).",
+                query.match_string, found.variant_files
+            ),
+            variants_lead(query, &variants, false),
+        )
+    } else if found.near_files > 0 {
+        let names = found.near.keys().cloned().collect::<Vec<_>>();
+        (
+            format!(
+                "No match for {}; near spellings match in {floor}{} file(s): {}.",
+                query.match_string,
+                found.near_files,
+                names.join(", ")
+            ),
+            variants_lead(query, &names, true),
+        )
+    } else {
         return;
-    }
-    hints.insert(
-        0,
-        format!(
-            "No match for {}; its other spellings match in {}{count} file(s).",
-            query.match_string,
-            if cut { "at least " } else { "" }
-        ),
-    );
+    };
+    hints.insert(0, hint);
     if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
-        map.insert("findSimilar".into(), variants_lead(query, &variants));
+        map.insert("findSimilar".into(), lead);
     }
 }
 

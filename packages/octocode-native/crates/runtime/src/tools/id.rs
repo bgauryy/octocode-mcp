@@ -54,15 +54,16 @@ impl ToolId {
         matches!(self, ToolId::Clasify)
     }
 
-    /// Independent read-only queries may execute concurrently. Mutating clone
-    /// and rewrite operations remain ordered; clasify owns its own bounded
-    /// provider scheduler.
+    /// Independent queries may execute concurrently. Rewrite operations
+    /// remain ordered; clasify owns its own bounded provider scheduler.
+    /// Clone rows run at once: each holds its entry's lock for all of its
+    /// work (a cache hit or a fresh checkout, until the row returns), the
+    /// lock other processes share, so rows for one entry serialize; eviction
+    /// removes only entries whose lock it takes, so it never deletes another
+    /// row's checkout; stages, askpass helpers and their names are per row.
     #[must_use]
     pub(crate) const fn supports_concurrent_queries(self) -> bool {
-        !matches!(
-            self,
-            ToolId::GhCloneRepo | ToolId::AstRewrite | ToolId::Clasify
-        )
+        !matches!(self, ToolId::AstRewrite | ToolId::Clasify)
     }
 }
 

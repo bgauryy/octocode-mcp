@@ -14,7 +14,8 @@ use crate::{
     tools::cancel::CancellationCheck,
 };
 use octocode_engine::structural::{
-    StructuralDetailedMatch, StructuralDiagnostic, StructuralSearchFilesOptions,
+    FileMatches, StructuralDemand, StructuralDetailedMatch, StructuralDiagnostic,
+    StructuralSearchFilesOptions,
 };
 use serde_json::{Value, json};
 
@@ -160,13 +161,19 @@ struct Scope {
     parsers: GlobParsers,
 }
 
-/// One scanned file: display path, matches, diagnostics, engine status.
-type ScannedFile = (
-    String,
-    Vec<StructuralDetailedMatch>,
-    Vec<StructuralDiagnostic>,
-    String,
-);
+/// One scanned file.
+struct ScannedFile {
+    /// The row path.
+    path: String,
+    /// What the scan kept of its matches (see [`demand`]).
+    matches: FileMatches,
+    diagnostics: Vec<StructuralDiagnostic>,
+    /// The engine status.
+    status: String,
+    /// The scanned path and the digest of the bytes it was matched in:
+    /// where a page rebuilds a priced file's matches.
+    source: Option<(std::path::PathBuf, String)>,
+}
 
 /// The files a scan evaluated plus its corpus-coverage signals. A
 /// single-file scan leaves the signals at their complete defaults.
@@ -247,14 +254,76 @@ impl Unparsed {
 /// Scans kept for the continuation pages of a multi-page result.
 static SCANS: super::memo::ScanMemo<Scan> = super::memo::ScanMemo::new();
 
+/// One scan per distinct query at a time: identical rows of one batch wait
+/// for the first one's scan and its start time (the memo's settle check).
+static SCAN_FLIGHT: octocode_io::flight::KeyedFlight<
+    String,
+    Option<(std::sync::Arc<Scan>, std::time::SystemTime)>,
+> = octocode_io::flight::KeyedFlight::transient();
+
+/// The flight a row joins: every query field but its page cursors (rows that
+/// differ only in the page they show scan alike), plus the scan inputs the
+/// query does not name.
+fn flight_key(q: MatchQuery<'_>, scan_key: &str) -> String {
+    let mut row = q.to_value();
+    if let Some(fields) = row.as_object_mut() {
+        for field in ["page", "matchPage", "snapshot"] {
+            fields.shift_remove(field);
+        }
+    }
+    crate::digest::json_sha256(&json!([row, scan_key]))
+}
+
 /// The scan inputs a `match` snapshot does not digest; a stored scan is
-/// served only to a page with the same ones.
+/// served only to a page with the same ones. The row shape is one of them:
+/// a priced scan's prices are the sizes of rows of that shape.
 fn scan_key(q: MatchQuery<'_>, paths: &PathPolicy) -> String {
     crate::digest::json_sha256(&json!([
         paths.identity(),
         q.default_excludes(),
-        super::MAX_PARSE_SOURCE_BYTES
+        super::MAX_PARSE_SOURCE_BYTES,
+        q.capture_text().unwrap_or(false),
+        content_length(q)
     ]))
+}
+
+/// The views that list files, not matches.
+fn file_list(q: MatchQuery<'_>) -> bool {
+    matches!(q.result_view().as_deref(), Some("files" | "countMatches"))
+}
+
+/// The shown length of a match value (`matchContentLength`).
+fn content_length(q: MatchQuery<'_>) -> usize {
+    q.match_content_length()
+        .map_or(limits::MATCH_CONTENT_LENGTH_DEFAULT, |length| {
+            length as usize
+        })
+        .clamp(1, limits::MATCH_CONTENT_LENGTH_MAXIMUM)
+}
+
+/// The size a match's row adds to its match page.
+fn row_chars(row: &MatchRow) -> usize {
+    crate::tools::stream_page::json_chars(&row.value) + 1
+}
+
+/// The row price of a match under `q`'s row shape.
+fn match_price(q: MatchQuery<'_>, m: &StructuralDetailedMatch) -> u32 {
+    let row = match_value(m, q.capture_text().unwrap_or(false), content_length(q));
+    u32::try_from(row_chars(&row)).unwrap_or(u32::MAX)
+}
+
+/// What a directory scan keeps of each match: a file view needs only the
+/// counts; a match view prices every row (pages are cut from the prices)
+/// and rebuilds only the rows of the file page it shows.
+fn demand<'a>(
+    q: MatchQuery<'_>,
+    price: &'a (dyn Fn(&StructuralDetailedMatch) -> u32 + Sync),
+) -> StructuralDemand<'a> {
+    if file_list(q) {
+        StructuralDemand::Count
+    } else {
+        StructuralDemand::Priced(price)
+    }
 }
 
 /// Rough heap bytes of a stored scan, its memo weight.
@@ -263,9 +332,18 @@ fn scan_bytes(scan: &Scan) -> usize {
         |d: &StructuralDiagnostic| 64 + d.message.len() + d.path.as_ref().map_or(0, String::len);
     scan.files
         .iter()
-        .map(|(path, matches, diagnostics, _)| {
-            96 + path.len()
-                + matches
+        .map(|file| {
+            96 + file.path.len()
+                + file.source.as_ref().map_or(0, |(path, digest)| {
+                    64 + path.as_os_str().len() + digest.len()
+                })
+                + match &file.matches {
+                    FileMatches::Priced(prices) => prices.len() * 4,
+                    FileMatches::Held(_) | FileMatches::Counted(_) => 0,
+                }
+                + file
+                    .matches
+                    .held()
                     .iter()
                     .map(|m| {
                         128 + m.text.len()
@@ -282,7 +360,7 @@ fn scan_bytes(scan: &Scan) -> usize {
                                 .sum::<usize>()
                     })
                     .sum::<usize>()
-                + diagnostics.iter().map(diagnostic).sum::<usize>()
+                + file.diagnostics.iter().map(diagnostic).sum::<usize>()
         })
         .sum::<usize>()
         + scan.diagnostics.iter().map(diagnostic).sum::<usize>()
@@ -308,6 +386,9 @@ struct Group {
     cut_chars: Option<usize>,
     /// Line spans of this match page's rows whose shown text was cut.
     clipped: Vec<(u64, u64)>,
+    /// A priced file whose rows are not built yet: its index in the scan's
+    /// files ([`rebuild_page`]).
+    priced: Option<usize>,
 }
 
 /// How the candidate scan ended early, and where a resume starts.
@@ -374,18 +455,35 @@ pub fn execute_match(
             }
         });
     let fresh = stored.is_none();
-    let started = std::time::SystemTime::now();
-    let scan = match stored {
-        Some(scan) => scan,
+    let (scan, started) = match stored {
+        Some(scan) => (scan, std::time::SystemTime::now()),
         None => {
-            let mut scan = if scope.is_file {
-                scan_file(q, &scope, security)?
-            } else {
-                scan_directory(q, &scope, paths, cancel)?
-            };
-            cancel.check().map_err(ToolError::cancelled)?;
-            sort_files(q, &mut scan.files);
-            std::sync::Arc::new(scan)
+            // Identical rows running at once (one batch) share one scan: the
+            // first scans, the others take its scan from the flight's slot.
+            let ticket = SCAN_FLIGHT.join(flight_key(q, &key));
+            // Rows run on blocking workers, never on an async one. A waiter
+            // stops on its own cancellation while another request scans.
+            let mut slot = ticket
+                .blocking_turn_until(|| cancel.check())
+                .map_err(ToolError::cancelled)?;
+            match slot.as_ref() {
+                Some((scan, started)) => (std::sync::Arc::clone(scan), *started),
+                None => {
+                    let started = std::time::SystemTime::now();
+                    let mut scan = if scope.is_file {
+                        scan_file(q, &scope, security)?
+                    } else {
+                        scan_directory(q, &scope, paths, cancel)?
+                    };
+                    cancel.check().map_err(ToolError::cancelled)?;
+                    sort_files(q, &mut scan.files);
+                    let scan = std::sync::Arc::new(scan);
+                    // Only a scan that completed is shared; a failed one
+                    // leaves the next row to scan itself.
+                    *slot = Some((std::sync::Arc::clone(&scan), started));
+                    (scan, started)
+                }
+            }
         }
     };
     let mut scope = scope;
@@ -410,7 +508,27 @@ pub fn execute_match(
         ));
     }
     let budget = crate::tools::page_windows::page_budget(response_window, &q.to_value());
-    let grouped = group_files(q, &scan.files, budget);
+    let mut grouped = group_files(q, &scan.files, budget);
+    let shown = file_page(q, &grouped.groups, budget).window;
+    if let Ok(incomplete) = rebuild_page(q, &scope, &scan.files, &mut grouped.groups[shown], budget)
+    {
+        // Counted and disclosed as the scan counts a file its limit cut.
+        grouped.unevaluated_files += incomplete.len() as u32;
+        grouped
+            .diagnostics
+            .extend(incomplete.iter().flatten().map(diag));
+    } else {
+        // A file on this page changed after the scan priced it.
+        if !fresh {
+            if let Some(stale) = q.snapshot() {
+                SCANS.evict(&stale);
+            }
+            return execute_match(q, paths, security, cancel, response_window);
+        }
+        return Ok(crate::tools::result::stale_snapshot(
+            crate::tools::result::restart_query(ToolId::AstSearch, &q.to_value()),
+        ));
+    }
     if !scope.is_file && scope.language.is_none() && !scan.truncated && q.scan_offset() == 0 {
         // Validate even files the literal prefilter left unparsed. Only an
         // initial whole-scope scan can reject the query for the selected set.
@@ -474,7 +592,7 @@ pub fn execute_match(
             .collect::<Vec<_>>();
         SCANS.put(
             (snapshot, key),
-            super::memo::Watch {
+            crate::tools::page_memo::Watch {
                 root: &scope.canonical,
                 sources: &watched,
                 rules: &scan.ignore_rules,
@@ -562,8 +680,16 @@ fn exact_miss(
         scan_directory(rule_query, &rule_scope, paths, cancel)
     }
     .ok()?;
-    let count = scan.files.iter().map(|file| file.1.len()).sum::<usize>();
-    let files = scan.files.iter().filter(|file| !file.1.is_empty()).count();
+    let count = scan
+        .files
+        .iter()
+        .map(|file| file.matches.len())
+        .sum::<usize>();
+    let files = scan
+        .files
+        .iter()
+        .filter(|file| !file.matches.is_empty())
+        .count();
     (count > 0).then_some(ExactMiss {
         kind: declaration.kind,
         count,
@@ -604,8 +730,8 @@ impl ExactMiss {
 
 /// The one grammar a directory scan without `language` read, from the
 /// census of its own walk (no second walk): `None` when it read several (or
-/// one the query does not compile in). A first window holding no file of a
-/// supported grammar is `languageRequired`.
+/// one the query does not compile in). A first window whose files are all
+/// of no supported grammar is `languageRequired`.
 fn infer_grammar(
     q: MatchQuery<'_>,
     scope: &Scope,
@@ -621,10 +747,16 @@ fn infer_grammar(
     }) {
         GrammarChoice::One(language) => Ok(Some(language)),
         GrammarChoice::Several(_) | GrammarChoice::Invalid(_) => Ok(None),
-        GrammarChoice::Absent if q.scan_offset() == 0 => Err(ToolError::new(
-            "languageRequired",
-            "No source file of a supported structural grammar was found under path; set language.",
-        )),
+        // A walk that admitted no file at all, or withheld some, names no
+        // grammar to set: its empty result and disclosures are the answer.
+        GrammarChoice::Absent
+            if q.scan_offset() == 0 && scan.unparsed.count > 0 && scan.withheld.total() == 0 =>
+        {
+            Err(ToolError::new(
+                "languageRequired",
+                "No source file of a supported structural grammar was found under path; set language.",
+            ))
+        }
         GrammarChoice::Absent => Ok(None),
     }
 }
@@ -748,12 +880,13 @@ fn scan_file(
         });
     }
     Ok(Scan {
-        files: vec![(
-            super::display_name(canonical),
-            r.matches,
-            r.diagnostics,
-            r.status,
-        )],
+        files: vec![ScannedFile {
+            path: super::display_name(canonical),
+            matches: FileMatches::Held(r.matches),
+            diagnostics: r.diagnostics,
+            status: r.status,
+            source: None,
+        }],
         sources: vec![canonical.clone()],
         source_digest: octocode_engine::digest::sha256(&bytes),
         ..Scan::default()
@@ -791,6 +924,11 @@ fn scan_directory(
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
 ) -> Result<Scan, ToolError> {
+    #[cfg(test)]
+    DIRECTORY_SCANS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .push(scope.canonical.clone());
     let extensions = scope.extensions.as_ref();
     // A file parses by its own extension or by the rule that names its parser.
     let parses = |path: &std::path::Path| {
@@ -812,6 +950,7 @@ fn scan_directory(
     let census = std::sync::Mutex::new(std::collections::BTreeMap::<String, usize>::new());
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let discovery = paths.discovery_walk();
+    let price = |m: &StructuralDetailedMatch| match_price(q, m);
     let r = octocode_engine::structural::search_files(
         StructuralSearchFilesOptions {
             path: scope.canonical.to_string_lossy().into_owned(),
@@ -831,42 +970,49 @@ fn scan_directory(
             skip_files: Some(q.scan_offset()),
             max_file_bytes: u32::try_from(super::MAX_PARSE_SOURCE_BYTES).ok(),
         },
+        demand(q, &price),
         &|path| {
-            let allowed = discovery.permits(path);
             // Only a directory or a file of the scanned grammar could have
             // matched, so only those leave absence unproven.
             // A dot entry out of view (no `hidden`) is neither walked nor
             // disclosed, as structureSearch tree does.
+            let in_view = q.include_hidden() == Some(true) || !super::is_dot_entry(path);
+            // The walk follows no link: one naming a directory or a file of
+            // the scanned grammar is disclosed as not followed, in or out of
+            // the allowed roots.
+            if path.is_symlink() {
+                let is_dir = path.is_dir();
+                if in_view && (is_dir || parses(path)) {
+                    withheld
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .record(path, is_dir);
+                }
+                return false;
+            }
+            let allowed = discovery.permits(path);
             let is_dir = path.is_dir();
             if allowed && is_dir {
                 let mut watched = observed.lock().unwrap_or_else(|error| error.into_inner());
                 watched.insert(path.to_path_buf());
                 if ignore_rules {
-                    // A repository nested in the scope keeps its exclude
-                    // file in its own git directory, outside the walk.
-                    if path != scope.canonical && path.join(".git").exists() {
-                        external_rules
-                            .lock()
-                            .unwrap_or_else(|error| error.into_inner())
-                            .extend(octocode_engine::search::walk::external_ignore_inputs(path));
+                    let inputs = crate::tools::page_memo::directory_ignore_inputs(
+                        path,
+                        &scope.canonical,
+                        |ignore| discovery.permits(ignore),
+                    );
+                    external_rules
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .extend(inputs.external);
+                    if inputs.untracked {
+                        untracked_ignore_dependencies
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                     }
-                    for name in [".gitignore", ".ignore"] {
-                        let ignore = path.join(name);
-                        match std::fs::symlink_metadata(&ignore) {
-                            Ok(metadata) if metadata.is_file() && discovery.permits(&ignore) => {
-                                watched.insert(ignore);
-                            }
-                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                            _ => untracked_ignore_dependencies
-                                .store(true, std::sync::atomic::Ordering::Relaxed),
-                        }
-                    }
+                    watched.extend(inputs.files);
                 }
             }
-            if !allowed
-                && (q.include_hidden() == Some(true) || !super::is_dot_entry(path))
-                && (is_dir || parses(path))
-            {
+            if !allowed && in_view && (is_dir || parses(path)) {
                 withheld
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
@@ -903,17 +1049,7 @@ fn scan_directory(
             // source files remain ignored unless the caller overrides them.
             admitted
         },
-        &|path| {
-            if let Some(extension) = scope.parsers.extension(path) {
-                extension.to_owned()
-            } else if let Some(parser) =
-                super::shared_extension_parser(path, scope.language.as_deref())
-            {
-                parser
-            } else {
-                octocode_engine::text::extension_of(&path.to_string_lossy(), true, "")
-            }
-        },
+        &|path| parser_extension(scope, path),
         &|| cancel.check().is_err(),
     )
     .map_err(super::native_error)?;
@@ -941,7 +1077,7 @@ fn scan_directory(
             .into_iter()
             .collect(),
         repository_markers: if ignore_rules {
-            repository_markers(&scope.canonical)
+            crate::tools::page_memo::repository_markers(&scope.canonical)
         } else {
             Vec::new()
         },
@@ -954,13 +1090,14 @@ fn scan_directory(
         files: r
             .files
             .into_iter()
-            .map(|f| {
-                (
-                    match_display_path(&scope.canonical, &f.path),
-                    f.matches,
-                    f.diagnostics,
-                    f.status,
-                )
+            .map(|f| ScannedFile {
+                path: match_display_path(&scope.canonical, &f.path),
+                source: f
+                    .source_sha256
+                    .map(|digest| (std::path::PathBuf::from(&f.path), digest)),
+                matches: f.matches,
+                diagnostics: f.diagnostics,
+                status: f.status,
             })
             .collect(),
         truncated: r.scan_truncated,
@@ -980,18 +1117,27 @@ fn scan_directory(
     })
 }
 
+/// The parser a directory scan reads `path` with: the grammar a
+/// `languageGlobs` entry names, else the one its shared extension resolves
+/// to under `language`, else its own extension.
+fn parser_extension(scope: &Scope, path: &std::path::Path) -> String {
+    if let Some(extension) = scope.parsers.extension(path) {
+        extension.to_owned()
+    } else if let Some(parser) = super::shared_extension_parser(path, scope.language.as_deref()) {
+        parser
+    } else {
+        octocode_engine::text::extension_of(&path.to_string_lossy(), true, "")
+    }
+}
+
+/// Every directory scan's root, for the tests that count scans.
+#[cfg(test)]
+pub(super) static DIRECTORY_SCANS: std::sync::Mutex<Vec<std::path::PathBuf>> =
+    std::sync::Mutex::new(Vec::new());
+
 fn directory_source_digest<'a>(files: impl Iterator<Item = (&'a str, Option<&'a str>)>) -> String {
     let identities = files.collect::<std::collections::BTreeMap<_, _>>();
     crate::digest::json_sha256(&json!(identities))
-}
-
-/// The repository markers at and above `root` whose presence decides
-/// whether a `.gitignore` applies ([`octocode_engine::search::walk`]): the
-/// memo keeps their presence.
-fn repository_markers(root: &std::path::Path) -> Vec<std::path::PathBuf> {
-    root.ancestors()
-        .flat_map(|dir| [dir.join(".git"), dir.join(".jj")])
-        .collect()
 }
 
 #[cfg(unix)]
@@ -1030,9 +1176,12 @@ fn memo_source_unchanged(scope: &Scope, scan: &Scan) -> bool {
 fn sort_files(q: MatchQuery<'_>, files: &mut [ScannedFile]) {
     files.sort_by(|a, b| {
         let ordering = if q.sort().as_deref() == Some("matchCount") {
-            b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0))
+            b.matches
+                .len()
+                .cmp(&a.matches.len())
+                .then_with(|| a.path.cmp(&b.path))
         } else {
-            a.0.cmp(&b.0)
+            a.path.cmp(&b.path)
         };
         if q.reverse().unwrap_or(false) {
             ordering.reverse()
@@ -1047,8 +1196,8 @@ fn sort_files(q: MatchQuery<'_>, files: &mut [ScannedFile]) {
 /// because the source changed: a retryable `timeout` with the same page as
 /// `next.retry`, never a `staleSnapshot` that discards the pages read.
 fn interrupted_rescan(q: MatchQuery<'_>, scan: &Scan) -> Option<ToolError> {
-    let interrupted = scan.files.iter().any(|(_, _, diagnostics, _)| {
-        diagnostics.iter().any(|diagnostic| {
+    let interrupted = scan.files.iter().any(|file| {
+        file.diagnostics.iter().any(|diagnostic| {
             matches!(
                 diagnostic.code.as_str(),
                 "structural.match.deadline" | "structural.parse.interrupted"
@@ -1082,7 +1231,7 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> String {
     let ordered = scan
         .files
         .iter()
-        .map(|f| (f.0.clone(), f.1.len()))
+        .map(|f| (f.path.clone(), f.matches.len()))
         .collect::<Vec<_>>();
     crate::digest::json_sha256(&json!([
         // Row shape version (v4: `matchCount`, object rows, 1-based columns); an older cursor
@@ -1111,14 +1260,16 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> String {
 
 fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Grouped {
     let mut grouped = Grouped::default();
-    let file_list = matches!(q.result_view().as_deref(), Some("files" | "countMatches"));
-    let content_length = q
-        .match_content_length()
-        .map_or(limits::MATCH_CONTENT_LENGTH_DEFAULT, |length| {
-            length as usize
-        })
-        .clamp(1, limits::MATCH_CONTENT_LENGTH_MAXIMUM);
-    for (path, matches, diagnostics, status) in files {
+    let file_list = file_list(q);
+    let content_length = content_length(q);
+    for (index, file) in files.iter().enumerate() {
+        let ScannedFile {
+            path,
+            matches,
+            diagnostics,
+            status,
+            ..
+        } = file;
         match status.as_str() {
             "ok" => {
                 grouped.parsed_files += 1;
@@ -1156,16 +1307,25 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Group
                 }
             }
         }
-        let rows = matches
-            .iter()
-            .map(|value| match_value(value, q.capture_text().unwrap_or(false), content_length))
-            .collect::<Vec<_>>();
-        if !rows.is_empty() {
-            grouped.total_matches += rows.len() as u64;
-            grouped.groups.push(if file_list {
-                listed_file(q, path.clone(), rows.len())
-            } else {
-                match_group(q, path.clone(), rows, budget)
+        let total = matches.len();
+        if total > 0 {
+            grouped.total_matches += total as u64;
+            grouped.groups.push(match matches {
+                FileMatches::Held(held) if !file_list => {
+                    let rows = held
+                        .iter()
+                        .map(|value| {
+                            match_value(value, q.capture_text().unwrap_or(false), content_length)
+                        })
+                        .collect();
+                    match_group(q, path.clone(), rows, budget)
+                }
+                FileMatches::Priced(prices) if !file_list => {
+                    priced_group(q, path.clone(), prices, budget, index)
+                }
+                // A file view lists the file with its count; only a file
+                // view's scan counts without pricing.
+                _ => listed_file(q, path.clone(), total),
             });
         }
         if status != "ok" || !diagnostics.is_empty() {
@@ -1198,33 +1358,161 @@ fn listed_file(q: MatchQuery<'_>, path: String, total: usize) -> Group {
         truncated_captures: false,
         cut_chars: None,
         clipped: vec![],
+        priced: None,
+    }
+}
+
+/// One file's match pages, cut from the sizes of its rows.
+struct MatchPages {
+    windows: Vec<std::ops::Range<usize>>,
+    /// The match page asked for.
+    page: usize,
+    out_of_range: bool,
+    more: bool,
+    /// What the file adds to a file page: its first match page.
+    first_chars: usize,
+}
+
+fn match_pages(q: MatchQuery<'_>, path: &str, sizes: &[usize], budget: usize) -> MatchPages {
+    let paging = crate::tools::page_windows::Paging::of(
+        q.match_page_size()
+            .map(|size| (size as usize).clamp(1, limits::MATCH_PAGE_SIZE_MAXIMUM)),
+        budget,
+    );
+    let windows = paging.windows(sizes);
+    let page = q.match_page().max(1) as usize;
+    // The file's place on a file page is its first match page, whichever
+    // match page is asked for, so the file pages never move.
+    let first_chars = windows.first().map_or(0, |first| {
+        sizes[first.clone()].iter().sum::<usize>() + path.len() + 32
+    });
+    MatchPages {
+        out_of_range: page > windows.len(),
+        more: page < windows.len(),
+        windows,
+        page,
+        first_chars,
+    }
+}
+
+/// A priced file's place on the file pages, cut from its prices exactly as
+/// [`match_group`] cuts it from its rows; its rows are built only when its
+/// file page is shown ([`rebuild_page`]).
+fn priced_group(
+    q: MatchQuery<'_>,
+    path: String,
+    prices: &[u32],
+    budget: usize,
+    index: usize,
+) -> Group {
+    let sizes = prices
+        .iter()
+        .map(|price| *price as usize)
+        .collect::<Vec<_>>();
+    let pages = match_pages(q, &path, &sizes, budget);
+    Group {
+        row: json!({"path": path}),
+        chars: pages.first_chars,
+        out_of_range: pages.out_of_range,
+        more_matches: pages.more,
+        truncated_captures: false,
+        cut_chars: None,
+        clipped: vec![],
+        priced: Some(index),
+    }
+}
+
+/// A priced file changed after the scan priced it: its rows can no longer
+/// be rebuilt as priced.
+struct SourceChanged;
+
+/// Build the rows of the priced files on the file page `groups` shows,
+/// from each file's scanned bytes (see
+/// [`octocode_engine::structural::file_matches`]); every rebuilt row must
+/// cost what the scan priced it at. A file whose scanned bytes did not
+/// finish matching this time (an execution limit) is shown without rows,
+/// as the scan shows a file its limit cut: each such file's diagnostics
+/// are returned.
+fn rebuild_page(
+    q: MatchQuery<'_>,
+    scope: &Scope,
+    files: &[ScannedFile],
+    groups: &mut [Group],
+    budget: usize,
+) -> Result<Vec<Vec<StructuralDiagnostic>>, SourceChanged> {
+    let content_length = content_length(q);
+    let mut incomplete = Vec::new();
+    for group in groups {
+        let Some(index) = group.priced else {
+            continue;
+        };
+        let file = &files[index];
+        let (Some((source, digest)), FileMatches::Priced(prices)) = (&file.source, &file.matches)
+        else {
+            return Err(SourceChanged);
+        };
+        let matches = match octocode_engine::structural::file_matches(
+            source,
+            &parser_extension(scope, source),
+            q.pattern().as_deref(),
+            q.rule().as_deref(),
+            digest,
+            super::MAX_PARSE_SOURCE_BYTES as u64,
+        ) {
+            Ok(octocode_engine::structural::Rebuilt::Matches(matches)) => matches,
+            Ok(octocode_engine::structural::Rebuilt::Incomplete(diagnostics)) => {
+                *group = unevaluated_group(file.path.clone());
+                incomplete.push(diagnostics);
+                continue;
+            }
+            Ok(octocode_engine::structural::Rebuilt::Changed) | Err(_) => {
+                return Err(SourceChanged);
+            }
+        };
+        let rows = matches
+            .iter()
+            .map(|m| match_value(m, q.capture_text().unwrap_or(false), content_length))
+            .collect::<Vec<_>>();
+        let repriced = rows
+            .iter()
+            .map(|row| u32::try_from(row_chars(row)).unwrap_or(u32::MAX));
+        if !repriced.eq(prices.iter().copied()) {
+            return Err(SourceChanged);
+        }
+        *group = match_group(q, file.path.clone(), rows, budget);
+    }
+    Ok(incomplete)
+}
+
+/// A shown file whose matches were not evaluated on this page: its path,
+/// no rows and no match pages to continue.
+fn unevaluated_group(path: String) -> Group {
+    Group {
+        row: json!({"path": path}),
+        chars: 0,
+        out_of_range: false,
+        more_matches: false,
+        truncated_captures: false,
+        cut_chars: None,
+        clipped: vec![],
+        priced: None,
     }
 }
 
 /// One file's match page, with per-file pagination when it is a subset.
 fn match_group(q: MatchQuery<'_>, path: String, rows: Vec<MatchRow>, budget: usize) -> Group {
     let total = rows.len();
-    let sizes = rows
-        .iter()
-        .map(|row| crate::tools::stream_page::json_chars(&row.value) + 1)
-        .collect::<Vec<_>>();
-    let paging = crate::tools::page_windows::Paging::of(
-        q.match_page_size()
-            .map(|size| (size as usize).clamp(1, limits::MATCH_PAGE_SIZE_MAXIMUM)),
-        budget,
-    );
-    let windows = paging.windows(&sizes);
-    let match_page = q.match_page().max(1) as usize;
-    let out_of_range = match_page > windows.len();
-    let more_matches = match_page < windows.len();
+    let sizes = rows.iter().map(row_chars).collect::<Vec<_>>();
+    let MatchPages {
+        windows,
+        page: match_page,
+        out_of_range,
+        more: more_matches,
+        first_chars,
+    } = match_pages(q, &path, &sizes, budget);
     let window = crate::tools::page_windows::nth_page(&windows, match_page)
         .cloned()
         .unwrap_or(total..total);
-    // The file's place on a file page is its first match page, whichever
-    // match page is asked for, so the file pages never move.
-    let first_chars = windows.first().map_or(0, |first| {
-        sizes[first.clone()].iter().sum::<usize>() + path.len() + 32
-    });
     let page_rows = &rows[window];
     // Rows whose text was cut to a header or that hide capture text:
     // `captureText:true` (next.expandCaptures) returns them whole.
@@ -1267,6 +1555,7 @@ fn match_group(q: MatchQuery<'_>, path: String, rows: Vec<MatchRow>, budget: usi
         truncated_captures,
         cut_chars,
         clipped,
+        priced: None,
     }
 }
 
@@ -1318,7 +1607,10 @@ fn render_match_page(
     budget: usize,
 ) -> Value {
     let truncated = scan.truncated;
-    let diagnostics = merge_diagnostics(grouped.diagnostics, scan_diagnostics(q, scope, scan));
+    let diagnostics = crate::tools::ast_rule::group_diagnostics(merge_diagnostics(
+        grouped.diagnostics,
+        scan_diagnostics(q, scope, scan),
+    ));
     let groups = grouped.groups;
     let page = file_page(q, &groups, budget);
     let page_groups = &groups[page.window.clone()];
@@ -1393,6 +1685,9 @@ fn render_match_page(
         more,
         snapshot,
     );
+    if grouped.compile_failed_files > 0 {
+        compile_failed_end(q, scope, &mut out, snapshot);
+    }
     // `complete` tells a reader the row's pages are drill-downs; a row with
     // no page needs no such note.
     let has_page = out["next"].as_object().is_some_and(|next| {
@@ -1415,6 +1710,22 @@ fn render_match_page(
         out["next"]["viewTree"] = tree_lead(q, scope, &file);
     }
     out
+}
+
+/// Files whose grammar the query does not compile in are on no page of any
+/// call with this query: a terminal limit (their diagnostics name them and
+/// the repair). When one grammar of the scope compiles it, `narrowScope`
+/// is the same query over that grammar's files alone, a result with no such
+/// gap.
+fn compile_failed_end(q: MatchQuery<'_>, scope: &Scope, out: &mut Value, snapshot: &str) {
+    crate::tools::paging::terminal_limit(out, "compileFailed", &[]);
+    if let Some(language) = scope.inferred.as_deref().filter(|_| q.language().is_none()) {
+        out["next"]["narrowScope"] = continuation_with(
+            q,
+            json!({"language": language, "page": 1, "matchPage": 1, "scanOffset": null, "snapshot": null}),
+            snapshot,
+        );
+    }
 }
 
 /// The files' diagnostics plus the scan's: the scan repeats the diagnostics
@@ -2307,10 +2618,15 @@ mod interrupted_rescan_tests {
         }))
         .expect("typed row");
         let q = MatchQuery::Pattern(&query);
+        let file = |diagnostics, status: &str| ScannedFile {
+            path: "a.min.js".to_owned(),
+            matches: FileMatches::Held(vec![]),
+            diagnostics,
+            status: status.to_owned(),
+            source: None,
+        };
         let cut = Scan {
-            files: vec![(
-                "a.min.js".to_owned(),
-                vec![],
+            files: vec![file(
                 vec![StructuralDiagnostic {
                     code: "structural.match.deadline".to_owned(),
                     severity: "warning".to_owned(),
@@ -2319,7 +2635,7 @@ mod interrupted_rescan_tests {
                     path: None,
                     recovery: None,
                 }],
-                "truncated".to_owned(),
+                "truncated",
             )],
             ..Scan::default()
         };
@@ -2329,7 +2645,7 @@ mod interrupted_rescan_tests {
         assert_eq!(retry["matchPage"], 9);
         assert_eq!(retry["snapshot"], "earlier");
         let changed = Scan {
-            files: vec![("a.min.js".to_owned(), vec![], vec![], "ok".to_owned())],
+            files: vec![file(vec![], "ok")],
             ..Scan::default()
         };
         assert!(interrupted_rescan(q, &changed).is_none());
@@ -2344,3 +2660,9 @@ mod discovery_freshness_tests;
 
 #[cfg(test)]
 mod external_ignore_freshness_tests;
+
+#[cfg(test)]
+mod flight_tests;
+
+#[cfg(test)]
+mod demand_tests;

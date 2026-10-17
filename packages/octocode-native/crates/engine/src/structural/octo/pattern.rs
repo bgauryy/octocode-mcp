@@ -3,18 +3,16 @@ use std::time::Instant;
 
 use tree_sitter::{Language, Node, Tree};
 
+use super::line_index_support::to_structural_match_with_index;
+use super::matching::{
+    CandidatePlan, CaptureEnv, ExecutionError, Found, children, named_children, node_text,
+    parse_tree, parse_tree_with_deadline, raw_range, visit_named,
+};
 use crate::structural::kinds::named_kind_id;
 use crate::structural::language::{AgLanguage, Expando};
 use crate::structural::metavars::{
     MetaVar, ambiguous_function_body_capture, key_value_pair_capture, meta_from_node,
     minimum_candidate_nodes, tag_name_capture,
-};
-use crate::structural::types::StructuralMatch;
-
-use super::line_index_support::to_structural_match_with_index;
-use super::matching::{
-    CandidatePlan, CaptureEnv, ExecutionError, MatchWithKind, children, named_children, node_text,
-    parse_tree, parse_tree_with_deadline, raw_range, visit_named,
 };
 use crate::text::utf8_offsets::LineIndex;
 
@@ -130,7 +128,11 @@ impl CompiledPattern {
         }
         // Parse fragments once, at compilation, for both direct patterns and
         // every nested YAML pattern. A grammar-checked terminator supplies
-        // statement/declaration context without depending on source matches.
+        // statement/declaration context without depending on source matches:
+        // a call takes it whatever the plain parse made of it (Go reads a
+        // bare call as a conversion), and any other fragment (`$A`, `$A?`,
+        // `$X.await`, `$A as $T`, `&mut $A`) takes it when the plain snippet
+        // does not parse. The statement wrapper unwraps, so `$A;` is `$A`.
         // Complete constructs and unrelated shapes retain their original tree.
         if let Some(kind) = lang.terminated_fragment_kind()
             && !source.trim_end().ends_with([';', '}'])
@@ -140,7 +142,8 @@ impl CompiledPattern {
                 parse_tree(&language, &contextual_source).map_err(|err| err.to_string())?;
             let contextual_root =
                 effective_pattern_root(contextual_tree.root_node(), &contextual_source);
-            if contextual_root.kind() == kind && !contextual_root.has_error() {
+            let plain_fails = effective_pattern_root(tree.root_node(), &source).has_error();
+            if !contextual_root.has_error() && (contextual_root.kind() == kind || plain_fails) {
                 source = contextual_source;
                 tree = contextual_tree;
             }
@@ -235,35 +238,38 @@ impl CompiledPattern {
         &self,
         content: &str,
         deadline: Instant,
-    ) -> Result<Vec<MatchWithKind>, ExecutionError> {
+        found: &mut Found<'_>,
+    ) -> Result<(), ExecutionError> {
         let Some(special) = &self.special else {
-            return Ok(Vec::new());
+            return Ok(());
         };
         let tree = parse_tree_with_deadline(&self.language, content, deadline)?;
 
+        // One match per node span.
         let mut seen = HashSet::new();
-        let mut matches = Vec::new();
         let line_index = LineIndex::tree_sitter(content);
         visit_named(tree.root_node(), deadline, &mut |candidate| {
             if !self.matches_candidate(candidate) {
                 return Ok(());
             }
-            if let Some(matched) =
-                self.special_structural_match(special, candidate, content, &line_index)
+            // Direct patterns and pattern rules share capture equality semantics.
+            let mut captures = CaptureEnv::default();
+            if self.matches_special(special, candidate, content, &mut captures)
+                && seen.insert((candidate.start_byte(), candidate.end_byte()))
             {
-                let key = (
-                    matched.start_line,
-                    matched.start_col,
-                    matched.end_line,
-                    matched.end_col,
-                );
-                if seen.insert(key) {
-                    matches.push(MatchWithKind::new(candidate, matched));
-                }
+                found.push(candidate, || {
+                    let (metavars, metavar_ranges_raw) = captures.into_maps();
+                    to_structural_match_with_index(
+                        candidate,
+                        content,
+                        &line_index,
+                        metavars,
+                        metavar_ranges_raw,
+                    )
+                });
             }
             Ok(())
-        })?;
-        Ok(matches)
+        })
     }
 
     pub(super) fn matches(
@@ -294,32 +300,6 @@ impl CompiledPattern {
             0,
             &mut budget,
         )
-    }
-
-    fn special_structural_match(
-        &self,
-        special: &SpecialPattern,
-        candidate: Node<'_>,
-        content: &str,
-        line_index: &LineIndex,
-    ) -> Option<StructuralMatch> {
-        // Direct patterns and pattern rules share capture equality semantics.
-        let mut captures = CaptureEnv::default();
-        if !self.matches_special(special, candidate, content, &mut captures) {
-            return None;
-        }
-        let (metavars, metavar_ranges_raw) = captures.into_maps();
-        match special {
-            SpecialPattern::JsxTagName { .. } | SpecialPattern::KeyValuePair { .. } => {
-                Some(to_structural_match_with_index(
-                    candidate,
-                    content,
-                    line_index,
-                    metavars,
-                    metavar_ranges_raw,
-                ))
-            }
-        }
     }
 
     fn matches_special(

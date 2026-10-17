@@ -13,7 +13,7 @@ use std::path::Path;
 
 /// In-memory read guard. Larger sources use bounded streaming windows up to
 /// `MAX_STREAM_SOURCE_BYTES`; a growing small-file read stops at this guard.
-pub(super) const MAX_SOURCE_BYTES: u64 = 10 * 1024 * 1024;
+pub(crate) const MAX_SOURCE_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 enum SourceSizeLimit {
@@ -107,6 +107,14 @@ pub fn execute_local_fetch(
             return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", e.to_string());
         }
     };
+    // The sniff saw the head; a NUL byte anywhere is binary (the one binary
+    // definition), so the rest is checked too: one memchr pass.
+    if bytes
+        .get(BINARY_SAMPLE_BYTES..)
+        .is_some_and(|rest| rest.contains(&0))
+    {
+        return refuse_binary(q, display_path);
+    }
     let mut result = process_fetched_content_selected(
         q,
         &bytes,
@@ -116,6 +124,7 @@ pub fn execute_local_fetch(
             modified: meta.modified().ok().and_then(system_time_iso),
             window,
             first_page_bytes: None,
+            interior: false,
         },
         security,
         cancel,
@@ -160,7 +169,7 @@ fn name_read_file(result: &mut LocalFetchResult, q: &LocalFetchQuery, read: &Val
 
 /// The validated path, opened, and the handle's stat; a refused path, a
 /// directory, a non-regular file or a failed open ends the read.
-fn resolve_file(
+pub(super) fn resolve_file(
     q: &LocalFetchQuery,
     paths: &impl PathAccess,
 ) -> Result<(ValidatedRead, fs::File, fs::Metadata), Box<LocalFetchResult>> {
@@ -225,7 +234,7 @@ fn fetch_streamed(
         q,
         path,
         source,
-        meta.len(),
+        meta,
         meta.modified().ok().and_then(system_time_iso),
         security,
         cancel,
@@ -248,11 +257,11 @@ fn selection_failure(
             "Selection was cancelled".into(),
         ),
         crate::tools::selection::Failure::Provider(failure) => {
-            let crate::tools::selection::ProviderFailure { error, receipt } = *failure;
+            let crate::tools::selection::ProviderFailure { error, outcome } = *failure;
             let mut result =
                 LocalFetchResult::error(q.path.to_string(), &error.code, error.message);
             result.hints = error.hints;
-            result.selection = Some(receipt);
+            result.selection = Some(outcome.receipt);
             result.next = Some(NextCalls {
                 unfiltered: unfiltered_read(q),
                 ..NextCalls::default()
@@ -311,21 +320,7 @@ fn path_failure(q: &LocalFetchQuery, failure: PathFailure) -> LocalFetchResult {
     } else {
         failure.message
     };
-    let code = if matches!(
-        failure.code.as_str(),
-        "outsideAllowedRoots"
-            | "symlinkEscape"
-            | "permissionDenied"
-            | crate::policy::PATH_POLICY_DENIED
-    ) {
-        failure.code.as_str()
-    } else if failure.resource_missing {
-        // The not-found code every local tool reports.
-        "pathNotFound"
-    } else {
-        "fileAccessFailed"
-    };
-    let mut result = LocalFetchResult::error(q.path.to_string(), code, message);
+    let mut result = LocalFetchResult::error(q.path.to_string(), &failure.code, message);
     result.resource_missing = failure.resource_missing;
     if failure.resource_missing {
         // The parent's tree shows a mistyped name's siblings; the listing
@@ -349,8 +344,8 @@ fn path_failure(q: &LocalFetchQuery, failure: PathFailure) -> LocalFetchResult {
     result
 }
 
-/// The refusal for a file whose leading bytes are binary.
-fn refuse_binary(q: &LocalFetchQuery, display_path: &str) -> LocalFetchResult {
+/// The refusal for a binary file: a NUL byte, or a binary head.
+pub(super) fn refuse_binary(q: &LocalFetchQuery, display_path: &str) -> LocalFetchResult {
     let mut result = LocalFetchResult::error(
         q.path.to_string(),
         "binaryFileUnsupported",
@@ -379,7 +374,7 @@ fn bind_continuation_to_source(result: &mut LocalFetchResult) {
             &mut next.continue_block,
             &mut next.whole_lines,
             &mut next.unfiltered,
-            &mut next.unfiltered2,
+            &mut next.unfiltered_unknown,
             &mut next.next_candidate_page,
         ]
         .into_iter()
@@ -389,7 +384,7 @@ fn bind_continuation_to_source(result: &mut LocalFetchResult) {
         }
         if let Some(digest) = result.source_sha256.as_deref() {
             for rows in next
-                .unfiltered_rest
+                .unfiltered_unknown_rest
                 .values_mut()
                 .filter_map(|call| call.pointer_mut("/query/queries"))
                 .filter_map(serde_json::Value::as_array_mut)
@@ -441,16 +436,22 @@ pub(crate) fn process_fetched_content_selected(
     regex: &impl RegexMatch,
     selection: Option<&crate::tools::selection::Runtime>,
 ) -> LocalFetchResult {
-    let mut source = match prepare_source(q, bytes, source_path, security, cancel) {
+    let sha256 = crate::digest::sha256(bytes);
+    // Refused on its input alone: no decode, redaction or extraction runs;
+    // the digest binds the unfiltered lead to the version the refusal saw.
+    if let Some(refused) = refused_selection_input(q, &sha256) {
+        return refused;
+    }
+    let mut source = match prepare_source(q, bytes, sha256, facts, source_path, security, cancel) {
         Ok(source) => source,
         Err(result) => return *result,
     };
     // A whole-text read moves the source into its view instead of copying
     // it: nothing after the extraction reads the source text of such a read.
     let extracted = if super::extraction::selects_whole(q) {
-        Ok(super::extraction::Extraction::whole(std::mem::take(
-            &mut source.text,
-        )))
+        Ok(super::extraction::Extraction::whole(
+            std::sync::Arc::unwrap_or_clone(std::mem::take(&mut source.text)),
+        ))
     } else {
         extract(q, &source.text, regex)
     };
@@ -572,6 +573,31 @@ fn select_no_match(input: &SelectionInput, mut result: LocalFetchResult) -> Loca
     result
 }
 
+/// A classified read its input alone rules out, refused before the source
+/// is decoded, redacted or extracted: selection judges raw text in line
+/// units, and pages only through its own selection token.
+fn refused_selection_input(q: &LocalFetchQuery, digest: &str) -> Option<LocalFetchResult> {
+    q.clasify_context.as_ref()?;
+    // A first call with an offset is a request, not a stale cursor.
+    if q.offset().is_some_and(|offset| offset > 0) && q.selection.is_none() {
+        return Some(unsupported_selection(
+            q,
+            "A classified read pages only through its continueWindow selection token; drop offset or clasifyContext.",
+            Some(digest),
+        ));
+    }
+    // A match read is verbatim whatever its minify (see `select_view`).
+    let transformed = q.minify_mode().is_some() && q.match_string.is_none();
+    if transformed || (q.unit == Some(WindowUnit::Bytes) && q.selection.is_none()) {
+        return Some(unsupported_selection(
+            q,
+            "clasifyContext requires raw text in line units; omit minify, and omit unit or use unit:lines.",
+            Some(digest),
+        ));
+    }
+    None
+}
+
 /// Select complete source windows before response paging.
 fn select_view_chunks(
     input: &SelectionInput,
@@ -587,22 +613,6 @@ fn select_view_chunks(
         }
         return Ok(None);
     }
-    // A first call with an offset is a request, not a stale cursor: a
-    // classified read pages only through its own selection token.
-    if q.offset().is_some_and(|offset| offset > 0) && q.selection.is_none() {
-        return Err(Box::new(unsupported_selection(
-            q,
-            "A classified read pages only through its continueWindow selection token; drop offset or clasifyContext.",
-            Some(input.sha256),
-        )));
-    }
-    if view.mode.is_some() || (q.unit == Some(WindowUnit::Bytes) && q.selection.is_none()) {
-        return Err(Box::new(unsupported_selection(
-            q,
-            "clasifyContext requires raw text in line units; omit minify, and omit unit or use unit:lines.",
-            Some(input.sha256),
-        )));
-    }
     let unsupported = None;
     let (candidates, chunks) = super::selection::chunks(
         &view.text,
@@ -616,20 +626,24 @@ fn select_view_chunks(
         unsupported,
     );
     let query_json = serde_json::to_value(q).unwrap_or_default();
-    let outcome = crate::tools::selection::select(
-        input.runtime,
-        &query_json,
-        &input.source_key(),
-        q.selection.as_ref().map(|s| s.as_str()),
-        &candidates,
-        unsupported,
-        crate::contracts::tool_types::SelectionUnit::Chunks,
-    )
-    .map_err(|failure| Box::new(selection_failure(q, failure)))?;
-    let (text, source_lines) = super::selection::project(&view.text, &chunks, &outcome.selected);
+    let (outcome, provider) =
+        crate::tools::selection::unless_transient(crate::tools::selection::select(
+            input.runtime,
+            &query_json,
+            &input.source_key(),
+            q.selection.as_ref().map(|s| s.as_str()),
+            &candidates,
+            unsupported,
+            crate::contracts::tool_types::SelectionUnit::Chunks,
+        ))
+        .map_err(|failure| Box::new(selection_failure(q, failure)))?;
+    let shown = outcome.shown(chunks.len());
+    let (text, source_lines) = super::selection::project(&view.text, &chunks, &shown);
     view.text = text;
     ext.source_lines = Some(source_lines);
-    Ok(Some(super::selection::Chosen::new(outcome, &chunks)))
+    Ok(Some(super::selection::Chosen::new(
+        outcome, provider, &chunks,
+    )))
 }
 
 /// The scanned page of a view, and the query it was cut for.
@@ -682,10 +696,15 @@ fn cut_page<'a>(
     let head_view = head_query(&q, view.mode, view.text.len());
     let head = head_view.is_some();
     let page_q = head_view.as_ref().unwrap_or(&q);
-    // A transformed whole-file view pages in raw source lines (the unit of
-    // `totalLines`, the gutter and `ranges`); an outline pages its own lines.
-    let source_lines = (view.mode == Some(MinifyMode::Standard) && ext.source_lines.is_none())
-        .then(|| SourceLines::of_gutter(&view.text, source.total_lines))
+    // A transformed view pages in the lines a raw read of the same
+    // selection pages in: raw source lines for a whole file (the unit of
+    // `totalLines`, the gutter and `ranges`), the extracted lines for
+    // `ranges`; an outline pages its own lines.
+    let source_lines = (view.mode == Some(MinifyMode::Standard))
+        .then(|| match ext.source_lines.as_deref() {
+            None => SourceLines::of_gutter(&view.text, source.total_lines),
+            Some(selected) => SourceLines::of_selected_gutter(&view.text, selected),
+        })
         .flatten();
     let window = PageWindow {
         query: page_q,
@@ -760,7 +779,7 @@ fn page_result(
         .map(|chosen| chosen.outcome.token.as_str());
     let mut next = continue_calls(q, &pg, head, token, &mut ext, &mut warnings);
     if let Some(chosen) = &selection_outcome
-        && chosen.outcome.receipt.selected_items < chosen.outcome.receipt.total_items
+        && chosen.outcome.leaves_out()
     {
         attach_unfiltered(next.get_or_insert_with(NextCalls::default), asked, chosen);
     }
@@ -827,11 +846,11 @@ fn page_result(
     }
 }
 
-/// A classified page's routes to what it left out: `unfiltered` reads
-/// exactly the unknown chunks (`unfiltered3`, … the rest of their ranges,
-/// as many rows per call as a call takes) beside `unfiltered2`, the whole
-/// unfiltered view; without unknown chunks narrower than the view, the
-/// whole view is `unfiltered`. `nextCandidatePage` judges what the
+/// A classified page's routes to what it left out: `unfiltered` reads the
+/// whole unfiltered view and, when the unknown chunks are narrower,
+/// `unfilteredUnknown` reads exactly them (`unfilteredUnknown2`, … the rest
+/// of their ranges, as many rows per call as a call takes).
+/// `nextCandidatePage` judges what the
 /// candidate budget left unjudged.
 fn attach_unfiltered(
     calls: &mut NextCalls,
@@ -844,25 +863,21 @@ fn attach_unfiltered(
         .next()
         .and_then(|row| serde_json::from_value(row).ok())
         .map(|query| FetchCall { query });
-    if first.is_some() {
-        calls.unfiltered2 = unfiltered_read(q);
-        calls.unfiltered = first;
-        let rest = reads.collect::<Vec<_>>();
-        for (index, batch) in rest
-            .chunks(crate::tools::result::rows_per_call(ToolId::LocalFetch))
-            .enumerate()
-        {
-            calls.unfiltered_rest.insert(
-                format!("unfiltered{}", index + 3),
-                crate::tools::result::Continuation::input(
-                    ToolId::LocalFetch,
-                    serde_json::json!({ "queries": batch }),
-                )
-                .build(),
-            );
-        }
-    } else {
-        calls.unfiltered = unfiltered_read(q);
+    calls.unfiltered = unfiltered_read(q);
+    calls.unfiltered_unknown = first;
+    let rest = reads.collect::<Vec<_>>();
+    for (index, batch) in rest
+        .chunks(crate::tools::result::rows_per_call(ToolId::LocalFetch))
+        .enumerate()
+    {
+        calls.unfiltered_unknown_rest.insert(
+            format!("unfilteredUnknown{}", index + 2),
+            crate::tools::result::Continuation::input(
+                ToolId::LocalFetch,
+                serde_json::json!({ "queries": batch }),
+            )
+            .build(),
+        );
     }
     if let Some(token) = chosen.next_candidates() {
         let mut page = q.clone();
@@ -953,7 +968,8 @@ const KEY_BLOCK_NOTE: &str =
 /// The decoded source, redacted before any window is cut from it.
 struct Source {
     sha256: String,
-    text: String,
+    /// The redacted text; a non-match read shares its preparation's copy.
+    text: std::sync::Arc<String>,
     chars: usize,
     bytes: usize,
     total_lines: usize,
@@ -1025,12 +1041,13 @@ fn redacted_lines(raw: &str, redacted: &str) -> Vec<(usize, usize)> {
 /// memo keeps it across calls.
 struct Prepared {
     /// The decoded text, private-key blocks redacted.
-    keyed: String,
+    keyed: std::sync::Arc<String>,
     /// The lines the key-block pass changed, with the placeholders each
     /// gained (empty when it changed nothing).
     key_block_lines: Vec<(usize, usize)>,
     key_blocks_redacted: bool,
-    /// Bytes of the decoded text before the key-block pass.
+    /// Bytes of the source as read (a leading BOM and the encoding
+    /// fallback change the decoded text, not the file's size).
     raw_bytes: usize,
     chars: usize,
     total_lines: usize,
@@ -1038,10 +1055,14 @@ struct Prepared {
 }
 
 impl Prepared {
-    fn of(bytes: &[u8], security: &impl ContentScan) -> Self {
+    fn of(bytes: &[u8], interior: bool, security: &impl ContentScan) -> Self {
         // Binary detection is a separate heuristic; text that is not UTF-8
         // is decoded (Latin-1 or lossy UTF-8) with a warning, never refused.
-        let decoded = octocode_engine::text::decode(bytes);
+        let decoded = if interior {
+            octocode_engine::text::Decoded::interior(bytes)
+        } else {
+            octocode_engine::text::decode(bytes)
+        };
         let raw = decoded.text;
         // Redact whole private-key blocks across the full file BEFORE any
         // window/extraction, so a bounded read of an interior body line
@@ -1052,7 +1073,7 @@ impl Prepared {
         Self {
             chars: raw.encode_utf16().count(),
             total_lines: line_count(&raw),
-            raw_bytes: raw.len(),
+            raw_bytes: bytes.len(),
             // The pass keeps the line count, so its changes map onto lines.
             key_block_lines: if changed {
                 redacted_lines(&raw, &keyed)
@@ -1060,7 +1081,7 @@ impl Prepared {
                 Vec::new()
             },
             key_blocks_redacted: changed,
-            keyed,
+            keyed: std::sync::Arc::new(keyed),
             warning: decoded.warning,
         }
     }
@@ -1070,34 +1091,51 @@ impl Prepared {
 /// page a runtime serves; smaller ones are cheap to prepare again.
 const PREPARED_MIN_BYTES: usize = 256 * 1024;
 
-/// Prepared sources by path and byte digest (the digest names the bytes, so
-/// an entry never goes stale). One process holds one content scanner.
-static PREPARED: octocode_io::memo::Memo<(std::path::PathBuf, String), Prepared> =
+/// A prepared source's key: its path, byte digest and whether the bytes
+/// begin inside the file ([`SourceFacts::interior`]).
+type PreparedKey = (std::path::PathBuf, String, bool);
+
+/// Prepared sources by [`PreparedKey`] (the digest names the bytes, so an
+/// entry never goes stale). One process holds one content scanner.
+static PREPARED: octocode_io::memo::Memo<PreparedKey, Prepared> =
     octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
         max_entries: 4,
         max_weight: 96 * 1024 * 1024,
         keep_newest: false,
     });
 
+/// One preparation per large version at a time: rows of a batch reading it
+/// concurrently wait for the first and take its value from the slot.
+static PREPARING: octocode_io::flight::KeyedFlight<PreparedKey, Option<std::sync::Arc<Prepared>>> =
+    octocode_io::flight::KeyedFlight::transient();
+
 /// The prepared source of `bytes` (digest `sha256`) at `source_path`: from
-/// the memo when an earlier page prepared the same version.
+/// the memo when an earlier page (or a concurrent row) prepared the same
+/// version. A row waiting for a concurrent row's preparation stops when
+/// `cancel` fails.
 fn prepared(
     bytes: &[u8],
     sha256: &str,
+    interior: bool,
     source_path: &std::path::Path,
     security: &impl ContentScan,
-) -> std::sync::Arc<Prepared> {
+    cancel: &impl CancellationCheck,
+) -> Result<std::sync::Arc<Prepared>, String> {
     if bytes.len() < PREPARED_MIN_BYTES {
-        return std::sync::Arc::new(Prepared::of(bytes, security));
+        return Ok(std::sync::Arc::new(Prepared::of(bytes, interior, security)));
     }
-    let key = (source_path.to_path_buf(), sha256.to_owned());
-    if let Some(hit) = PREPARED.get(&key) {
-        return hit.value;
-    }
-    let prepared = Prepared::of(bytes, security);
-    let weight =
-        prepared.keyed.len() + prepared.key_block_lines.len() * 2 * std::mem::size_of::<usize>();
-    PREPARED.insert(key, prepared, weight, None)
+    // Rows prepare in blocking row workers, never on an async worker.
+    PREPARING.memoized_blocking(
+        (source_path.to_path_buf(), sha256.to_owned(), interior),
+        |key| PREPARED.get(key).map(|hit| hit.value),
+        |key| {
+            let prepared = Prepared::of(bytes, interior, security);
+            let weight = prepared.keyed.len()
+                + prepared.key_block_lines.len() * 2 * std::mem::size_of::<usize>();
+            PREPARED.insert(key, prepared, weight, None)
+        },
+        || cancel.check(),
+    )
 }
 
 /// Decode and redact the source; a stale snapshot, a cancel or a failed
@@ -1106,32 +1144,41 @@ fn prepared(
 fn prepare_source(
     q: &LocalFetchQuery,
     bytes: &[u8],
+    sha256: String,
+    facts: &SourceFacts,
     source_path: &std::path::Path,
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
 ) -> Result<Source, Box<LocalFetchResult>> {
-    let sha256 = crate::digest::sha256(bytes);
     if let Some(expected) = q.snapshot.as_deref()
         && **expected != sha256
     {
         return Err(Box::new(stale_snapshot(q)));
     }
-    cancel
-        .check()
-        .map_err(|e| Box::new(LocalFetchResult::error(q.path.to_string(), "cancelled", e)))?;
-    let prepared = prepared(bytes, &sha256, source_path, security);
+    let cancelled = |e| Box::new(LocalFetchResult::error(q.path.to_string(), "cancelled", e));
+    cancel.check().map_err(cancelled)?;
+    let prepared = prepared(
+        bytes,
+        &sha256,
+        facts.interior,
+        source_path,
+        security,
+        cancel,
+    )
+    .map_err(cancelled)?;
     let key_blocks_redacted = prepared.key_blocks_redacted;
     // matchString runs on redacted text: sanitize the whole source (line-count
     // preserving) before matching so a probe cannot confirm a secret that the
     // returned window would redact (exact-prefix oracle).
     let (text, match_redacted) = if q.match_string.is_some() {
-        security
+        let (text, redacted) = security
             .redact_source_lines(&prepared.keyed, source_path, &sha256)
             .map_err(|(code, message)| {
                 Box::new(LocalFetchResult::error(q.path.to_string(), &code, message))
-            })?
+            })?;
+        (std::sync::Arc::new(text), redacted)
     } else {
-        (prepared.keyed.clone(), false)
+        (std::sync::Arc::clone(&prepared.keyed), false)
     };
     // Both passes keep the line count, so their changes map onto lines.
     let mut redacted = prepared.key_block_lines.clone();
@@ -1154,7 +1201,7 @@ fn prepare_source(
 /// A failed selection; an invalid regex carries its repaired read (the
 /// message names the item and the parser's reason), and ranges that all start
 /// past the file end carry the same read of the file's last window.
-fn extraction_error(
+pub(super) fn extraction_error(
     q: &LocalFetchQuery,
     error: ExtractionError,
     total_lines: usize,
@@ -1392,9 +1439,10 @@ fn select_view(
 /// would join tokens (`boolean{`, `string,...args`).
 ///
 /// The view is kept (in memory and on disk), so it renders from the source
-/// redacted line by line first: no kept outline ever holds a secret. A
-/// source the scanner refuses renders unredacted for this page only (each
-/// page scans what it returns) and is never kept.
+/// redacted line by line first: no kept outline ever holds a secret, and a
+/// kept one is served without scanning the source again. A source the
+/// scanner refuses renders unredacted for this page only (each page scans
+/// what it returns) and is never kept.
 pub(super) fn symbols_view(
     store: &crate::cache::Store<crate::tools::declarations_cache::SymbolsView>,
     source: &str,
@@ -1402,19 +1450,19 @@ pub(super) fn symbols_view(
     source_path: &std::path::Path,
     security: &impl ContentScan,
 ) -> std::sync::Arc<crate::tools::declarations_cache::SymbolsView> {
-    match crate::security::scan::redact_lines(security, source, source_path) {
-        Ok((redacted, changed)) => {
-            crate::tools::declarations_cache::symbols_view(store, source, path, || {
+    crate::tools::declarations_cache::symbols_view(store, source, path, || {
+        match crate::security::scan::redact_lines(security, source, source_path) {
+            Ok((redacted, changed)) => {
                 let redacted_lines = if changed {
                     redacted_lines(source, &redacted)
                 } else {
                     Vec::new()
                 };
-                render_symbols_view(&redacted, path, redacted_lines)
-            })
+                Ok(render_symbols_view(&redacted, path, redacted_lines))
+            }
+            Err(_) => Err(render_symbols_view(source, path, Vec::new())),
         }
-        Err(_) => std::sync::Arc::new(render_symbols_view(source, path, Vec::new())),
-    }
+    })
 }
 
 /// The symbols view of `source`, which the caller has redacted.
@@ -1431,7 +1479,16 @@ fn render_symbols_view(
             super::block::outline_recovery_warning(source, path),
         )
     };
-    let (outline, warning) = match octocode_engine::portable::extract_signatures(source, path) {
+    // One parse serves the outline and the declarations its spans and
+    // recovery note read: the declarations seed the shared cache those
+    // readers take them from.
+    let (signatures, declarations) =
+        octocode_engine::signatures::extract_signatures_with_declarations(source, path);
+    if let Some(declarations) = declarations {
+        let _ =
+            crate::tools::declarations_cache::document(source, path, None, || Some(declarations));
+    }
+    let (outline, warning) = match signatures {
         Ok(outline) => code(outline),
         Err(reason) => match crate::content::markdown_heading_outline(source, path) {
             Some(headings) => code(headings),
@@ -1717,9 +1774,25 @@ fn page_next(
         }
         return next;
     }
-    let (total, unit) = match pg.pagination.unit {
-        WindowUnit::Lines => (pg.pagination.total_lines, "lines"),
-        WindowUnit::Bytes => (pg.pagination.total_bytes, "bytes"),
+    let total = match pg.pagination.unit {
+        WindowUnit::Lines => pg.pagination.total_lines,
+        WindowUnit::Bytes => pg.pagination.total_bytes,
+    };
+    Some(past_end(q, total, pg.pagination.unit, warnings))
+}
+
+/// The one shape of a page asked past the end of its view, whatever reads
+/// the source (whole or streamed): nothing returned, a warning naming the
+/// view's `total` in `unit`, and the restart at offset 0.
+pub(super) fn past_end(
+    q: &LocalFetchQuery,
+    total: usize,
+    unit: WindowUnit,
+    warnings: &mut Vec<String>,
+) -> NextCalls {
+    let unit = match unit {
+        WindowUnit::Lines => "lines",
+        WindowUnit::Bytes => "bytes",
     };
     warnings.push(format!(
         "offset {} is past the end of the selected view ({total} {unit}); nothing was returned.",
@@ -1727,10 +1800,10 @@ fn page_next(
     ));
     let mut query = q.clone();
     query.offset = Some(0);
-    Some(NextCalls {
+    NextCalls {
         restart: Some(FetchCall { query }),
         ..NextCalls::default()
-    })
+    }
 }
 
 /// Notes for a read's scope: a reversed range and a long-line byte walk.
@@ -1967,8 +2040,16 @@ fn bar_alternatives(q: &LocalFetchQuery) -> Option<LocalFetchQuery> {
 }
 
 /// Lines the same read selects when every pattern matches case-insensitively;
-/// 0 when the patterns do not compile that way either.
+/// 0 when the patterns do not compile that way either, or already matched so.
 fn insensitive_match_count(q: &LocalFetchQuery, text: &str, regex: &impl RegexMatch) -> usize {
+    // A read that matched every pattern ignoring case already ran this one.
+    if !q
+        .match_strings()
+        .iter()
+        .any(|pattern| q.case_sensitive_for(pattern))
+    {
+        return 0;
+    }
     let mut insensitive = q.clone();
     insensitive.case_mode = Some(ReadCaseMode::Insensitive);
     super::extraction::extract(&insensitive, text, regex)
@@ -2012,6 +2093,33 @@ mod source_size_tests {
             None,
             None,
         )
+    }
+
+    /// A cancelled row stops waiting for another row's preparation of the
+    /// same large source instead of waiting until it lands.
+    #[test]
+    fn a_cancelled_row_stops_waiting_for_another_rows_preparation() {
+        struct Cancelled;
+        impl CancellationCheck for Cancelled {
+            fn check(&self) -> Result<(), String> {
+                Err("cancelled".into())
+            }
+        }
+        let bytes = vec![b'x'; PREPARED_MIN_BYTES];
+        let path = std::path::Path::new("/flight/cancelled-row.txt");
+        let sha256 = crate::digest::sha256(&bytes);
+        let holder = PREPARING.join((path.to_path_buf(), sha256.clone(), false));
+        let held = holder.blocking_turn();
+        let started = std::time::Instant::now();
+        let waited = prepared(&bytes, &sha256, false, path, &Passthrough, &Cancelled);
+        assert_eq!(waited.err().as_deref(), Some("cancelled"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "{:?}",
+            started.elapsed()
+        );
+        drop(held);
+        drop(holder);
     }
 
     #[test]

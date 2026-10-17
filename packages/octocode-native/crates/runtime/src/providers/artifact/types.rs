@@ -120,12 +120,34 @@ impl ArtifactSearchQuery {
             _ => 1,
         }
     }
-    /// Points a discovery query at `page`.
+    /// Points a discovery query at `page`. A cursor names the start of one
+    /// page, so it is cleared with the page it named.
     pub(crate) fn set_page(&mut self, page: u64) {
         let page = std::num::NonZeroU64::new(page);
         match self {
-            Self::NpmDiscovery(query) => query.page = page,
-            Self::RegistryDiscovery(query) => query.page = page,
+            Self::NpmDiscovery(query) => (query.page, query.cursor) = (page, None),
+            Self::RegistryDiscovery(query) => (query.page, query.cursor) = (page, None),
+            _ => {}
+        }
+    }
+    /// The opaque registry cursor that starts this discovery page
+    /// (`cursor`, copied from `next.nextPage`).
+    pub(crate) fn cursor(&self) -> Option<&str> {
+        match self {
+            Self::NpmDiscovery(query) => query.cursor.as_deref().map(String::as_str),
+            Self::RegistryDiscovery(query) => query.cursor.as_deref().map(String::as_str),
+            _ => None,
+        }
+    }
+    /// Names the cursor that starts this discovery page. A cursor the
+    /// contract's bound rejects is left off: the page then walks to its
+    /// start instead of carrying an input the tool would refuse.
+    pub(crate) fn set_cursor(&mut self, cursor: Option<&str>) {
+        match self {
+            Self::NpmDiscovery(query) => query.cursor = cursor.and_then(|text| text.parse().ok()),
+            Self::RegistryDiscovery(query) => {
+                query.cursor = cursor.and_then(|text| text.parse().ok());
+            }
             _ => {}
         }
     }
@@ -185,6 +207,27 @@ fn page_size_defaults_from_the_contract() {
     assert_eq!(discovery.page_size(), PAGE_SIZE_DEFAULT);
     assert_eq!(exact.page_size(), PAGE_SIZE_DEFAULT);
     assert_eq!(sized.page_size(), 3);
+}
+
+/// A cursor names one page's start: moving the page clears it, and a
+/// cursor past the contract's bound is left off rather than carried.
+#[cfg(test)]
+#[test]
+fn a_cursor_belongs_to_its_page_and_the_contract_bounds_it() {
+    use crate::tools::id::query_limits::artifact_search::CURSOR_MAX_LENGTH;
+    let mut query = artifact_query(
+        serde_json::json!({"ecosystem": "go", "keywords": ["http"], "page": 2, "cursor": "c2"}),
+        None,
+    );
+    assert_eq!(query.cursor(), Some("c2"));
+    query.set_page(3);
+    assert_eq!((query.page(), query.cursor()), (3, None));
+    query.set_cursor(Some("c3"));
+    assert_eq!(query.cursor(), Some("c3"));
+    query.set_cursor(Some(&"x".repeat(CURSOR_MAX_LENGTH + 1)));
+    assert_eq!(query.cursor(), None);
+    let exact = artifact_query(serde_json::json!({"packageName": "ajv"}), None);
+    assert_eq!(exact.cursor(), None);
 }
 
 /// A request budget no artifact test exhausts.
@@ -267,6 +310,11 @@ pub struct ArtifactItem {
     /// or rewritten commit): no lead pins it; the response warns with it.
     #[serde(skip)]
     pub missing_ref: Option<String>,
+    /// `${…}` properties the declared dependencies name that the release's
+    /// own metadata does not define (a Maven parent POM's): the response
+    /// states them.
+    #[serde(skip)]
+    pub unresolved_properties: Vec<String>,
 }
 
 impl ArtifactItem {
@@ -297,6 +345,7 @@ impl ArtifactItem {
             source_attested: false,
             source_tag: false,
             missing_ref: None,
+            unresolved_properties: Vec::new(),
         }
     }
 }

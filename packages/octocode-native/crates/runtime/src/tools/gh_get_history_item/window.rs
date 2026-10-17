@@ -80,7 +80,28 @@ impl Loaded {
             first: Value::Null,
         }
     }
+
+    /// The first items of a longer collection: they cover the first page,
+    /// and later pages read on from where they end.
+    pub(super) fn prefix(items: Vec<Value>) -> Self {
+        Self {
+            items,
+            state: WindowState {
+                skipped: 0,
+                exhausted: false,
+                capped: false,
+            },
+            first: Value::Null,
+        }
+    }
 }
+
+/// Provider batches read at once: a known span loads in waves of this many
+/// requests, in provider order.
+const BATCH_CONCURRENCY: usize = 8;
+
+/// One provider batch response: the body and whether a next batch exists.
+pub(super) type Batch = (Value, bool);
 
 /// The public page a load must cover, read in `MAX_PER_PAGE`-sized batches.
 pub(super) struct WindowSpec {
@@ -89,10 +110,55 @@ pub(super) struct WindowSpec {
     pub(super) page_size: usize,
     /// A filter hides items, so the window cannot jump ahead by index.
     pub(super) filtered: bool,
-    /// Provider item count when known up front (a PR's `changed_files`). A
-    /// filtered scan then reads every batch concurrently instead of one
-    /// round trip per batch.
+    /// Provider item count when known up front (a PR's `changed_files`).
+    /// It sizes the batches a window spans, so they load concurrently: every
+    /// batch of a filtered scan, the batches under an unfiltered page.
     pub(super) provider_total: Option<usize>,
+    /// A batch the read already holds, by its 1-based number (the first
+    /// batch fetched beside the PR): it is used, never fetched again.
+    pub(super) prefetched: Option<(usize, Batch)>,
+}
+
+impl WindowSpec {
+    /// The provider batch the window starts at: the first for a filtered
+    /// window, else the one holding the page's first item.
+    pub(super) fn first_batch(&self) -> usize {
+        if self.filtered {
+            1
+        } else {
+            (self.start() / MAX_PER_PAGE).min(self.max_batches.saturating_sub(1)) + 1
+        }
+    }
+
+    /// Whether the page may need more than its first provider batch: a
+    /// filtered scan (its matches lie anywhere), or a page whose items cross
+    /// a batch boundary.
+    pub(super) fn spans_batches(&self) -> bool {
+        self.filtered || self.need().div_ceil(MAX_PER_PAGE) > self.first_batch()
+    }
+
+    fn start(&self) -> usize {
+        self.page.saturating_sub(1).saturating_mul(self.page_size)
+    }
+
+    /// Items (matches, for a filtered window) the page needs loaded.
+    fn need(&self) -> usize {
+        self.start().saturating_add(self.page_size)
+    }
+
+    /// The last batch of the wave that starts at `next`: through every batch
+    /// the known provider total says the window spans, else `next` alone.
+    fn wave_end(&self, next: usize) -> usize {
+        self.provider_total.map_or(next, |total| {
+            let span = if self.filtered {
+                total
+            } else {
+                self.need().min(total)
+            };
+            span.div_ceil(MAX_PER_PAGE)
+                .clamp(next, self.max_batches.max(next))
+        })
+    }
 }
 
 /// Load provider batches until `keep`-matching items cover the requested
@@ -125,34 +191,20 @@ pub(super) fn commit_file_items(value: &mut Value) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// Read the window in waves: each wave fetches, concurrently and in
+/// provider order, the batches the known provider total says the window
+/// spans (one batch when the total is unknown). Every batch a wave fetched
+/// is kept; whether the page is covered is judged between waves.
 pub(super) async fn load_window_with(
     transport: &GitHubTransport,
     segments: &[&str],
-    spec: WindowSpec,
+    mut spec: WindowSpec,
     keep: impl Fn(&Value) -> bool,
     extract: fn(&mut Value) -> Vec<Value>,
     context: &RequestContext,
 ) -> Result<Loaded, ProviderError> {
-    if spec.filtered
-        && let Some(total) = spec.provider_total.filter(|total| *total > MAX_PER_PAGE)
-    {
-        return load_all_batches(
-            transport,
-            segments,
-            spec.max_batches,
-            total,
-            extract,
-            context,
-        )
-        .await;
-    }
-    let start = spec.page.saturating_sub(1).saturating_mul(spec.page_size);
-    let need = start.saturating_add(spec.page_size);
-    let mut first_batch = if spec.filtered {
-        1
-    } else {
-        (start / MAX_PER_PAGE).min(spec.max_batches - 1) + 1
-    };
+    let need = spec.need();
+    let mut first_batch = spec.first_batch();
     loop {
         let mut loaded = Loaded {
             items: Vec::new(),
@@ -164,37 +216,32 @@ pub(super) async fn load_window_with(
             first: Value::Null,
         };
         let mut matched = loaded.state.skipped;
-        let mut batch = first_batch;
-        loop {
-            let (mut value, more) = fetch(
-                transport,
-                segments,
-                &[
-                    ("per_page", MAX_PER_PAGE.to_string()),
-                    ("page", batch.to_string()),
-                ],
-                context,
-            )
-            .await?;
-            let items = extract(&mut value);
-            if batch == first_batch {
-                loaded.first = value;
-            }
-            matched += items.iter().filter(|item| keep(item)).count();
-            loaded.items.extend(items);
-            if !more {
-                loaded.state.exhausted = true;
-                break;
-            }
-            if batch >= spec.max_batches {
-                loaded.state.capped = true;
-                loaded.state.exhausted = true;
-                break;
+        let mut next = first_batch;
+        'waves: loop {
+            let last = spec.wave_end(next);
+            let held = spec.prefetched.take_if(|(batch, _)| *batch == next);
+            let batches = fetch_batches(transport, segments, next..=last, held, context).await?;
+            for (batch, (mut value, more)) in (next..=last).zip(batches) {
+                let items = extract(&mut value);
+                if batch == first_batch {
+                    loaded.first = value;
+                }
+                matched += items.iter().filter(|item| keep(item)).count();
+                loaded.items.extend(items);
+                if !more {
+                    loaded.state.exhausted = true;
+                    break 'waves;
+                }
+                if batch >= spec.max_batches {
+                    loaded.state.capped = true;
+                    loaded.state.exhausted = true;
+                    break 'waves;
+                }
             }
             if matched >= need {
                 break;
             }
-            batch += 1;
+            next = last + 1;
         }
         // A jump past the real end (stale page cursor) restarts from batch 1
         // so a page past the true last page is flagged out of range.
@@ -206,48 +253,35 @@ pub(super) async fn load_window_with(
     }
 }
 
-/// Read every provider batch a collection of `total` items spans (up to
-/// `max_batches`) concurrently, in provider order.
-async fn load_all_batches(
+/// Provider batches `batches` in order, [`BATCH_CONCURRENCY`] in flight;
+/// a `held` batch (the first of the range) is used as is.
+async fn fetch_batches(
     transport: &GitHubTransport,
     segments: &[&str],
-    max_batches: usize,
-    total: usize,
-    extract: fn(&mut Value) -> Vec<Value>,
+    batches: std::ops::RangeInclusive<usize>,
+    held: Option<(usize, Batch)>,
     context: &RequestContext,
-) -> Result<Loaded, ProviderError> {
-    let batches = total.div_ceil(MAX_PER_PAGE).clamp(1, max_batches);
-    let pages = futures_util::future::try_join_all((1..=batches).map(|batch| async move {
-        fetch(
-            transport,
-            segments,
-            &[
-                ("per_page", MAX_PER_PAGE.to_string()),
-                ("page", batch.to_string()),
-            ],
-            context,
-        )
-        .await
-    }))
-    .await?;
-    let last_has_more = pages.last().is_some_and(|(_, more)| *more);
-    let mut loaded = Loaded {
-        items: Vec::new(),
-        state: WindowState {
-            skipped: 0,
-            exhausted: true,
-            capped: last_has_more && batches >= max_batches,
-        },
-        first: Value::Null,
-    };
-    for (index, (mut value, _)) in pages.into_iter().enumerate() {
-        let items = extract(&mut value);
-        if index == 0 {
-            loaded.first = value;
-        }
-        loaded.items.extend(items);
-    }
-    Ok(loaded)
+) -> Result<Vec<Batch>, ProviderError> {
+    use futures_util::{StreamExt as _, TryStreamExt as _};
+    let held = held.map(|(_, batch)| batch);
+    let skip = usize::from(held.is_some());
+    let fetched = futures_util::stream::iter(batches.skip(skip))
+        .map(|batch| async move {
+            fetch(
+                transport,
+                segments,
+                &[
+                    ("per_page", MAX_PER_PAGE.to_string()),
+                    ("page", batch.to_string()),
+                ],
+                context,
+            )
+            .await
+        })
+        .buffered(BATCH_CONCURRENCY)
+        .try_collect::<Vec<_>>()
+        .await?;
+    Ok(held.into_iter().chain(fetched).collect())
 }
 
 /// A provider list that ended before an authoritative item count is partial,
@@ -446,6 +480,114 @@ pub(super) fn patch_window(char_length: Option<usize>, auto_page_chars: Option<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::gh_shared::test_support::{default_context, one_shot_provider};
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    /// Mount provider batch `page` of `/files` (100 items each, `total` in
+    /// all), answering after `delay` and expecting `reads` requests.
+    async fn mount_batch(server: &MockServer, page: usize, total: usize, reads: u64) {
+        let items = ((page - 1) * MAX_PER_PAGE..(page * MAX_PER_PAGE).min(total))
+            .map(|n| json!({"filename": format!("f{n}")}))
+            .collect::<Vec<_>>();
+        let mut answer = ResponseTemplate::new(200)
+            .set_delay(std::time::Duration::from_millis(300))
+            .set_body_json(items);
+        if page * MAX_PER_PAGE < total {
+            answer = answer.insert_header(
+                "link",
+                format!(
+                    "<{}/api/v3/files?page={}>; rel=\"next\"",
+                    server.uri(),
+                    page + 1
+                ),
+            );
+        }
+        Mock::given(method("GET"))
+            .and(path("/api/v3/files"))
+            .and(query_param("page", page.to_string()))
+            .respond_with(answer)
+            .expect(reads)
+            .mount(server)
+            .await;
+    }
+
+    fn spec(page_size: usize, filtered: bool, total: Option<usize>) -> WindowSpec {
+        WindowSpec {
+            max_batches: MAX_FILE_BATCHES,
+            page: 1,
+            page_size,
+            filtered,
+            provider_total: total,
+            prefetched: None,
+        }
+    }
+
+    /// An unfiltered page whose files span several provider batches, with
+    /// the provider total known, reads those batches at once and in order:
+    /// three 300 ms batches take about one batch's time, not three.
+    #[tokio::test]
+    async fn a_page_spanning_batches_reads_them_at_once_in_order() {
+        let server = MockServer::builder().start().await;
+        for page in 1..=3 {
+            mount_batch(&server, page, 1000, 1).await;
+        }
+        let provider = one_shot_provider(&server);
+        let started = std::time::Instant::now();
+        let loaded = load_window(
+            &provider.transport,
+            &["files"],
+            spec(250, false, Some(1000)),
+            |_| true,
+            &default_context(),
+        )
+        .await
+        .expect("window");
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(800),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(loaded.items.len(), 300);
+        let names = loaded
+            .items
+            .iter()
+            .map(|item| item["filename"].as_str().unwrap_or_default().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, (0..300).map(|n| format!("f{n}")).collect::<Vec<_>>());
+        assert!(!loaded.state.exhausted);
+    }
+
+    /// A batch the read already holds (fetched beside the PR) is used as
+    /// is: a filtered scan of 250 files reads only batches 2 and 3, and
+    /// every file lands once, in provider order.
+    #[tokio::test]
+    async fn a_prefetched_batch_is_never_read_again() {
+        let server = MockServer::builder().start().await;
+        mount_batch(&server, 1, 250, 0).await;
+        mount_batch(&server, 2, 250, 1).await;
+        mount_batch(&server, 3, 250, 1).await;
+        let provider = one_shot_provider(&server);
+        let first = (0..100)
+            .map(|n| json!({"filename": format!("f{n}")}))
+            .collect::<Vec<_>>();
+        let loaded = load_window(
+            &provider.transport,
+            &["files"],
+            WindowSpec {
+                prefetched: Some((1, (json!(first), true))),
+                ..spec(100, true, Some(250))
+            },
+            |_| true,
+            &default_context(),
+        )
+        .await
+        .expect("window");
+        assert_eq!(loaded.items.len(), 250);
+        assert_eq!(loaded.items[0]["filename"], "f0");
+        assert_eq!(loaded.items[249]["filename"], "f249");
+        assert!(loaded.state.exhausted && !loaded.state.capped);
+    }
 
     #[test]
     fn window_pages_span_provider_batches_without_provider_cursors() {

@@ -1,4 +1,5 @@
-use std::path::{Component, Path, PathBuf};
+pub(crate) use octocode_engine::text::lexical;
+use std::path::{Path, PathBuf};
 
 use super::discovery::{is_sensitive_path, withheld_message};
 use super::{PolicyError, PolicyErrorCode};
@@ -87,6 +88,7 @@ impl PathPolicy {
                 "Path cannot be empty",
             ));
         }
+        reject_nul(input)?;
         let absolute = self.expand_and_resolve(input);
         match std::fs::canonicalize(&absolute) {
             Ok(real) => self.validate_resolved(input, &absolute, real, require_regular),
@@ -160,6 +162,7 @@ impl PathPolicy {
                 "Path cannot be empty",
             ));
         }
+        reject_nul(input)?;
         let absolute = self.expand_and_resolve(input);
         if absolute.exists() {
             return self.validate_resolved(
@@ -257,7 +260,8 @@ impl PathPolicy {
                 (
                     PolicyErrorCode::SymlinkEscape,
                     format!(
-                        "Symlink target '{}' is outside allowed directories{}",
+                        "Symlink '{}' resolves to '{}', outside allowed directories{}",
+                        self.display_requested(input, lexical),
                         self.redact(&real),
                         self.describe_roots()
                     ),
@@ -457,6 +461,18 @@ impl PathPolicy {
     }
 }
 
+/// A NUL byte ends a path at the operating system: no file has that name,
+/// so the request is malformed, not a filesystem failure.
+fn reject_nul(input: &Path) -> Result<(), PolicyError> {
+    if input.as_os_str().as_encoded_bytes().contains(&0) {
+        return Err(PolicyError::new(
+            PolicyErrorCode::InvalidInput,
+            "Path contains a NUL byte; send the path without it",
+        ));
+    }
+    Ok(())
+}
+
 fn add_root(roots: &mut Vec<PathBuf>, root: &Path) {
     let absolute = absolutize(root);
     if !roots.contains(&absolute) {
@@ -501,23 +517,7 @@ fn absolutize(path: impl AsRef<Path>) -> PathBuf {
 
 /// `path` with `\` read as `/`, then folded by [`lexical`].
 fn normalize(path: &Path) -> PathBuf {
-    lexical(Path::new(&path.to_string_lossy().replace('\\', "/")))
-}
-
-/// `.` and `..` folded lexically, without touching the file system; a `..`
-/// above the first component is dropped.
-pub(crate) fn lexical(path: &Path) -> PathBuf {
-    let mut result = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                result.pop();
-            }
-            other => result.push(other.as_os_str()),
-        }
-    }
-    result
+    lexical(Path::new(&octocode_engine::text::slash_path(path)))
 }
 
 /// [`PathPolicy::permits_discovery`] over one walk. An entry that is not a
@@ -768,13 +768,31 @@ mod tests {
             ..Default::default()
         })
         .expect("path policy test setup should succeed");
-        assert_eq!(
-            policy
-                .validate_read(root.join("escape.txt"))
-                .expect_err("path policy should reject the test input")
-                .code,
-            PolicyErrorCode::SymlinkEscape
+        let escape = policy
+            .validate_read(root.join("escape.txt"))
+            .expect_err("path policy should reject the test input");
+        assert_eq!(escape.code, PolicyErrorCode::SymlinkEscape);
+        // The link and where it resolves (outside paths stay redacted).
+        assert!(
+            escape
+                .message
+                .starts_with("Symlink 'escape.txt' resolves to 'secret.txt', outside"),
+            "{}",
+            escape.message
         );
+        for nul in ["a\0b.txt", "\0"] {
+            assert_eq!(
+                policy.validate_read(root.join(nul)).expect_err("NUL").code,
+                PolicyErrorCode::InvalidInput
+            );
+            assert_eq!(
+                policy
+                    .validate_output(root.join(nul))
+                    .expect_err("NUL")
+                    .code,
+                PolicyErrorCode::InvalidInput
+            );
+        }
         assert_eq!(
             policy
                 .validate_output(root.join("escape-dir/new.txt"))

@@ -19,7 +19,7 @@ pub use types::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
     ArtifactType, ResolvedNpmRegistry, TerminalLimit,
 };
-pub(crate) use util::{github_repo_dir, github_repository, github_slug};
+pub(crate) use util::{github_repo_dir, github_repository, github_slug, release_ref_in};
 
 use http::RegistryClient;
 use octocode_github::RequestBudget;
@@ -93,18 +93,23 @@ pub async fn execute_artifact(
 /// offset-addressed registries, the page itself for page-addressed ones.
 /// Every page starts at `(page - 1) * pageSize`, so consecutive pages tile
 /// the result list without gaps.
+/// A token-paged registry's page also carries the query's `cursor`, the
+/// registry token that starts it (the contract bounds its length).
 fn page_state(query: &ArtifactSearchQuery) -> ArtifactProviderState {
     let page = query.page();
     let size = query.page_size() as u64;
+    let token = query.cursor().map(str::to_owned);
     match query.artifact_type() {
         ArtifactType::Crates | ArtifactType::Packagist | ArtifactType::Go => {
             ArtifactProviderState {
                 page: Some(page),
+                token,
                 ..Default::default()
             }
         }
         _ => ArtifactProviderState {
             offset: Some(page.saturating_sub(1).saturating_mul(size)),
+            token,
             ..Default::default()
         },
     }
@@ -127,18 +132,58 @@ pub(crate) fn page_out_of_range(query: &ArtifactSearchQuery) -> Option<TerminalL
 /// fails loudly rather than serving a wrong page labeled as final data.
 const MAX_CURSOR_OFFSET: u64 = 10_000;
 const MAX_CURSOR_PAGE: u64 = 1_000;
-const MAX_CURSOR_TOKEN_BYTES: usize = 4_096;
 /// npm search serves `from` up to 5,000; a deeper `from` answers with the
 /// first rows again (registry.npmjs.org, measured 2026-10-15).
 const NPM_MAX_FROM: u64 = 5_000;
 
+/// How deep a registry's discovery results reach: the one table both
+/// page bounds derive from.
+struct Reach {
+    /// The deepest result position a discovery page may start at.
+    max_start: u64,
+    /// The result position no row is served past, when the registry ends
+    /// its results there rather than at a page's start; `None` when only
+    /// the start of a page is bounded.
+    end: Option<u64>,
+}
+
+impl Reach {
+    /// A registry that serves rows up to `end`: the last page starts at
+    /// its final row.
+    const fn ending_at(end: u64) -> Self {
+        Self {
+            max_start: end - 1,
+            end: Some(end),
+        }
+    }
+
+    const fn starting_at_most(max_start: u64) -> Self {
+        Self {
+            max_start,
+            end: None,
+        }
+    }
+}
+
+fn reach(artifact_type: ArtifactType) -> Reach {
+    match artifact_type {
+        ArtifactType::Npm => Reach::starting_at_most(NPM_MAX_FROM),
+        ArtifactType::Maven => Reach::ending_at(maven::REACHABLE_END),
+        ArtifactType::Nuget => Reach::ending_at(nuget::REACHABLE_END),
+        _ => Reach::starting_at_most(MAX_CURSOR_OFFSET),
+    }
+}
+
 /// The deepest result position a discovery page of `artifact_type` may
 /// start at.
 fn max_start_offset(artifact_type: ArtifactType) -> u64 {
-    match artifact_type {
-        ArtifactType::Npm => NPM_MAX_FROM,
-        _ => MAX_CURSOR_OFFSET,
-    }
+    reach(artifact_type).max_start
+}
+
+/// The result position a discovery of `artifact_type` reaches no row past
+/// ([`Reach::end`]).
+pub(crate) fn reachable_end(artifact_type: ArtifactType) -> Option<u64> {
+    reach(artifact_type).end
 }
 
 fn validate_cursor_state(
@@ -147,11 +192,7 @@ fn validate_cursor_state(
 ) -> Result<(), ArtifactError> {
     let out_of_range = state.offset.unwrap_or(0) > max_start_offset(artifact_type)
         || state.page.unwrap_or(1) > MAX_CURSOR_PAGE
-        || state.page == Some(0)
-        || state
-            .token
-            .as_ref()
-            .is_some_and(|token| token.len() > MAX_CURSOR_TOKEN_BYTES);
+        || state.page == Some(0);
     if out_of_range {
         return Err(ArtifactError::new(
             "invalidInput",
@@ -236,13 +277,9 @@ mod cursor_state_tests {
                 page: Some(0),
                 ..Default::default()
             },
-            ArtifactProviderState {
-                token: Some("x".repeat(MAX_CURSOR_TOKEN_BYTES + 1)),
-                ..Default::default()
-            },
         ] {
             let error =
-                validate_cursor_state(ArtifactType::Maven, &state).expect_err("out of range");
+                validate_cursor_state(ArtifactType::Nuget, &state).expect_err("out of range");
             assert_eq!(error.code, "invalidInput");
         }
         for state in [
@@ -253,8 +290,29 @@ mod cursor_state_tests {
                 token: Some("issued".into()),
             },
         ] {
-            assert!(validate_cursor_state(ArtifactType::Maven, &state).is_ok());
+            assert!(validate_cursor_state(ArtifactType::Nuget, &state).is_ok());
         }
+    }
+
+    /// The query's cursor reaches the provider as the page's token, for
+    /// every paging style; a query without one carries none.
+    #[test]
+    fn the_query_cursor_is_the_provider_page_token() {
+        for (ecosystem, page) in [("go", Some(3)), ("nuget", None)] {
+            let query = types::artifact_query(
+                serde_json::json!({"ecosystem": ecosystem, "keywords": ["http"],
+                    "page": 3, "pageSize": 10, "cursor": "issued"}),
+                None,
+            );
+            let state = page_state(&query);
+            assert_eq!(state.token.as_deref(), Some("issued"), "{ecosystem}");
+            assert_eq!(state.page, page, "{ecosystem}");
+        }
+        let plain = types::artifact_query(
+            serde_json::json!({"ecosystem": "go", "keywords": ["http"]}),
+            None,
+        );
+        assert_eq!(page_state(&plain).token, None);
     }
 
     /// The gate reads the contract's capability table, so a new

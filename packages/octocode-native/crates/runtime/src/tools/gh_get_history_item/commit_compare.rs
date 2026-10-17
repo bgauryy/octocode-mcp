@@ -57,6 +57,7 @@ pub(super) async fn commit(
             page_size: file_page_size(query, query.include_diff()),
             filtered: !filter.is_trivial(),
             provider_total: None,
+            prefetched: None,
         },
         |file| filter.matches(file),
         commit_file_items,

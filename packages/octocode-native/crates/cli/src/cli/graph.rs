@@ -17,7 +17,7 @@ WORKFLOW
   octocode graph query impact <id>         blast radius: affected files by depth, tests to run
   octocode graph query impact --since main blast radius of a branch diff
   octocode graph query issues              ranked possible problems (cycles, dead code, ...)
-  octocode graph query stale               files changed since ingest -> re-ingest
+  octocode graph query stale               sources or configs changed/added since ingest -> re-ingest
 
 NODE IDS
   src/a.ts               file (root-relative; absolute paths are accepted too)
@@ -29,7 +29,7 @@ EVIDENCE
   Syntax-derived. Imports are module-resolved (tsconfig paths, workspaces, cargo, go.mod, python
   roots). Calls carry via (local|import|namespace|unique-name) and confidence (high|medium|low).
   Call answers carry coverage.callInternalRecall (below 0.9 they add a warning: a lower bound).
-  issues findings carry a tier (100/90/60); the default view hides tier 60 (text-referenced).
+  issues findings carry a tier (100/90/60, see --min-tier); the default view hides tier 60.
   Treat results as leads: confirm identity with lspSearch before deleting or renaming.
 
 OUTPUT
@@ -39,8 +39,9 @@ OUTPUT
   3 no graph or node, 5 error. A cut result is still 0: run next for more.
 
 STORAGE
-  <workspace>/.octocode/graph/<UTC time>-<scope>/{graph.bin, manifest.json}; latest names the
-  newest. The workspace is --workspace, else the nearest .git ancestor of the current directory
+  <workspace>/.octocode/graph/<UTC time>-<scope>-<root tag>/{graph.bin, manifest.json}; latest
+  names the newest. --graph takes an id, a scope, or a substring of exactly one id (several:
+  exit 2). The workspace is --workspace, else the nearest .git ancestor of the current directory
   inside the allowed roots (WORKSPACE_ROOT, else the current directory).
   Files over 1 MB stay as unparsed nodes; minified bundles keep their imports but no symbols.";
 
@@ -48,9 +49,10 @@ STORAGE
 pub(super) enum GraphCommand {
     /// Parse a directory and publish a snapshot (graph.bin + manifest.json).
     ///
-    /// Writes <workspace>/.octocode/graph/<UTC time>-<scope>/ and updates `latest`; keeps the
-    /// newest 3 snapshots per scope (--keep). Honors .gitignore; prunes hidden directories and
-    /// dependency, build-output, and environment directories (node_modules, target, venv, ...).
+    /// Writes <workspace>/.octocode/graph/<UTC time>-<scope>-<root tag>/ and updates `latest`;
+    /// keeps the newest 3 snapshots per scanned root (--keep). Honors .gitignore; prunes hidden
+    /// directories and dependency, build-output, and environment directories (node_modules,
+    /// target, venv, ...).
     /// Prints a receipt: counts, call-link rate, scan gaps, and a `next` command.
     #[command(verbatim_doc_comment)]
     Ingest(Box<IngestArgs>),
@@ -86,10 +88,10 @@ pub(super) struct IngestArgs {
     /// Maximum files to parse (default 50000).
     #[arg(long)]
     max_files: Option<u32>,
-    /// Snapshots of the same scope to keep, newest first (default 3).
+    /// Snapshots of the same root to keep, newest first (default 3).
     #[arg(long)]
     keep: Option<usize>,
-    /// Rebuild even when the latest snapshot of this scope is current (by default an
+    /// Rebuild even when the latest snapshot of this root is current (by default an
     /// unchanged tree reuses it and prints `reused: true`).
     #[arg(long)]
     force: bool,
@@ -103,7 +105,8 @@ pub(super) struct QueryArgs {
     target: Option<String>,
     /// Destination reference for `path`.
     to: Option<String>,
-    /// Snapshot directory, graph.bin path, snapshot id, or id substring.
+    /// Snapshot directory, graph.bin path, snapshot id, scope, or a substring of exactly one id
+    /// (a scope or substring naming several snapshots exits 2 and lists them).
     #[arg(long)]
     graph: Option<String>,
     /// Workspace whose .octocode/graph holds the snapshots.
@@ -143,7 +146,10 @@ pub(super) struct QueryArgs {
     #[arg(long)]
     min_score: Option<f64>,
     /// `issues`: lowest certainty tier to show: 100 (nothing references it), 90 (no graph or
-    /// text reference; the default), 60 (referenced only by text, e.g. a string path).
+    /// code reference; the default; bare prose words are listed in evidence.textMentions), 60
+    /// (the file path, or every unused export, is referenced in code or qualified text such as
+    /// `mod.run`, listed in evidence.mentionedIn, where some exports alone keep 90; or no mention
+    /// scan ran).
     #[arg(long)]
     min_tier: Option<u8>,
     /// `impact`: more changed references (files or symbols, comma-separated).

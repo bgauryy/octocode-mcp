@@ -1533,6 +1533,7 @@ fn a_scan_past_its_time_budget_resumes_exactly_once() {
         calls += 1;
         let result = files::search_files_with_budget(
             scan_options(&root, skip),
+            StructuralDemand::Matches,
             &|_| true,
             &|_| "ts".to_owned(),
             &|| false,
@@ -1577,4 +1578,124 @@ fn a_named_root_pattern_is_a_declaration() {
     assert_eq!(pattern_declaration("$X.unwrap()", "rs"), None);
     assert_eq!(pattern_declaration("foo($A)", "ts"), None);
     assert_eq!(pattern_declaration("fn ???", "rs"), None);
+}
+
+/// Every demand finds the same matches in the same order: a count keeps
+/// only the count, a price keeps one price per match (each match priced
+/// once), and [`file_matches`] rebuilds a priced file's matches exactly
+/// until the file changes.
+#[test]
+fn every_demand_counts_the_same_matches_and_a_priced_file_rebuilds_them() {
+    let root = temp_root("demands");
+    fs::write(
+        root.join("a.rs"),
+        "fn a() { let x = f(g(1), h(2)); }\nfn b() { t(u(v(3))); }\n",
+    )
+    .unwrap();
+    fs::write(root.join("b.rs"), "fn c() { w(4); }\n").unwrap();
+    let options = || StructuralSearchFilesOptions {
+        pattern: Some("$A".to_owned()),
+        ..scan_options(&root, 0)
+    };
+    let scan = |demand| {
+        search_files(options(), demand, &|_| true, &|_| "rs".to_owned(), &|| {
+            false
+        })
+        .expect("scan")
+    };
+    let held = scan(StructuralDemand::Matches);
+    let counted = scan(StructuralDemand::Count);
+    let priced_calls = std::sync::atomic::AtomicUsize::new(0);
+    let price = |m: &StructuralDetailedMatch| {
+        priced_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        u32::try_from(m.text.len()).unwrap()
+    };
+    let priced = scan(StructuralDemand::Priced(&price));
+    assert!(held.total_matches > 10, "{}", held.total_matches);
+    assert_eq!(counted.total_matches, held.total_matches);
+    assert_eq!(priced.total_matches, held.total_matches);
+    assert_eq!(
+        priced_calls.load(std::sync::atomic::Ordering::Relaxed),
+        held.total_matches as usize
+    );
+    for ((held, counted), priced) in held.files.iter().zip(&counted.files).zip(&priced.files) {
+        assert!(matches!(counted.matches, FileMatches::Counted(_)));
+        assert!(counted.matches.held().is_empty());
+        assert_eq!(counted.matches.len(), held.matches.len());
+        let FileMatches::Priced(prices) = &priced.matches else {
+            panic!("priced demand keeps prices");
+        };
+        let lengths = held
+            .matches
+            .held()
+            .iter()
+            .map(|m| u32::try_from(m.text.len()).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(prices, &lengths, "{}", held.path);
+        let digest = priced.source_sha256.as_deref().expect("digest");
+        let rebuilt = file_matches(
+            std::path::Path::new(&priced.path),
+            "rs",
+            Some("$A"),
+            None,
+            digest,
+            crate::signatures::MAX_PARSE_SIZE as u64,
+        )
+        .expect("rebuild");
+        let super::Rebuilt::Matches(rebuilt) = rebuilt else {
+            panic!("unchanged file: {}", held.path);
+        };
+        let spans = |matches: &[StructuralDetailedMatch]| {
+            matches
+                .iter()
+                .map(|m| {
+                    (
+                        m.start_line,
+                        m.start_col,
+                        m.end_line,
+                        m.end_col,
+                        m.text.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(spans(&rebuilt), spans(held.matches.held()), "{}", held.path);
+    }
+    let changed = &priced.files[0];
+    fs::write(&changed.path, "fn z() {}\n").unwrap();
+    assert!(
+        matches!(
+            file_matches(
+                std::path::Path::new(&changed.path),
+                "rs",
+                Some("$A"),
+                None,
+                changed.source_sha256.as_deref().expect("digest"),
+                crate::signatures::MAX_PARSE_SIZE as u64,
+            )
+            .expect("rebuild"),
+            super::Rebuilt::Changed
+        ),
+        "a changed file rebuilds nothing"
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Rebuilding a file whose bytes still hash to the scan's gives the scan's
+/// matches, or, when matching them did not finish this time (an execution
+/// limit), an incomplete rebuild with the limit's diagnostics: never a
+/// changed file.
+#[test]
+fn a_rebuild_cut_by_a_limit_is_incomplete_not_changed() {
+    let oversize = "x".repeat(MAX_STRUCTURAL_CONTENT_BYTES + 1);
+    let cut = search_detailed(&oversize, "big.rs", "rs", Some("$A"), None);
+    assert_eq!(cut.status, "truncated");
+    match files::Rebuilt::of(cut) {
+        Rebuilt::Incomplete(diagnostics) => {
+            assert_eq!(diagnostics[0].code, "structural.content.tooLarge");
+        }
+        Rebuilt::Matches(_) | Rebuilt::Changed => panic!("a cut rebuild is incomplete"),
+    }
+    let whole = search_detailed("fn a() {}\n", "a.rs", "rs", Some("fn $N() {}"), None);
+    assert!(matches!(files::Rebuilt::of(whole), Rebuilt::Matches(matches) if matches.len() == 1));
 }

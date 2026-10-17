@@ -98,6 +98,57 @@ function readMarkdownLinks(content) {
   return links;
 }
 
+// GitHub heading anchors: the rendered heading text, lowercased, with
+// everything but letters, marks, numbers, `_`, `-` and spaces removed and
+// spaces turned into `-`; a repeated slug gets `-1`, `-2`, ... HTML
+// `<a id|name>` anchors count too. Fenced code is not a heading.
+const anchorsByFile = new Map();
+
+function headingSlug(heading) {
+  return heading
+    .replace(/\s+#+\s*$/, '')
+    .replace(/!?\[([^\]]*)]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/`|\*\*|__/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '')
+    .replace(/ /g, '-');
+}
+
+function readAnchors(filePath) {
+  if (anchorsByFile.has(filePath)) return anchorsByFile.get(filePath);
+  const anchors = new Set();
+  const slugCounts = new Map();
+  let fence = null;
+  for (const line of fs.readFileSync(filePath, 'utf8').split('\n')) {
+    const fenceMark = line.match(/^\s*(`{3,}|~{3,})/)?.[1][0];
+    if (fenceMark) {
+      if (!fence) fence = fenceMark;
+      else if (fence === fenceMark) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    for (const [, id] of line.matchAll(/<a\s+(?:id|name)=["']([^"']+)["']/g)) anchors.add(id);
+    const heading = line.match(/^#{1,6}\s+(.*)$/)?.[1];
+    if (heading === undefined) continue;
+    const slug = headingSlug(heading);
+    const count = slugCounts.get(slug) ?? 0;
+    slugCounts.set(slug, count + 1);
+    anchors.add(count ? `${slug}-${count}` : slug);
+  }
+  anchorsByFile.set(filePath, anchors);
+  return anchors;
+}
+
+// A `#fragment` into a Markdown file must name one of its anchors.
+function missingAnchor(targetPath, linkTarget) {
+  const hash = linkTarget.indexOf('#');
+  if (hash < 0 || !targetPath.endsWith('.md') || !fs.existsSync(targetPath)) return null;
+  const fragment = decodeURIComponent(linkTarget.slice(hash + 1));
+  return readAnchors(targetPath).has(fragment) ? null : fragment;
+}
+
 function validateDocsLinks() {
   const failures = [];
 
@@ -108,8 +159,13 @@ function validateDocsLinks() {
     {
       const content = fs.readFileSync(filePath, 'utf8');
       for (const linkTarget of readMarkdownLinks(content)) {
+        const relativeFile = path.relative(ROOT, filePath);
+        if (linkTarget.startsWith('#')) {
+          const fragment = missingAnchor(filePath, linkTarget);
+          if (fragment !== null) failures.push(`${relativeFile} points to missing heading "#${fragment}"`);
+          continue;
+        }
         if (
-          linkTarget.startsWith('#') ||
           linkTarget.startsWith('mailto:') ||
           linkTarget.startsWith('tel:') ||
           ( /^[a-z][a-z0-9+.-]*:/i.test(linkTarget) && !linkTarget.startsWith('https://') )
@@ -119,8 +175,11 @@ function validateDocsLinks() {
 
         if (!linkTarget.startsWith('https://')) {
           const relativeTarget = decodeURIComponent(linkTarget.split('#')[0]);
-          if (!fs.existsSync(path.resolve(path.dirname(filePath), relativeTarget))) {
-            failures.push(`${path.relative(ROOT, filePath)} points to missing relative file "${linkTarget}"`);
+          const targetPath = path.resolve(path.dirname(filePath), relativeTarget);
+          if (!fs.existsSync(targetPath)) {
+            failures.push(`${relativeFile} points to missing relative file "${linkTarget}"`);
+          } else if (missingAnchor(targetPath, linkTarget) !== null) {
+            failures.push(`${relativeFile} points to missing heading "${linkTarget}"`);
           }
           continue;
         }
@@ -133,9 +192,9 @@ function validateDocsLinks() {
             .replace(/\/$/, '');
           const absoluteTarget = path.join(ROOT, relativeTarget);
           if (!fs.existsSync(absoluteTarget)) {
-            failures.push(
-              `${path.relative(ROOT, filePath)} points to missing repo file "${relativeTarget}"`
-            );
+            failures.push(`${relativeFile} points to missing repo file "${relativeTarget}"`);
+          } else if (missingAnchor(absoluteTarget, linkTarget) !== null) {
+            failures.push(`${relativeFile} points to missing heading "${linkTarget}"`);
           }
         }
       }

@@ -331,3 +331,70 @@ fn disk_entries_that_are_not_bounded_regular_files_are_evicted_misses() {
         Some("kept".to_owned())
     );
 }
+
+/// A prune deletes entries past their TTL first, whatever the budget: an
+/// expired `Volatile` entry never waits for the byte cap. It reads only each
+/// entry's header; live and immutable entries stay.
+#[test]
+fn prune_removes_expired_entries_before_any_live_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::<String>::new(CacheConfig::default(), Some(dir.path().into()));
+    store.put(key("short", "x"), "x".repeat(4096), 4096, volatile(60));
+    age_disk_entries(dir.path(), 120);
+    store.put(key("pinned", "x"), "p".into(), 1, CacheClass::Immutable);
+    store.put(key("live", "x"), "l".into(), 1, volatile(600));
+    store.disk.as_ref().unwrap().prune(u64::MAX);
+    assert_eq!(
+        json_files(dir.path()).len(),
+        2,
+        "only the expired entry goes"
+    );
+    let reader = Store::<String>::new(CacheConfig::default(), Some(dir.path().into()));
+    assert!(reader.get(&key("pinned", "x")).is_some());
+    assert!(reader.get(&key("live", "x")).is_some());
+    assert!(reader.get(&key("short", "x")).is_none());
+}
+
+#[test]
+fn confirmed_retention_requires_capacity_and_every_configured_tier() {
+    let config = CacheConfig {
+        max_entries: 2,
+        max_bytes: 1024,
+        disk_bytes: 4096,
+    };
+    let memory = Store::<String>::new(config.clone(), None);
+    assert!(
+        memory
+            .put_confirmed(key("fits", "x"), "value".into(), 5, volatile(120))
+            .1
+    );
+    assert!(
+        !memory
+            .put_confirmed(key("oversize", "x"), "large".into(), 1025, volatile(120))
+            .1
+    );
+    assert!(memory.get(&key("oversize", "x")).is_none());
+    let root = tempfile::tempdir().unwrap();
+    let blocked = root.path().join("blocked");
+    fs::write(&blocked, b"a file cannot hold cache entries").unwrap();
+    let failed_disk = Store::<String>::new(config.clone(), Some(blocked));
+    assert!(
+        !failed_disk
+            .put_confirmed(key("disk-failure", "x"), "value".into(), 5, volatile(120))
+            .1
+    );
+    let dir = root.path().join("working");
+    let disk = Store::new(config.clone(), Some(dir.clone()));
+    assert!(
+        disk.put_confirmed(key("saved", "x"), "value".to_owned(), 5, volatile(120))
+            .1
+    );
+    let reopened = Store::<String>::new(config, Some(dir.clone()));
+    assert_eq!(
+        reopened.get(&key("saved", "x")).unwrap().value.as_str(),
+        "value"
+    );
+    age_disk_entries(&dir, 121);
+    reopened.clear_memory();
+    assert!(reopened.get(&key("saved", "x")).is_none());
+}

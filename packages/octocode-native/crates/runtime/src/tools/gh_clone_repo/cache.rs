@@ -27,6 +27,8 @@ pub(super) struct CacheMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sparse_path: Option<String>,
     pub source: String,
+    /// The whole entry's bytes (checkout and `.git`) at publication, which
+    /// eviction weighs it by without walking it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
     /// Checked-out bytes outside `.git` at publication: a clean checkout's
@@ -42,12 +44,13 @@ pub(super) struct CacheMeta {
     pub depth: u64,
 }
 
-/// What a cache entry holds: repository, ref, sparse scope ([`super::Sparse::key`]),
-/// and history depth.
+/// What a cache entry holds: repository, commit, sparse scope
+/// ([`super::Sparse::key`]), and history depth.
 pub(super) struct Identity<'a> {
     pub owner: &'a str,
     pub repo: &'a str,
-    pub branch: &'a str,
+    /// The full commit SHA checked out (recorded as the meta's `branch`).
+    pub commit: &'a str,
     pub sparse_key: Option<&'a str>,
     pub depth: u64,
 }
@@ -60,7 +63,7 @@ impl CacheMeta {
             expires_at: iso8601_millis(now.saturating_add(ttl.as_millis() as i64)),
             owner: identity.owner.to_owned(),
             repo: identity.repo.to_owned(),
-            branch: identity.branch.to_owned(),
+            branch: identity.commit.to_owned(),
             commit_sha: commit_sha.to_owned(),
             sparse_path: identity.sparse_key.map(str::to_owned),
             source: "clone".into(),
@@ -79,14 +82,9 @@ impl CacheMeta {
     /// cache directory whose meta disagrees (hash collision, manual edit,
     /// layout drift) must be re-cloned rather than served.
     pub fn matches(&self, identity: &Identity<'_>) -> bool {
-        let branch_matches = if octocode_github::is_full_sha(identity.branch) {
-            self.branch.eq_ignore_ascii_case(identity.branch)
-        } else {
-            self.branch == identity.branch
-        };
         self.owner.eq_ignore_ascii_case(identity.owner)
             && self.repo.eq_ignore_ascii_case(identity.repo)
-            && branch_matches
+            && self.branch.eq_ignore_ascii_case(identity.commit)
             && self.sparse_path.as_deref() == identity.sparse_key
             && self.depth == identity.depth
     }
@@ -113,34 +111,17 @@ struct LockMeta {
     created_at: i64,
 }
 
+/// The cache entry of `commit` (a full SHA, keyed lowercase: one commit
+/// in any case is one checkout) with its sparse set and history depth.
 pub(super) fn clone_dir(
     home: &Path,
     owner: &str,
     repo: &str,
-    branch: &str,
+    commit: &str,
     sparse_key: Option<&str>,
     depth: u64,
     host: &str,
 ) -> PathBuf {
-    // Full commit SHAs are case-insensitive; key them lowercase so FOO and foo
-    // share one checkout.
-    let lowered;
-    let branch = if octocode_github::is_full_sha(branch) {
-        lowered = branch.to_ascii_lowercase();
-        lowered.as_str()
-    } else {
-        branch
-    };
-    let safe_branch =
-        if branch == "." || branch == ".." || branch.contains('/') || branch.contains('\\') {
-            format!(
-                "{}__b_{}",
-                branch.replace(['/', '\\'], "_"),
-                hash(branch, 8)
-            )
-        } else {
-            branch.to_owned()
-        };
     let sparse = sparse_key
         .map(|key| format!("__sp_{}", hash(key, 6)))
         .unwrap_or_default();
@@ -151,7 +132,8 @@ pub(super) fn clone_dir(
         String::new()
     };
     repo_dir(home, owner, repo).join(format!(
-        "{safe_branch}{sparse}{history}__host_{}",
+        "{}{sparse}{history}__host_{}",
+        commit.to_ascii_lowercase(),
         hash(host, 16)
     ))
 }
@@ -418,7 +400,7 @@ pub(super) fn evict(context: &CloneContext<'_>, protected: Option<&Path>) {
     let max_count = context.config.max_clone_count;
     let base = clones_root(home);
     let mut live = vec![];
-    for branch in clone_entries(&base) {
+    for branch in clone_entries(home, &base) {
         if context.path_policy.validate(&branch).is_err() {
             continue;
         }
@@ -475,27 +457,46 @@ pub(super) fn evict(context: &CloneContext<'_>, protected: Option<&Path>) {
     }
 }
 
-fn clone_entries(base: &Path) -> Vec<PathBuf> {
+/// Every checkout entry (`<owner>/<repo>/<entry>/`) under `base`. A file
+/// beside the owner, repo or entry directories is no entry and nothing reads
+/// it (a retired layout's `.default-branch__host_*.json`): it is removed as
+/// the walk passes it.
+fn clone_entries(home: &Path, base: &Path) -> Vec<PathBuf> {
     let mut values = vec![];
-    let Ok(owners) = fs::read_dir(base) else {
-        return values;
-    };
-    for owner in owners.flatten().filter(|entry| entry.path().is_dir()) {
-        let Ok(repos) = fs::read_dir(owner.path()) else {
-            continue;
-        };
-        for repo in repos.flatten().filter(|entry| entry.path().is_dir()) {
-            if let Ok(branches) = fs::read_dir(repo.path()) {
-                values.extend(
-                    branches
-                        .flatten()
-                        .map(|entry| entry.path())
-                        .filter(|path| path.is_dir()),
-                );
-            }
+    for owner in directories(home, base) {
+        for repo in directories(home, &owner) {
+            values.extend(directories(home, &repo));
         }
     }
     values
+}
+
+/// The directories directly under `parent`; every other entry there (a
+/// file or a symlink, never followed) is an orphan and is removed.
+fn directories(home: &Path, parent: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return Vec::new();
+    };
+    let mut directories = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => directories.push(path),
+            Ok(_) => {
+                let size = fs::symlink_metadata(&path).map_or(0, |meta| meta.len());
+                if fs::remove_file(&path).is_ok() {
+                    log_eviction(home, "orphaned-file", &path, size);
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    directories
+}
+
+/// Bytes of a checkout's `.git` directory.
+pub(super) fn git_dir_size(path: &Path) -> u64 {
+    directory_size(&path.join(".git"))
 }
 
 pub(super) fn checked_out_size(path: &Path) -> u64 {
@@ -590,81 +591,30 @@ mod tests {
     }
 
     #[test]
-    fn unsafe_branch_names_remain_cache_leaves() {
-        let home = Path::new("/tmp/octocode-cache-root");
-        for branch in [".", "..", "feature/nested", r"feature\portable"] {
-            let path = clone_dir(
-                home,
-                "owner",
-                "repo",
-                branch,
-                None,
-                1,
-                "https://example.test",
-            );
-            assert!(path.starts_with(home.join("tmp/clone/owner/repo")));
-            assert_ne!(
-                path.file_name().and_then(|value| value.to_str()),
-                Some(branch)
-            );
-        }
-    }
-
-    #[test]
-    fn full_sha_cache_keys_ignore_case() {
+    fn commit_cache_keys_ignore_case() {
         let home = Path::new("/tmp/octocode-cache-root");
         let sha = "ABCDEF0123456789ABCDEF0123456789ABCDEF01";
-        assert_eq!(
-            clone_dir(home, "o", "r", sha, None, 1, "https://example.test"),
-            clone_dir(
-                home,
-                "o",
-                "r",
-                &sha.to_ascii_lowercase(),
-                None,
-                1,
-                "https://example.test"
-            )
-        );
-        // Non-SHA refs stay case-sensitive (Git branch names are).
-        assert_ne!(
-            clone_dir(home, "o", "r", "Main", None, 1, "https://example.test"),
-            clone_dir(home, "o", "r", "main", None, 1, "https://example.test")
-        );
+        let entry = |owner, repo, commit| {
+            clone_dir(home, owner, repo, commit, None, 1, "https://example.test")
+        };
+        let lower = sha.to_ascii_lowercase();
+        assert_eq!(entry("o", "r", sha), entry("o", "r", &lower));
         // Owner/repo are case-insensitive on GitHub: one checkout.
-        assert_eq!(
-            clone_dir(
-                home,
-                "Octo",
-                "Repo",
-                "main",
-                None,
-                1,
-                "https://example.test"
-            ),
-            clone_dir(
-                home,
-                "octo",
-                "repo",
-                "main",
-                None,
-                1,
-                "https://example.test"
-            )
-        );
+        assert_eq!(entry("Octo", "Repo", sha), entry("octo", "repo", sha));
+        assert!(entry("o", "r", sha).starts_with(home.join("tmp/clone/o/r")));
     }
 
     fn identity<'a>(
         owner: &'a str,
         repo: &'a str,
-        branch: &'a str,
+        commit: &'a str,
         sparse_key: Option<&'a str>,
         depth: u64,
     ) -> Identity<'a> {
         Identity {
             owner,
             repo,
-            branch,
+            commit,
             sparse_key,
             depth,
         }
@@ -672,29 +622,26 @@ mod tests {
 
     #[test]
     fn cache_meta_matches_only_the_requested_identity() {
+        let (a, b) = ("a".repeat(40), "b".repeat(40));
         let meta = CacheMeta::new(
-            &identity("Owner", "Repo", "main", Some("src"), 1),
-            &"a".repeat(40),
+            &identity("Owner", "Repo", &a, Some("src"), 1),
+            &a,
             Duration::from_secs(60),
         );
-        assert!(meta.matches(&identity("owner", "repo", "main", Some("src"), 1)));
-        assert!(!meta.matches(&identity("owner", "other", "main", Some("src"), 1)));
-        assert!(!meta.matches(&identity("owner", "repo", "dev", Some("src"), 1)));
-        assert!(!meta.matches(&identity("owner", "repo", "main", None, 1)));
-        assert!(!meta.matches(&identity("owner", "repo", "main", Some("src"), 5)));
-        let pinned = CacheMeta::new(
-            &identity("o", "r", &"b".repeat(40), None, 1),
-            &"b".repeat(40),
-            Duration::from_secs(60),
-        );
-        assert!(pinned.matches(&identity("o", "r", &"B".repeat(40), None, 1)));
+        assert!(meta.matches(&identity("owner", "repo", &a, Some("src"), 1)));
+        assert!(meta.matches(&identity("owner", "repo", &"A".repeat(40), Some("src"), 1)));
+        assert!(!meta.matches(&identity("owner", "other", &a, Some("src"), 1)));
+        assert!(!meta.matches(&identity("owner", "repo", &b, Some("src"), 1)));
+        assert!(!meta.matches(&identity("owner", "repo", &a, None, 1)));
+        assert!(!meta.matches(&identity("owner", "repo", &a, Some("src"), 5)));
     }
 
     #[test]
     fn deep_history_and_sparse_sets_key_their_own_entries() {
         let home = Path::new("/tmp/octocode-cache-root");
-        let shallow = clone_dir(home, "o", "r", "main", None, 1, "https://example.test");
-        let deep = clone_dir(home, "o", "r", "main", None, 5, "https://example.test");
+        let sha = "c".repeat(40);
+        let shallow = clone_dir(home, "o", "r", &sha, None, 1, "https://example.test");
+        let deep = clone_dir(home, "o", "r", &sha, None, 5, "https://example.test");
         assert_ne!(shallow, deep);
         assert!(deep.to_string_lossy().contains("__d5__host_"));
         crate::tools::test_support::checks::assert_absent(

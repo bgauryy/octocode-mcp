@@ -1,9 +1,8 @@
-//! A stored scan in compact form: every field of a scan's files, written as
-//! variable-length integers and length-prefixed text into one deflated
-//! buffer, beside its stats. Lossless: [`Packed::unpack`] returns exactly the
-//! scan [`Packed::pack`] was given, so a stored scan of any size costs its
-//! compressed bytes, and a page served from it reads the scan once instead of
-//! walking the tree again.
+//! Bounded in-memory continuation scans. Ordinary rows carry source anchors,
+//! exact prices and duplicate equivalence classes, without snippet text. Class
+//! IDs preserve equality and ranking; they are not source identities. The
+//! initial snapshot hashes full value digests and source digests separately.
+//! Other views retain their values. No scan is written to disk.
 
 use octocode_engine::types::{
     SearchedSource, TextSearchFile, TextSearchMatch, TextSearchResult, TextSearchStats,
@@ -23,8 +22,21 @@ pub struct Packed {
 
 impl Packed {
     /// `scan` packed, or `None` when its files take more than `max_raw`
-    /// bytes unpacked (a page would inflate that much to read it).
-    pub fn pack(scan: &TextSearchResult, max_raw: usize) -> Option<Self> {
+    /// bytes unpacked (a page would inflate that much to read it) or more
+    /// than `max_packed` packed. Packing stops at the file that passes
+    /// either bound, so a scan too large to keep costs no more than the
+    /// bound to refuse.
+    #[cfg(test)]
+    pub fn pack(scan: &TextSearchResult, max_raw: usize, max_packed: usize) -> Option<Self> {
+        Self::pack_checked(scan, max_raw, max_packed, &|| false)
+    }
+
+    pub fn pack_checked(
+        scan: &TextSearchResult,
+        max_raw: usize,
+        max_packed: usize,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<Self> {
         let mut out = Writer {
             sink: BufWriter::with_capacity(
                 64 * 1024,
@@ -34,10 +46,13 @@ impl Packed {
             max: max_raw,
         };
         for file in &scan.files {
-            out.file(file)?;
+            out.file(file, true, cancelled)?;
+            // The deflated bytes so far only grow.
+            (out.sink.get_ref().get_ref().len() <= max_packed).then_some(())?;
         }
         let raw_len = out.written;
         let bytes = out.sink.into_inner().ok()?.finish().ok()?;
+        (bytes.len() <= max_packed).then_some(())?;
         Some(Self {
             bytes,
             raw_len,
@@ -47,15 +62,29 @@ impl Packed {
     }
 
     /// The scan this was packed from.
+    #[cfg(test)]
     pub fn unpack(&self) -> Option<TextSearchResult> {
+        self.unpack_checked(&|| false)
+    }
+
+    pub fn unpack_checked(&self, cancelled: &dyn Fn() -> bool) -> Option<TextSearchResult> {
         let mut raw = Vec::with_capacity(self.raw_len);
-        flate2::read::DeflateDecoder::new(self.bytes.as_slice())
-            .take(self.raw_len as u64)
-            .read_to_end(&mut raw)
-            .ok()?;
+        let mut input =
+            flate2::read::DeflateDecoder::new(self.bytes.as_slice()).take(self.raw_len as u64);
+        let mut block = [0; 65536];
+        loop {
+            if cancelled() {
+                return None;
+            }
+            let n = input.read(&mut block).ok()?;
+            if n == 0 {
+                break;
+            }
+            raw.extend_from_slice(&block[..n]);
+        }
         let mut reader = Reader { raw: &raw, at: 0 };
         let files = (0..self.files)
-            .map(|_| reader.file())
+            .map(|_| reader.file(cancelled))
             .collect::<Option<Vec<_>>>()?;
         (reader.at == raw.len()).then(|| TextSearchResult {
             files,
@@ -110,25 +139,45 @@ impl<W: Write> Writer<W> {
         self.number(value.map_or(0, |n| u64::from(n) + 1))
     }
 
-    fn file(&mut self, file: &TextSearchFile) -> Option<()> {
+    /// Every field of `file`; its source's size and time only when
+    /// `stamps` (an identity binds the source by its digest alone).
+    fn file(
+        &mut self,
+        file: &TextSearchFile,
+        stamps: bool,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<()> {
         self.text(&file.path)?;
         self.number(u64::from(file.match_count))?;
         match &file.source {
             None => self.number(0)?,
             Some(source) => {
                 self.number(1)?;
-                self.number(source.size)?;
-                self.time(source.modified)?;
+                if stamps {
+                    self.number(source.size)?;
+                    self.time(source.modified)?;
+                }
                 self.bytes(&source.digest)?;
             }
         }
         self.number(file.matches.len() as u64)?;
+        let mut classes = std::collections::HashMap::new();
         for hit in &file.matches {
+            if cancelled() {
+                return None;
+            }
             self.number(u64::from(hit.line))?;
             self.number(u64::from(hit.column))?;
             self.number(u64::from(hit.byte_offset))?;
+            self.optional(hit.deferred)?;
             self.text(&hit.value)?;
-            self.bytes(&hit.value_digest)?;
+            if stamps && hit.deferred.is_some() {
+                let next = classes.len() as u64;
+                let class = *classes.entry(hit.value_digest).or_insert(next);
+                self.number(class)?;
+            } else {
+                self.bytes(&hit.value_digest)?;
+            }
             for value in [hit.count, hit.rank, hit.original_chars, hit.original_bytes] {
                 self.optional(value)?;
             }
@@ -149,6 +198,72 @@ impl<W: Write> Writer<W> {
         self.number(tag)?;
         self.number(distance.as_secs())?;
         self.number(u64::from(distance.subsec_nanos()))
+    }
+}
+
+/// SHA-256 over a scan written in the packed encoding (every value is
+/// length-prefixed, so distinct inputs write distinct bytes), streamed into
+/// the hasher: hashing a scan of any size keeps no copy of it.
+pub struct Identity(Writer<Hashing>);
+
+struct Hashing(sha2::Sha256);
+
+impl Write for Hashing {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        sha2::Digest::update(&mut self.0, bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Default for Identity {
+    fn default() -> Self {
+        Self(Writer {
+            sink: Hashing(<sha2::Sha256 as sha2::Digest>::new()),
+            written: 0,
+            max: usize::MAX,
+        })
+    }
+}
+
+impl Identity {
+    pub fn text(&mut self, text: &str) -> &mut Self {
+        self.0.text(text);
+        self
+    }
+
+    pub fn number(&mut self, value: u64) -> &mut Self {
+        self.0.number(value);
+        self
+    }
+
+    /// `None` as 0, `Some(n)` as n + 1.
+    pub fn optional(&mut self, value: Option<u32>) -> &mut Self {
+        self.0.optional(value);
+        self
+    }
+
+    /// `None` as 0, `Some(text)` as 1 then the text.
+    pub fn optional_text(&mut self, text: Option<&str>) -> &mut Self {
+        match text {
+            None => self.number(0),
+            Some(text) => self.number(1).text(text),
+        }
+    }
+
+    /// Every field of `file` except its source's size and time: the source
+    /// is bound by the digest of its bytes.
+    pub fn file(&mut self, file: &TextSearchFile) -> &mut Self {
+        self.0.file(file, false, &|| false);
+        self
+    }
+
+    /// Lowercase-hex SHA-256 of everything written.
+    pub fn finish(self) -> String {
+        hex::encode(sha2::Digest::finalize(self.0.sink.0))
     }
 }
 
@@ -194,7 +309,7 @@ impl Reader<'_> {
         }
     }
 
-    fn file(&mut self) -> Option<TextSearchFile> {
+    fn file(&mut self, cancelled: &dyn Fn() -> bool) -> Option<TextSearchFile> {
         let path = self.text()?;
         let match_count = self.small()?;
         let source = match self.number()? {
@@ -209,12 +324,28 @@ impl Reader<'_> {
         let hits = usize::try_from(self.number()?).ok()?;
         let mut matches = Vec::with_capacity(hits.min(self.raw.len()));
         for _ in 0..hits {
+            if cancelled() {
+                return None;
+            }
+            let line = self.small()?;
+            let column = self.small()?;
+            let byte_offset = self.small()?;
+            let deferred = self.optional()?;
+            let value = self.text()?;
+            let value_digest = if deferred.is_some() {
+                let mut digest = [0; 32];
+                digest[..8].copy_from_slice(&self.number()?.to_le_bytes());
+                digest
+            } else {
+                self.bytes(32)?.try_into().ok()?
+            };
             matches.push(TextSearchMatch {
-                line: self.small()?,
-                column: self.small()?,
-                byte_offset: self.small()?,
-                value: self.text()?,
-                value_digest: self.bytes(32)?.try_into().ok()?,
+                line,
+                column,
+                byte_offset,
+                deferred,
+                value,
+                value_digest,
                 count: self.optional()?,
                 rank: self.optional()?,
                 original_chars: self.optional()?,
@@ -250,6 +381,7 @@ mod tests {
 
     fn hit(line: u32, value: &str) -> TextSearchMatch {
         TextSearchMatch {
+            deferred: None,
             line,
             column: line * 3,
             byte_offset: line * 5,
@@ -337,7 +469,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        let packed = Packed::pack(&scan, usize::MAX).expect("packed");
+        let packed = Packed::pack(&scan, usize::MAX, usize::MAX).expect("packed");
         assert_same(&packed.unpack().expect("unpacked"), &scan);
         let values = scan
             .files
@@ -351,8 +483,57 @@ mod tests {
             packed.weight()
         );
         // Past the unpacked bound nothing is packed.
-        assert!(Packed::pack(&scan, packed.raw_len - 1).is_none());
-        assert!(Packed::pack(&scan, packed.raw_len).is_some());
+        assert!(Packed::pack(&scan, packed.raw_len - 1, usize::MAX).is_none());
+        assert!(Packed::pack(&scan, packed.raw_len, usize::MAX).is_some());
+        // Past the packed bound nothing is packed either.
+        assert!(Packed::pack(&scan, usize::MAX, packed.weight() - 1).is_none());
+        assert!(Packed::pack(&scan, usize::MAX, packed.weight()).is_some());
+    }
+
+    #[test]
+    fn compact_classes_store_an_oversized_scan_and_preserve_all_duplicate_relations() {
+        let mut scan = TextSearchResult {
+            files: vec![TextSearchFile {
+                path: "/dense.txt".into(),
+                match_count: 150_000,
+                matches: (0..150_000)
+                    .map(|n| {
+                        let mut hit = hit(n, &format!("needle {n} {}", "x".repeat(200)));
+                        hit.value_digest = <sha2::Sha256 as sha2::Digest>::digest(
+                            (n - u32::from(n % 10 == 9)).to_le_bytes(),
+                        )
+                        .into();
+                        hit
+                    })
+                    .collect(),
+                source: None,
+            }],
+            stats: Default::default(),
+        };
+        let cap = super::super::manifest::MAX_BYTES;
+        assert!(
+            Packed::pack(&scan, 64 * 1024 * 1024, cap).is_none(),
+            "old payload exceeds cap"
+        );
+        for hit in &mut scan.files[0].matches {
+            hit.deferred = Some(300);
+            hit.value.clear();
+        }
+        let packed = Packed::pack(&scan, 64 * 1024 * 1024, cap)
+            .expect("compact payload within unchanged cap");
+        let unpacked = packed.unpack().expect("unpack");
+        assert_eq!(unpacked.files[0].matches.len(), 150_000);
+        for (index, hit) in unpacked.files[0].matches.iter().enumerate() {
+            assert_eq!(hit.line as usize, index);
+            assert_eq!(hit.deferred, Some(300));
+            assert!(hit.value.is_empty());
+            assert_eq!(
+                hit.value_digest[..8],
+                ((index / 10 * 9 + (index % 10).min(8)) as u64).to_le_bytes()
+            );
+        }
+        assert!(Packed::pack_checked(&scan, usize::MAX, usize::MAX, &|| true).is_none());
+        assert!(packed.unpack_checked(&|| true).is_none());
     }
 
     #[test]
@@ -361,7 +542,7 @@ mod tests {
             files: Vec::new(),
             stats: TextSearchStats::default(),
         };
-        let packed = Packed::pack(&scan, 0).expect("packed");
+        let packed = Packed::pack(&scan, 0, usize::MAX).expect("packed");
         assert!(packed.unpack().expect("unpacked").files.is_empty());
     }
 }

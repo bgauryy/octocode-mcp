@@ -30,7 +30,7 @@ The default catalog contains 12 tools over MCP and 13 in the CLI; the live catal
 
 - Row `status` `error`: use its repair (`hints` tip, `repair` in `hints` lead, or `next.restart` page). `clasify` uses `queries[].error` with nested `error.hints`. Check hoisted `shared` before calling a field missing.
 - Copy needed page calls unchanged; they carry fields compact schemas omit. A coverage claim must cover every page in its declared view. With classification, `selection` describes candidate decisions, not completeness of the corpus.
-- `next.unfiltered` recovers the original view, including selected items. The [classification recovery guide](clasify.md#recover-from-unknown-or-error) owns when to use it and when to stop.
+- Classification has separate calls for selected pages, unjudged candidates, unknown inspection and the complete original view. Follow the [classification recovery guide](clasify.md#recover-from-unknown-or-error) to choose the needed call and stop when the evidence is sufficient.
 - `hints` is a string list: per-call facts or `<action>: <tool> <JSON input>` suggestions. Copy the JSON unchanged when following a suggestion; `Approximate:` marks low confidence. Suggestions do not complete unread pages. Successful-row suggestions need `extras:["hints"]` except the contract's default leads and the captured-source read from `clasify`.
 - GitHub empty or unindexed: provider blind spot; verify the path, or materialize and search locally.
 - Result, match, content, patch, and diagnostic pagination are independent: inspect limits even when `hasMore:false`.

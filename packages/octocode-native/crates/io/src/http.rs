@@ -32,6 +32,22 @@ pub struct ClientPolicy {
     pub user_agent: Option<&'static str>,
 }
 
+/// Process variables the HTTP client reads: proxies and the trust store.
+/// A host that keeps one process for many calls (the CLI's warm server)
+/// keys on them; a spawned network tool (git) is given them.
+pub const NETWORK_ENV: &[&str] = &[
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+];
+
 /// Build a client for `policy`. Errors are reqwest's; callers map them to
 /// their own error type.
 pub fn client(policy: &ClientPolicy) -> reqwest::Result<reqwest::Client> {

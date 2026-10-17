@@ -417,6 +417,50 @@ fn reduce_file<'a>(
     (rows, notes)
 }
 
+/// The declarations facts of `source` at `path`, parsed with `parser`'s
+/// grammar (`None`: the file's own), through the one declarations cache
+/// every reader shares: a file outlined alone and then in its directory is
+/// parsed once.
+fn declarations(
+    source: &str,
+    path: &str,
+    parser: Option<&str>,
+) -> Option<std::sync::Arc<octocode_engine::graph::GraphFactsDocument>> {
+    crate::tools::declarations_cache::document(source, path, parser, || match parser {
+        Some(extension) => {
+            octocode_engine::signatures::extract_declarations_document_with_extension(
+                source, path, extension,
+            )
+        }
+        None => octocode_engine::signatures::extract_declarations_document(source, path),
+    })
+}
+
+/// [`reduce_file`] over one file's declarations facts.
+fn reduce_document(
+    q: &AstSearchQuerySymbols,
+    filter: Option<&NameFilter>,
+    facts: &octocode_engine::graph::GraphFactsDocument,
+    source: impl FnOnce() -> Option<String>,
+) -> (Vec<Value>, Vec<String>) {
+    let declarations = match serde_json::to_value(&facts.declarations) {
+        Ok(Value::Array(rows)) => rows,
+        _ => vec![],
+    };
+    reduce_file(
+        q,
+        filter,
+        declarations,
+        facts
+            .edges
+            .iter()
+            .map(|edge| (edge.from.as_str(), edge.relation.as_str(), edge.to.as_str())),
+        &facts.diagnostics,
+        &facts.error_lines,
+        source,
+    )
+}
+
 /// Declaration rows per file, after the kind filter and a name prefilter.
 pub(super) struct Outline {
     pub(super) files: Vec<OutlineFile>,
@@ -457,7 +501,7 @@ fn outline_file(
     let source_path = canonical.to_string_lossy();
     let parser = super::parser_override(canonical, q.language().as_deref());
     let unsupported = || json!({"status":"error","errorCode":"symbolsUnsupported","path":canonical.to_string_lossy(),"error":"No native declaration extractor supports this source. Inspect its syntax tree or exact content."});
-    let raw = match parser.as_deref() {
+    let document = match parser.as_deref() {
         // An extension that selects no grammar outlines nothing: an empty
         // outline would read as a file without declarations.
         None if crate::tools::ast_rule::file_grammar(canonical).is_none() => {
@@ -465,76 +509,22 @@ fn outline_file(
         }
         // The cache keys the parser extension used, so every override reuses
         // its own parse.
-        parser => {
-            crate::tools::declarations_cache::extract(
-                &source,
-                &source_path,
-                parser,
-                || match parser {
-                    Some(extension) => {
-                        octocode_engine::portable::extract_declarations_with_extension(
-                            &source,
-                            &source_path,
-                            extension,
-                        )
-                    }
-                    None => octocode_engine::portable::extract_declarations(&source, &source_path),
-                },
-            )
-        }
+        parser => declarations(&source, &source_path, parser),
     };
     let path = super::display_name(canonical);
-    let Some(raw) = raw else {
+    let Some(document) = document else {
         return Ok(Err(unsupported()));
     };
-    let (mut skipped, mut diagnostics, mut files) = (0, vec![], vec![]);
+    let mut diagnostics = vec![];
     if let Some(note) = super::cpp_header_note(canonical, q.language().as_deref(), &source) {
         diagnostics
             .push(json!({"code":super::CPP_HEADER_NOTE,"severity":"warning","message":note}));
     }
-    match serde_json::from_str::<Value>(&raw) {
-        Ok(mut facts) => {
-            let declarations = match facts["declarations"].take() {
-                Value::Array(rows) => rows,
-                _ => vec![],
-            };
-            let notes = facts["diagnostics"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect::<Vec<_>>();
-            let spans = serde_json::from_value::<Vec<[u32; 2]>>(facts["errorLines"].take())
-                .unwrap_or_default();
-            let (rows, notes) = reduce_file(
-                q,
-                q.name_filter().as_ref(),
-                declarations,
-                facts["edges"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|edge| {
-                        Some((
-                            edge["from"].as_str()?,
-                            edge["relation"].as_str()?,
-                            edge["to"].as_str()?,
-                        ))
-                    }),
-                &notes,
-                &spans,
-                || Some(source.to_string()),
-            );
-            files.push((path, rows, notes));
-        }
-        Err(_) => {
-            skipped = 1;
-            diagnostics.push(
-                json!({"path":canonical.to_string_lossy(),"message":"graph facts decode failed"}),
-            );
-        }
-    }
+    let (rows, notes) = reduce_document(q, q.name_filter().as_ref(), &document, || {
+        Some(source.to_string())
+    });
+    let files = vec![(path, rows, notes)];
+    let skipped = 0;
     Ok(Ok(Outline {
         files,
         scanned: 1,
@@ -606,7 +596,10 @@ fn walk_directory(
     let files = octocode_engine::graph::walk_graph_fact_files(
         &directory_scan_options(q, canonical),
         &|path, file_type| {
-            let allowed = discovery.permits_entry(path, file_type);
+            // The walk follows no link, in or out of the allowed roots: a
+            // link is disclosed like a withheld entry, never outlined.
+            let link = file_type.map_or_else(|| path.is_symlink(), |kind| kind.is_symlink());
+            let allowed = !link && discovery.permits_entry(path, file_type);
             // Only a directory or an outlinable file leaves absence unproven.
             // The outline walk hides dot entries unless `includeHidden`:
             // one out of view is not disclosed.
@@ -661,24 +654,14 @@ fn outline_walked(
     let scan = octocode_engine::graph::scan_walked_graph_facts(
         directory_scan_options(q, canonical),
         walk.files,
+        octocode_engine::graph::FactsSource::Declarations(&|source, path, parser| {
+            declarations(source, &path.to_string_lossy(), parser)
+        }),
         &keep,
         &|view| {
-            let declarations = match serde_json::to_value(&view.facts.declarations) {
-                Ok(Value::Array(rows)) => rows,
-                _ => vec![],
-            };
-            let (rows, notes) = reduce_file(
-                q,
-                filter.as_ref(),
-                declarations,
-                view.facts
-                    .edges
-                    .iter()
-                    .map(|edge| (edge.from.as_str(), edge.relation.as_str(), edge.to.as_str())),
-                &view.facts.diagnostics,
-                &view.facts.error_lines,
-                || Some(view.content.to_owned()),
-            );
+            let (rows, notes) = reduce_document(q, filter.as_ref(), view.facts, || {
+                Some(view.content.to_owned())
+            });
             (!rows.is_empty() || !notes.is_empty())
                 .then(|| (rooted(view.relative_path), rows, notes))
         },
@@ -983,31 +966,19 @@ fn place_notes(
     file_notes: &[(String, Vec<String>)],
     diagnostics: &mut Vec<Value>,
 ) {
-    let mut grouped: Vec<(&String, Vec<&String>)> = Vec::new();
-    for (path, notes) in file_notes {
-        for m in notes {
-            if !per_row_path {
-                diagnostics.push(json!({"message":m}));
-            } else if let Some((_, paths)) = grouped.iter_mut().find(|(message, _)| *message == m) {
-                paths.push(path);
+    let notes = file_notes.iter().flat_map(|(path, notes)| {
+        notes.iter().map(move |m| {
+            if per_row_path {
+                json!({"path": path, "message": m})
             } else {
-                grouped.push((m, vec![path]));
+                json!({"message": m})
             }
-        }
-    }
-    for (message, paths) in grouped {
-        match paths.as_slice() {
-            [path] => diagnostics.push(json!({"path": path, "message": message})),
-            _ => {
-                // `files[].path`, like every row path, is shaped by the
-                // response stage.
-                let files: Vec<Value> = paths.iter().map(|path| json!({"path": path})).collect();
-                diagnostics.push(json!({
-                    "message": format!("{message} ({} files)", paths.len()),
-                    "files": files,
-                }));
-            }
-        }
+        })
+    });
+    if per_row_path {
+        diagnostics.extend(crate::tools::ast_rule::group_diagnostics(notes.collect()));
+    } else {
+        diagnostics.extend(notes);
     }
 }
 
@@ -1117,7 +1088,10 @@ pub(super) fn render_page(
     set: &SymbolSet,
     response_window: Option<usize>,
 ) -> Value {
-    if q.page() > 1 && q.snapshot() != Some(set.snapshot.as_str()) {
+    // A page without a snapshot pins nothing: it pages the current outline,
+    // as `match` and structureSearch do; only a snapshot that no longer
+    // matches is stale.
+    if q.page() > 1 && q.snapshot().is_some_and(|given| given != set.snapshot) {
         return crate::tools::result::stale_snapshot(crate::tools::result::restart_query(
             ToolId::AstSearch,
             &crate::tools::result::query_row(q, &[]),

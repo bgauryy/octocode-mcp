@@ -6,7 +6,7 @@ use std::{
     collections::BTreeMap,
     fs::TryLockError,
     path::{Path, PathBuf},
-    sync::{Arc, Once},
+    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 use tokio_util::sync::CancellationToken;
@@ -23,17 +23,17 @@ const WRITE_LOCK_WAIT: Duration = Duration::from_secs(1);
 /// it must not hold the window until its own time arrives.
 const PEER_STAMP_HORIZON_MS: u64 = 120_000;
 
-/// Say once per process, on stderr (stdout carries results and JSON-RPC), that
-/// the shared record cannot be used and this process paces alone: the request
-/// still goes ahead under its own limits.
+/// Say on stderr, once per process ([`octocode_io::notice`]), that the shared
+/// record cannot be used and this process paces alone: the request still goes
+/// ahead under its own limits.
 fn warn_unshared(action: &str, path: &Path, error: &dyn std::fmt::Display) {
-    static WARNED: Once = Once::new();
-    WARNED.call_once(|| {
-        eprintln!(
+    octocode_io::notice::raise(
+        "github-budget-unshared",
+        format!(
             "[octocode] warning: GitHub rate-limit state shared with other octocode processes cannot be used ({action} {}: {error}); this process paces its GitHub requests alone.",
             path.display()
-        );
-    });
+        ),
+    );
 }
 
 /// The state file's bytes: `None` when it does not exist yet, or cannot be
@@ -246,7 +246,9 @@ impl KeyState {
         match tokio::runtime::Handle::try_current() {
             Ok(handle) => {
                 let state = Arc::clone(self);
-                drop(handle.spawn_blocking(move || state.persist_with(|_| {})));
+                drop(handle.spawn_blocking(octocode_io::notice::carried(move || {
+                    state.persist_with(|_| {});
+                })));
             }
             Err(_) => self.persist_with(|_| {}),
         }

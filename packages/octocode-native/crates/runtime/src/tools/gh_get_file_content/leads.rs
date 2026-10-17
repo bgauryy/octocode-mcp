@@ -150,7 +150,7 @@ mod tests {
                 .expect("query");
         let mut rest = serde_json::Map::new();
         rest.insert(
-            "unfiltered3".into(),
+            "unfilteredUnknown2".into(),
             Continuation::input(
                 ToolId::LocalFetch,
                 json!({"queries":[{"path":"README.md","ranges":["1-2"]},
@@ -160,19 +160,19 @@ mod tests {
         );
         let mut result = LocalFetchResult::blank("success");
         result.next = Some(NextCalls {
-            unfiltered: Some(read(json!({"ranges":["3-4"]}))),
-            unfiltered2: Some(read(json!({"fullContent":true}))),
+            unfiltered: Some(read(json!({"fullContent":true}))),
+            unfiltered_unknown: Some(read(json!({"ranges":["3-4"]}))),
             continue_window: Some(read(json!({"offset":50,"length":50,"unit":"lines"}))),
-            unfiltered_rest: rest,
+            unfiltered_unknown_rest: rest,
             ..NextCalls::default()
         });
         let next = rewrite_continuations(&mut result, &source, None, "abc123").expect("next");
-        let whole = &next["unfiltered2"];
+        let whole = &next["unfiltered"];
         assert_eq!(whole["tool"], "ghGetFileContent");
         assert_eq!(whole["query"]["queries"][0]["fullContent"], true, "{next}");
         let window = &next["continueWindow"]["query"]["queries"][0];
         assert!(window.get("fullContent").is_none() && window["offset"] == 50);
-        let rows = next["unfiltered3"]["query"]["queries"]
+        let rows = next["unfilteredUnknown2"]["query"]["queries"]
             .as_array()
             .expect("rows");
         assert_eq!(rows.len(), 2);

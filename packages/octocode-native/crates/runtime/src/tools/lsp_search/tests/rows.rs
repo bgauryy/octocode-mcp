@@ -885,10 +885,17 @@ async fn class_callers_narrow_to_the_member_holding_the_call_site() {
         .narrow(&edge(site), &mut sources)
         .await
         .expect("constructor holds the call");
-    assert_eq!(narrowed["kind"], 9, "{narrowed}");
-    assert_eq!(narrowed["detail"], "Editor", "{narrowed}");
-    assert_eq!(narrowed["range"]["start"]["line"], 2, "{narrowed}");
-    assert_eq!(narrowed["range"]["end"]["line"], 4, "{narrowed}");
+    // The whole narrowed item: the constructor's name, ranges and the
+    // class as its detail.
+    assert_eq!(
+        narrowed,
+        serde_json::json!({
+            "name": "constructor", "kind": 9, "detail": "Editor", "uri": uri,
+            "range": {"start": {"line": 2, "character": 2}, "end": {"line": 4, "character": 3}},
+            "selectionRange": {"start": {"line": 2, "character": 2}, "end": {"line": 2, "character": 13}}
+        }),
+        "{narrowed}"
+    );
     // A site outside every member keeps the class.
     let field = serde_json::json!({"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}});
     assert!(facts.narrow(&edge(field), &mut sources).await.is_none());

@@ -12,6 +12,7 @@ mod selection;
 pub(crate) use output::Output;
 mod types;
 mod verify;
+mod walked;
 pub use executor::execute_local_search;
 pub use types::*;
 

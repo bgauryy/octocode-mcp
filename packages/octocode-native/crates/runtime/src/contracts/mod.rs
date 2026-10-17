@@ -54,10 +54,7 @@ pub(crate) fn classification_notice(key: &str) -> &'static str {
 pub fn tool_contract(tool: ToolId) -> Result<&'static serde_json::Value, &'static str> {
     static TOOLS: [std::sync::OnceLock<Result<serde_json::Value, String>>; ToolId::ALL.len()] =
         [const { std::sync::OnceLock::new() }; ToolId::ALL.len()];
-    let index = ToolId::ALL
-        .iter()
-        .position(|id| *id == tool)
-        .ok_or("tool is not in the embedded contract")?;
+    let index = tool.index();
     if let Some(Ok(contract)) = CONTRACT.get() {
         return contract["tools"]
             .get(index)
@@ -195,8 +192,9 @@ pub fn prepare_rows(tool_name: &str, input: &serde_json::Value) -> Option<Vec<Ro
     Some(results)
 }
 
-/// Validate every query in the `{"queries":[...]}` envelope
-/// ([`normalize_input`] wraps a bare row into it first). The envelope's shape
+/// Validate a fresh-query or saved-response envelope and return its query rows.
+/// Saved-response reads have no query rows. [`normalize_input`] wraps a bare
+/// fresh row into an envelope first. The envelope's shape
 /// is checked first (`prepare::envelope_issues`: a bare array or a nested
 /// envelope is rejected with a repairable issue, never reshaped); then the
 /// complete envelope validates, so cross-query limits and indexed

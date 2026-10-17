@@ -372,7 +372,7 @@ fn walk_children(
             if Instant::now() >= deadline {
                 let path = dir_entry.path();
                 let relative = path.strip_prefix(&query.root).unwrap_or(&path);
-                state.time_cut = Some(normalize_path(relative));
+                state.time_cut = Some(crate::text::slash_path(relative));
                 return Ok(());
             }
         }
@@ -418,7 +418,7 @@ fn walk_children(
             Verdict::Pruned => {
                 if !replaying {
                     let relative = path.strip_prefix(&query.root).unwrap_or(&path);
-                    state.pruned_dirs.push(normalize_path(relative));
+                    state.pruned_dirs.push(crate::text::slash_path(relative));
                 }
                 continue;
             }
@@ -695,7 +695,7 @@ fn to_entry(
     let relative_path = path
         .strip_prefix(&query.root)
         .ok()
-        .map(normalize_path)
+        .map(crate::text::slash_path)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| file_name(path));
     let name = file_name(path);
@@ -822,10 +822,6 @@ pub(crate) fn normalize_extensions(values: Vec<String>) -> Vec<String> {
         .map(|value| value.trim().trim_start_matches('.').to_lowercase())
         .filter(|value| !value.is_empty())
         .collect()
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }
 
 fn file_name(path: &Path) -> String {

@@ -12,6 +12,7 @@
 //! rather than reset, so a transient failure can drop one update but never
 //! wipe accumulated counters.
 
+use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::path::Path;
 use std::time::Duration;
@@ -24,16 +25,36 @@ const LOCK_WAIT: Duration = Duration::from_secs(2);
 const LOCK_POLL: Duration = Duration::from_millis(10);
 
 /// Classification usage aggregated over one tool call.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ClassificationUsage {
     pub calls: u64,
     pub known_usage_calls: u64,
     pub unknown_usage_calls: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub discovery_calls: u64,
+    pub replayed_evaluations: u64,
+    pub models: BTreeSet<String>,
 }
 
 impl ClassificationUsage {
+    pub(crate) fn output(&self) -> crate::contracts::tool_types::SelectionUsage {
+        let count = |value| i64::try_from(value).unwrap_or(i64::MAX);
+        crate::contracts::tool_types::SelectionUsage {
+            calls: count(self.calls),
+            known_usage_calls: count(self.known_usage_calls),
+            unknown_usage_calls: count(self.unknown_usage_calls),
+            input_tokens: count(self.input_tokens),
+            output_tokens: count(self.output_tokens),
+            replayed_evaluations: count(self.replayed_evaluations),
+            models: self
+                .models
+                .iter()
+                .filter_map(|model| model.parse().ok())
+                .collect(),
+        }
+    }
+
     /// Fold one provider usage record (`{input_tokens, output_tokens}`) in.
     pub fn add_record(&mut self, usage: &Value) {
         let tokens = |key: &str| usage.get(key).and_then(Value::as_u64);
@@ -84,7 +105,7 @@ fn acquire_lock(home: &Path) -> Option<octocode_io::lock::LockedFile> {
 
 /// Record one tool call's aggregated classification usage.
 pub fn record_classification(home: &Path, enabled: bool, usage: ClassificationUsage) {
-    if !enabled || usage.calls == 0 {
+    if !enabled || (usage.calls == 0 && usage.discovery_calls == 0) {
         return;
     }
     let Some(_lock) = acquire_lock(home) else {
@@ -121,6 +142,9 @@ pub fn record_classification(home: &Path, enabled: bool, usage: ClassificationUs
     let Some(section) = section.as_object_mut() else {
         return;
     };
+    if usage.discovery_calls > 0 {
+        bump(section, "discovery_calls", usage.discovery_calls);
+    }
     bump(section, "calls", usage.calls);
     bump(section, "known_usage_calls", usage.known_usage_calls);
     bump(section, "unknown_usage_calls", usage.unknown_usage_calls);
@@ -142,6 +166,7 @@ mod tests {
             unknown_usage_calls: 0,
             input_tokens,
             output_tokens,
+            ..ClassificationUsage::default()
         }
     }
 

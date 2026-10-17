@@ -36,13 +36,18 @@ async fn a_rejected_row_keeps_later_row_indices_on_the_next_page() {
         row["mainGoal"] = json!("Batch index replay.");
         row
     };
-    // Text windows and row pages alike.
+    // Text windows and row pages alike. Each read names a window wider than
+    // its share of the page (a whole-file read would fit its share and page
+    // by its own continuation), so the response itself pages.
+    let read = |path: &std::path::Path| {
+        brief(json!({"path":path,"offset":0,"length":20_000,"unit":"bytes"}))
+    };
     for scope in [None, Some("rows")] {
         let mut input = json!({
             "queries":[
-                brief(json!({"path":a,"fullContent":true})),
+                read(&a),
                 brief(json!({"path":a,"bogusField":1})),
-                brief(json!({"path":c,"fullContent":true}))
+                read(&c)
             ],
             "responseLength": 6000
         });
@@ -58,10 +63,9 @@ async fn a_rejected_row_keeps_later_row_indices_on_the_next_page() {
             .pointer("/responsePagination/next/query")
             .cloned()
             .unwrap_or_else(|| panic!("a second page: {}", page["responsePagination"]));
-        assert_eq!(
-            next["queries"].as_array().map(Vec::len),
-            Some(2),
-            "the continuation carries the admitted rows only: {next}"
+        assert!(
+            next.get("queries").is_none(),
+            "saved pages do not repeat input rows: {next}"
         );
         assert!(next.to_string().find("bogusField").is_none(), "{next}");
         let first_rows = indices(page);

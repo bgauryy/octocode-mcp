@@ -254,6 +254,9 @@ pub struct LspExecutionConfig {
     /// Resolved `OCTOCODE_*` settings (process env and trusted `.env` layers).
     pub env: std::collections::BTreeMap<String, String>,
     pub octocode_home: Option<std::path::PathBuf>,
+    /// The runtime's working directory: the invocation directory language
+    /// server discovery trusts and searches, whatever the process's is.
+    pub invocation_dir: Option<std::path::PathBuf>,
     pub(crate) lead_cache: std::sync::Arc<crate::tools::leads::lsp::LeadProbeCache>,
     pub(crate) prewarm_state: std::sync::Arc<std::sync::Mutex<prewarm::WarmState>>,
 }
@@ -268,6 +271,7 @@ impl LspExecutionConfig {
             trust_project_config: self.trust_project_config,
             env: self.env.clone(),
             octocode_home: self.octocode_home.clone(),
+            invocation_dir: self.invocation_dir.clone(),
         }
     }
 
@@ -590,11 +594,23 @@ struct Target {
     /// The server to use when `config` (octocode's native tsgo) fails to
     /// start; `None` where there is no substitute.
     fallback: Option<octocode_engine::lsp::types::JsLanguageServerConfig>,
+    /// Why the server runs at another root than the one inferred for the
+    /// file: a warning every row of the request carries.
+    root_note: Option<String>,
 }
 
 impl Target {
     fn fail(&self, query: &LspSearchQuery, code: &str, message: &str, available: bool) -> Exit {
         Exit::Row(failure(query, &self.uri, code, message, available))
+    }
+
+    /// Whether the server (or its fallback) would launch, by resolution
+    /// only: a row that fails before any server starts still says whether
+    /// one could.
+    fn server_resolves(&self) -> bool {
+        use octocode_engine::lsp::config::server_command_resolves;
+        server_command_resolves(&self.config)
+            || self.fallback.as_ref().is_some_and(server_command_resolves)
     }
 }
 
@@ -676,6 +692,32 @@ async fn run_page(
     response_window: Option<usize>,
 ) -> Result<Value, Exit> {
     let target = discover_server(query, path, paths, execution_config)?;
+    let outcome = run_target(query, &target, cancel, pool, paths, response_window).await;
+    let Some(note) = target.root_note else {
+        return outcome;
+    };
+    match outcome {
+        Ok(mut row) => {
+            crate::tools::paging::push_warnings(&mut row, [note]);
+            Ok(row)
+        }
+        Err(Exit::Row(mut row)) => {
+            crate::tools::paging::push_warnings(&mut row, [note]);
+            Err(Exit::Row(row))
+        }
+        failed => failed,
+    }
+}
+
+/// [`run_page`] once the server is discovered.
+async fn run_target(
+    query: &LspSearchQuery,
+    target: &Target,
+    cancel: &dyn CancellationCheck,
+    pool: &LspClientPool,
+    paths: &PathPolicy,
+    response_window: Option<usize>,
+) -> Result<Value, Exit> {
     let language_id = target.config.language_id.as_deref();
     let scope = scope::Scope::resolve(
         &target.path,
@@ -687,18 +729,24 @@ async fn run_page(
     // text is sent in didOpen, resolves the anchor, and serves same-file
     // context windows; a bad document or anchor costs no server start.
     let mut sources = SourceCache::new(paths);
-    let document = read_anchor_document(query, &target, &mut sources).await?;
+    let document = read_anchor_document(query, target, &mut sources).await?;
     scope_responses(query, &scope, document.as_deref(), cancel).await?;
     let text = document.as_deref().map(|source| source.content.as_str());
     let anchor =
         anchor::resolve_anchor(query, &target.path, &target.uri, text).map_err(|error| {
-            let mut row = failure(query, &target.uri, "anchorUnresolved", &error, true);
+            let mut row = failure(
+                query,
+                &target.uri,
+                "anchorUnresolved",
+                &error,
+                target.server_resolves(),
+            );
             failure::anchor_recovery(&mut row, query, text);
             Exit::Row(row)
         })?;
     let session = open_session(
         query,
-        &target,
+        target,
         document.as_deref(),
         &mut sources,
         cancel,
@@ -736,7 +784,7 @@ async fn run_page(
     annotate(
         &mut result,
         query,
-        &target,
+        target,
         &session,
         &scope,
         anchor.resolved_symbol,
@@ -774,6 +822,7 @@ fn discover_server(
     let uri =
         engine_path_to_uri(&path).map_err(|error| LspFailure::invalid_query(error.to_string()))?;
     let fail = |code: &str, message: &str| Exit::Row(failure(query, &uri, code, message, false));
+    let root_only = Path::new(&path).is_dir();
     let workspace_candidate = query
         .workspace_root()
         .map(str::to_owned)
@@ -784,15 +833,40 @@ fn discover_server(
                 .map(|parent| parent.to_string_lossy().into_owned())
                 .unwrap_or_else(|| ".".into())
         });
+    let mut root_note = None;
     let workspace = match paths.validate(&workspace_candidate) {
         Ok(validated) if validated.canonical.is_dir() => {
             validated.canonical.to_string_lossy().into_owned()
         }
-        _ => {
+        _ if query.workspace_root().is_some() => {
             return Err(fail(
                 "workspaceRootInvalid",
                 "workspaceRoot is not an authorized directory.",
             ));
+        }
+        // An inferred root above the allowed roots (a member crate opened
+        // from inside its Cargo workspace): the caller named no root, so the
+        // server runs at the widest allowed directory on the file's path.
+        _ => {
+            let inferred = paths.redact(&workspace_candidate);
+            let start = if root_only {
+                Path::new(&path)
+            } else {
+                Path::new(&path).parent().unwrap_or(Path::new(&path))
+            };
+            let Some(allowed) = scope::widest_authorized_dir(start, paths) else {
+                return Err(fail(
+                    "workspaceRootInvalid",
+                    &format!(
+                        "The project root inferred for this file ({inferred}) is not an authorized directory, and no directory on the file's path is."
+                    ),
+                ));
+            };
+            root_note = Some(format!(
+                "The project root inferred for this file ({inferred}) is outside the allowed roots, so the language server runs at {} instead; pass an authorized workspaceRoot to choose another.",
+                paths.redact(&allowed)
+            ));
+            allowed
         }
     };
     let config_path = execution_config
@@ -806,7 +880,6 @@ fn discover_server(
         .transpose()
         .map_err(LspFailure::path_denied)?;
     let discovery = execution_config.discovery(config_path);
-    let root_only = Path::new(&path).is_dir();
     let discovered = if root_only {
         default_server_for_workspace_root(&workspace, &discovery)
     } else {
@@ -837,6 +910,7 @@ fn discover_server(
         root_only,
         config,
         fallback,
+        root_note,
     })
 }
 

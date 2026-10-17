@@ -246,7 +246,7 @@ describe('web tool', () => {
     });
     const call = async (active: string[]) => text(await webTool(active).execute('id', { url: `${base}/`, maxChars: 1_000 }));
     const all = await call(['mcp__octocode__clasify', 'mcp__octocode__localSearch', 'mcp__octocode__localFetch']);
-    expect(all).toMatch(/is in \/\S+: locate a described target with mcp__octocode__clasify \(resource \{tool:"localFetch", query:\{path:<this file>, fullContent:true\}\}, a locate question; a hit in a table of contents is not the section, read the hit\); search literal text with mcp__octocode__localSearch \(headings: regex "\^#\{1,3\} "\); read line ranges with mcp__octocode__localFetch\]$/);
+    expect(all).toMatch(/is in \/\S+: screen a bounded unread selection with mcp__octocode__clasify \(source \{tool:"localFetch", query:\{path:<this file>, ranges:<observed line ranges>\}\}, a noul question about one stated fact; typed answers only, read deciding evidence\); search literal text with mcp__octocode__localSearch \(headings: regex "\^#\{1,3\} "\); read line ranges with mcp__octocode__localFetch\]$/);
     const saved = /is in (\/\S+):/.exec(all)![1]!;
     expect(fs.readFileSync(saved, 'utf8')).toBe('y'.repeat(30_000));
     // Without the classification provider the local tools remain; without Octocode tools the generic wording stands.

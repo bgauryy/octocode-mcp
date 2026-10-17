@@ -66,6 +66,57 @@ pub struct StructuralDetailedMatch {
     pub node_kind: Option<String>,
 }
 
+/// What a file search keeps of each file's matches ([`super::search_files`]).
+/// Every demand finds the same matches and counts them exactly; they differ
+/// only in what each match leaves behind.
+#[derive(Clone, Copy)]
+pub enum StructuralDemand<'a> {
+    /// Every match, materialized ([`FileMatches::Held`]).
+    Matches,
+    /// Each file's match count ([`FileMatches::Counted`]): no match text,
+    /// capture or header is built.
+    Count,
+    /// Each match handed to the caller's price as it is found and then
+    /// dropped ([`FileMatches::Priced`]): a file keeps one price per match,
+    /// in match order, and a page rebuilds the matches it shows
+    /// ([`super::file_matches`]).
+    Priced(&'a (dyn Fn(&StructuralDetailedMatch) -> u32 + Sync)),
+}
+
+/// What a file search kept of one file's matches, by its
+/// [`StructuralDemand`].
+pub enum FileMatches {
+    Held(Vec<StructuralDetailedMatch>),
+    Priced(Vec<u32>),
+    Counted(u32),
+}
+
+impl FileMatches {
+    /// How many matches the file has, whatever was kept of them.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Held(matches) => matches.len(),
+            Self::Priced(prices) => prices.len(),
+            Self::Counted(count) => *count as usize,
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The materialized matches; empty unless they were held.
+    #[must_use]
+    pub fn held(&self) -> &[StructuralDetailedMatch] {
+        match self {
+            Self::Held(matches) => matches,
+            Self::Priced(_) | Self::Counted(_) => &[],
+        }
+    }
+}
+
 pub struct StructuralSearchFilesOptions {
     pub path: String,
     pub pattern: Option<String>,
@@ -120,7 +171,7 @@ pub struct StructuralSearchDetailedFileResult {
     pub status: String,
     pub language_id: Option<String>,
     pub skipped_reason: Option<String>,
-    pub matches: Vec<StructuralDetailedMatch>,
+    pub matches: FileMatches,
     pub diagnostics: Vec<StructuralDiagnostic>,
 }
 

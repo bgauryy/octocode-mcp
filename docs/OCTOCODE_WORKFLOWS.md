@@ -206,7 +206,7 @@ flowchart LR
 ```
 
 - `next` holds pages and explicit recovery routes. Follow the pages needed to support the claim; a repository-wide completeness claim requires complete coverage of its scope.
-- `next.unfiltered` recovers the complete original view after `clasifyContext`, including already selected items. Use it for unresolved coverage, unknown candidates or an exhaustive claim. It is optional when selected evidence already supports the scoped answer; automatically reading it defeats scouting.
+- `next.unfiltered`, when offered, recovers the complete original view after `clasifyContext` ([context selection](OCTOCODE_TOOLS.md#context-selection)). Use it for unresolved coverage, unknown candidates or an exhaustive claim. It is optional when selected evidence already supports the scoped answer; automatically reading it defeats scouting.
 - Copy a bound page call unchanged. To change filters or ranges, start a new scoped query and name what stays unread. Do not compute an offset or advance counters yourself: the returned offset is authoritative.
 - Each bound pages independently (files and matches, source lines, graph diagnostics, LSP snapshots, history collections, the whole-response text): [page layers](TOOL_DATA_CONTRACT.md#executable-continuations).
 - If you stop before the last page, or `next` is absent but the row has a partial or coverage flag, name the gap in the answer.

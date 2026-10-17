@@ -132,9 +132,23 @@ impl<V: Serialize + DeserializeOwned> Store<V> {
             }
             self.memory.remove(key);
         }
+        self.read_disk(key)
+    }
+
+    /// Mutable retained work is read under its owner's transaction lock.
+    /// Persistent state must observe another process's latest write, including
+    /// eviction or expiry, rather than revive an older memory entry.
+    pub(crate) fn get_current(&self, key: &CacheKey) -> Option<Cached<V>> {
+        if self.disk.is_none() {
+            return self.get(key);
+        }
+        self.memory.remove(key);
+        self.read_disk(key)
+    }
+
+    fn read_disk(&self, key: &CacheKey) -> Option<Cached<V>> {
         let (value, class, age, bytes) = self.disk.as_ref()?.read::<V>(key, &self.config)?;
         let fresh = class.freshness(age)?;
-        // Promote, backdated so the memory copy ages like the disk copy.
         let now = Instant::now();
         let stored_at = now.checked_sub(age).unwrap_or(now);
         let value =
@@ -147,14 +161,29 @@ impl<V: Serialize + DeserializeOwned> Store<V> {
     /// disk. An entry larger than the memory budget is not stored at all.
     /// The stored value is returned, shared with the entry.
     pub fn put(&self, key: CacheKey, value: V, bytes: usize, class: CacheClass) -> Arc<V> {
+        self.put_confirmed(key, value, bytes, class).0
+    }
+
+    /// Whether the value was retained in every configured tier. A result
+    /// continuation must check this before advertising saved pages.
+    pub fn put_confirmed(
+        &self,
+        key: CacheKey,
+        value: V,
+        bytes: usize,
+        class: CacheClass,
+    ) -> (Arc<V>, bool) {
         if self.config.max_entries == 0 || bytes > self.config.max_bytes {
-            return Arc::new(value);
+            return (Arc::new(value), false);
         }
-        if let Some(disk) = &self.disk {
-            disk.write(&key, &value, class, &self.config);
-        }
-        self.memory
-            .insert_full(key, value, class, bytes, class.ttl(), Instant::now())
+        let saved = self
+            .disk
+            .as_ref()
+            .is_none_or(|disk| disk.write(&key, &value, class, &self.config));
+        let value = self
+            .memory
+            .insert_full(key, value, class, bytes, class.ttl(), Instant::now());
+        (value, saved)
     }
 
     /// Drop `key` from both tiers.
@@ -217,6 +246,46 @@ fn entry_is_invalid(error: &std::io::Error) -> bool {
         return true;
     }
     false
+}
+
+/// How much of an entry file [`expired`] reads: its class and store time
+/// lead the file ([`DiskEntryRef`] writes `value` last).
+const HEADER_BYTES: usize = 512;
+
+/// Whether the entry file at `path` is past its class's lifetime, read from
+/// its leading `class` and `storedAtUnix` fields alone, never its value. A
+/// file whose header does not parse is not judged here (its read evicts it).
+fn expired(path: &std::path::Path, now: u64) -> bool {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Header {
+        class: CacheClass,
+        stored_at_unix: u64,
+    }
+    let Ok(file) = crate::private_file::open_no_follow(path, false) else {
+        return false;
+    };
+    let mut head = Vec::with_capacity(HEADER_BYTES);
+    if std::io::Read::read_to_end(
+        &mut std::io::Read::take(&file, HEADER_BYTES as u64),
+        &mut head,
+    )
+    .is_err()
+    {
+        return false;
+    }
+    let Some(end) = head
+        .windows(b",\"value\":".len())
+        .position(|window| window == b",\"value\":")
+    else {
+        return false;
+    };
+    let mut header = head[..end].to_vec();
+    header.push(b'}');
+    serde_json::from_slice::<Header>(&header).is_ok_and(|header| {
+        let age = Duration::from_secs(now.saturating_sub(header.stored_at_unix));
+        header.class.freshness(age).is_none()
+    })
 }
 
 fn now_unix() -> u64 {
@@ -302,7 +371,7 @@ impl Disk {
         value: &V,
         class: CacheClass,
         config: &CacheConfig,
-    ) {
+    ) -> bool {
         let path = self.file(key);
         let entry = DiskEntryRef {
             class,
@@ -310,14 +379,16 @@ impl Disk {
             value,
         };
         let Ok(bytes) = serde_json::to_vec(&entry) else {
-            return;
+            return false;
         };
         if bytes.len() > config.max_bytes {
-            return;
+            return false;
         }
         // Owner-only replacement: values may be private source, and an
         // in-place rewrite would keep a pre-existing file's loose mode.
-        let _ = octocode_io::atomic::write_atomic(&path, &bytes, false);
+        if octocode_io::atomic::write_atomic(&path, &bytes, false).is_err() {
+            return false;
+        }
         if self
             .writes
             .fetch_add(1, Ordering::Relaxed)
@@ -326,6 +397,7 @@ impl Disk {
         {
             self.prune(config.disk_bytes);
         }
+        path.is_file()
     }
 
     /// True when no process pruned within [`PRUNE_INTERVAL`]; claims the slot
@@ -344,13 +416,14 @@ impl Disk {
         true
     }
 
-    /// Keep the directory within `budget` bytes, removing the least recently
-    /// used files first.
+    /// Remove expired entries, then keep the directory within `budget`
+    /// bytes, removing the least recently used files first.
     fn prune(&self, budget: u64) {
         let Ok(read_dir) = fs::read_dir(&self.dir) else {
             return;
         };
         let now = SystemTime::now();
+        let unix_now = now_unix();
         let mut files: Vec<(SystemTime, u64, PathBuf)> = read_dir
             .flatten()
             .filter_map(|entry| {
@@ -358,6 +431,12 @@ impl Disk {
                 let meta = entry.metadata().ok()?;
                 let modified = meta.modified().ok()?;
                 match path.extension().and_then(|ext| ext.to_str()) {
+                    // An entry past its `Volatile` TTL is dead weight a read
+                    // would delete anyway: it goes before any live one.
+                    Some("json") if expired(&path, unix_now) => {
+                        let _ = fs::remove_file(&path);
+                        None
+                    }
                     Some("json") => Some((modified, meta.len(), path)),
                     // A temp file older than any write could take is a crash
                     // leftover from between the temp write and the rename.
@@ -397,3 +476,60 @@ impl Disk {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+#[cfg(test)]
+mod current_tests {
+    use super::*;
+
+    #[test]
+    fn current_reads_other_process_progress_and_does_not_revive_evicted_memory() {
+        let directory = tempfile::tempdir().expect("cache directory");
+        let first = Store::<String>::new(CacheConfig::default(), Some(directory.path().to_owned()));
+        let second =
+            Store::<String>::new(CacheConfig::default(), Some(directory.path().to_owned()));
+        let key = CacheKey {
+            namespace: "assessment".into(),
+            scope: "same-access".into(),
+            resource: "plan".into(),
+        };
+        first.put(key.clone(), "pending".into(), 16, CacheClass::Immutable);
+        second.put(key.clone(), "complete".into(), 16, CacheClass::Immutable);
+        assert_eq!(
+            first.get(&key).expect("old memory receipt").value.as_str(),
+            "pending"
+        );
+        assert_eq!(
+            first
+                .get_current(&key)
+                .expect("latest committed progress")
+                .value
+                .as_str(),
+            "complete"
+        );
+        second.remove(&key);
+        assert!(
+            first.get_current(&key).is_none(),
+            "disk eviction is authoritative"
+        );
+        assert!(first.get(&key).is_none(), "stale memory was removed");
+    }
+
+    #[test]
+    fn current_memory_reads_keep_the_memory_only_policy() {
+        let store = Store::<String>::new(CacheConfig::default(), None);
+        let key = CacheKey {
+            namespace: "assessment".into(),
+            scope: "session".into(),
+            resource: "plan".into(),
+        };
+        store.put(key.clone(), "retained".into(), 16, CacheClass::Immutable);
+        assert_eq!(
+            store
+                .get_current(&key)
+                .expect("in-process progress")
+                .value
+                .as_str(),
+            "retained"
+        );
+    }
+}

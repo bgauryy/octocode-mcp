@@ -78,10 +78,10 @@ lists every Cargo dependency between them.
 | Crate | Owns | Depends on |
 |---|---|---|
 | `crates/engine` | Reusable algorithms: search, AST, signatures, graph facts, minification, the language-server pool | none |
-| `crates/io` | Owner-only atomic writes, `flock` waits, the HTTP client policy, the in-process `memo` | none |
-| `crates/github` | GitHub protocol and transport, retries, `Partition`, `KeyedFlight` | `io` |
+| `crates/io` | Cross-crate primitives: owner-only atomic writes, `flock` waits, environment reads, the HTTP client policy, the in-process memo, keyed single flight, stderr notices ([`lib.rs`](crates/io/src/lib.rs)) | none |
+| `crates/github` | GitHub protocol and transport, retries, `Partition` ([`lib.rs`](crates/github/src/lib.rs)) | `io` |
 | `crates/runtime` (`octocode-native`) | `ToolRuntime`: config, credentials, contracts, availability, tools, responses | `io`, `engine`, `github` |
-| `crates/cli` | The `octocode` binary and its warm `lspSearch` server | `io`, `runtime`, `engine`, `github` |
+| `crates/cli` | The `octocode` binary and its warm tool server | `io`, `runtime`, `engine`, `github` |
 | `crates/runtime-napi` | The N-API addon the MCP server loads | `runtime` |
 
 Design and invariants: [ARCHITECTURE.md](ARCHITECTURE.md). Languages and what
@@ -151,9 +151,54 @@ and [clasify availability](../../docs/OCTOCODE_CLASIFY.md#availability).
 
 Hidden maintenance commands: `cache <status|clear>`,
 `lsp-server <list|install|uninstall|clean|status>`, and `serve` (the warm
-`lspSearch` server, started automatically). Exit codes are printed by
+tool server, started automatically). Exit codes are printed by
 `octocode --help` and documented in the
 [CLI guide](../octocode/docs/OCTOCODE_CLI.md#exit-codes).
+
+### Warm tool server
+
+Every read-only tool call (all tools except `ghCloneRepo` and `astRewrite`)
+runs on `octocode serve`, so a later page reuses what an earlier call computed,
+as it does in one MCP session: page memos, stored scans, outlines, symbol
+pages, graph reports, and warm language servers. The first call of a workspace
+starts the server, detached, behind a socket in `<temp dir>/octocode-<uid>`
+(a 0700 directory only the owner can enter).
+
+- **One server per** binary build, workspace (the nearest `.git` ancestor of
+  the working directory, else the directory), and call identity: the resolved
+  configuration (home and workspace `.env` and `.octocoderc`, every variable the
+  config contract declares), the environment GitHub credential's source and
+  digest, every `OCTOCODE_*` variable such as `OCTOCODE_BETA`, the proxy and
+  trust-store variables, and the variables the engine reads from the server's
+  own process (`PROCESS_ENV`). Any change starts a new server; the socket name
+  is a hash, so it holds no secret.
+- **Per directory and environment.** A call runs as a CLI started in its own
+  directory with its own environment would: the request carries the
+  environment, so credential discovery (`gh` and `GH_CONFIG_DIR`, npm config)
+  sees the caller's. The server keeps a runtime per directory and environment
+  (up to `MAX_RUNTIMES`), on one shared language-server pool, so directories of
+  one repository share one rust-analyzer.
+- **Credentials.** A remembered `gh` or stored credential expires after the
+  resolver's memo TTL, so `gh auth switch`, a logout, or a rotated token reaches
+  a warm server within it; `octocode auth login` and `logout` stop every warm
+  server.
+- **Same output.** Stdout, the exit code, and stderr (configuration warnings,
+  and the warnings a call raises, such as an unusable credential store or
+  rate-limit state file) match an in-process call. Ctrl-C cancels the call on
+  the server.
+- **In process instead** with `storage.mode = memory`
+  (`OCTOCODE_STORAGE_MODE=memory`), on Windows, or for `ghCloneRepo` and
+  `astRewrite`. A server that cannot be reached, refuses a call, or fails
+  mid-call is named on stderr and the call runs in process; a server that
+  sends no reply within the request budget answers `timeout`.
+- **Bounded.** At most `MAX_SERVERS` servers per user: a starting server asks
+  the least recently used ones past the cap to stop, and a stopping server
+  finishes the calls it has. A server exits after `IDLE_EXIT` without a
+  request.
+
+The named limits are constants in
+[`crates/cli/src/cli/serve.rs`](crates/cli/src/cli/serve.rs), which documents
+how the server keeps these guarantees.
 
 `npx @octocodeai/octocode-native` runs this binary directly. `npx octocode` (the
 Node launcher) runs the same binary with unchanged arguments and inherited stdio.

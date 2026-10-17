@@ -283,6 +283,20 @@ fn render_query_limits(tools: &[Value]) -> Result<String, Box<dyn Error>> {
     Ok(output)
 }
 
+/// A contract string array as Rust string literals.
+fn string_list(value: &Value, path: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    value
+        .as_array()
+        .ok_or_else(|| invalid(format!("{path} is not an array")))?
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(|item| format!("{item:?}"))
+                .ok_or_else(|| invalid(format!("{path} holds a non-string")))
+        })
+        .collect()
+}
+
 /// `ToolId` identity and policy, generated from the contract's `tools[]`
 /// (`name`, `family`, `cliOnly`, `beta`, `disabled` are authored once in core
 /// `TOOL_POLICIES`). Nothing in native re-spells a tool list.
@@ -301,6 +315,7 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
         Vec::new(),
     );
     let mut extras = String::new();
+    let mut sort_keys = String::new();
     let mut scan_totals = String::new();
     let mut github = Vec::new();
     for (index, tool) in tools.iter().enumerate() {
@@ -370,23 +385,27 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
             .and_then(Value::as_object)
             .ok_or_else(|| invalid(format!("{path} has no extraPaths{{}}")))?
         {
-            let paths = paths
-                .as_array()
-                .ok_or_else(|| invalid(format!("{path}.extraPaths.{kind} is not an array")))?
-                .iter()
-                .map(|item| {
-                    item.as_str()
-                        .map(|item| format!("{item:?}"))
-                        .ok_or_else(|| {
-                            invalid(format!("{path}.extraPaths.{kind} holds a non-string"))
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let paths = string_list(paths, &format!("{path}.extraPaths.{kind}"))?;
             kinds.push(format!("({kind:?}, &[{}])", paths.join(", ")));
         }
         extras.push_str(&format!(
             "            ToolId::{variant} => &[{}],\n",
             kinds.join(", ")
+        ));
+        // `sortKeyPaths`: absent for a tool whose rows sort by no extra field.
+        let mut sorts = Vec::new();
+        if let Some(entries) = tool.get("sortKeyPaths") {
+            let entries = entries
+                .as_object()
+                .ok_or_else(|| invalid(format!("{path}.sortKeyPaths is not an object")))?;
+            for (sort, paths) in entries {
+                let paths = string_list(paths, &format!("{path}.sortKeyPaths.{sort}"))?;
+                sorts.push(format!("({sort:?}, &[{}])", paths.join(", ")));
+            }
+        }
+        sort_keys.push_str(&format!(
+            "            ToolId::{variant} => &[{}],\n",
+            sorts.join(", ")
         ));
         variants.push(variant);
     }
@@ -478,6 +497,10 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
          impl ToolId {{\n\
          \x20   /// All tool identities in contract order.\n\
          \x20   pub const ALL: [ToolId; {count}] = [{all}];\n\n\
+         \x20   /// This tool's position in [`ToolId::ALL`]: the variants are declared\n\
+         \x20   /// in that order, so a per-tool table indexes by it.\n\
+         \x20   #[must_use]\n\
+         \x20   pub const fn index(self) -> usize {{\n        self as usize\n    }}\n\n\
          \x20   /// The wire name exactly as it appears in the contract and in tool-call envelopes.\n\
          \x20   #[must_use]\n\
          \x20   pub const fn as_str(self) -> &'static str {{\n        match self {{\n{names}        }}\n    }}\n\n\
@@ -504,6 +527,10 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
          \x20   /// the row's `extras` names the kind.\n\
          \x20   #[must_use]\n\
          \x20   pub const fn extra_paths(self) -> &'static [(&'static str, &'static [&'static str])] {{\n        match self {{\n{extras}        }}\n    }}\n\n\
+         \x20   /// Extra paths a row sorted by a `sort` value keeps, by value (contract\n\
+         \x20   /// `sortKeyPaths`): the field rows are ordered by is default output.\n\
+         \x20   #[must_use]\n\
+         \x20   pub const fn sort_key_paths(self) -> &'static [(&'static str, &'static [&'static str])] {{\n        match self {{\n{sort_keys}        }}\n    }}\n\n\
          \x20   /// Which rows of this tool carry scan totals that default output trims\n\
          \x20   /// (contract `scanTotals`); `None`: the tool has none.\n\
          \x20   #[must_use]\n\
@@ -518,7 +545,16 @@ pub(super) fn render_tool_ids(contract: &Value) -> Result<String, Box<dyn Error>
          pub enum ScanTotals {{\n    Always,\n    WithMatchCount,\n}}\n\n\
          /// A tool of the contract's `github` family.\n\
          #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
-         pub enum GitHubTool {{\n{github_decl}}}\n",
+         pub enum GitHubTool {{\n{github_decl}}}\n\n\
+         #[cfg(test)]\n\
+         mod tool_index_tests {{\n\
+         \x20   #[test]\n\
+         \x20   fn each_tool_indexes_its_position_in_all() {{\n\
+         \x20       for (position, tool) in super::ToolId::ALL.into_iter().enumerate() {{\n\
+         \x20           assert_eq!(tool.index(), position, \"{{}}\", tool.as_str());\n\
+         \x20       }}\n\
+         \x20   }}\n\
+         }}\n",
         variants_decl = variants
             .iter()
             .map(|v| format!("    {v},\n"))

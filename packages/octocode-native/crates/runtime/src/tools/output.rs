@@ -96,6 +96,18 @@ pub trait ToolOutput: Sync {
         }
     }
 
+    /// Evidence collections in outer-to-inner order. `*` visits a keyed
+    /// resource or a single array element. Other values remain indivisible.
+    /// Without explicit paths, the pager uses ordinary `data` arrays.
+    fn collection_paths(&self) -> Option<&'static [&'static str]> {
+        None
+    }
+
+    /// Shared row definitions carried by the first display fragment only.
+    fn first_fragment_fields(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// How the text channel renders this tool's rows.
     fn text_shape(&self) -> TextShape {
         TextShape::Structured

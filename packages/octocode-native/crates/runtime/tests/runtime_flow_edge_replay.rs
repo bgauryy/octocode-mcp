@@ -2,7 +2,7 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 //! Flow edges replay verbatim: every `next.*` page and `hints.*` lead a
-//! local tool emits is a complete tool input (`{queries:[row]}`), passes the
+//! local tool emits is a complete fresh or saved tool input, passes the
 //! strict input contract of the tool it names, uses only current field and
 //! lead names, and runs unchanged as the whole call. The seeds
 //! below reach the local edges whose fields the schema alignment changed;
@@ -65,15 +65,9 @@ fn assert_current(edge: &Edge) {
         edge.from,
         edge.name
     );
-    assert!(
-        edge.query["queries"].is_array(),
-        "{}.{} is not a complete input: {edge:?}",
-        edge.from,
-        edge.name
-    );
     validate(&edge.tool, edge.query.clone()).unwrap_or_else(|error| {
         panic!(
-            "{}.{} → {} fails the strict contract: {error:?}\n{edge:?}",
+            "{}.{} → {} is not a complete input under the strict contract: {error:?}\n{edge:?}",
             edge.from, edge.name, edge.tool
         )
     });
@@ -292,6 +286,7 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
         "astSearch.nextMatchPage",
         "astTopology.retrySuffixMatch",
         "localFetch.continueWindow",
+        "localFetch.responsePagination.next",
     ] {
         assert!(
             seen.contains(expected),

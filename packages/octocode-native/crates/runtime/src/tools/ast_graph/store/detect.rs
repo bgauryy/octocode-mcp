@@ -64,8 +64,10 @@ pub(crate) struct Finding {
     pub verify: Vec<String>,
     pub corroborated_by: Vec<&'static str>,
     /// vulture-style certainty: 100 nothing references it anywhere, 90 no
-    /// graph or text reference, 60 referenced by text only (strings,
-    /// configs) or otherwise uncertain. The default view shows 90+.
+    /// graph or code reference (bare prose words go to
+    /// `evidence.textMentions`), 60 the file path or every unused export is
+    /// referenced in code or qualified text (`evidence.mentionedIn`), or no
+    /// mention scan ran. The default view shows 90+.
     pub tier: u8,
 }
 
@@ -1816,34 +1818,50 @@ fn health(v: &View) -> Value {
 const MENTION_EXTRA_SKIP_DIRS: &[&str] = &["venv", "vendor"];
 const MENTION_MAX_FILE: u64 = 2 << 20;
 const MENTION_MAX_TOTAL: u64 = 512 << 20;
+/// Markup and single-file components whose script blocks import modules
+/// (`<script>import { run } from './cmd'</script>`, an MDX `import`): no
+/// grammar the engine parses covers them, yet a name in them may load an
+/// export, as one in source code does.
+const SCRIPT_BEARING_MARKUP: &[&str] = &["vue", "svelte", "astro", "mdx", "html", "htm"];
 
+/// Per key, every file mentioning it with the 1-based line of its first
+/// mention there, as `file:line`, files in path order.
 type Mentions = BTreeMap<String, Vec<String>>;
+
+/// The mention scan's hits: file stems in path-like tokens, and export
+/// names split by kind ([`scan_mentions`]).
+#[derive(Default)]
+struct MentionHits {
+    stems: Mentions,
+    /// Names in source code, or qualified (`index.run`, `checks/run`) in
+    /// any text: a reference that may load the export.
+    references: Mentions,
+    /// Names only as bare words of non-code text (prose, a list): context,
+    /// never a reference.
+    words: Mentions,
+}
 
 /// One pass over the repository's text: which candidate file stems appear as
 /// path-like tokens (`'./worker.ts'`, `"src/tool.ts"`) and which export names
-/// appear as identifiers, and where (up to 3 files each). This is the
-/// SCARF/vulture "is it mentioned anywhere" safety check.
+/// appear as identifiers, and where: every file, with its first line. This is
+/// the SCARF/vulture "is it mentioned anywhere" safety check. A name in a
+/// source file (any grammar the engine parses, or [`SCRIPT_BEARING_MARKUP`])
+/// or qualified by a module path or object (`mod.run`, `index.run`) is a
+/// reference; a bare word of other text (a README's "run") is only a word.
 fn scan_mentions(
     root: &std::path::Path,
     stems: &BTreeSet<String>,
     names: &BTreeSet<String>,
-) -> (Mentions, Mentions, bool) {
+) -> (MentionHits, bool) {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    // Each key keeps its 3 lexicographically smallest files, so the result is
+    // Per key, per file, the first line: a map keeps the result
     // deterministic whatever order the parallel walk visits files in.
-    type Hits = BTreeMap<String, BTreeSet<String>>;
-    let found = Mutex::new((Hits::new(), Hits::new()));
+    type Hits = BTreeMap<String, BTreeMap<String, usize>>;
+    let found = Mutex::new((Hits::new(), Hits::new(), Hits::new()));
     // Bytes read so far; a file that would pass the total ends the scan.
     let spent = AtomicU64::new(0);
     let truncated = AtomicBool::new(false);
-    let keep = |map: &mut Hits, key: &str, file: &str| {
-        let files = map.entry(key.to_owned()).or_default();
-        files.insert(file.to_owned());
-        if files.len() > 3 {
-            files.pop_last();
-        }
-    };
     let walker = crate::tools::pruned_walk(
         root,
         crate::tools::syntax_prune(
@@ -1891,50 +1909,101 @@ fn scan_mentions(
                 |_| entry.path().to_string_lossy().into_owned(),
                 |path| path.to_string_lossy().replace('\\', "/"),
             );
+            let extension = octocode_engine::text::extension_of(&rel, true, "");
+            let code = SCRIPT_BEARING_MARKUP.contains(&extension.as_str())
+                || octocode_engine::signatures::languages::find_entry(&extension).is_some();
             let text = String::from_utf8_lossy(&bytes);
-            let mut local = (Vec::<&str>::new(), Vec::<&str>::new());
-            for token in text.split(|c: char| !(c.is_alphanumeric() || "_$./@-".contains(c))) {
-                if token.is_empty() {
-                    continue;
-                }
-                if token.contains(['/', '.']) {
-                    let last = token.rsplit('/').next().unwrap_or(token);
-                    let stem = last.split('.').next().unwrap_or(last);
-                    if stems.contains(stem) {
-                        local.0.push(stem);
+            // Per key, its first line in this file.
+            let mut local = (
+                BTreeMap::<&str, usize>::new(),
+                BTreeMap::<&str, usize>::new(),
+                BTreeMap::<&str, usize>::new(),
+            );
+            for (index, line) in text.lines().enumerate() {
+                for token in line.split(|c: char| !(c.is_alphanumeric() || "_$./@-".contains(c))) {
+                    if token.is_empty() {
+                        continue;
                     }
-                }
-                for part in token.split(['.', '/', '-', '@']) {
-                    if names.contains(part) {
-                        local.1.push(part);
+                    if token.contains(['/', '.']) {
+                        let last = token.rsplit('/').next().unwrap_or(token);
+                        let stem = last.split('.').next().unwrap_or(last);
+                        if stems.contains(stem) {
+                            local.0.entry(stem).or_insert(index + 1);
+                        }
+                    }
+                    let mut at = 0;
+                    for part in token.split(['.', '/', '-', '@']) {
+                        let start = at;
+                        at += part.len() + 1;
+                        if !names.contains(part) {
+                            continue;
+                        }
+                        let qualified =
+                            token[..start].strip_suffix(['.', '/']).is_some_and(|head| {
+                                head.ends_with(|c: char| c.is_alphanumeric() || "_$".contains(c))
+                            });
+                        let kind = if code || qualified {
+                            &mut local.1
+                        } else {
+                            &mut local.2
+                        };
+                        kind.entry(part).or_insert(index + 1);
                     }
                 }
             }
-            if (!local.0.is_empty() || !local.1.is_empty())
+            if !(local.0.is_empty() && local.1.is_empty() && local.2.is_empty())
                 && let Ok(mut guard) = found.lock()
             {
-                let (stem_hits, name_hits) = &mut *guard;
-                for stem in local.0 {
-                    keep(stem_hits, stem, &rel);
-                }
-                for name in local.1 {
-                    keep(name_hits, name, &rel);
+                let (stem_hits, references, words) = &mut *guard;
+                for (hits, mine) in [
+                    (stem_hits, local.0),
+                    (references, local.1),
+                    (words, local.2),
+                ] {
+                    for (key, line) in mine {
+                        hits.entry(key.to_owned())
+                            .or_default()
+                            .insert(rel.clone(), line);
+                    }
                 }
             }
             ignore::WalkState::Continue
         })
     });
-    let (stem_hits, name_hits) = found.into_inner().unwrap_or_default();
+    let (stems, references, words) = found.into_inner().unwrap_or_default();
     let flatten = |hits: Hits| -> Mentions {
         hits.into_iter()
-            .map(|(key, files)| (key, files.into_iter().collect()))
+            .map(|(key, files)| {
+                let files = files
+                    .into_iter()
+                    .map(|(file, line)| format!("{file}:{line}"))
+                    .collect();
+                (key, files)
+            })
             .collect()
     };
     (
-        flatten(stem_hits),
-        flatten(name_hits),
+        MentionHits {
+            stems: flatten(stems),
+            references: flatten(references),
+            words: flatten(words),
+        },
         truncated.load(Ordering::Relaxed),
     )
+}
+
+/// The `file:line` mentions of `key` in files other than `subject`.
+fn mentions_outside(hits: &Mentions, key: &str, subject: &str) -> Vec<String> {
+    hits.get(key)
+        .into_iter()
+        .flatten()
+        .filter(|mention| {
+            mention
+                .rsplit_once(':')
+                .is_none_or(|(file, _)| file != subject)
+        })
+        .cloned()
+        .collect()
 }
 
 fn file_stem(path: &str) -> String {
@@ -1952,8 +2021,10 @@ fn tier_dead_code(findings: &mut [Finding], root: &std::path::Path, notes: &mut 
                 stems.insert(file_stem(&finding.subject));
             }
             "unused-export" => {
+                // Every name, short ones too: tier 90 claims no code or
+                // qualified reference, so no name may skip the check.
                 for name in finding.evidence["exports"].as_array().into_iter().flatten() {
-                    if let Some(name) = name.as_str().filter(|n| n.len() >= 4) {
+                    if let Some(name) = name.as_str() {
                         names.insert(name.to_owned());
                     }
                 }
@@ -1964,23 +2035,15 @@ fn tier_dead_code(findings: &mut [Finding], root: &std::path::Path, notes: &mut 
     if stems.is_empty() && names.is_empty() {
         return;
     }
-    let (stem_hits, name_hits, truncated) = scan_mentions(root, &stems, &names);
+    let (hits, truncated) = scan_mentions(root, &stems, &names);
     if truncated {
         notes.push(json!({"detector": "unreachable-file", "skipped": "mention scan stopped at 512 MB of text; later files unchecked"}));
     }
     for finding in findings.iter_mut() {
         match finding.detector {
             "unreachable-file" => {
-                let mentions = stem_hits
-                    .get(&file_stem(&finding.subject))
-                    .map(|files| {
-                        files
-                            .iter()
-                            .filter(|f| **f != finding.subject)
-                            .cloned()
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
+                let mentions =
+                    mentions_outside(&hits.stems, &file_stem(&finding.subject), &finding.subject);
                 if !mentions.is_empty() {
                     finding.tier = 60;
                     finding.evidence["mentionedIn"] = json!(mentions);
@@ -1996,24 +2059,27 @@ fn tier_dead_code(findings: &mut [Finding], root: &std::path::Path, notes: &mut 
                     .as_array()
                     .cloned()
                     .unwrap_or_default();
-                let mut mentioned = BTreeMap::new();
+                let mut referenced = BTreeMap::new();
+                let mut words = BTreeMap::new();
                 for name in exports.iter().filter_map(Value::as_str) {
-                    if let Some(files) = name_hits.get(name) {
-                        let others = files
-                            .iter()
-                            .filter(|f| **f != finding.subject)
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        if !others.is_empty() {
-                            mentioned.insert(name.to_owned(), others);
+                    for (hits, kept) in [
+                        (&hits.references, &mut referenced),
+                        (&hits.words, &mut words),
+                    ] {
+                        let mentions = mentions_outside(hits, name, &finding.subject);
+                        if !mentions.is_empty() {
+                            kept.insert(name.to_owned(), mentions);
                         }
                     }
                 }
-                if !mentioned.is_empty() {
-                    finding.evidence["mentionedIn"] = json!(mentioned);
-                    if mentioned.len() == exports.len() {
+                if !words.is_empty() {
+                    finding.evidence["textMentions"] = json!(words);
+                }
+                if !referenced.is_empty() {
+                    if referenced.len() == exports.len() {
                         finding.tier = 60;
                     }
+                    finding.evidence["mentionedIn"] = json!(referenced);
                 }
             }
             _ => {}
@@ -2119,6 +2185,22 @@ pub(crate) fn run(
         let started = std::time::Instant::now();
         tier_dead_code(&mut c.findings, root, &mut c.notes);
         timings.insert("mention-scan", started.elapsed().as_millis() as u64);
+    } else if c
+        .findings
+        .iter()
+        .any(|f| matches!(f.detector, "unreachable-file" | "unused-export"))
+    {
+        // Without the scan a tier-90 dead-code finding has had no text check.
+        for finding in &mut c.findings {
+            if matches!(finding.detector, "unreachable-file" | "unused-export") {
+                finding.tier = finding.tier.min(60);
+            }
+        }
+        note(
+            &mut c.notes,
+            "unused-export",
+            "mention scan skipped: the snapshot root is not a directory, so dead-code findings are tier 60 (no text check ran)",
+        );
     }
 
     let mut by_detector = BTreeMap::<&str, usize>::new();
@@ -2190,6 +2272,36 @@ mod tests {
         };
         let members = BTreeSet::from([0, 1, 2, 3]);
         assert_eq!(witness_cycle(0, &members, &adj), vec![0, 3, 0]);
+    }
+
+    /// A name imported by a component's script block (`.vue`, `.svelte`,
+    /// `.astro`, `.mdx`, `.html`) is a reference, as in source code; the
+    /// same bare word in prose stays a word.
+    #[test]
+    fn script_bearing_markup_names_are_references() {
+        let dir = tempfile::tempdir().expect("dir");
+        let import = "<script>\nimport { run } from './cmd'\n</script>\n";
+        let markup = [
+            "App.vue",
+            "Page.svelte",
+            "Card.astro",
+            "doc.mdx",
+            "index.html",
+        ];
+        for name in markup {
+            std::fs::write(dir.path().join(name), import).expect("write");
+        }
+        std::fs::write(dir.path().join("README.md"), "Call run to start.\n").expect("write");
+        let (hits, truncated) = scan_mentions(
+            dir.path(),
+            &BTreeSet::new(),
+            &BTreeSet::from(["run".to_owned()]),
+        );
+        assert!(!truncated);
+        let mut expected = markup.map(|name| format!("{name}:2"));
+        expected.sort();
+        assert_eq!(hits.references.get("run"), Some(&expected.to_vec()));
+        assert_eq!(hits.words.get("run"), Some(&vec!["README.md:1".to_owned()]));
     }
 
     #[test]

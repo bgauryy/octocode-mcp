@@ -62,9 +62,17 @@ const SHARED_MODULES: &[(&str, &str)] = &[
         "source_capture",
         "one complete source selection captured through the authorized readers as a classification state",
     ),
+    (
+        "source_sections",
+        "source-coordinate section planning shared by localFetch and clasify",
+    ),
     ("stream_page", "streamed paging"),
     ("symbol_outline", "declaration outline rows"),
     ("test_support", "test fixtures"),
+    (
+        "workers",
+        "the one per-query fan-out width: the batch's core share, a cap, the items",
+    ),
 ];
 
 /// Tool-to-tool imports that stay, `(importer, imported, why)`. Each is one-way

@@ -32,8 +32,11 @@ pub async fn run<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhSearchCodeQuery,
     request: Result<&RequestContext, ProviderError>,
-    security: &impl ContentScan,
+    security: &(impl ContentScan + Sync),
 ) -> Result<ToolData, GhFailure> {
+    if let Some(failure) = ref_without_repo(query) {
+        return Err(failure);
+    }
     let context = request.as_ref().ok().copied();
     let result = match request {
         Ok(context) => execute(provider, query, context, security).await,
@@ -110,6 +113,28 @@ pub async fn run<C: ConditionalCache>(
     })
 }
 
+/// `ref` re-reads one repository's hits at that ref; an owner-wide search
+/// spans many repositories, each read at its own indexed commit, so the
+/// ref cannot apply. Rejected before any request, with the same search
+/// without it as the repair.
+fn ref_without_repo(query: &GhSearchCodeQuery) -> Option<GhFailure> {
+    let reference = code_output::requested_ref(query).filter(|_| query.repo.is_none())?;
+    let error = ProviderError::new(
+        ProviderErrorKind::Validation,
+        format!(
+            "ref \"{reference}\" needs repo: an owner-wide search reads each hit at its repository's indexed commit."
+        ),
+    );
+    let message = error.message.to_string();
+    let repair = Continuation::new(ToolId::GhSearchCode, query_row(query, &["ref"]))
+        .confidence("high")
+        .build();
+    Some(GhFailure {
+        next: Some(Box::new(json!({ "repair": repair }))),
+        ..GhFailure::new(error, message).hint("Add repo to read that repository's hits at the ref.")
+    })
+}
+
 /// Files each merged search lists per page: GitHub ANDs repeated
 /// `extension:` qualifiers, so each of `k` extensions is its own search of
 /// `ceil(per / k)` files on the same page number.
@@ -130,7 +155,7 @@ pub(crate) async fn execute<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhSearchCodeQuery,
     context: &RequestContext,
-    security: &impl ContentScan,
+    security: &(impl ContentScan + Sync),
 ) -> Result<ToolData, ProviderError> {
     let current = usize_of(query.page);
     let per = page_size(query);
@@ -147,15 +172,20 @@ pub(crate) async fn execute<C: ConditionalCache>(
     // reruns once against the canonical name, as ghSearchHistory does.
     // A page past the last holds no files of a search that has results.
     let past_end = data.fetched == 0 && data.total > 0 && current > data.pages;
-    if data.fetched == 0
-        && !past_end
-        && let Some((renamed, warnings)) = renamed_scope(provider, query, context).await?
-    {
-        let mut output = Box::pin(execute(provider, &renamed, context, security)).await?;
-        for warning in warnings.into_iter().rev() {
-            push_warning_front(&mut output.data, warning);
+    if data.fetched == 0 && !past_end {
+        match renamed_scope(provider, query, context).await? {
+            Rescope::Renamed(renamed, warnings) => {
+                let mut output = Box::pin(execute(provider, &renamed, context, security)).await?;
+                for warning in warnings.into_iter().rev() {
+                    push_warning_front(&mut output.data, warning);
+                }
+                return Ok(output);
+            }
+            // The repository check already failed: the empty page's own
+            // check of it would read the same 404 again.
+            Rescope::Missing(error) => return Err(error),
+            Rescope::Stands => {}
         }
-        return Ok(output);
     }
     let more = current < data.pages;
     let mut items = code_output::files(&data.items, query, security)?;
@@ -284,11 +314,19 @@ fn disclose_completeness(
     }
 }
 
-/// One provider page, merged across `extensions`: GitHub ANDs repeated
-/// `extension:` qualifiers, so each extension is its own indexed search on
-/// the same page number. The searches share `pageSize` (each lists
-/// `ceil(pageSize / k)`), so a merged page holds about `pageSize` files and
-/// page N of every search is page N of the merge: lossless.
+/// One merged page across `extensions`: GitHub ANDs repeated `extension:`
+/// qualifiers, so each extension is its own indexed search of
+/// `ceil(pageSize / k)` files a GitHub page ([`per_search`]). Page 1 lists
+/// page 1 of every search; their totals lay out the later pages, which take
+/// the searches' remaining GitHub pages `k` at a time, page by page in
+/// extension order ([`later_pages`]). A search that has run out is never
+/// asked for a later page, a page stays about `pageSize` files while any
+/// search has files left, and every GitHub page is on exactly one merged
+/// page: lossless. One search's page N is its GitHub page N. A later page
+/// lays itself out from every search's page 1, read from the code-search
+/// cache: when that cache is cold (memory storage across CLI processes, or
+/// an expired page 1) each page 1 is searched again, one request per
+/// search, an exhausted one included.
 struct SearchPage {
     /// The files this page lists: GitHub's, less those an earlier page of
     /// the same search already listed.
@@ -309,6 +347,35 @@ struct SearchPage {
     incomplete: bool,
     /// Organizations SAML enforcement withheld from the merged searches.
     sso_partial: Vec<u64>,
+}
+
+/// The GitHub pages (search index, page number) merged page `current`
+/// (≥ 2) lists, given each search's page count: pages 2 and on of every
+/// search that has them, page by page, `searches` to a merged page.
+fn later_pages(pages: &[usize], current: usize) -> Vec<(usize, usize)> {
+    let per = pages.len().max(1);
+    let deepest = pages.iter().copied().max().unwrap_or(0);
+    (2..=deepest)
+        .flat_map(|page| {
+            pages
+                .iter()
+                .enumerate()
+                .filter(move |&(_, &count)| count >= page)
+                .map(move |(search, _)| (search, page))
+        })
+        .skip((current.saturating_sub(2)).saturating_mul(per))
+        .take(per)
+        .collect()
+}
+
+/// Merged pages of searches with these page counts: page 1, then the
+/// later GitHub pages `searches` at a time; none when every search is empty.
+fn merged_pages(pages: &[usize]) -> usize {
+    if pages.iter().all(|&count| count == 0) {
+        return 0;
+    }
+    let later: usize = pages.iter().map(|count| count.saturating_sub(1)).sum();
+    1 + later.div_ceil(pages.len().max(1))
 }
 
 async fn search_page<C: ConditionalCache>(
@@ -340,18 +407,75 @@ async fn search_page<C: ConditionalCache>(
         incomplete: false,
         sso_partial: Vec::new(),
     };
-    let requests = scopes
+    let searches = scopes
         .into_iter()
         .map(|extension| CodeSearchRequest {
             query: query::code(query, extension),
-            page: current,
+            page: 1,
             per_page: per_search,
             include_fragments: query.match_in != GhSearchCodeQueryMatchIn::Path,
         })
         .collect::<Vec<_>>();
-    // Each extension's search takes its own window slot, so a row
-    // whose uncached searches cannot all start within the wait cap is
-    // refused before the first is sent, not midway with its slots spent.
+    let at = |search: usize, number: usize| CodeSearchRequest {
+        page: number,
+        ..searches[search].clone()
+    };
+    let merged = searches.len() > 1;
+    // Each GitHub page takes its own window slot, so a row whose uncached
+    // searches cannot all start within the wait cap is refused before the
+    // first is sent, not midway with its slots spent.
+    let refuse = |sends: usize| match provider.transport.code_search_batch_refusal(sends, context) {
+        Some(refusal) => Err(refusal),
+        None => Ok(()),
+    };
+    // A later merged page is laid out by every search's page 1 (usually
+    // cached by the walk's first page). Uncached ones are read first; the
+    // pages they lay out are counted unseen, as all uncached.
+    let mut firsts = Vec::new();
+    let mut reserved = false;
+    if merged && current > 1 {
+        for search in &searches {
+            firsts.push(
+                provider
+                    .transport
+                    .cached_code_search(search, context)
+                    .await?,
+            );
+        }
+        let missing = firsts.iter().filter(|first| first.is_none()).count();
+        if missing > 0 {
+            refuse(missing + searches.len())?;
+            reserved = true;
+        }
+        for (search, first) in searches.iter().zip(&mut firsts) {
+            if first.is_none() {
+                *first = Some(provider.transport.search_code(search, context).await?);
+            }
+        }
+    }
+    let counts = |firsts: &[Option<octocode_github::CodeSearchPage>]| {
+        firsts
+            .iter()
+            .map(|first| first.as_ref().map_or(0, |first| first.total_count))
+            .collect::<Vec<_>>()
+    };
+    let reach_pages = |counts: &[usize]| {
+        counts
+            .iter()
+            .map(|&count| SearchWindow::PageEnd.reach(count, per_search).pages)
+            .collect::<Vec<_>>()
+    };
+    let units = if merged && current > 1 {
+        later_pages(&reach_pages(&counts(&firsts)), current)
+    } else {
+        (0..searches.len())
+            .map(|search| (search, current))
+            .collect()
+    };
+    let requests = units
+        .iter()
+        .map(|&(search, number)| at(search, number))
+        .collect::<Vec<_>>();
     let mut cached = Vec::with_capacity(requests.len());
     for request in &requests {
         cached.push(
@@ -361,24 +485,25 @@ async fn search_page<C: ConditionalCache>(
                 .await?,
         );
     }
-    let sends = cached.iter().filter(|page| page.is_none()).count();
-    if let Some(refusal) = provider.transport.code_search_batch_refusal(sends, context) {
-        return Err(refusal);
+    if !reserved {
+        refuse(cached.iter().filter(|page| page.is_none()).count())?;
     }
     // GitHub's index moves between page reads, so a file can come back on a
-    // later page. The earlier pages of this search that are still cached
-    // (no request) say which files the walk already delivered.
+    // later page. The earlier pages of each listed search that are still
+    // cached (no request) say which files the walk already delivered.
     let mut seen = std::collections::HashSet::new();
-    for request in &requests {
-        for earlier in 1..current {
+    let mut checked = Vec::with_capacity(units.len());
+    for &(search, number) in &units {
+        // A search's first page here is its lowest: the earlier ones precede it.
+        if checked.contains(&search) {
+            continue;
+        }
+        checked.push(search);
+        for earlier in 1..number {
             page.earlier_total += 1;
-            let request = CodeSearchRequest {
-                page: earlier,
-                ..request.clone()
-            };
             if let Ok(Some(listed)) = provider
                 .transport
-                .cached_code_search(&request, context)
+                .cached_code_search(&at(search, earlier), context)
                 .await
             {
                 page.earlier_checked += 1;
@@ -386,15 +511,13 @@ async fn search_page<C: ConditionalCache>(
             }
         }
     }
+    let mut unit_counts = Vec::with_capacity(requests.len());
     for (request, cached) in requests.iter().zip(cached) {
         let data = match cached {
             Some(data) => data,
             None => provider.transport.search_code(request, context).await?,
         };
-        let reach = SearchWindow::PageEnd.reach(data.total_count, per_search);
-        page.total += reach.total;
-        page.pages = page.pages.max(reach.pages);
-        page.matched += data.total_count;
+        unit_counts.push(data.total_count);
         page.incomplete |= data.incomplete_results;
         for organization in data.sso_partial_organizations {
             if !page.sso_partial.contains(&organization) {
@@ -410,6 +533,18 @@ async fn search_page<C: ConditionalCache>(
             }
         }
     }
+    // Merged totals are every search's page-1 count, so each page of the
+    // walk states the same layout; one search states its own page's.
+    let counts = if merged && current > 1 {
+        counts(&firsts)
+    } else {
+        unit_counts
+    };
+    for &count in &counts {
+        page.total += SearchWindow::PageEnd.reach(count, per_search).total;
+        page.matched += count;
+    }
+    page.pages = merged_pages(&reach_pages(&counts));
     Ok(page)
 }
 
@@ -447,17 +582,27 @@ impl SearchPage {
     }
 }
 
-/// The query re-scoped to a renamed repository's canonical name, with the
-/// rename warning; `None` when the name stands or cannot be checked.
+/// What an empty scoped search learned of its repository's name.
+enum Rescope {
+    /// The query re-scoped to the canonical name, with the rename warning.
+    Renamed(Box<GhSearchCodeQuery>, Vec<String>),
+    /// The repository does not exist: the search's not-found failure.
+    Missing(ProviderError),
+    /// The name stands, cannot be checked, or the search is owner-wide.
+    Stands,
+}
+
+/// [`Rescope`] of an empty search's scope.
 async fn renamed_scope<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhSearchCodeQuery,
     context: &RequestContext,
-) -> Result<Option<(GhSearchCodeQuery, Vec<String>)>, ProviderError> {
+) -> Result<Rescope, ProviderError> {
+    use crate::tools::gh_shared::CanonicalScope;
     let Some(scoped) = query.repo.as_deref() else {
-        return Ok(None);
+        return Ok(Rescope::Stands);
     };
-    let Some((owner, repo)) = crate::tools::gh_shared::canonical_repo(
+    let (owner, repo) = match crate::tools::gh_shared::canonical_scope(
         provider,
         &query.owner,
         scoped,
@@ -465,8 +610,10 @@ async fn renamed_scope<C: ConditionalCache>(
         crate::tools::gh_shared::RenameCheck::Metadata,
     )
     .await?
-    else {
-        return Ok(None);
+    {
+        CanonicalScope::Renamed(canonical) => canonical,
+        CanonicalScope::Missing(error) => return Ok(Rescope::Missing(error)),
+        CanonicalScope::Stands => return Ok(Rescope::Stands),
     };
     let warning = crate::tools::gh_shared::renamed_warning(
         query.owner.as_str(),
@@ -479,7 +626,7 @@ async fn renamed_scope<C: ConditionalCache>(
     let mut renamed = query.clone();
     renamed.owner = owner.parse().map_err(|error| decode(&error))?;
     renamed.repo = Some(repo.parse().map_err(|error| decode(&error))?);
-    Ok(Some((renamed, vec![warning])))
+    Ok(Rescope::Renamed(Box::new(renamed), vec![warning]))
 }
 
 /// Why a search is empty, with the route that verifies it.

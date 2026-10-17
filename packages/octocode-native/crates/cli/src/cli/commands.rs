@@ -44,7 +44,7 @@ impl ToolArgs {
             .ok_or_else(|| format!("The JSON query exceeds {} MiB.", MAX_QUERY_BYTES >> 20))?;
         // Editors on Windows save UTF-8 with a byte-order mark; JSON never
         // starts with one.
-        let text = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+        let text = &bytes[octocode_engine::text::bom_len(&bytes)..];
         String::from_utf8(text.to_vec())
             .map(Some)
             .map_err(|error| format!("Cannot read {source}: {error}"))
@@ -204,7 +204,7 @@ pub(super) enum Command {
     Install(super::mcp_install::InstallArgs),
 
     // ── Hidden commands (not part of the agent surface) ──────────────────────
-    /// Serve warm lspSearch calls for one workspace over a private socket.
+    /// Serve warm read-only tool calls for one workspace over a private socket.
     #[command(hide = true)]
     Serve {
         /// Socket path.
@@ -294,4 +294,25 @@ pub(super) enum ConfigCommand {
         /// Environment key or setting path, e.g. `GITHUB_TOKEN`.
         key: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ToolArgs;
+
+    /// A query file saved with a UTF-8 byte-order mark reads as its JSON.
+    #[test]
+    fn an_input_file_with_a_byte_order_mark_reads_as_its_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("query.json");
+        std::fs::write(&file, "\u{feff}{\"queries\":[]}").expect("query file");
+        let args = ToolArgs {
+            query: None,
+            input: Some(file),
+        };
+        assert_eq!(
+            args.query_text().expect("readable"),
+            Some("{\"queries\":[]}".to_owned())
+        );
+    }
 }

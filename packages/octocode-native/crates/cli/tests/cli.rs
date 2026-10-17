@@ -30,6 +30,8 @@ fn all_tools_enabled(command: &mut std::process::Command) -> &mut std::process::
     command
         .env("OCTOCODE_CLASSIFICATION_API", "fixture-key")
         .env("OCTOCODE_BETA", "true")
+        // The clone cache (ghCloneRepo) needs persistent storage.
+        .env("OCTOCODE_STORAGE_MODE", "persistent")
 }
 
 #[test]
@@ -750,7 +752,13 @@ fn tool_reads_query_from_input_file() {
 #[test]
 fn schema_lists_compact_field_lists_for_every_enabled_tool() {
     let workspace = Workspace::new();
-    let output = workspace.cli().arg("schema").output().expect("schema");
+    // Persistent storage: the clone cache (ghCloneRepo) needs it.
+    let output = workspace
+        .cli()
+        .env("OCTOCODE_STORAGE_MODE", "persistent")
+        .arg("schema")
+        .output()
+        .expect("schema");
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(stdout(&output).trim_end().lines().count(), 1);
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("schema JSON");
@@ -775,6 +783,7 @@ fn schema_lists_compact_field_lists_for_every_enabled_tool() {
     assert!(fields_of("lspSearch").starts_with("anchored["));
     let clone = workspace
         .cli()
+        .env("OCTOCODE_STORAGE_MODE", "persistent")
         .args(["schema", "ghCloneRepo"])
         .output()
         .expect("clone schema");

@@ -1,7 +1,7 @@
 //! Leads from an exact registry row to its source on GitHub.
 use crate::providers::artifact::{
     ArtifactError, ArtifactItem, ArtifactSearchQuery, ArtifactType, github_repo_dir, github_slug,
-    page_out_of_range,
+    page_out_of_range, release_ref_in,
 };
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, query_row};
@@ -19,7 +19,7 @@ pub(super) fn label_release_source(artifact: &mut ArtifactItem, exact: bool) {
             .repository
             .as_deref()
             .zip(artifact.version.as_deref())
-            .and_then(|(url, version)| version_ref(url, version));
+            .and_then(|(url, version)| release_ref_in(url, version));
     }
     artifact.verification = if artifact.source_ref.is_none() {
         (exact
@@ -69,6 +69,24 @@ pub(super) fn source_warning(artifact: &ArtifactItem) -> Option<String> {
     Some(format!("{package}: {reason}{source}."))
 }
 
+/// The warning of a row whose dependency versions name properties its
+/// release metadata does not define: they are shown as declared, and this
+/// says so instead of leaving a `${…}` to read as a version.
+pub(super) fn property_warning(artifact: &ArtifactItem) -> Option<String> {
+    let names = &artifact.unresolved_properties;
+    if names.is_empty() {
+        return None;
+    }
+    let package = match artifact.version.as_deref() {
+        Some(version) => format!("{} {version}", artifact.name),
+        None => artifact.name.clone(),
+    };
+    Some(format!(
+        "{package}: dependency versions {} are properties its POM does not define (a parent POM sets them); shown as declared.",
+        names.join(", ")
+    ))
+}
+
 /// The leads of an exact row whose repository is on GitHub: the
 /// ghStructure tree at the package's directory. A published entry point is
 /// not a source path (a built package names output the repository lacks), so
@@ -110,7 +128,7 @@ pub(super) fn source_leads(artifact: &ArtifactItem) -> Map<String, Value> {
 /// The query as a lead copies it: every field the caller set except the
 /// brief and the page cursor.
 fn copied(query: &ArtifactSearchQuery) -> Map<String, Value> {
-    match query_row(query, &["mainGoal", "reasoning", "page"]) {
+    match query_row(query, &["mainGoal", "reasoning", "page", "cursor"]) {
         Value::Object(row) => row,
         _ => Map::new(),
     }
@@ -227,23 +245,6 @@ pub(super) fn broaden_keywords(query: &ArtifactSearchQuery) -> Option<Value> {
 
 /// Broadened variants at most: one call's batch.
 const BROADEN_VARIANTS: usize = 5;
-
-/// The ref of a `/tree/<ref>` or `/blob/<ref>` repository URL when it names
-/// `version`'s release (`v8.1.4` for 8.1.4) and nothing after it: a branch
-/// or a monorepo directory URL is not release evidence.
-fn version_ref(url: &str, version: &str) -> Option<String> {
-    let rest = url.split_once("github.com/")?.1;
-    let rest = rest.split(['#', '?']).next()?;
-    let mut parts = rest.split('/').filter(|part| !part.is_empty());
-    let (_owner, _repo, kind, reference) =
-        (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
-    let tagged = !version.is_empty()
-        && reference
-            .strip_suffix(version)
-            .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with(['v', '-', '/', '@']));
-    (matches!(kind, "tree" | "blob") && parts.next().is_none() && tagged)
-        .then(|| reference.to_owned())
-}
 
 #[cfg(test)]
 mod tests {

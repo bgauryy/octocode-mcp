@@ -584,7 +584,7 @@ fn annotate_sibling_branch_fields(
             .copied()
             .filter(|branch| selectors_accept(branch, value))
             .collect::<Vec<_>>();
-        let requires = sibling_missing_fields(&same_mode, value, field)
+        let requires = sibling_missing_fields(root, &same_mode, value, field)
             .or_else(|| sibling_selector_values(&declaring, value));
         if let (Some(requires), Some(schema)) = (
             requires,
@@ -598,7 +598,12 @@ fn annotate_sibling_branch_fields(
 /// The required fields each declaring branch still lacks, one alternative per
 /// branch (`pattern or rule` for an astSearch match field), so the projector
 /// names every form that accepts the field, not only the first.
-fn sibling_missing_fields(declaring: &[&Value], value: &Value, field: &str) -> Option<Vec<Value>> {
+fn sibling_missing_fields(
+    root: &Value,
+    declaring: &[&Value],
+    value: &Value,
+    field: &str,
+) -> Option<Vec<Value>> {
     let mut options: Vec<String> = Vec::new();
     for branch in declaring {
         let missing = branch
@@ -608,6 +613,14 @@ fn sibling_missing_fields(declaring: &[&Value], value: &Value, field: &str) -> O
             .flatten()
             .filter_map(Value::as_str)
             .filter(|required| *required != field && value.get(*required).is_none())
+            .map(|required| {
+                let schema =
+                    super::super::resolve_ref(&branch["properties"][required], &root["$defs"]);
+                selector_literals(schema).map_or_else(
+                    || required.to_owned(),
+                    |literals| render_selector(required, &literals),
+                )
+            })
             .collect::<Vec<_>>();
         if missing.is_empty() {
             continue;
@@ -1134,10 +1147,10 @@ mod tests {
     }
 
     #[test]
-    fn clasify_noul_and_box_allow_missing_or_null_instructions() {
+    fn clasify_noul_criteria_and_box_allow_missing_or_null_instructions() {
         for question in [
-            json!({"type":"noul"}),
-            json!({"type":"noul","instructions":null,"criteria":null}),
+            json!({"type":"noul","criteria":{"true":"The state contains evidence."}}),
+            json!({"type":"noul","instructions":null,"criteria":{"false":"The state is empty."}}),
             json!({"type":"box"}),
             json!({"type":"box","instructions":null}),
         ] {
@@ -1148,7 +1161,65 @@ mod tests {
                     "questions":{"check":question}
                 }]}),
             )
-            .expect("Noul and Box do not require instructions");
+            .expect("Noul with criteria and Box do not require instructions");
+        }
+    }
+
+    #[test]
+    fn clasify_noul_rejects_missing_instructions_and_unusable_criteria() {
+        for question in [
+            json!({"type":"noul"}),
+            json!({"type":"noul","instructions":null,"criteria":null}),
+            json!({"type":"noul","instructions":" ","criteria":{"true":[],"false":{}}}),
+        ] {
+            assert!(
+                prepare_many_and_validate(
+                    "clasify",
+                    json!({"queries":[{
+                        "state":"Observed evidence",
+                        "questions":{"check":question}
+                    }]}),
+                )
+                .is_err(),
+                "a Noul question needs a usable predicate: {question}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_literal_selector_names_its_value_without_changing_plain_requirements() {
+        let root = json!({"$defs":{"mode":{"const":"match"}}});
+        let branch = json!({
+            "properties":{"operation":{"$ref":"#/$defs/mode"},"pattern":{"type":"string"}},
+            "required":["operation","pattern"]
+        });
+        assert_eq!(
+            super::sibling_missing_fields(&root, &[&branch], &json!({}), "payload"),
+            Some(vec![json!("operation:\"match\" and pattern")])
+        );
+    }
+
+    #[test]
+    fn section_fields_without_operation_name_the_sections_literal() {
+        for (field, value) in [
+            (
+                "resources",
+                json!({"file":{"tool":"localFetch","query":{"path":"a.rs"}}}),
+            ),
+            ("assessment", json!("opaque")),
+        ] {
+            let mut row = json!({"state":"evidence","questions":{"fact":{"type":"noul","instructions":"Supported?"}}});
+            row[field] = value;
+            let error = prepare_many_and_validate("clasify", json!({"queries":[row]}))
+                .expect_err("section-only field on evaluation");
+            let projected = crate::contracts::format_input_error("clasify", &error);
+            assert_eq!(
+                projected["error"],
+                format!(
+                    "Remove '{field}' from queries[0]: it applies only with operation:\"sections\"."
+                ),
+                "{projected}"
+            );
         }
     }
 
@@ -1245,7 +1316,7 @@ mod tests {
     #[test]
     fn selector_issues_lead_the_chosen_branch() {
         let issues = clasify_issues(json!({
-            "questions":{"check":{"type":"noul"}},
+            "questions":{"check":{"type":"noul","instructions":"The state contains evidence."}},
             "source":{"tool":"astSearch","query":{"path":"a.ts"}}
         }));
         assert_eq!(

@@ -445,7 +445,7 @@ fn admit(query: &RewriteRequest, options: &AstRewriteRuntimeOptions) -> Result<(
     if query.apply() && !options.allow_apply {
         return Err(RewriteError::new(
             "applyDisabled",
-            "Applying rewrites requires the separate astRewrite apply capability.",
+            "Applying rewrites requires OCTOCODE_BETA=true (local.beta), the gate that enables astRewrite apply.",
         ));
     }
     if query.apply() && query.snapshot().is_none() {
@@ -1036,8 +1036,8 @@ fn run_scan(
                 file: file.path.clone(),
                 range: RawRange {
                     byte_offset: RawByteRange {
-                        start: matched.byte_start as usize,
-                        end: matched.byte_end as usize,
+                        start: matched.range.start_byte as usize,
+                        end: matched.range.end_byte as usize,
                     },
                     start: RawPosition {
                         line: matched.range.start.line,
@@ -1050,7 +1050,10 @@ fn run_scan(
                 },
                 text: matched.replaced_text,
                 replacement: matched.replacement,
-                replacement_offsets: None,
+                replaced: RawByteRange {
+                    start: matched.byte_start as usize,
+                    end: matched.byte_end as usize,
+                },
                 meta_variables,
             });
         }
@@ -1272,11 +1275,7 @@ fn prepare_matches(
     let mut matches = engine
         .into_iter()
         .map(|matched| {
-            let replacement_range = matched
-                .replacement_offsets
-                .as_ref()
-                .unwrap_or(&matched.range.byte_offset);
-            let (start, end) = (replacement_range.start, replacement_range.end);
+            let (start, end) = (matched.replaced.start, matched.replaced.end);
             let mut captures = Map::new();
             for (name, value) in &matched.meta_variables.single {
                 captures.insert(
@@ -1305,9 +1304,10 @@ fn prepare_matches(
                 matched.replacement
             ]));
             // Lines and columns are 1-based like every tool; columns
-            // count UTF-16 code units, the end stays exclusive. `byteRange` names the
-            // replaced span and is emitted only when it differs from the
-            // matched `range.byteOffset`.
+            // count UTF-16 code units, the end stays exclusive. `range` is the
+            // matched node's span (bytes and positions alike); `byteRange`
+            // names the replaced span and is emitted only when the fixer
+            // widened it past the node (`expandStart`/`expandEnd`).
             let range = &matched.range;
             let mut public = json!({
                 "id":id,"path":path,

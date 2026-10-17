@@ -16,7 +16,7 @@ pub(super) const MAX_KEY_SCAN_BYTES: u64 = 10 * 1024 * 1024;
 
 /// What a stored scan's file must still hash to (see `expected_digest`).
 pub(super) type ExpectedDigest<'a> =
-    dyn Fn(&std::path::Path) -> Option<Option<super::manifest::Digest>> + 'a;
+    dyn Fn(&std::path::Path) -> Option<Option<super::manifest::Digest>> + Sync + 'a;
 
 /// What every stage of one page reads besides the scan: the query, the read
 /// policy, the root the rows name paths under, the bytes a stored scan's
@@ -28,6 +28,9 @@ pub(super) struct PageScope<'a, C> {
     pub(super) expected_digest: &'a ExpectedDigest<'a>,
     pub(super) security: &'a ContentSecurity,
     pub(super) cancel: &'a C,
+    /// This query's share of the cores for the page's parallel reads (see
+    /// [`crate::tools::workers::workers`]).
+    pub(super) walk_threads: Option<u32>,
 }
 
 /// (path, line, column) of every match whose value secret redaction
@@ -86,8 +89,8 @@ pub(super) fn redact_scan(
         paths,
         output_root,
         expected_digest,
-        security,
         cancel,
+        ..
     } = *scope;
     if let Some(stored) = stored.filter(|stored| stored.output_root == output_root) {
         cancel.check().map_err(ToolError::cancelled)?;
@@ -102,40 +105,134 @@ pub(super) fn redact_scan(
         output_root: output_root.to_path_buf(),
         ..Redaction::default()
     };
-    for (file_index, file) in parsed.files.iter_mut().enumerate() {
-        if let Ok(relative) = std::path::Path::new(&file.path).strip_prefix(output_root) {
-            file.path = relative.to_string_lossy().into_owned();
-        }
-        let source_path = output_root.join(&file.path);
-        let key_source = if file
-            .matches
-            .iter()
-            .any(|m| crate::security::snippet_may_hold_key_material(&m.value))
-        {
-            validate_matched(paths, &source_path)?;
-            let bytes = read_key_scan_bytes(&source_path);
-            let digest = bytes
-                .as_ref()
-                .map(|bytes| <[u8; 32]>::from(Sha256::digest(bytes)));
+    // Files redact independently: on parallel workers, merged in file order
+    // so the record (and the first failure) is the one a serial pass makes.
+    let mut outcomes = redact_files(&mut parsed.files, scope.walk_threads, |file| {
+        redact_file(scope, file)
+    });
+    outcomes.sort_by_key(|(file_index, _)| *file_index);
+    for (file_index, outcome) in outcomes {
+        let FileRedaction {
+            key_file,
+            changes,
+            path,
+        } = outcome?;
+        if let Some(digest) = key_file {
             record.key_files.push((file_index, digest));
-            if let (Some(digest), Some(expected)) = (digest, expected_digest(&source_path))
-                && expected != Some(digest)
-            {
-                return Err(changed_since_scan(query));
-            }
-            bytes
-                .map(|bytes| {
-                    let text = String::from_utf8_lossy(&bytes).into_owned();
-                    (crate::security::private_key_block_line_ranges(&text), text)
-                })
-                .filter(|(ranges, _)| !ranges.is_empty())
-        } else {
-            None
-        };
-        let key_lines = key_source
+        }
+        for (match_index, line, column, value) in changes {
+            redacted.insert((path.clone(), line, column));
+            record.changes.push((file_index, match_index, value));
+        }
+    }
+    Ok((redacted, record))
+}
+
+/// What redacting one file changed.
+struct FileRedaction {
+    /// Its key-block scan, with the digest of the bytes it read.
+    key_file: Option<Option<super::manifest::Digest>>,
+    /// The values replaced: match index, line, column, new value.
+    changes: Vec<(usize, u32, u32, String)>,
+    /// The file's row path.
+    path: String,
+}
+
+/// `redact` of every file, by file index, on scoped workers that each take
+/// the next unredacted file (the work per file varies widely).
+fn redact_files<T: Send>(
+    files: &mut [octocode_engine::types::TextSearchFile],
+    walk_threads: Option<u32>,
+    redact: impl Fn(&mut octocode_engine::types::TextSearchFile) -> T + Sync,
+) -> Vec<(usize, T)> {
+    let workers = crate::tools::workers::workers(walk_threads, files.len(), None);
+    let queue = std::sync::Mutex::new(files.iter_mut().enumerate());
+    let next = || {
+        queue
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .next()
+    };
+    let drain = || {
+        let mut done = Vec::new();
+        while let Some((index, file)) = next() {
+            done.push((index, redact(file)));
+        }
+        done
+    };
+    if workers < 2 {
+        return drain();
+    }
+    std::thread::scope(|scope| {
+        let tasks = (0..workers).map(|_| scope.spawn(drain)).collect::<Vec<_>>();
+        tasks
+            .into_iter()
+            .flat_map(|task| {
+                task.join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect()
+    })
+}
+
+/// Make one file's path relative to the output root and redact secrets in
+/// its values (see [`redact_scan`]).
+fn redact_file(
+    scope: &PageScope<'_, impl CancellationCheck>,
+    file: &mut octocode_engine::types::TextSearchFile,
+) -> Result<FileRedaction, ToolError> {
+    let PageScope {
+        query,
+        paths,
+        output_root,
+        expected_digest,
+        security,
+        cancel,
+        ..
+    } = *scope;
+    if let Ok(relative) = std::path::Path::new(&file.path).strip_prefix(output_root) {
+        file.path = relative.to_string_lossy().into_owned();
+    }
+    let mut key_material = false;
+    visit_values(scope, file, 0..file.matches.len(), |_, hit| {
+        key_material |= crate::security::snippet_may_hold_key_material(&hit.value);
+        if hit.deferred.is_some() {
+            hit.value = String::new();
+        }
+        Ok(())
+    })?;
+    let source_path = output_root.join(&file.path);
+    let mut key_file = None;
+    let key_source = if key_material {
+        validate_matched(paths, &source_path)?;
+        let bytes = read_key_scan_bytes(&source_path);
+        let digest = bytes
             .as_ref()
-            .map(|(ranges, text)| (ranges, text.lines().collect::<Vec<_>>()));
-        for (match_index, matched) in file.matches.iter_mut().enumerate() {
+            .map(|bytes| <[u8; 32]>::from(Sha256::digest(bytes)));
+        key_file = Some(digest);
+        if let (Some(digest), Some(expected)) = (digest, expected_digest(&source_path))
+            && expected != Some(digest)
+        {
+            return Err(changed_since_scan(query));
+        }
+        bytes
+            .map(|bytes| {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                (crate::security::private_key_block_line_ranges(&text), text)
+            })
+            .filter(|(ranges, _)| !ranges.is_empty())
+    } else {
+        None
+    };
+    let key_lines = key_source
+        .as_ref()
+        .map(|(ranges, text)| (ranges, text.lines().collect::<Vec<_>>()));
+    let mut changes = Vec::new();
+    visit_values(
+        scope,
+        file,
+        0..file.matches.len(),
+        |match_index, matched| {
             cancel.check().map_err(ToolError::cancelled)?;
             let changed = if let Some((ranges, lines)) = &key_lines
                 && crate::security::match_window_intersects_key_block(
@@ -156,15 +253,30 @@ pub(super) fn redact_scan(
                 matched.value = sanitized.content;
                 changed
             };
-            if changed {
-                redacted.insert((file.path.clone(), matched.line, matched.column));
-                record
-                    .changes
-                    .push((file_index, match_index, matched.value.clone()));
+            if matched.deferred.is_some() {
+                matched.deferred = None;
+                let price = super::layout::row_chars(matched, None, false);
+                matched.deferred = Some(u32::try_from(price).unwrap_or(u32::MAX));
+                if !changed {
+                    matched.value = String::new();
+                }
             }
-        }
-    }
-    Ok((redacted, record))
+            if changed {
+                changes.push((
+                    match_index,
+                    matched.line,
+                    matched.column,
+                    matched.value.clone(),
+                ));
+            }
+            Ok(())
+        },
+    )?;
+    Ok(FileRedaction {
+        key_file,
+        changes,
+        path: file.path.clone(),
+    })
 }
 
 /// `value` (a match row whose `line` is the match) with each of its lines
@@ -318,6 +430,7 @@ pub(super) fn verify_candidate(
     scope.cancel.check().map_err(ToolError::cancelled)?;
     let source = scope.output_root.join(&file.path);
     validate_matched(scope.paths, &source)?;
+    materialize(scope, file, 0..file.matches.len())?;
     let before = file
         .matches
         .iter()
@@ -336,8 +449,9 @@ pub(super) fn verify_candidate(
         },
     )
     .map_err(ToolError::cancelled)?;
-    for (matched, before) in file.matches.iter().zip(before) {
+    for (matched, before) in file.matches.iter_mut().zip(before) {
         if matched.value != before {
+            matched.deferred = None;
             redacted.insert((file.path.clone(), matched.line, matched.column));
         }
     }
@@ -397,6 +511,7 @@ pub(super) fn verify_shown(
     let mut to_outline: Vec<(std::path::PathBuf, Vec<u8>)> = Vec::new();
     for (index, rows) in &layout.shown {
         let file = &mut parsed.files[*index];
+        materialize(scope, file, rows.clone())?;
         cancel.check().map_err(ToolError::cancelled)?;
         // The check rewrites only the shown rows, so only they are compared.
         let end = rows.end.min(file.matches.len());
@@ -444,15 +559,16 @@ pub(super) fn verify_shown(
             }
         }
     }
-    outlines.extend(parallel_outlines(to_outline, security));
+    outlines.extend(parallel_outlines(to_outline, scope));
     Ok(unverified)
 }
 
 /// The outline of each read file, parsed on scoped threads; order-free.
 fn parallel_outlines(
     files: Vec<(std::path::PathBuf, Vec<u8>)>,
-    security: &ContentSecurity,
+    scope: &PageScope<'_, impl CancellationCheck>,
 ) -> Vec<(std::path::PathBuf, Option<super::enclosing::Outline>)> {
+    let security = scope.security;
     if files.len() < 2 {
         return files
             .into_iter()
@@ -462,9 +578,7 @@ fn parallel_outlines(
             })
             .collect();
     }
-    let workers = std::thread::available_parallelism()
-        .map_or(4, std::num::NonZeroUsize::get)
-        .min(files.len());
+    let workers = crate::tools::workers::workers(scope.walk_threads, files.len(), None);
     let per_worker = files.len().div_ceil(workers);
     let mut files = files;
     std::thread::scope(|scope| {
@@ -528,7 +642,7 @@ pub(super) fn cut_outlines(
         indexes.insert(source.clone(), index);
         reads.push((source, bytes));
     }
-    Ok(parallel_outlines(reads, scope.security)
+    Ok(parallel_outlines(reads, scope)
         .into_iter()
         .filter_map(|(source, outline)| Some((*indexes.get(&source)?, outline)))
         .collect())
@@ -923,6 +1037,144 @@ pub(super) fn read_bounded_line(
     }))
 }
 
+pub(super) fn materialize(
+    scope: &PageScope<'_, impl CancellationCheck>,
+    file: &mut octocode_engine::types::TextSearchFile,
+    rows: std::ops::Range<usize>,
+) -> Result<(), ToolError> {
+    visit_values(scope, file, rows, |_, _| Ok(()))
+}
+
+/// Reconstruct one value at a time, then release or consume it before reading
+/// the next. Every read is policy-checked and hashes the complete source; no
+/// result escapes when that digest differs from the search's bytes.
+fn visit_values(
+    scope: &PageScope<'_, impl CancellationCheck>,
+    file: &mut octocode_engine::types::TextSearchFile,
+    rows: std::ops::Range<usize>,
+    mut visit: impl FnMut(usize, &mut octocode_engine::types::TextSearchMatch) -> Result<(), ToolError>,
+) -> Result<(), ToolError> {
+    use std::io::BufRead;
+    let mut wanted = Vec::new();
+    for index in rows {
+        let Some(hit) = file.matches.get_mut(index) else {
+            continue;
+        };
+        scope.cancel.check().map_err(ToolError::cancelled)?;
+        if hit.deferred.is_some() && hit.value.is_empty() {
+            wanted.push(index);
+        } else {
+            visit(index, hit)?;
+        }
+    }
+    if wanted.is_empty() {
+        return Ok(());
+    }
+    wanted.sort_unstable_by_key(|&i| file.matches[i].line);
+    let path = scope.output_root.join(&file.path);
+    validate_matched(scope.paths, &path)?;
+    let source = file.source.ok_or_else(|| changed_since_scan(scope.query))?;
+    let (input, _) =
+        octocode_engine::text::open_regular(&path).map_err(|_| changed_since_scan(scope.query))?;
+    let mut input = std::io::BufReader::new(CheckedRead {
+        input,
+        cancel: scope.cancel,
+    });
+    let mut digest = Sha256::new();
+    let mut bytes = Vec::new();
+    let mut line = 0u32;
+    let mut at = 0;
+    let mut size = 0u64;
+    while at < wanted.len() {
+        scope.cancel.check().map_err(ToolError::cancelled)?;
+        bytes.clear();
+        // Match the engine's line-buffer ceiling, including a terminating newline.
+        let read = std::io::Read::take(&mut input, 64 * 1024 * 1024 + 1)
+            .read_until(b'\n', &mut bytes)
+            .map_err(|_| {
+                scope
+                    .cancel
+                    .check()
+                    .err()
+                    .map_or_else(|| changed_since_scan(scope.query), ToolError::cancelled)
+            })?;
+        if read == 0 {
+            break;
+        }
+        if read > 64 * 1024 * 1024 {
+            return Err(changed_since_scan(scope.query));
+        }
+        digest.update(&bytes);
+        size += read as u64;
+        line = line.saturating_add(1);
+        while let Some(&index) = wanted.get(at).filter(|&&i| file.matches[i].line == line) {
+            scope.cancel.check().map_err(ToolError::cancelled)?;
+            let value_bytes = if line == 1 {
+                &bytes[octocode_engine::text::bom_len(&bytes)..]
+            } else {
+                &bytes
+            };
+            let value_bytes = value_bytes
+                .split(|byte| *byte == 0)
+                .next()
+                .unwrap_or_default();
+            let text = String::from_utf8_lossy(value_bytes);
+            let text = text
+                .strip_suffix('\n')
+                .map(|s| s.strip_suffix('\r').unwrap_or(s))
+                .unwrap_or(&text);
+            let hit = &mut file.matches[index];
+            hit.value = octocode_engine::portable::materialize_search_line(
+                text,
+                line,
+                hit.column,
+                super::executor::effective_match_content_length(scope.query) as usize,
+            )
+            .value;
+            visit(index, hit)?;
+            at += 1;
+        }
+    }
+    // The remaining source still binds the snapshot, but has no values to
+    // reconstruct. A binary tail can be larger than the searcher's line cap.
+    drop(bytes);
+    let mut chunk = [0u8; 64 * 1024];
+    loop {
+        scope.cancel.check().map_err(ToolError::cancelled)?;
+        let read = std::io::Read::read(&mut input, &mut chunk).map_err(|_| {
+            scope
+                .cancel
+                .check()
+                .err()
+                .map_or_else(|| changed_since_scan(scope.query), ToolError::cancelled)
+        })?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&chunk[..read]);
+        size += read as u64;
+    }
+    if at != wanted.len()
+        || size != source.size
+        || <[u8; 32]>::from(digest.finalize()) != source.digest
+    {
+        return Err(changed_since_scan(scope.query));
+    }
+    Ok(())
+}
+
+struct CheckedRead<'a, C> {
+    input: std::fs::File,
+    cancel: &'a C,
+}
+
+impl<C: CancellationCheck> std::io::Read for CheckedRead<'_, C> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.cancel.check().map_err(std::io::Error::other)?;
+        std::io::Read::read(&mut self.input, bytes)
+    }
+}
+
 #[cfg(test)]
 mod verification_tests {
     use super::*;
@@ -930,6 +1182,7 @@ mod verification_tests {
 
     fn hit(line: u32, value: &str) -> octocode_engine::types::TextSearchMatch {
         octocode_engine::types::TextSearchMatch {
+            deferred: None,
             line,
             column: 0,
             byte_offset: 0,
@@ -940,6 +1193,90 @@ mod verification_tests {
             original_chars: None,
 
             original_bytes: None,
+        }
+    }
+
+    /// Files redact on parallel workers, yet the record lists key-block
+    /// reads and replaced values in file and match order, every time, and
+    /// each replaced value is marked redacted on its row.
+    #[test]
+    fn a_parallel_redaction_records_in_file_order() {
+        let dir = tempfile::tempdir().expect("fixture");
+        let (paths, security) = crate::tools::test_support::simple_policy(dir.path());
+        let key = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEAinteriorKeyBodyAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n-----END RSA PRIVATE KEY-----\n";
+        let mut files = Vec::new();
+        for index in 0..48 {
+            let path = dir.path().join(format!("f{index:02}.ts"));
+            let mut body = String::from("const plain = 1;\n");
+            let mut matches = vec![hit(1, "const plain = 1;")];
+            if index % 3 == 0 {
+                let secret =
+                    format!("const t = \"ghp_{index:02}ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\";");
+                body.push_str(&secret);
+                body.push('\n');
+                matches.push(hit(2, &secret));
+            }
+            if index % 7 == 0 {
+                body.push_str(key);
+                matches.push(hit(
+                    4,
+                    "MIIEpQIBAAKCAQEAinteriorKeyBodyAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ));
+            }
+            std::fs::write(&path, body).expect("fixture");
+            files.push(octocode_engine::types::TextSearchFile {
+                path: path.to_string_lossy().into_owned(),
+                match_count: matches.len() as u32,
+                matches,
+                source: None,
+            });
+        }
+        let scan = octocode_engine::types::TextSearchResult {
+            files,
+            stats: Default::default(),
+        };
+        let query: LocalSearchQuery = serde_json::from_value(serde_json::json!({
+            "path": dir.path(), "matchString": "const", "mainGoal": "test", "reasoning": "test"
+        }))
+        .expect("query");
+        let expected = |_: &std::path::Path| None;
+        let scope = PageScope {
+            query: &query,
+            paths: &paths,
+            output_root: dir.path(),
+            expected_digest: &expected,
+            security: &security,
+            cancel: &NeverCancel,
+            walk_threads: None,
+        };
+        let redact = || {
+            let mut parsed = scan.clone();
+            let (redacted, record) = redact_scan(&scope, &mut parsed, None).expect("redaction");
+            (redacted, record, parsed)
+        };
+        let (redacted, record, parsed) = redact();
+        for _ in 0..3 {
+            let (again, again_record, again_parsed) = redact();
+            assert_eq!(again, redacted);
+            assert_eq!(again_record, record);
+            assert_eq!(
+                format!("{:?}", again_parsed.files),
+                format!("{:?}", parsed.files)
+            );
+        }
+        let order = record
+            .changes
+            .iter()
+            .map(|(file, row, _)| (*file, *row))
+            .collect::<Vec<_>>();
+        assert!(order.is_sorted(), "{order:?}");
+        assert!(record.key_files.iter().map(|(file, _)| *file).is_sorted());
+        assert_eq!(record.key_files.len(), 7, "{:?}", record.key_files);
+        assert!(record.changes.len() >= 16 + 7, "{:?}", record.changes);
+        assert_eq!(redacted.len(), record.changes.len());
+        assert!(parsed.files.iter().all(|file| !file.path.starts_with('/')));
+        for (file, row, value) in &record.changes {
+            assert_eq!(&parsed.files[*file].matches[*row].value, value);
         }
     }
 

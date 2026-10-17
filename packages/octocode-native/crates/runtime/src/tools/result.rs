@@ -6,8 +6,8 @@ use serde_json::{Map, Value};
 use crate::tools::id::ToolId;
 
 /// One executable follow-up call, `{tool, query, confidence?}`. The
-/// `query` is always the complete tool input (`{queries:[row]}` plus any
-/// response-window field), so MCP and the CLI run it verbatim. Every `next`
+/// `query` is always the complete tool input: query rows for new work, or
+/// snapshot and paging fields for a saved response. MCP and CLI run it verbatim. Every `next`
 /// page and `hints` lead is built here; debug builds and tests validate each
 /// one against the strict input contract when it is built.
 #[must_use]
@@ -23,7 +23,7 @@ impl Continuation {
         Self::input(tool, serde_json::json!({ "queries": [row] }))
     }
 
-    /// A complete input: rows plus response-window fields.
+    /// A complete input: query rows or saved-response paging fields.
     pub fn input(tool: ToolId, input: Value) -> Self {
         Self {
             tool,
@@ -92,7 +92,7 @@ pub fn continuation_row_mut(call: &mut Value) -> Option<&mut Value> {
 }
 
 /// How a call failed, for the caller's exit code and error state.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum FailureKind {
     NotFound,
     Authentication,

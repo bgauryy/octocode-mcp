@@ -1,3 +1,6 @@
+mod capture;
+pub(crate) use capture::capture_text;
+pub(crate) use executor::MAX_SOURCE_BYTES;
 mod block;
 pub(crate) use block::BLOCK_MAX_LINES;
 pub(crate) use pagination::LINE_PAGE_BYTES;

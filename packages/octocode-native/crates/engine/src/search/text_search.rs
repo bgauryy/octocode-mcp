@@ -268,6 +268,7 @@ enum Mode {
 #[derive(Clone, Copy)]
 struct MatchWork {
     materialize_line: bool,
+    deferred_snippet: Option<usize>,
     enumerate_submatches: bool,
     collect_spans: bool,
     /// Sum [`relevance::line_weight`] over matched lines.
@@ -277,6 +278,7 @@ struct MatchWork {
 fn match_work(mode: Mode, only_matching: bool) -> MatchWork {
     MatchWork {
         materialize_line: mode == Mode::Normal,
+        deferred_snippet: None,
         enumerate_submatches: mode != Mode::CountLines,
         collect_spans: mode == Mode::Normal && only_matching,
         weigh_lines: false,
@@ -733,6 +735,7 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                         let value = span_value(&line_text, start, end);
                         let column = columns.column(start) as u32;
                         om.push(TextSearchMatch {
+                            deferred: None,
                             line: line_number,
                             column,
                             byte_offset: start as u32,
@@ -754,6 +757,7 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
             if count == 0 {
                 count = 1;
                 self.om_matches.push(TextSearchMatch {
+                    deferred: None,
                     line: line_number,
                     column: 0,
                     byte_offset: 0,
@@ -780,11 +784,19 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                     &line_text,
                     lossy_offset(bytes, first_start.unwrap_or(0)).min(line_text.len()),
                 ) as u32;
-                self.entry.raw_matches.push(RawMatch {
-                    line_text,
-                    line_number,
-                    column,
-                });
+                if let Some(limit) = self.work.deferred_snippet {
+                    let mut hit =
+                        super::text_parser::line_match(&line_text, line_number, column, limit);
+                    hit.value = String::new();
+                    hit.deferred = Some(0);
+                    self.entry.prepared.push(hit);
+                } else {
+                    self.entry.raw_matches.push(RawMatch {
+                        line_text,
+                        line_number,
+                        column,
+                    });
+                }
             }
         }
 
@@ -1392,14 +1404,16 @@ impl<M: Matcher> FileSearcher<'_, M> {
     /// and the rest of the file.
     fn search(&mut self, file: &std::fs::File, len: u64) -> std::io::Result<FileOutcome> {
         let hash = self.digest_max_bytes.is_some_and(|max| len <= max);
+        let mut work = self.work;
+        if work.deferred_snippet.is_some() {
+            let prefix = read_prefix(file, 3)?;
+            if prefix.starts_with(&[0xff, 0xfe]) || prefix.starts_with(&[0xfe, 0xff]) {
+                work.deferred_snippet = None;
+            }
+            std::io::Seek::seek(&mut &*file, std::io::SeekFrom::Start(0))?;
+        }
         let mut tap = SourceTap::new(file, hash, self.keep_head, self.copy);
-        let mut sink = CollectSink::new(
-            self.matcher,
-            self.work,
-            self.deadline,
-            self.stop,
-            self.words,
-        );
+        let mut sink = CollectSink::new(self.matcher, work, self.deadline, self.stop, self.words);
         // `search_file` reads through this same reader path: memory maps are
         // never used, and multiline reads the whole file under the heap limit.
         self.searcher
@@ -1525,7 +1539,7 @@ fn collect<M: Matcher + Sync>(
             .flatten(),
     };
     let scope = &scope;
-    walk_builder.build_parallel().run(|| {
+    let worker = || {
         let path_filter = Arc::clone(&path_filter);
         let mut worker_recs = WorkerRecs {
             local: Vec::new(),
@@ -1543,6 +1557,13 @@ fn collect<M: Matcher + Sync>(
             context_lines,
             // `mode`/`only_matching` are invariant for the whole search.
             work: MatchWork {
+                deferred_snippet: (opts.defer_values
+                    && opts.digest_max_bytes == Some(u64::MAX)
+                    && !opts.perl_regex.unwrap_or(false)
+                    && context_lines == 0
+                    && !only_matching
+                    && !opts.multiline.unwrap_or(false))
+                .then_some(opts.max_snippet_chars.unwrap_or(DEFAULT_MAX_SNIPPET_CHARS) as usize),
                 weigh_lines: ranks_by_relevance(opts)
                     && lists_match_density(mode)
                     && !opts.invert_match.unwrap_or(false),
@@ -1556,8 +1577,20 @@ fn collect<M: Matcher + Sync>(
             words: scope.words.as_ref(),
         };
 
-        Box::new(move |dent| scope.visit(dent, &*path_filter, &mut files, &mut worker_recs))
-    });
+        move |dent| scope.visit(dent, &*path_filter, &mut files, &mut worker_recs)
+    };
+    // A file root is one entry: the parallel walker would spawn its pool and
+    // poll in idle 1 ms sleeps to search it, so it is searched on this thread.
+    if Path::new(&opts.path).is_file() {
+        let mut visit = worker();
+        for dent in walk_builder.build() {
+            if matches!(visit(dent), WalkState::Quit) {
+                break;
+            }
+        }
+    } else {
+        walk_builder.build_parallel().run(|| Box::new(worker()));
+    }
     Ok(())
 }
 
@@ -1739,7 +1772,7 @@ impl WalkScope<'_> {
         }
         if self.prune.prunes_entry(&dent) {
             let relative = dent.path().strip_prefix(&opts.path).unwrap_or(dent.path());
-            state.record_pruned(relative.to_string_lossy().replace('\\', "/"));
+            state.record_pruned(crate::text::slash_path(relative));
             return Err(WalkState::Skip);
         }
         if !dent.file_type().is_some_and(|t| t.is_file()) {

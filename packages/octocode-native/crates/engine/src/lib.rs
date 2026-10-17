@@ -16,6 +16,7 @@ pub mod graph;
 pub mod lsp;
 pub mod minify;
 pub mod portable;
+pub mod process_env;
 pub mod scan_budget;
 pub mod search;
 pub mod security;

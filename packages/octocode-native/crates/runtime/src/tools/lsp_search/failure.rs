@@ -1046,22 +1046,59 @@ pub(super) fn flagged_with(row: &Value, reasons: &[&str]) -> bool {
 /// the files).
 pub(super) const TEXT_CHECK: &str = "a localSearch of the name";
 
-/// [`text_search_lead`] over files ignore rules keep out of the lexical
-/// scans: each row lifts them with `includeIgnored`.
+/// Recover known ignored paths and, when unfinished, the unsearched scope.
+/// If the combined queries exceed the batch limit, an unfiltered root search
+/// covers the known paths, including nested roots and files outside the family.
 pub(super) fn ignored_text_lead(
     name: &str,
     scope: &super::scope::Scope,
     files: &[String],
+    unfinished: bool,
 ) -> Value {
-    let mut lead = text_search_lead(name, &scope.root, &scope.include, Some(files)).build();
-    for row in lead["query"]["queries"]
-        .as_array_mut()
-        .into_iter()
-        .flatten()
-    {
+    let mut rows = Vec::new();
+    for file in files {
+        let row = text_search_row(name, file);
+        if !rows.contains(&row) {
+            rows.push(row);
+        }
+    }
+    let mut root = text_search_row(name, &scope.root);
+    if !scope.include.is_empty() {
+        root["include"] = json!(scope.include);
+    }
+    if (unfinished || rows.is_empty()) && !rows.contains(&root) {
+        rows.push(root.clone());
+    }
+    let broad = rows.len() > LISTED_TEXT_FILES;
+    if broad {
+        let mut recovery = text_search_row(name, &scope.root);
+        // A root walk must reach paths that explicit file/root queries reach.
+        recovery["defaultExcludes"] = json!(false);
+        recovery["includeHidden"] = json!(true);
+        rows = vec![recovery];
+        if unfinished && !rows.contains(&root) {
+            rows.push(root);
+        }
+    }
+    for row in &mut rows {
         row["includeIgnored"] = json!(true);
     }
-    lead
+    crate::tools::result::Continuation::input(ToolId::LocalSearch, json!({"queries": rows}))
+        .confidence(if broad || unfinished || files.is_empty() {
+            "medium"
+        } else {
+            "high"
+        })
+        .build()
+}
+
+fn text_search_row(name: &str, path: &str) -> Value {
+    json!({
+        "path": path,
+        "matchString": super::render::word_pattern(name),
+        "regex": "rust",
+        "caseMode": "sensitive",
+    })
 }
 
 /// The one lexical lead every lspSearch row builds: one row per listed file
@@ -1077,14 +1114,7 @@ pub(super) fn text_search_lead(
     include: &[String],
     files: Option<&[String]>,
 ) -> crate::tools::result::Continuation {
-    let row = |path: &str| {
-        json!({
-            "path": path,
-            "matchString": super::render::word_pattern(name),
-            "regex": "rust",
-            "caseMode": "sensitive",
-        })
-    };
+    let row = |path: &str| text_search_row(name, path);
     if let Some(files) = files.filter(|files| (1..=LISTED_TEXT_FILES).contains(&files.len())) {
         let rows = files.iter().map(|file| row(file)).collect::<Vec<_>>();
         return crate::tools::result::Continuation::input(
@@ -1150,6 +1180,82 @@ mod tests {
                 .sum()
             })
             .collect()
+    }
+
+    #[test]
+    fn ignored_recovery_deduplicates_queries_and_reserves_room_for_unfinished_scope() {
+        let scope = super::super::scope::Scope::new("/r".into(), vec!["*.ts".into()]);
+        let files = (0..4).map(|i| format!("/r/f{i}.js")).collect::<Vec<_>>();
+        let mut repeated = files.clone();
+        repeated.extend(files.clone());
+        let lead = ignored_text_lead("x", &scope, &repeated, true);
+        let rows = lead["query"]["queries"].as_array().expect("queries");
+        assert_eq!(rows.len(), LISTED_TEXT_FILES);
+        for (row, path) in rows.iter().zip(&files) {
+            assert_eq!(row["path"], *path);
+            assert!(row.get("include").is_none());
+            assert_eq!(row["includeIgnored"], true);
+        }
+        assert_eq!(rows[4]["path"], "/r");
+        assert_eq!(rows[4]["include"], json!(["*.ts"]));
+        assert_eq!(rows[4]["includeIgnored"], true);
+
+        let scope = super::super::scope::Scope::new("/r".into(), Vec::new());
+        let lead = ignored_text_lead("x", &scope, &["/r".into(), "/r".into()], true);
+        assert_eq!(
+            lead["query"]["queries"].as_array().expect("queries").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn ignored_recovery_overflow_keeps_out_of_family_and_nested_paths_searchable() {
+        let root = tempfile::tempdir().expect("root");
+        std::fs::create_dir(root.path().join(".git")).expect("repository");
+        std::fs::write(root.path().join(".gitignore"), "*.js\n").expect("ignore rules");
+        let mut files = Vec::new();
+        for relative in ["a.js", "b.js", ".hidden/c.js", "dist/d.js"] {
+            let path = root.path().join(relative);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+            std::fs::write(&path, "needle();\n").expect("source");
+            files.push(path.to_string_lossy().into_owned());
+        }
+        let nested = root.path().join("repos/child");
+        std::fs::create_dir_all(nested.join(".git")).expect("nested repository");
+        std::fs::write(nested.join("e.js"), "needle();\n").expect("nested source");
+        files.push(nested.to_string_lossy().into_owned());
+        let scope = super::super::scope::Scope::new(
+            root.path().to_string_lossy().into_owned(),
+            vec!["*.ts".into()],
+        );
+        let exact = ignored_text_lead("needle", &scope, &files, false);
+        assert_eq!(
+            exact["query"]["queries"].as_array().expect("queries").len(),
+            5
+        );
+        assert_eq!(run_rows(&exact, root.path()), vec![1; 5]);
+
+        let unfinished = ignored_text_lead("needle", &scope, &files, true);
+        let rows = unfinished["query"]["queries"].as_array().expect("queries");
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].get("include").is_none());
+        assert_eq!(rows[0]["defaultExcludes"], false);
+        assert_eq!(rows[0]["includeHidden"], true);
+        assert_eq!(rows[1]["include"], json!(["*.ts"]));
+        assert_eq!(run_rows(&unfinished, root.path()), vec![5, 0]);
+
+        let sixth = root.path().join("f.js");
+        std::fs::write(&sixth, "needle();\n").expect("sixth source");
+        files.push(sixth.to_string_lossy().into_owned());
+        let complete = ignored_text_lead("needle", &scope, &files, false);
+        assert_eq!(
+            complete["query"]["queries"]
+                .as_array()
+                .expect("queries")
+                .len(),
+            1
+        );
+        assert_eq!(run_rows(&complete, root.path()), vec![6]);
     }
 
     #[test]

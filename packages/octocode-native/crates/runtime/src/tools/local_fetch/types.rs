@@ -34,7 +34,14 @@ impl LocalFetchQuery {
     }
     /// Sets the read to the one line span `start..=end`.
     pub(crate) fn set_line_span(&mut self, start: usize, end: usize) {
-        self.ranges = format!("{start}-{end}").parse().ok().into_iter().collect();
+        self.set_line_spans(&[(start, end)]);
+    }
+    /// Sets the read to the line spans `start..=end`, in order.
+    pub(crate) fn set_line_spans(&mut self, spans: &[(usize, usize)]) {
+        self.ranges = spans
+            .iter()
+            .filter_map(|(start, end)| format!("{start}-{end}").parse().ok())
+            .collect();
     }
     /// `regex:"rust"` or `"pcre2"`: `matchString` is a regular expression.
     pub(crate) fn is_regex(&self) -> bool {
@@ -189,19 +196,24 @@ impl Serialize for FetchCall {
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct NextCalls {
-    /// Recovery of a classified view without classification: exactly the
-    /// unknown chunks when they fit one read, else the complete view.
+    /// Recovery of a classified view without classification: the complete
+    /// unfiltered view.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unfiltered: Option<FetchCall>,
-    /// The complete unfiltered view, beside an `unfiltered` that reads only
-    /// the unknown chunks.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub unfiltered2: Option<FetchCall>,
-    /// The unknown chunks' `ranges` past what `unfiltered` reads
-    /// (`unfiltered3`, `unfiltered4`, …): each a call of as many rows of
-    /// `ranges` as one call takes, together reaching every unknown chunk.
+    /// Exactly the unknown chunks, beside `unfiltered`, when they are
+    /// narrower than the complete view.
+    #[serde(
+        rename = "unfilteredUnknown",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub unfiltered_unknown: Option<FetchCall>,
+    /// The unknown chunks' `ranges` past what `unfilteredUnknown` reads
+    /// (`unfilteredUnknown2`, `unfilteredUnknown3`, …): each a call of as
+    /// many rows of `ranges` as one call takes, together reaching every
+    /// unknown chunk.
     #[serde(flatten)]
-    pub unfiltered_rest: serde_json::Map<String, serde_json::Value>,
+    pub unfiltered_unknown_rest: serde_json::Map<String, serde_json::Value>,
     /// The same classified read judging the chunks its candidate budget
     /// left unjudged.
     #[serde(
@@ -214,6 +226,14 @@ pub struct NextCalls {
     pub continue_window: Option<FetchCall>,
     #[serde(rename = "readBoundedLines", skip_serializing_if = "Option::is_none")]
     pub read_bounded_lines: Option<FetchCall>,
+    /// The other requested `ranges` of a streamed multi-range read refused
+    /// for the span `readBoundedLines` reads on its own.
+    #[serde(
+        rename = "readOtherRanges",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub read_other_ranges: Option<FetchCall>,
     /// Offset-zero recovery for a page requested past the end of the view.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub restart: Option<FetchCall>,
@@ -269,11 +289,12 @@ impl NextCalls {
     pub fn absorb(&mut self, other: NextCalls) {
         let NextCalls {
             unfiltered,
-            unfiltered2,
-            unfiltered_rest,
+            unfiltered_unknown,
+            unfiltered_unknown_rest,
             next_candidate_page,
             continue_window,
             read_bounded_lines,
+            read_other_ranges,
             restart,
             whole_lines,
             continue_block,
@@ -287,10 +308,11 @@ impl NextCalls {
         } = other;
         for (mine, theirs) in [
             (&mut self.unfiltered, unfiltered),
-            (&mut self.unfiltered2, unfiltered2),
+            (&mut self.unfiltered_unknown, unfiltered_unknown),
             (&mut self.next_candidate_page, next_candidate_page),
             (&mut self.continue_window, continue_window),
             (&mut self.read_bounded_lines, read_bounded_lines),
+            (&mut self.read_other_ranges, read_other_ranges),
             (&mut self.restart, restart),
             (&mut self.whole_lines, whole_lines),
             (&mut self.continue_block, continue_block),
@@ -303,8 +325,8 @@ impl NextCalls {
                 *mine = theirs;
             }
         }
-        if self.unfiltered_rest.is_empty() {
-            self.unfiltered_rest = unfiltered_rest;
+        if self.unfiltered_unknown_rest.is_empty() {
+            self.unfiltered_unknown_rest = unfiltered_unknown_rest;
         }
         for (mine, theirs) in [
             (&mut self.view_tree, view_tree),
@@ -325,10 +347,11 @@ impl NextCalls {
     pub fn reads_mut(&mut self) -> impl Iterator<Item = &mut FetchCall> {
         [
             &mut self.unfiltered,
-            &mut self.unfiltered2,
+            &mut self.unfiltered_unknown,
             &mut self.next_candidate_page,
             &mut self.continue_window,
             &mut self.read_bounded_lines,
+            &mut self.read_other_ranges,
             &mut self.restart,
             &mut self.whole_lines,
             &mut self.continue_block,
@@ -757,6 +780,10 @@ pub struct SourceFacts {
     /// Bytes the first page of a selected view (matches, ranges) holds;
     /// `None` keeps the line page budget. Continuations use that budget.
     pub first_page_bytes: Option<usize>,
+    /// The bytes begin inside the file, past its first line (a streamed
+    /// window): a U+FEFF leading them is text, not the file's byte-order
+    /// mark.
+    pub interior: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -773,6 +800,7 @@ pub struct ValidatedRead {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PathFailure {
+    /// The row's `errorCode`: the policy's shared code, else the access code.
     pub code: String,
     pub message: String,
     pub safe_path: Option<String>,
@@ -927,7 +955,7 @@ impl PathAccess for crate::policy::path::PathPolicy {
                 let missing = error.code == crate::policy::PolicyErrorCode::NotFound;
                 let resolved = self.expand_and_resolve(path);
                 PathFailure {
-                    code: error.local_error_code("pathValidationFailed").into(),
+                    code: error.local_error_code("fileAccessFailed").into(),
                     message: error.message,
                     safe_path: error.safe_path,
                     resource_missing: missing,

@@ -38,10 +38,26 @@ async fn refs<C: octocode_github::ConditionalCache>(
     // One named ref resolves to its commit (gh `api git/ref/tags/X`), not a
     // page of every tag.
     if let Some(reference) = query.ref_.as_deref() {
-        let sha = provider
+        let sha = match provider
             .resolve_reference(owner, repo, Some(reference), false, context)
             .await
-            .map_err(|error| super::traverse::missing_ref(error, owner, repo, reference))?;
+        {
+            Ok(sha) => sha,
+            Err(error) => {
+                // The failure names a renamed repository as it is now.
+                let renamed = super::canonical(provider, query, context)
+                    .await
+                    .ok()
+                    .flatten();
+                let at = renamed.as_ref().map_or(query, |(_, canonical)| canonical);
+                return Err(super::traverse::missing_ref(
+                    error,
+                    at.owner.as_str(),
+                    at.repo.as_str(),
+                    reference,
+                ));
+            }
+        };
         // A full SHA names itself: a commit, no ref lookup needed.
         let kind = if sha.eq_ignore_ascii_case(reference) {
             RefMatch::Commit
@@ -150,7 +166,8 @@ async fn refs<C: octocode_github::ConditionalCache>(
     Ok(ToolData::from(value))
 }
 
-/// Bytes of code per language on the default branch, largest first.
+/// Bytes of code per language on the default branch, largest first, with
+/// the rename warning a renamed repository's other operations carry.
 async fn languages<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
@@ -164,5 +181,9 @@ async fn languages<C: octocode_github::ConditionalCache>(
         .into_iter()
         .map(|(name, bytes)| (name, json!(bytes)))
         .collect();
-    Ok(ToolData::from(json!({ "languages": languages })))
+    let mut value = json!({ "languages": languages });
+    if let Some((warning, _)) = super::canonical(provider, query, context).await? {
+        push_warning_front(&mut value, warning);
+    }
+    Ok(ToolData::from(value))
 }

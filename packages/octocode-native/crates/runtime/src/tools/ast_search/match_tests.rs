@@ -944,3 +944,93 @@ fn clipped_values_past_one_read_batch_are_named() {
     }
     assert!(warning.contains("z.rs 2-503"), "{out}");
 }
+
+/// A page number without a snapshot asks for that page of the current
+/// result in every astSearch variant (match, symbols of a file and of a
+/// directory, syntaxTree), as in structureSearch: never `staleSnapshot`.
+/// Only a snapshot that no longer matches is stale.
+#[test]
+fn a_page_without_a_snapshot_pages_the_current_result_in_every_variant() {
+    let root = Fixture::new();
+    for name in ["a.ts", "b.ts", "c.ts"] {
+        root.write(
+            name,
+            "export function one() { call(1); }\nexport function two() { call(2); }\nexport function three() { call(3); }\n",
+        );
+    }
+    let file = root.0.join("a.ts");
+    for query in [
+        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"call($A)","pageSize":1}),
+        json!({"operation":"symbols","path":file,"pageSize":1}),
+        json!({"operation":"symbols","path":root.0,"pageSize":1}),
+        json!({"operation":"syntaxTree","path":file,"pageSize":5}),
+    ] {
+        let first = run(&root.0, query.clone()).expect("first page");
+        let next = first["next"]["nextPage"]["query"]["queries"][0].clone();
+        assert!(next.is_object(), "{first}");
+        let mut bare = next.clone();
+        bare.as_object_mut().expect("row").remove("snapshot");
+        let pinned = run(&root.0, next.clone()).expect("pinned page 2");
+        let fresh = run(&root.0, bare).expect("bare page 2");
+        assert!(fresh.get("errorCode").is_none(), "{query}: {fresh}");
+        assert_eq!(
+            fresh["pagination"], pinned["pagination"],
+            "{query}: {fresh}"
+        );
+        let mut wrong = next;
+        wrong["snapshot"] = json!("not-the-snapshot");
+        let stale = run(&root.0, wrong).expect("stale");
+        assert_eq!(stale["errorCode"], "staleSnapshot", "{query}: {stale}");
+    }
+}
+
+/// A pattern that compiles in one grammar of a mixed scope: the files of
+/// the other grammar fail to compile with one identical diagnostic, stated
+/// once with every path (no path dropped). No call with this pattern
+/// reaches them, so the cut is a terminal limit, and `narrowScope` runs
+/// the same query over the grammar that compiles it.
+#[test]
+fn compile_failures_group_by_diagnostic_and_end_on_a_terminal_limit() {
+    let root = Fixture::new();
+    root.write("main.py", "def run(a):\n    return a\n");
+    // Each spells the pattern's anchor, so the prefilter reads them all.
+    for name in ["a.rs", "b.rs", "c.rs"] {
+        root.write(name, "// def\nfn x() {}\n");
+    }
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"pattern":"def $F($$$A):\n    $$$B","resultView":"countMatches"}),
+    )
+    .expect("python matches");
+    assert_eq!(out["matchCount"], 1, "{out}");
+    let failed = out["diagnostics"]
+        .as_array()
+        .unwrap_or_else(|| panic!("diagnostics: {out}"))
+        .iter()
+        .filter(|row| row["code"] == "structural.query.compileFailed")
+        .collect::<Vec<_>>();
+    assert_eq!(failed.len(), 1, "one row per distinct diagnostic: {out}");
+    let files = failed[0]["files"].as_array().expect("every path");
+    assert_eq!(files.len(), 3, "{out}");
+    for name in ["a.rs", "b.rs", "c.rs"] {
+        assert!(
+            files.iter().any(|file| file["path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with(name))),
+            "{name}: {out}"
+        );
+    }
+    assert!(failed[0].get("path").is_none(), "{out}");
+    assert_eq!(out["terminalLimit"], true, "{out}");
+    assert!(
+        out["partialReasons"]
+            .as_array()
+            .is_some_and(|reasons| reasons.contains(&json!("compileFailed"))),
+        "{out}"
+    );
+    let narrow = &out["next"]["narrowScope"]["query"]["queries"][0];
+    assert_eq!(narrow["language"], "python", "{out}");
+    let narrowed = run(&root.0, narrow.clone()).expect("narrowed");
+    assert_eq!(narrowed["matchCount"], 1, "{narrowed}");
+    assert!(narrowed.get("terminalLimit").is_none(), "{narrowed}");
+}

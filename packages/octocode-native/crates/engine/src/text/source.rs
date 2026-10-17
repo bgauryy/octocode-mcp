@@ -86,24 +86,35 @@ pub struct Decoded<'a> {
 /// fallback is flagged with a warning. Bytes holding no valid non-ASCII
 /// UTF-8 sequence decode as Latin-1 (ISO-8859-1), one char per byte; text
 /// that is mostly UTF-8 keeps it and replaces the stray bytes (U+FFFD).
+/// `bytes` start a file: a leading UTF-8 BOM is not text of line 1 (as
+/// editors and localSearch show it), so no decoding keeps it.
 pub fn decode(bytes: &[u8]) -> Decoded<'_> {
-    if let Ok(text) = std::str::from_utf8(bytes) {
-        return Decoded {
-            text: Cow::Borrowed(text),
-            warning: None,
-        };
-    }
-    if bytes.utf8_chunks().any(|chunk| !chunk.valid().is_ascii()) {
-        return Decoded {
-            text: String::from_utf8_lossy(bytes),
-            warning: Some("Not valid UTF-8: invalid bytes were replaced with U+FFFD."),
-        };
-    }
-    Decoded {
-        text: Cow::Owned(bytes.iter().map(|&byte| char::from(byte)).collect()),
-        warning: Some(
-            "Not valid UTF-8: decoded as Latin-1 (ISO-8859-1); characters from other 8-bit encodings may be approximate, and byte offsets count the decoded UTF-8 text.",
-        ),
+    Decoded::interior(&bytes[super::bom_len(bytes)..])
+}
+
+impl<'a> Decoded<'a> {
+    /// [`decode`] of bytes that do not start a file (a window that begins
+    /// at a later line): no byte-order mark can lead them, so every U+FEFF
+    /// they hold is text.
+    pub fn interior(bytes: &'a [u8]) -> Self {
+        if let Ok(text) = std::str::from_utf8(bytes) {
+            return Self {
+                text: Cow::Borrowed(text),
+                warning: None,
+            };
+        }
+        if bytes.utf8_chunks().any(|chunk| !chunk.valid().is_ascii()) {
+            return Self {
+                text: String::from_utf8_lossy(bytes),
+                warning: Some("Not valid UTF-8: invalid bytes were replaced with U+FFFD."),
+            };
+        }
+        Self {
+            text: Cow::Owned(bytes.iter().map(|&byte| char::from(byte)).collect()),
+            warning: Some(
+                "Not valid UTF-8: decoded as Latin-1 (ISO-8859-1); characters from other 8-bit encodings may be approximate, and byte offsets count the decoded UTF-8 text.",
+            ),
+        }
     }
 }
 
@@ -259,5 +270,30 @@ mod tests {
         assert!(latin.warning.is_some_and(|w| w.contains("Latin-1")));
         let mixed = decode(b"\xc3\xa9\xff");
         assert_eq!(mixed.text, "\u{e9}\u{fffd}");
+    }
+
+    /// A leading UTF-8 BOM is not text in any decoding: valid UTF-8 stays
+    /// borrowed, and the fallbacks neither keep U+FEFF nor show it as
+    /// Latin-1 `ï»¿`. A later U+FEFF is text.
+    #[test]
+    fn decode_drops_a_leading_bom_in_every_decoding() {
+        let utf8 = decode(b"\xef\xbb\xbfalpha\n\xef\xbb\xbfbeta");
+        assert_eq!(utf8.text, "alpha\n\u{feff}beta");
+        assert!(matches!(utf8.text, Cow::Borrowed(_)));
+        assert_eq!(decode(b"\xef\xbb\xbf\xc3\xa9\xff").text, "\u{e9}\u{fffd}");
+        assert_eq!(decode(b"\xef\xbb\xbfcaf\xe9").text, "caf\u{e9}");
+    }
+
+    /// Bytes inside a file keep a leading U+FEFF: only a file's first
+    /// bytes can hold its byte-order mark.
+    #[test]
+    fn interior_bytes_keep_a_leading_feff_as_text() {
+        let window = Decoded::interior(b"\xef\xbb\xbfgamma\n");
+        assert_eq!(window.text, "\u{feff}gamma\n");
+        assert!(window.warning.is_none());
+        assert_eq!(
+            Decoded::interior(b"\xef\xbb\xbfcaf\xe9").text,
+            "\u{feff}caf\u{fffd}"
+        );
     }
 }

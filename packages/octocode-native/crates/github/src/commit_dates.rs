@@ -1,10 +1,15 @@
-//! Last-commit dates of repository paths at one commit.
+//! The last commit that touched each repository path at one commit: the
+//! one source of that fact for every tool (ghStructure's dated listings,
+//! ghGetFileContent's receipts).
 //!
 //! One GraphQL request answers up to [`MAX_PATHS_PER_REQUEST`] paths: each
 //! path is an aliased `history(first:1, path:)` on the commit object. Paths
 //! travel as GraphQL variables, never inside the document text, so quotes,
 //! backslashes, and non-ASCII names need no escaping.
-use super::{GitHubTransport, GraphQlPage, ProviderError, ProviderErrorKind, RequestContext};
+use super::{
+    CommitListRequest, GitHubTransport, GraphQlPage, ProviderError, ProviderErrorKind,
+    RequestContext,
+};
 use serde_json::{Map, Value, json};
 
 /// Aliased `history` connections per GraphQL request.
@@ -19,6 +24,9 @@ pub struct PathDates {
     /// commit at or before the commit that touched it. `None` when the path
     /// has no history there or its request failed.
     pub dates: Vec<Option<String>>,
+    /// Per requested path, in input order: that commit's author, the GitHub
+    /// login when GitHub links one, else the git author name.
+    pub authors: Vec<Option<String>>,
     /// The first failure. Requests after it are not sent, so every path of
     /// the failed and later requests stays `None`.
     pub error: Option<ProviderError>,
@@ -32,7 +40,7 @@ pub(crate) fn path_dates_document(count: usize) -> String {
     for index in 0..count {
         variables.push_str(&format!(",$p{index}:String!"));
         selections.push_str(&format!(
-            " p{index}:history(first:1,path:$p{index}){{nodes{{committedDate}}}}"
+            " p{index}:history(first:1,path:$p{index}){{nodes{{committedDate author{{name user{{login}}}}}}}}"
         ));
     }
     format!(
@@ -52,13 +60,10 @@ pub(crate) fn path_dates_variables(owner: &str, repo: &str, commit: &str, paths:
     Value::Object(variables)
 }
 
-/// The commit date and the `count` path dates of one response; an answer
-/// without the commit object is an error, and so are GraphQL errors that
-/// left any requested alias unanswered.
-fn parse_path_dates(
-    page: &GraphQlPage,
-    count: usize,
-) -> Result<(Option<String>, Vec<Option<String>>), ProviderError> {
+/// The commit date and the `count` path commits (date, author) of one
+/// response; an answer without the commit object is an error, and so are
+/// GraphQL errors that left any requested alias unanswered.
+fn parse_path_dates(page: &GraphQlPage, count: usize) -> Result<ParsedDates, ProviderError> {
     let commit = page
         .data
         .as_ref()
@@ -73,11 +78,18 @@ fn parse_path_dates(
     };
     let date = |value: Option<&Value>| value.and_then(Value::as_str).map(str::to_owned);
     let mut answered = true;
-    let dates = (0..count)
+    let commits = (0..count)
         .map(|index| {
             let history = commit.get(format!("p{index}"));
             answered &= history.is_some_and(Value::is_object);
-            date(history.and_then(|history| history.pointer("/nodes/0/committedDate")))
+            let node = history.and_then(|history| history.pointer("/nodes/0"));
+            (
+                date(node.and_then(|node| node.get("committedDate"))),
+                date(node.and_then(|node| {
+                    node.pointer("/author/user/login")
+                        .or_else(|| node.pointer("/author/name"))
+                })),
+            )
         })
         .collect();
     if !answered && let Some(error) = page.errors.first() {
@@ -86,8 +98,11 @@ fn parse_path_dates(
             format!("GitHub GraphQL: {}", error.message),
         ));
     }
-    Ok((date(commit.get("committedDate")), dates))
+    Ok((date(commit.get("committedDate")), commits))
 }
+
+/// A commit's date and the `(date, author)` of each path's last commit.
+type ParsedDates = (Option<String>, Vec<(Option<String>, Option<String>)>);
 
 impl GitHubTransport {
     /// The last-commit date of each of `paths` at `commit` (a full SHA) and
@@ -105,6 +120,7 @@ impl GitHubTransport {
         let mut result = PathDates {
             commit_date: None,
             dates: vec![None; paths.len()],
+            authors: vec![None; paths.len()],
             error: None,
         };
         if paths.is_empty() {
@@ -124,10 +140,13 @@ impl GitHubTransport {
                 .await
                 .and_then(|page| parse_path_dates(&page, slice.len()));
             match answer {
-                Ok((commit_date, dates)) => {
+                Ok((commit_date, commits)) => {
                     result.commit_date = result.commit_date.or(commit_date);
                     let start = chunk * MAX_PATHS_PER_REQUEST;
-                    result.dates[start..start + dates.len()].clone_from_slice(&dates);
+                    for (offset, (date, author)) in commits.into_iter().enumerate() {
+                        result.dates[start + offset] = date;
+                        result.authors[start + offset] = author;
+                    }
                 }
                 Err(error) => {
                     result.error = Some(error);
@@ -136,6 +155,60 @@ impl GitHubTransport {
             }
         }
         result
+    }
+
+    /// The `(date, author)` of the last commit at or before `commit` (a full
+    /// SHA) that touched `path`, as [`Self::path_commit_dates`] answers it;
+    /// `(None, None)` when the path has no history there. When GraphQL
+    /// cannot be sent (no token, disabled, throttled), the REST commit list
+    /// answers the one path in one request, so a single file's receipt
+    /// needs no GraphQL.
+    pub async fn path_last_commit(
+        &self,
+        owner: &str,
+        repo: &str,
+        commit: &str,
+        path: &str,
+        context: &RequestContext,
+    ) -> Result<(Option<String>, Option<String>), ProviderError> {
+        if self.graphql_ready(context).is_ok() {
+            let mut answer = self
+                .path_commit_dates(owner, repo, commit, &[path], context)
+                .await;
+            if let Some(error) = answer.error {
+                return Err(error);
+            }
+            return Ok((answer.dates.swap_remove(0), answer.authors.swap_remove(0)));
+        }
+        let page = self
+            .list_commits(
+                &CommitListRequest {
+                    owner: owner.to_owned(),
+                    repo: repo.to_owned(),
+                    branch: Some(commit.to_owned()),
+                    path: Some(path.to_owned()),
+                    author: None,
+                    since: None,
+                    until: None,
+                    page: 1,
+                    per_page: 1,
+                },
+                context,
+            )
+            .await?;
+        let text = |value: Option<&Value>| value.and_then(Value::as_str).map(str::to_owned);
+        Ok(page.items.first().map_or((None, None), |last| {
+            (
+                text(
+                    last.pointer("/commit/committer/date")
+                        .or_else(|| last.pointer("/commit/author/date")),
+                ),
+                text(
+                    last.pointer("/author/login")
+                        .or_else(|| last.pointer("/commit/author/name")),
+                ),
+            )
+        }))
     }
 
     /// GraphQL can be sent now: enabled, a credential is configured (GitHub
@@ -234,7 +307,7 @@ mod tests {
         let document = path_dates_document(2);
         assert_eq!(
             document,
-            "query($owner:String!,$name:String!,$oid:GitObjectID!,$p0:String!,$p1:String!){repository(owner:$owner,name:$name){object(oid:$oid){...on Commit{committedDate p0:history(first:1,path:$p0){nodes{committedDate}} p1:history(first:1,path:$p1){nodes{committedDate}}}}}}"
+            "query($owner:String!,$name:String!,$oid:GitObjectID!,$p0:String!,$p1:String!){repository(owner:$owner,name:$name){object(oid:$oid){...on Commit{committedDate p0:history(first:1,path:$p0){nodes{committedDate author{name user{login}}}} p1:history(first:1,path:$p1){nodes{committedDate author{name user{login}}}}}}}}"
         );
     }
 
@@ -394,6 +467,74 @@ mod tests {
             Some(ProviderErrorKind::Configuration)
         );
         assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    /// One file's last commit comes from the same GraphQL history as a
+    /// listing's dates, with its author: the linked login, else the git
+    /// name. No REST commit list is read.
+    #[tokio::test]
+    async fn a_files_last_commit_is_the_graphql_history_with_its_author() {
+        let server = MockServer::builder().start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"data":{"repository":{"object":{
+                    "committedDate": "2026-01-31T10:00:00Z",
+                    "p0": {"nodes": [{"committedDate": "2026-01-02T00:00:00Z",
+                        "author": {"name": "Ada", "user": {"login": "ada-l"}}}]}
+                }}}}),
+            ))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let transport = transport(&server);
+        let last = transport
+            .path_last_commit("a", "b", SHA, "a.txt", &context(true))
+            .await
+            .expect("last commit");
+        assert_eq!(
+            last,
+            (Some("2026-01-02T00:00:00Z".into()), Some("ada-l".into()))
+        );
+        let listed = transport
+            .path_commit_dates("a", "b", SHA, &["a.txt"], &context(true))
+            .await;
+        assert_eq!(listed.authors, vec![Some("ada-l".into())]);
+        assert!(
+            server
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .all(|request| request.url.path() == "/api/graphql")
+        );
+    }
+
+    /// Without a token GraphQL cannot be sent: the one path is answered by
+    /// one REST commit-list request instead, with the same fields.
+    #[tokio::test]
+    async fn an_anonymous_files_last_commit_reads_the_commit_list() {
+        let server = MockServer::builder().start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v3/repos/a/b/commits"))
+            .and(wiremock::matchers::query_param("path", "a.txt"))
+            .and(wiremock::matchers::query_param("sha", SHA))
+            .and(wiremock::matchers::query_param("per_page", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
+                "author": null,
+                "commit": {"committer": {"date": "2026-01-02T00:00:00Z"}, "author": {"name": "Ada"}}
+            }])))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let last = transport(&server)
+            .path_last_commit("a", "b", SHA, "a.txt", &context(false))
+            .await
+            .expect("last commit");
+        assert_eq!(
+            last,
+            (Some("2026-01-02T00:00:00Z".into()), Some("Ada".into()))
+        );
     }
 
     #[tokio::test]

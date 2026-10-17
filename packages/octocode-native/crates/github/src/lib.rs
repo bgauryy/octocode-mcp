@@ -8,7 +8,6 @@ mod content;
 mod credentials;
 mod endpoint;
 mod error;
-mod flight;
 mod history;
 mod history_item;
 mod partition;
@@ -19,6 +18,8 @@ mod retry;
 mod search;
 mod transport;
 mod tree;
+
+use octocode_io::flight::KeyedFlight;
 
 /// GitHub REST's largest `per_page`: one provider batch of a list endpoint
 /// (branches, tags, comments, reviews, commits, changed files).
@@ -33,7 +34,6 @@ pub use content::{
 pub use credentials::{CredentialSource, ResolvedCredential};
 pub use endpoint::{GitHubEndpoint, credential_host, is_loopback};
 pub use error::{ProviderError, ProviderErrorKind, ProviderErrorReason, RateLimit};
-pub use flight::{KeyedFlight, Ticket};
 pub use history::{CommitListRequest, HistoryPage, HistoryRequest, PullListRequest};
 pub use partition::Partition;
 pub use query_syntax::{

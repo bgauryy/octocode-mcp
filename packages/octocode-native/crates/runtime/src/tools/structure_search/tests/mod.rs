@@ -129,6 +129,8 @@ fn listed_entry(dir: &str, entry: &str) -> Value {
     for field in fields {
         if field == "symlink" {
             row["type"] = json!("symlink");
+        } else if matches!(field, "binary" | "unreadable") {
+            row["totalLines"] = json!(field);
         } else if let Some(lines) = field.strip_prefix("totalLines=") {
             row["totalLines"] = json!(lines.parse::<u64>().expect("totalLines"));
         } else if let Some(modified) = field.strip_prefix("modifiedMs=") {
@@ -351,6 +353,58 @@ fn a_line_sort_shows_the_line_counts_without_extras() {
     )
     .expect("files");
     assert!(listed(&by_size)[0].get("totalLines").is_none(), "{by_size}");
+}
+
+/// A line sort counts text files only: a binary file has no lines (it
+/// says `binary`) and an unreadable one an unknown count (`unreadable`),
+/// never a count of 0 that reads like an empty file; both rank after the
+/// counted files.
+#[test]
+fn a_line_sort_names_binary_and_unreadable_files_instead_of_counting_them() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("text.rs"), "a\nb\n").expect("text");
+    std::fs::write(root.0.join("empty.rs"), "").expect("empty");
+    let mut binary = vec![b'\n'; 64];
+    binary.extend([0_u8, 1, 2, 3]);
+    std::fs::write(root.0.join("blob.bin"), &binary).expect("binary");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(root.0.join("locked.rs"), "a\n").expect("locked");
+        std::fs::set_permissions(
+            root.0.join("locked.rs"),
+            std::fs::Permissions::from_mode(0o000),
+        )
+        .expect("chmod");
+    }
+    let out = run(
+        &root.0,
+        json!({"operation":"files","path":root.0,"entryType":"f","sort":"lines"}),
+    )
+    .expect("files");
+    let lines = listed(&out)
+        .iter()
+        .map(|row| {
+            let path = row["path"].as_str().expect("path");
+            (
+                path.rsplit('/').next().expect("name").to_owned(),
+                row["totalLines"].clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut expected = vec![
+        ("text.rs".to_owned(), json!(2)),
+        ("empty.rs".to_owned(), json!(0)),
+        ("blob.bin".to_owned(), json!("binary")),
+    ];
+    // Root reads every file whatever its mode.
+    #[cfg(unix)]
+    if std::fs::read(root.0.join("locked.rs")).is_err() {
+        expected.push(("locked.rs".to_owned(), json!("unreadable")));
+    } else {
+        expected.insert(1, ("locked.rs".to_owned(), json!(1)));
+    }
+    assert_eq!(lines, expected, "{out}");
 }
 
 #[test]
@@ -720,6 +774,28 @@ fn tree_entries_carry_details_and_symlink_fields_like_files() {
         entry.starts_with("two.rs (4, totalLines=2, modifiedMs="),
         "{detailed}"
     );
+}
+
+/// The field a listing is sorted by is default output (L6-8): a modified
+/// sort shows each file's `modifiedMs` without `extras`, as the lines sort
+/// shows `totalLines`; another sort leaves it to `extras: ["details"]`.
+#[test]
+fn a_modified_sort_shows_its_key_without_extras() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("two.rs"), "a\nb\n").expect("file");
+    let entry = |sort: &str| {
+        let out = run(
+            &root.0,
+            json!({"operation":"files","path":root.0,"entryType":"f","sort":sort}),
+        )
+        .expect("files");
+        out["files"][0]["files"][0]
+            .as_str()
+            .unwrap_or_else(|| panic!("entry: {out}"))
+            .to_owned()
+    };
+    assert!(entry("modified").starts_with("two.rs (4, modifiedMs="));
+    assert_eq!(entry("size"), "two.rs (4)");
 }
 
 #[test]

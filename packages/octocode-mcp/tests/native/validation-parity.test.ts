@@ -93,20 +93,30 @@ const cases: ReadonlyArray<{
     ],
   },
   {
-    name: 'a removed clasify matrix field is named as sent',
+    name: 'section resources on a whole-source clasify query',
     tool: 'clasify',
     query: {
       state: { name: 'validation-parity-fixture' },
-      resources: [{ tool: 'localFetch', query: { path: 'package.json' } }],
+      resources: {
+        package: {
+          tool: 'localFetch',
+          query: { path: 'package.json', fullContent: true },
+        },
+      },
       questions: {
         q: { type: 'noul', instructions: 'Does this define a package?' },
       },
     },
     says: [
-      "Remove unknown field 'resources' from queries[0]",
+      "Remove 'resources' from queries[0]",
+      'it applies only with operation',
+      'repair: clasify',
+    ],
+    never: [
+      'candidateEvidence',
+      "Remove unknown field 'resources'",
       "did you mean 'source'?",
     ],
-    never: ['candidateEvidence'],
   },
   {
     name: 'a misspelled lspSearch path',
@@ -131,6 +141,7 @@ describe('CLI and MCP validation guidance parity', () => {
     const input = { queries: [{ ...brief, ...query }] };
     const mcp = await rejection(mcpRuntime, tool, input);
     const cli = await rejection(cliRuntime, tool, input);
+    expect(mcp.envelope).toEqual(cli.envelope);
     // Both surfaces answer with the same typed error envelope: the error
     // itself, no kind/version/tool frame.
     for (const envelope of [mcp.envelope, cli.envelope]) {

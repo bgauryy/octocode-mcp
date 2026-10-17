@@ -37,11 +37,16 @@ pub async fn run<C: octocode_github::ConditionalCache>(
     home: &Path,
 ) -> Result<ToolData, GhFailure> {
     let context = request.map_err(|error| search_failure(error, None))?;
+    let listed = listed_at(query).map_err(|error| search_failure(error, None))?;
+    let query = listed.as_ref().unwrap_or(query);
     let error = match execute(provider, query, context, home).await {
         Ok(output) => return Ok(output),
         Err(error) => error,
     };
     let error = classify_unresolved_sha(provider, query, context, error).await;
+    // Recovery leads name a renamed repository as it is now.
+    let renamed = canonical(provider, query, context).await.ok().flatten();
+    let query = renamed.as_ref().map_or(query, |(_, canonical)| canonical);
     let path = query.path.as_deref().unwrap_or_default().trim_matches('/');
     let requested = query.ref_.as_ref().map(|value| value.as_str());
     // A path failure comes after its ref resolved: its leads pin that commit.
@@ -86,6 +91,21 @@ pub async fn run<C: octocode_github::ConditionalCache>(
     }
     let found = locate_path(provider, &at, context).await;
     Err(path_failure(error, &at, query.max_depth, found))
+}
+
+/// The query with its `path` as the repository names it
+/// ([`crate::tools::gh_shared::listing_path`]), so the listing, its
+/// continuations and its recovery leads all name one path; `None` when it
+/// already does. A path climbing above the root is invalid input.
+fn listed_at(query: &GhStructureQuery) -> Result<Option<GhStructureQuery>, ProviderError> {
+    let Some(requested) = query.path.as_deref() else {
+        return Ok(None);
+    };
+    let path = crate::tools::gh_shared::listing_path(requested)?;
+    Ok((path != requested).then(|| GhStructureQuery {
+        path: Some(path),
+        ..query.clone()
+    }))
 }
 
 /// A full 40-hex `ref` skips ref resolution, so a SHA GitHub does not have
@@ -435,12 +455,7 @@ impl Scope {
             .map(|glob| PathFilter::new(glob))
             .collect::<Result<Vec<_>, _>>()?;
         let filter = (!filters.is_empty()).then_some(filters);
-        let requested = query.path.as_deref().unwrap_or("").trim_matches('/');
-        let path = if requested == "." {
-            String::new()
-        } else {
-            requested.to_owned()
-        };
+        let path = crate::tools::gh_shared::listing_path(query.path.as_deref().unwrap_or(""))?;
         // A name search looks at every level unless the caller bounds it.
         let depth = match (query.max_depth, &filter) {
             (Some(depth), _) => crate::tools::num::usize_of(depth),
@@ -963,6 +978,140 @@ mod tests {
                 "{}",
                 out.data
             );
+        }
+
+        /// A renamed repository answers `/repos/a/b/...` with a 301 to
+        /// `/repositories/1/...`; its metadata names `c/d`.
+        async fn renamed_server(route: &str, status: u16, body: Value) -> MockServer {
+            let server = MockServer::builder().start().await;
+            Mock::given(method("GET"))
+                .and(path(format!("/api/v3/repos/a/b/{route}")))
+                .respond_with(ResponseTemplate::new(301).insert_header(
+                    "location",
+                    format!("{}/api/v3/repositories/1/{route}", server.uri()),
+                ))
+                .mount(&server)
+                .await;
+            mount_json(
+                &server,
+                format!("/api/v3/repositories/1/{route}"),
+                status,
+                body,
+            )
+            .await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b",
+                200,
+                json!({"default_branch":"main","full_name":"c/d"}),
+            )
+            .await;
+            server
+        }
+
+        /// `operation:"languages"` on a renamed repository carries the
+        /// rename warning, as its tree and refs rows do.
+        #[tokio::test]
+        async fn languages_of_a_renamed_repository_warn_of_the_rename() {
+            let server = renamed_server("languages", 200, json!({"Rust": 10})).await;
+            let out = list(
+                &server,
+                json!({"owner":"a","repo":"b","operation":"languages"}),
+            )
+            .await
+            .expect("languages");
+            assert_eq!(out.data["languages"], json!({"Rust": 10}), "{}", out.data);
+            assert_eq!(
+                out.data["warnings"],
+                json!([crate::tools::gh_shared::renamed_warning(
+                    "a",
+                    "b",
+                    &("c".into(), "d".into())
+                )]),
+                "{}",
+                out.data
+            );
+        }
+
+        /// A ref that does not resolve on a renamed repository names the
+        /// repository as it is now, in the message and the `viewRefs` lead.
+        #[tokio::test]
+        async fn a_missing_ref_of_a_renamed_repository_names_it_canonically() {
+            let server = renamed_server(
+                "commits/nope",
+                422,
+                json!({"message":"No commit found for SHA: nope"}),
+            )
+            .await;
+            let home = tempfile::tempdir().expect("home");
+            let provider = mock_provider(&server, RetryPolicy::default());
+            let context = default_context();
+            let failure = run(
+                &provider,
+                &query(json!({"owner":"a","repo":"b","operation":"refs","ref":"nope"})),
+                Ok(&context),
+                home.path(),
+            )
+            .await
+            .expect_err("missing ref");
+            assert!(failure.message.contains("c/d"), "{}", failure.message);
+            let lead = &failure.next.expect("viewRefs")["viewRefs"]["query"]["queries"][0];
+            assert_eq!(
+                (lead["owner"].as_str(), lead["repo"].as_str()),
+                (Some("c"), Some("d")),
+                "{lead}"
+            );
+        }
+
+        /// A listing path is read as the repository names it (`./`, `//`
+        /// and `a/../` resolved), and its leads name that path; a path that
+        /// climbs above the root is invalid input, before any request.
+        #[tokio::test]
+        async fn listing_paths_are_normalized_and_escapes_rejected() {
+            let server = server().await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents/src%2Flib",
+                200,
+                json!([{"name":"a.rs","path":"src/lib/a.rs","type":"file","size":3}]),
+            )
+            .await;
+            let home = tempfile::tempdir().expect("home");
+            let provider = mock_provider(&server, RetryPolicy::default());
+            let context = default_context();
+            for requested in ["./src/lib", "src//lib/", "src/x/../lib"] {
+                let out = run(
+                    &provider,
+                    &query(json!({"owner":"a","repo":"b","path":requested})),
+                    Ok(&context),
+                    home.path(),
+                )
+                .await
+                .unwrap_or_else(|failure| panic!("{requested}: {}", failure.message));
+                assert_eq!(
+                    out.data["files"][0]["dir"], "src/lib",
+                    "{requested}: {}",
+                    out.data
+                );
+            }
+            let before = server.received_requests().await.unwrap_or_default().len();
+            for escape in ["../..", "../../etc", "src/../../x"] {
+                let failure = run(
+                    &provider,
+                    &query(json!({"owner":"a","repo":"b","path":escape})),
+                    Ok(&context),
+                    home.path(),
+                )
+                .await
+                .expect_err(escape);
+                assert_eq!(
+                    failure.error.kind,
+                    ProviderErrorKind::Validation,
+                    "{escape}"
+                );
+            }
+            let after = server.received_requests().await.unwrap_or_default().len();
+            assert_eq!(before, after, "an escape sends no request");
         }
 
         async fn list(server: &MockServer, value: Value) -> Result<ToolData, ProviderError> {

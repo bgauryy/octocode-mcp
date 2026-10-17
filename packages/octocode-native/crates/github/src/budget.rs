@@ -1014,9 +1014,9 @@ impl KeyState {
             // The persist takes the peer-shared file lock and may poll it: keep
             // that wait off the async worker.
             let state = Arc::clone(self);
-            let _ = tokio::task::spawn_blocking(move || {
+            let _ = tokio::task::spawn_blocking(octocode_io::notice::carried(move || {
                 state.persist_with(|view| view.release(group.name(), start, previous, window));
-            })
+            }))
             .await;
         }
     }
@@ -1030,9 +1030,9 @@ impl KeyState {
         self.facts().release(group.name(), start, previous, window);
         if persisted {
             let state = Arc::clone(self);
-            let write = move || {
+            let write = octocode_io::notice::carried(move || {
                 state.persist_with(|view| view.release(group.name(), start, previous, window))
-            };
+            });
             match tokio::runtime::Handle::try_current() {
                 Ok(handle) => drop(handle.spawn_blocking(write)),
                 Err(_) => write(),
@@ -1044,7 +1044,10 @@ impl KeyState {
     /// blocking thread, not on the executor worker that polls this request.
     async fn refresh_off_thread(self: &Arc<Self>) {
         let state = Arc::clone(self);
-        let _ = tokio::task::spawn_blocking(move || state.refresh_from_disk()).await;
+        let _ = tokio::task::spawn_blocking(octocode_io::notice::carried(move || {
+            state.refresh_from_disk()
+        }))
+        .await;
     }
 
     /// Record the primary bucket carried by any response.

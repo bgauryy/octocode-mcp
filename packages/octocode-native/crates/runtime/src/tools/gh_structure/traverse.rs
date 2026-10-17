@@ -146,35 +146,16 @@ pub(super) async fn recursive_tree<C: octocode_github::ConditionalCache>(
         ..
     } = *listing;
     let resource = format!("{}:{branch}", repo_key("git-tree", owner, repo));
-    if let Ok(partition) = provider.transport.cache_partition(context, None)
-        && let Some(cached) = provider.cache.get(&partition, &resource).await
-        && let Ok(tree) = serde_json::from_slice::<octocode_github::TreeResponse>(&cached.bytes)
-    {
-        root_is_directory(&tree, root)?;
-        return Ok(DeepTree::Read(traversal_from_git_tree(tree, listing)));
-    }
-    match provider
-        .transport
-        .get_tree(
-            &TreeRequest {
-                owner: owner.into(),
-                repo: repo.into(),
-                reference: branch.into(),
-                recursive: true,
-            },
-            context,
-        )
-        .await
-    {
-        Ok(tree) if !tree.truncated => {
-            root_is_directory(&tree, root)?;
-            cache_tree(provider, context, resource, branch, &tree).await;
-            Ok(DeepTree::Read(traversal_from_git_tree(tree, listing)))
-        }
-        Ok(_) => Ok(DeepTree::Truncated),
-        Err(error) if access_failure(&error) => Err(error),
-        Err(_) => Ok(DeepTree::Unavailable),
-    }
+    Ok(
+        match fetch_tree(provider, listing, resource, branch, true, context).await? {
+            TreeRead::Whole(tree) => {
+                root_is_directory(&tree, root)?;
+                DeepTree::Read(traversal_from_git_tree(tree, listing))
+            }
+            TreeRead::Truncated => DeepTree::Truncated,
+            TreeRead::Unavailable => DeepTree::Unavailable,
+        },
+    )
 }
 
 /// One subdirectory's whole subtree from a recursive git tree read by its
@@ -213,11 +194,62 @@ async fn read_tree<C: octocode_github::ConditionalCache>(
     recursive: bool,
     context: &RequestContext,
 ) -> Result<Option<octocode_github::TreeResponse>, ProviderError> {
-    if let Ok(partition) = provider.transport.cache_partition(context, None)
-        && let Some(cached) = provider.cache.get(&partition, &resource).await
+    Ok(
+        match fetch_tree(provider, listing, resource, reference, recursive, context).await? {
+            TreeRead::Whole(tree) => Some(tree),
+            TreeRead::Truncated | TreeRead::Unavailable => None,
+        },
+    )
+}
+
+/// What one git tree read answered.
+enum TreeRead {
+    Whole(octocode_github::TreeResponse),
+    /// Past GitHub's recursive-tree limit.
+    Truncated,
+    /// A transient failure.
+    Unavailable,
+}
+
+/// The process's in-flight git tree reads, one per `(credential, resource)`;
+/// a slot remembers that the first read came back truncated (never cached).
+fn tree_flights()
+-> &'static octocode_io::flight::KeyedFlight<(octocode_github::Partition, String), bool> {
+    static FLIGHTS: octocode_io::flight::KeyedFlight<(octocode_github::Partition, String), bool> =
+        octocode_io::flight::KeyedFlight::transient();
+    &FLIGHTS
+}
+
+/// The git tree at `reference` (immutable: a commit or tree SHA, or
+/// `<commit>:<path>`), from the cache under `resource` or one read that
+/// stores an untruncated answer there. Single flight: concurrent rows on one
+/// tree wait for the first read, then take what it cached (or its
+/// truncation), so a tree of many MB downloads once. Access failures
+/// propagate.
+async fn fetch_tree<C: octocode_github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    listing: &Listing<'_>,
+    resource: String,
+    reference: &str,
+    recursive: bool,
+    context: &RequestContext,
+) -> Result<TreeRead, ProviderError> {
+    let partition = provider.transport.cache_partition(context, None).ok();
+    let ticket = partition
+        .as_ref()
+        .map(|partition| tree_flights().join((partition.clone(), resource.clone())));
+    let mut turn = match &ticket {
+        Some(ticket) => Some(context.budget.wait(ticket.turn()).await?),
+        None => None,
+    };
+    if turn.as_deref() == Some(&true) {
+        return Ok(TreeRead::Truncated);
+    }
+    if let Some(partition) = &partition
+        && let Some(cached) = provider.cache.get(partition, &resource).await
         && let Ok(tree) = serde_json::from_slice(&cached.bytes)
     {
-        return Ok(Some(tree));
+        return Ok(TreeRead::Whole(tree));
     }
     match provider
         .transport
@@ -234,11 +266,16 @@ async fn read_tree<C: octocode_github::ConditionalCache>(
     {
         Ok(tree) if !tree.truncated => {
             cache_tree(provider, context, resource, listing.branch, &tree).await;
-            Ok(Some(tree))
+            Ok(TreeRead::Whole(tree))
         }
-        Ok(_) => Ok(None),
+        Ok(_) => {
+            if let Some(truncated) = turn.as_deref_mut() {
+                *truncated = true;
+            }
+            Ok(TreeRead::Truncated)
+        }
         Err(error) if access_failure(&error) => Err(error),
-        Err(_) => Ok(None),
+        Err(_) => Ok(TreeRead::Unavailable),
     }
 }
 

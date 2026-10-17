@@ -16,6 +16,7 @@ pub(crate) struct FileEntry {
     pub(crate) raw_matches: Vec<RawMatch>,
     /// line_number → context text
     pub(crate) contexts: HashMap<u32, String>,
+    pub(crate) prepared: Vec<TextSearchMatch>,
 }
 
 impl FileEntry {
@@ -23,6 +24,7 @@ impl FileEntry {
         Self {
             raw_matches: Vec::new(),
             contexts: HashMap::new(),
+            prepared: Vec::new(),
         }
     }
 }
@@ -78,15 +80,21 @@ fn clips_to_window(line: &str, column: u32, max_chars: usize) -> bool {
 /// Clip `line` to `max_chars`, keeping the match at UTF-16 `column` visible.
 /// Lines whose match already fits the head are truncated from the start; otherwise
 /// the window starts a quarter-snippet before the match and is marked with `…`.
+/// A window near the line's end starts earlier instead, so it still spends
+/// `max_chars` (the tail it ends on is the line's own, unmarked).
 fn clip_around_match(line: &str, column: u32, max_chars: usize) -> String {
-    if line.chars().count() <= max_chars {
+    let line_chars = line.chars().count();
+    if line_chars <= max_chars {
         return line.to_owned();
     }
     if !clips_to_window(line, column, max_chars) {
         return truncate_unicode(line, max_chars);
     }
     let match_char = utf16_to_char_index(line, column);
-    let start_char = match_char.saturating_sub(max_chars / 4);
+    // `…` takes one char; the rest of the window is the line from its start.
+    let start_char = match_char
+        .saturating_sub(max_chars / 4)
+        .min(line_chars - (max_chars - 1));
     let start_byte = line
         .char_indices()
         .nth(start_char)
@@ -130,35 +138,21 @@ pub(crate) fn assemble_file(
     context_lines: u32,
     max_snippet: usize,
 ) -> TextSearchFile {
+    if !entry.prepared.is_empty() {
+        return TextSearchFile {
+            path,
+            match_count: entry.prepared.len() as u32,
+            matches: entry.prepared,
+            source: None,
+        };
+    }
     if context_lines == 0 {
         // One row per hit line: a line that needs no clip becomes the value
         // itself instead of a copy.
         let matches = entry
             .raw_matches
             .into_iter()
-            .map(|m| {
-                let chars = m.line_text.chars().count();
-                let (clipped, bytes) = (chars > max_snippet, m.line_text.len());
-                let rank = line_rank_at(&m.line_text, m.column);
-                let byte_offset = utf16_to_byte_offset(&m.line_text, m.column);
-                let value_digest = Sha256::digest(m.line_text.trim().as_bytes()).into();
-                let value = if !clipped {
-                    m.line_text
-                } else {
-                    clip_around_match(&m.line_text, m.column, max_snippet)
-                };
-                TextSearchMatch {
-                    line: m.line_number,
-                    column: m.column,
-                    byte_offset,
-                    value,
-                    value_digest,
-                    count: None,
-                    rank: Some(rank),
-                    original_chars: clipped.then(|| u32::try_from(chars).unwrap_or(u32::MAX)),
-                    original_bytes: clipped.then(|| u32::try_from(bytes).unwrap_or(u32::MAX)),
-                }
-            })
+            .map(|m| line_match(&m.line_text, m.line_number, m.column, max_snippet))
             .collect::<Vec<_>>();
         return TextSearchFile {
             path,
@@ -238,6 +232,7 @@ pub(crate) fn assemble_file(
             };
 
             TextSearchMatch {
+                deferred: None,
                 line: m.line_number,
                 column: m.column,
                 byte_offset: utf16_to_byte_offset(&m.line_text, m.column),
@@ -257,6 +252,37 @@ pub(crate) fn assemble_file(
         match_count,
         matches,
         source: None,
+    }
+}
+
+/// Recreate the exact context-free snippet, rank and full-value identity.
+pub fn line_match(
+    line_text: &str,
+    line_number: u32,
+    column: u32,
+    max_snippet: usize,
+) -> TextSearchMatch {
+    let chars = line_text.chars().count();
+    let (clipped, bytes) = (chars > max_snippet, line_text.len());
+    let rank = line_rank_at(line_text, column);
+    let byte_offset = utf16_to_byte_offset(line_text, column);
+    let value_digest = Sha256::digest(line_text.trim().as_bytes()).into();
+    let value = if !clipped {
+        line_text.to_owned()
+    } else {
+        clip_around_match(line_text, column, max_snippet)
+    };
+    TextSearchMatch {
+        deferred: None,
+        line: line_number,
+        column,
+        byte_offset,
+        value,
+        value_digest,
+        count: None,
+        rank: Some(rank),
+        original_chars: clipped.then(|| u32::try_from(chars).unwrap_or(u32::MAX)),
+        original_bytes: clipped.then(|| u32::try_from(bytes).unwrap_or(u32::MAX)),
     }
 }
 
@@ -472,6 +498,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A hit near the end of a long line gets a window that spends the
+    /// whole budget, not a quarter-snippet lead and the short tail: the
+    /// window shifts left, ends on the line's own last char, and keeps the
+    /// match visible.
+    #[test]
+    fn a_window_near_the_line_end_fills_the_budget() {
+        let line = format!("{}cursor:pointer}}", "a".repeat(230));
+        let column = u32::try_from(line.find("cursor").expect("hit")).expect("column");
+        for max in [40, 200] {
+            let value = clip_around_match(&line, column, max);
+            assert_eq!(value.chars().count(), max, "{value}");
+            assert!(
+                value.starts_with('…') && value.ends_with("cursor:pointer}"),
+                "{value}"
+            );
+        }
+        // A hit mid-line keeps its quarter-snippet lead.
+        let mid = format!("{}needle{}", "a".repeat(300), "b".repeat(300));
+        let value = clip_around_match(&mid, 300, 40);
+        assert!(
+            value.starts_with(&format!("…{}needle", "a".repeat(10))),
+            "{value}"
+        );
+        assert!(value.ends_with("..."), "{value}");
+        assert_eq!(value.chars().count(), 40, "{value}");
     }
 
     #[test]

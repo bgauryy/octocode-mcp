@@ -191,11 +191,11 @@ These are code constants, not settings (one owner: `RuntimeLimits` in `packages/
 | Context selection per operation | 64 candidates, 131,072 characters, 10 s |
 | Language-server memory | 25% of host RAM, between 4096 and 8192 MiB (per-server `maxMemoryMb` overrides) |
 
-Response-cache sizes and per-surface tool-call timeouts (the CLI allows longer for LSP cold starts) are fixed too.
+Response-cache sizes and the tool-call budget (300 s, one for every surface: CLI, warm server and MCP; an embedder may set its own) are fixed too.
 
 - **GitHub rate limits:** a call waits out a primary or secondary limit, search spacing, or a full code-search window (10 searches a minute) for up to 45 s and then sends; a longer wait fails at once with `rateLimited` and `retryAfter`. Waiting does not spend the request timeout, but the tool call's own deadline still bounds it, and 45 s stays under the 60 s tool-call timeout some MCP hosts apply. Processes sharing a token reserve search slots under one file lock on `tmp/ratelimit/` (keyed by host and a token hash, never the token), so together they stay within one window and keep the spacing. A stamp expires with its window, so a crashed process never wedges it; a stamp dated more than two minutes ahead is ignored. If the file or its directory cannot be read, written or locked, the call goes ahead under this process's own pacing and one warning goes to stderr.
 - **Classification gate:** one process-wide gate per provider endpoint allows 10 requests in flight; one tool call may use up to three quarters. Throttling (429/503/529) halves the gate, `Retry-After` pauses every caller, and the gate recovers gradually.
-- **Context selection:** units the budget leaves unassessed stay unknown and recoverable through `next.unfiltered`; they never spill into the default evidence body.
+- **Context selection:** units the budget leaves unassessed stay unknown and never spill into the default evidence body; recovery: [context selection](OCTOCODE_TOOLS.md#context-selection).
 
 ## GitHub Enterprise
 

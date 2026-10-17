@@ -42,7 +42,7 @@ fn overlap_error_identifies_ranges_and_how_to_narrow_the_preview() {
                 column: end as u32,
             },
         },
-        replacement_offsets: None,
+        replaced: RawByteRange { start, end },
         meta_variables: RawMetaVariables::default(),
     };
     let error = prepare_matches("a.ts", "before", vec![matched(0, 12), matched(5, 14)])
@@ -1929,4 +1929,204 @@ fn several_grammars_lead_to_a_preview_per_language() {
         );
         assert!(preview.get("errorCode").is_none(), "{preview}");
     }
+}
+
+/// Edit count of a shortest script: n + m - 2·LCS.
+fn shortest_edits(old: &[&str], new: &[&str]) -> usize {
+    let mut lcs = vec![vec![0usize; new.len() + 1]; old.len() + 1];
+    for i in (0..old.len()).rev() {
+        for j in (0..new.len()).rev() {
+            lcs[i][j] = if old[i] == new[j] {
+                lcs[i + 1][j + 1] + 1
+            } else {
+                lcs[i + 1][j].max(lcs[i][j + 1])
+            };
+        }
+    }
+    old.len() + new.len() - 2 * lcs[0][0]
+}
+
+/// The linear-space diff is a shortest script that rebuilds `new` from
+/// `old`, prints deletions before insertions in each changed run, and
+/// refuses a script over the budget.
+#[test]
+fn line_diff_is_a_shortest_script_within_the_budget() {
+    let mut seed = 0x9e37_79b9_u32;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        seed
+    };
+    let alphabet = ["a\n", "b\n", "c\n", "d\n"];
+    for _ in 0..400 {
+        let old = (0..next() % 12)
+            .map(|_| alphabet[(next() % 4) as usize])
+            .collect::<Vec<_>>();
+        let new = (0..next() % 12)
+            .map(|_| alphabet[(next() % 4) as usize])
+            .collect::<Vec<_>>();
+        let best = shortest_edits(&old, &new);
+        let ops = line_diff(&old, &new, 64).expect("within budget");
+        let edits = ops.iter().filter(|op| **op != LineOp::Equal).count();
+        assert_eq!(edits, best, "{old:?} -> {new:?}: {ops:?}");
+        let (mut i, mut j, mut rebuilt) = (0, 0, Vec::new());
+        for op in &ops {
+            match op {
+                LineOp::Equal => {
+                    assert_eq!(old[i], new[j]);
+                    rebuilt.push(old[i]);
+                    i += 1;
+                    j += 1;
+                }
+                LineOp::Delete => i += 1,
+                LineOp::Insert => {
+                    rebuilt.push(new[j]);
+                    j += 1;
+                }
+            }
+        }
+        assert_eq!((i, j), (old.len(), new.len()));
+        assert_eq!(rebuilt, new);
+        assert!(
+            ops.windows(2)
+                .all(|pair| !(pair[0] == LineOp::Insert && pair[1] == LineOp::Delete)),
+            "{ops:?}"
+        );
+        if best > 0 {
+            assert!(
+                line_diff(&old, &new, best - 1).is_none(),
+                "{old:?} -> {new:?}"
+            );
+            assert!(line_diff(&old, &new, best).is_some(), "{old:?} -> {new:?}");
+        }
+    }
+}
+
+/// A large far-apart edit set stays exact: the old trace kept one diagonal
+/// snapshot per edit (O(D²) memory); this one keeps two diagonal arrays.
+#[test]
+fn line_diff_finds_thousands_of_scattered_edits() {
+    let old = (0..5_000)
+        .map(|i| format!("line {i}\n"))
+        .collect::<Vec<_>>();
+    let new = (0..5_000)
+        .map(|i| {
+            if i % 10 == 5 {
+                format!("changed {i}\n")
+            } else {
+                format!("line {i}\n")
+            }
+        })
+        .collect::<Vec<_>>();
+    let old = old.iter().map(String::as_str).collect::<Vec<_>>();
+    let new = new.iter().map(String::as_str).collect::<Vec<_>>();
+    let ops = line_diff(&old, &new, 4096).expect("within budget");
+    let edits = ops.iter().filter(|op| **op != LineOp::Equal).count();
+    assert_eq!(edits, 1000);
+}
+
+/// Recovery reads `Planned` like `Staged` and `BackedUp` like `Promoted`,
+/// so a commit persists its journal at the plan, after staging, at the
+/// commit start, once per backup and at the end: N + 4 writes, not 3N + 4.
+#[test]
+fn a_commit_persists_only_the_journal_states_recovery_reads() {
+    let root_dir = Fixture::new();
+    let root = root_dir.0.clone();
+    let files = (0..3)
+        .map(|index| {
+            let target = root.join(format!("f{index}.ts"));
+            fs::write(&target, b"old\n").expect("target");
+            PreparedFile {
+                path: format!("f{index}.ts"),
+                shown: format!("f{index}.ts"),
+                absolute: target.clone(),
+                before_hash: sha256(b"old\n"),
+                after_hash: sha256(b"new\n"),
+                before: b"old\n".to_vec(),
+                after: b"new\n".to_vec(),
+                patch: String::new(),
+                matches: Vec::new(),
+                permissions: fs::metadata(&target).expect("metadata").permissions(),
+                before_errors: 0,
+                after_facts: None,
+            }
+        })
+        .collect::<Vec<_>>();
+    let state_dir = Fixture::new();
+    let before = super::journal::persists();
+    let receipt = super::journal::commit_transaction(&state_dir.0, &root, &files, &NeverCancel)
+        .expect("commit");
+    assert_eq!(receipt["committed"], true, "{receipt}");
+    assert_eq!(super::journal::persists() - before, files.len() + 4);
+    for file in &files {
+        assert_eq!(fs::read(&file.absolute).expect("target"), b"new\n");
+    }
+}
+
+/// `range` is the matched node's span in bytes and positions alike;
+/// `byteRange` appears only when the replaced span is wider, and the splice
+/// uses the replaced span.
+#[test]
+fn match_rows_keep_the_node_range_and_name_a_wider_replaced_span() {
+    let matched = |replaced: RawByteRange| RawMatch {
+        file: "a.ts".into(),
+        text: "foo(1), ".into(),
+        replacement: String::new(),
+        range: RawRange {
+            byte_offset: RawByteRange { start: 4, end: 10 },
+            start: RawPosition { line: 0, column: 4 },
+            end: RawPosition {
+                line: 0,
+                column: 10,
+            },
+        },
+        replaced,
+        meta_variables: RawMetaVariables::default(),
+    };
+    let wide = prepare_matches(
+        "a.ts",
+        "h",
+        vec![matched(RawByteRange { start: 4, end: 12 })],
+    )
+    .expect("wide");
+    assert_eq!(
+        wide[0].public["range"]["byteOffset"],
+        json!({"start":4,"end":10})
+    );
+    assert_eq!(wide[0].public["byteRange"], json!({"start":4,"end":12}));
+    assert_eq!((wide[0].start, wide[0].end), (4, 12));
+    let same = prepare_matches(
+        "a.ts",
+        "h",
+        vec![matched(RawByteRange { start: 4, end: 10 })],
+    )
+    .expect("same");
+    assert!(
+        same[0].public.get("byteRange").is_none(),
+        "{}",
+        same[0].public
+    );
+    assert_eq!((same[0].start, same[0].end), (4, 10));
+}
+
+/// Apply is gated by OCTOCODE_BETA alone, and the refusal says so.
+#[test]
+fn a_refused_apply_names_the_beta_gate() {
+    let (dir, policy, security) = fixture();
+    let (_, preview) = full_preview(&dir.0, &policy, &security);
+    let out = rewrite_row(
+        preview["next"]["apply"]["query"]["queries"][0].clone(),
+        &policy,
+        &security,
+        &NeverCancel,
+        &Default::default(),
+    );
+    let error = out.to_string();
+    assert!(error.contains("applyDisabled"), "{error}");
+    assert!(error.contains("OCTOCODE_BETA"), "{error}");
+    assert!(
+        !error.contains("separate astRewrite apply capability"),
+        "{error}"
+    );
 }

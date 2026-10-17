@@ -33,6 +33,7 @@ async function connect(server) {
     env,
     stderr: 'pipe',
   });
+  transport.stderr?.on('data', chunk => process.stderr.write(chunk));
   const client = new Client({ name: 'native-response-pagination', version: '1' });
   await client.connect(transport);
   return client;
@@ -43,19 +44,20 @@ function withoutOpaqueCursors(value) {
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== 'cursor')
+      .filter(([key]) => key !== 'cursor' && key !== 'expiresAt')
       .map(([key, nested]) => [key, withoutOpaqueCursors(nested)]),
   );
 }
 
 async function collect(client) {
   let args = {
-    queries: [{ path: source, fullContent: true, mainGoal: 'page', reasoning: 'Exercise response pagination parity.', debug: false }],
+    queries: [{ path: source, fullContent: true, mainGoal: 'page', reasoning: 'Exercise response pagination parity.' }],
     responseLength: 96,
   };
   const pages = [];
   for (let index = 0; index < 100; index += 1) {
     const result = await client.callTool({ name: 'localFetch', arguments: args });
+    assert.notEqual(result.isError, true, JSON.stringify(result.structuredContent));
     pages.push(result);
     const pagination = result.structuredContent?.responsePagination;
     if (!pagination?.hasMore) break;
@@ -65,8 +67,10 @@ async function collect(client) {
     args = continuation.query;
   }
   assert.ok(pages.length > 1);
-  // The last page has nothing left to page: it carries no responsePagination.
-  assert.equal(pages.at(-1).structuredContent.responsePagination, undefined);
+  // Saved reads retain replay/lifetime metadata after the final page.
+  const last = pages.at(-1).structuredContent.responsePagination;
+  assert.equal(last?.hasMore ?? false, false);
+  assert.equal(last?.next, undefined);
   return pages;
 }
 
@@ -92,20 +96,20 @@ try {
   const stale = await native.callTool({
     name: 'localFetch',
     arguments: {
-      queries: [{ path: source, fullContent: true, reasoning: 'Exercise stale response pagination restart parity.', debug: false }],
       responseLength: 96,
       responseOffset: first.nextOffset,
       responseSnapshot: 'response-v1:stale',
     },
   });
-  assert.equal(stale.structuredContent.responsePagination.restart, true);
-  assert.equal(stale.structuredContent.responsePagination.next.query.responseOffset, 0);
+  assert.equal(stale.isError, true);
+  assert.equal(stale.structuredContent.errorCode, 'responseSnapshotExpired');
+  assert.equal(stale.structuredContent.responsePagination, undefined);
   const [expectedInvalid, actualInvalid] = await Promise.all([
     reference.callTool({ name: 'localFetch', arguments: { queries: [{}] } }),
     native.callTool({ name: 'localFetch', arguments: { queries: [{}] } }),
   ]);
   assert.deepEqual(actualInvalid, expectedInvalid);
-  console.log(JSON.stringify({ pages: actual.length, unicode: true, staleRestart: true }));
+  console.log(JSON.stringify({ pages: actual.length, unicode: true, staleReadRejected: true }));
 } finally {
   await Promise.allSettled([reference.close(), native.close()]);
   await rm(fixture, { recursive: true, force: true });

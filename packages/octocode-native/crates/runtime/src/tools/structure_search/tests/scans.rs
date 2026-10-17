@@ -332,25 +332,42 @@ fn a_listing_with_ignored_entries_leads_to_include_ignored() {
 }
 
 /// An include or exclude glob with a `..` segment never matches under
-/// `path`: both operations name it, with the localSearch wording.
+/// `path`: both operations name it, with the localSearch wording. The note
+/// reads the same for the whole result, so it is a static notice: stated on
+/// the first page and never on a resumed walk's window.
 #[test]
 fn a_glob_that_reaches_above_path_is_named_by_both_operations() {
     let root = Fixture::new();
     std::fs::write(root.0.join("main.rs"), "x\n").expect("file");
     let expected = crate::policy::include::parent_glob_warning(&["../src/*.rs".to_owned()], &[])
         .expect("warning");
+    let names = |row: &Value, key: &str| {
+        row[key]
+            .as_array()
+            .is_some_and(|notes| notes.iter().any(|note| *note == expected.as_str()))
+    };
     for operation in ["tree", "files"] {
         for key in ["include", "exclude"] {
-            let out = run(
-                &root.0,
-                json!({"operation":operation,"path":root.0,key:["../src/*.rs"]}),
-            )
-            .expect("listing");
+            let query = json!({"operation":operation,"path":root.0,key:["../src/*.rs"]});
+            let out = run(&root.0, query.clone()).expect("listing");
+            assert!(names(&out, "notices"), "{operation} {key}: {out}");
             assert!(
-                out["warnings"]
-                    .as_array()
-                    .is_some_and(|warnings| warnings.iter().any(|w| *w == expected.as_str())),
-                "{operation} {key}: {out}"
+                !names(&out, "warnings"),
+                "said once: {operation} {key}: {out}"
+            );
+            let mut resumed = query;
+            resumed["walkOffset"] = json!(1);
+            let window = run(&root.0, resumed.clone()).expect("resumed window");
+            let row = crate::response::rows::result_row(
+                crate::tools::id::ToolId::StructureSearch,
+                0,
+                &resumed,
+                window,
+                None,
+            );
+            assert!(
+                !names(&row["data"], "notices") && !names(&row["data"], "warnings"),
+                "a resumed walk does not repeat it: {operation} {key}: {row}"
             );
         }
     }
@@ -371,6 +388,40 @@ fn a_tree_names_a_symlink_that_leaves_the_allowed_roots() {
         assert_eq!(
             out["warnings"][0], "1 entry withheld by path policy: 1 symlink not followed.",
             "{operation}: {out}"
+        );
+    }
+}
+
+/// A filtered listing walks past an admitted link to a directory without
+/// following it, and hides the link row: it discloses the link with
+/// localSearch's wording instead of an empty listing that blames its
+/// filters. An unfiltered listing shows the link as its own row.
+#[cfg(unix)]
+#[test]
+fn a_filtered_listing_names_the_links_it_does_not_follow() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join("real/skill")).expect("target");
+    std::fs::write(root.0.join("real/skill/SKILL.md"), "x\n").expect("doc");
+    std::fs::create_dir(root.0.join("links")).expect("links");
+    std::os::unix::fs::symlink(root.0.join("real/skill"), root.0.join("links/skill"))
+        .expect("link");
+    let links = root.0.join("links");
+    for operation in ["tree", "files"] {
+        let out = run(
+            &root.0,
+            json!({"operation":operation,"path":links,"extensions":["md"]}),
+        )
+        .expect("filtered listing");
+        assert_eq!(
+            out["warnings"],
+            json!(["1 entry withheld by path policy: 1 symlink not followed."]),
+            "{operation}: {out}"
+        );
+        let plain = run(&root.0, json!({"operation":operation,"path":links})).expect("listing");
+        assert!(plain.get("warnings").is_none(), "{operation}: {plain}");
+        assert!(
+            has_string(&plain, "skill (symlink)") || plain.to_string().contains("symlink"),
+            "{operation}: {plain}"
         );
     }
 }

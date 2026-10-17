@@ -25,7 +25,7 @@ use super::failure::{LspFailure, RequestFailures, flag_partial, ignored_text_lea
 use super::import_stop::{proven_missing, stays_on_import};
 use super::recovery::{get_locations, resolve_definition_chain, snippet_identity};
 use super::render::uri_to_path;
-use super::scope::{IgnoredMentions, Scope, canonical};
+use super::scope::{CODE_CHECK_MAX_BYTES, CODE_CHECK_MAX_FILES, IgnoredMentions, Scope, canonical};
 use super::source::SourceCache;
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
@@ -51,8 +51,11 @@ const DIGEST_PREFIX: &str = "lsp-imp:";
 /// Partial reason of a window that leaves later windows unverified.
 pub(super) const CAPPED_REASON: &str = "importerScanCapped";
 /// Partial reason of a scan whose ignore rules hid files that import the
-/// name.
+/// name, or that spell it and could not be checked for an import.
 pub(super) const IGNORED_REASON: &str = "importerScanIgnored";
+/// The note of a lifted scan that stopped at its bound before reaching any
+/// evidence: it reads the same on every row of the scope.
+const IGNORED_UNFINISHED_NOTICE: &str = "The scan for gitignored files that spell this name stopped at its time bound, so importers among them are unverified.";
 /// Settle/ready bounds for the last candidate open of a window; the load it
 /// triggers covers every candidate opened before it. Shorter than a
 /// request's anchor open (the server already loaded the anchor's project),
@@ -383,46 +386,91 @@ impl Importers {
     }
 
     /// Gitignored files are outside the candidate scan. One that imports the
-    /// name may be a hidden importer: the row is partial, names the deciding
-    /// rules, and leads to exactly those files. Files that only spell the
-    /// name, or a scan for them that stopped at its bound, are no evidence
-    /// of a hidden importer: the row keeps only the lead (over the files, or
-    /// over the scope when the scan did not finish).
+    /// name may be a hidden importer, and one the import check could not
+    /// decide is not ruled out: the row is partial, counts each kind, names
+    /// the deciding rules, and leads to exactly those files. Files that only
+    /// spell the name are no evidence of a hidden importer: the row keeps
+    /// only the lead over them. A scan that stopped at its bound left the
+    /// rest unverified: its lead is over the scope, which holds the files it
+    /// found and those it did not reach, and without evidence the row is
+    /// partial and says the scan did not finish. Nested repositories the scan
+    /// did not enter are named, and the lead reaches into them too; they are
+    /// no evidence on their own, so they never make the row partial.
     fn disclose_ignored(&self, row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
         let ignored = &self.ignored;
-        let Some(name) = query
-            .symbol_name()
-            .filter(|_| !ignored.files.is_empty() || ignored.unfinished)
-        else {
+        if !ignored.nested_repositories.is_empty() {
+            crate::tools::paging::push_notice(
+                row,
+                format!(
+                    "The scan for gitignored files did not enter {} (directories with their own .git) under the scope root: {}.",
+                    match ignored.nested_repositories.len() {
+                        1 => "1 nested repository".to_owned(),
+                        count => format!("{count} nested repositories"),
+                    },
+                    ignored.nested_repositories.join(", ")
+                ),
+            );
+        }
+        let Some(name) = query.symbol_name().filter(|_| {
+            !ignored.files.is_empty()
+                || ignored.unfinished
+                || !ignored.nested_repositories.is_empty()
+        }) else {
             return;
         };
-        if ignored.importing.is_empty() {
-            let listed: &[String] = if ignored.unfinished {
-                &[]
-            } else {
-                &ignored.files
-            };
-            row["next"]["includeSkipped"] = ignored_text_lead(name, scope, listed);
+        let evidence = ignored
+            .importing
+            .iter()
+            .chain(&ignored.unchecked)
+            .cloned()
+            .collect::<Vec<_>>();
+        let spelled = if evidence.is_empty() {
+            &ignored.files
+        } else {
+            &evidence
+        };
+        let nested = ignored.nested_repositories.iter().map(|repo| {
+            Path::new(&scope.root)
+                .join(repo)
+                .to_string_lossy()
+                .into_owned()
+        });
+        let listed = spelled.iter().cloned().chain(nested).collect::<Vec<_>>();
+        row["next"]["includeSkipped"] = ignored_text_lead(name, scope, &listed, ignored.unfinished);
+        if evidence.is_empty() {
+            if ignored.unfinished {
+                crate::tools::paging::mark_partial(row, IGNORED_REASON, &[]);
+                crate::tools::paging::push_notice(row, IGNORED_UNFINISHED_NOTICE);
+            }
             return;
         }
         let rules = match ignored.rules.as_slice() {
             [] => "ignore rules".to_owned(),
             rules => rules.join(", "),
         };
-        let files = match ignored.importing.len() {
-            1 => "1 file that imports this name is".to_owned(),
-            count => format!("{count} files that import this name are"),
-        };
+        let mut counts = Vec::new();
+        match ignored.importing.len() {
+            0 => {}
+            1 => counts.push("1 imports it".to_owned()),
+            count => counts.push(format!("{count} import it")),
+        }
+        if !ignored.unchecked.is_empty() {
+            counts.push(format!(
+                "{} could not be checked for an import (unreadable, larger than {} MiB, unparsable, or past the first {CODE_CHECK_MAX_FILES} checked)",
+                ignored.unchecked.len(),
+                CODE_CHECK_MAX_BYTES / (1024 * 1024),
+            ));
+        }
         let more = if ignored.unfinished {
             " The scan for gitignored files stopped at its time bound, so more may exist."
         } else {
             ""
         };
         let warning = format!(
-            "{files} gitignored ({rules}), so importer recovery did not verify them; a localSearch with includeIgnored reads their text.{more}"
+            "Of the gitignored files that spell this name ({rules}), {}; importer recovery did not verify them, and a localSearch with includeIgnored reads their text.{more}",
+            counts.join(" and ")
         );
         crate::tools::paging::mark_partial(row, IGNORED_REASON, &[warning]);
-        row["next"]["includeSkipped"] = ignored_text_lead(name, scope, &ignored.importing);
     }
 
     /// Record the scan on the row's coverage so readers and
@@ -556,7 +604,7 @@ pub(super) async fn verified_anchors(
     let mut ignored = scope
         .ignored_text_files(symbol, &skip, sources.policy(), cancel)
         .await?;
-    ignored.importing = importing_files(sources, cancel, &ignored.files, symbol).await?;
+    check_imports(&mut ignored, sources.policy(), cancel, symbol).await?;
     let declaration = identities(
         client,
         sources,
@@ -618,46 +666,62 @@ pub(super) async fn verified_anchors(
     })
 }
 
-/// Ignored files read to tell an importer from a file that only spells the
-/// name; any beyond it count as importing (unchecked is not absence).
-const MAX_IGNORED_CHECKED: usize = 64;
-
-/// Of `files`, those that import `symbol`: by name (`import { symbol }`,
-/// `const { symbol } = require(…)`, renamed or not), or through a namespace
-/// or default binding whose member `.symbol` the file spells. A file that
-/// cannot be read or parsed counts as importing.
-async fn importing_files(
-    sources: &mut SourceCache<'_>,
+/// Sort `ignored.files` into those that import `symbol` (by name:
+/// `import { symbol }`, `const { symbol } = require(…)`, renamed or not; or
+/// through a namespace or default binding whose member `.symbol` the file
+/// spells) and those the check cannot decide: refused by the policy,
+/// unreadable, larger than [`CODE_CHECK_MAX_BYTES`], unparsable, or past
+/// [`CODE_CHECK_MAX_FILES`]. One blocking worker reads the files in turn and
+/// keeps none: the server never opens them, so no request cache holds them.
+async fn check_imports(
+    ignored: &mut IgnoredMentions,
+    policy: &PathPolicy,
     cancel: &dyn CancellationCheck,
-    files: &[String],
     symbol: &str,
-) -> Result<Vec<String>, LspFailure> {
-    let mut importing = Vec::new();
-    for (index, file) in files.iter().enumerate() {
-        cancel.check().map_err(LspFailure::cancelled)?;
-        let imports = if index < MAX_IGNORED_CHECKED {
-            match sources.get(file).await {
-                Some(source) => imports_name(&source.content, file, symbol),
-                None => true,
-            }
-        } else {
-            true
-        };
-        if imports {
-            importing.push(file.clone());
+) -> Result<(), LspFailure> {
+    let files = ignored.files.clone();
+    let (policy, symbol) = (policy.clone(), symbol.to_owned());
+    let checked = super::blocking_cancellable(cancel, move |stopped| {
+        files
+            .into_iter()
+            .enumerate()
+            .map(|(index, file)| {
+                let imports = (index < CODE_CHECK_MAX_FILES && !stopped())
+                    .then(|| import_of(&policy, &file, &symbol))
+                    .flatten();
+                (file, imports)
+            })
+            .collect::<Vec<_>>()
+    })
+    .await?;
+    let Some(checked) = checked else {
+        // The worker failed: nothing was decided.
+        ignored.unchecked = ignored.files.clone();
+        return Ok(());
+    };
+    for (file, imports) in checked {
+        match imports {
+            Some(true) => ignored.importing.push(file),
+            Some(false) => {}
+            None => ignored.unchecked.push(file),
         }
     }
-    Ok(importing)
+    Ok(())
 }
 
-/// Whether `content` imports `symbol` (see [`importing_files`]); `true`
-/// when the file cannot be parsed.
-fn imports_name(content: &str, file: &str, symbol: &str) -> bool {
-    let Some(parsed) = octocode_engine::portable::extract_graph_facts(content, file)
-        .and_then(|facts| serde_json::from_str::<Value>(&facts).ok())
-    else {
-        return true;
-    };
+/// Whether the policy-readable, bounded `file` imports `symbol`; `None`
+/// when it cannot be read or parsed.
+fn import_of(policy: &PathPolicy, file: &str, symbol: &str) -> Option<bool> {
+    let valid = policy.validate_read(file).ok()?;
+    let bytes = crate::tools::source::read_bounded(&valid.canonical, CODE_CHECK_MAX_BYTES).ok()?;
+    imports_name(&String::from_utf8(bytes).ok()?, file, symbol)
+}
+
+/// Whether `content` imports `symbol` (see [`check_imports`]); `None` when
+/// the file cannot be parsed.
+fn imports_name(content: &str, file: &str, symbol: &str) -> Option<bool> {
+    let parsed = octocode_engine::portable::extract_graph_facts(content, file)
+        .and_then(|facts| serde_json::from_str::<Value>(&facts).ok())?;
     let member = format!(".{symbol}");
     let spells_member = || {
         content.match_indices(&member).any(|(at, _)| {
@@ -667,18 +731,20 @@ fn imports_name(content: &str, file: &str, symbol: &str) -> bool {
                 .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$')
         })
     };
-    parsed
-        .get("imports")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .any(
-            |import| match import.get("importedName").and_then(Value::as_str) {
-                Some(name) if name == symbol => true,
-                Some("*" | "default") => spells_member(),
-                _ => false,
-            },
-        )
+    Some(
+        parsed
+            .get("imports")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(
+                |import| match import.get("importedName").and_then(Value::as_str) {
+                    Some(name) if name == symbol => true,
+                    Some("*" | "default") => spells_member(),
+                    _ => false,
+                },
+            ),
+    )
 }
 
 /// A synchronized candidate and its `(line, character, is-call)` occurrences.
@@ -1228,11 +1294,12 @@ mod tests {
         assert_eq!(row["coverage"]["importerScan"], SCAN_FAILED);
     }
 
-    /// Only a gitignored file that imports the name makes the row partial;
-    /// files that only spell it, or a scan that stopped at its bound, leave
-    /// a lead and no partial reason.
+    /// A gitignored file that imports the name, one the check could not
+    /// decide, or a scan that stopped at its bound makes the row partial;
+    /// files that only spell it and nested repositories leave a lead and no
+    /// partial reason.
     #[test]
-    fn only_ignored_importers_make_the_row_partial() {
+    fn ignored_importers_or_an_unfinished_scan_make_the_row_partial() {
         let query: LspSearchQuery = serde_json::from_value(json!({
             "operation": "references", "path": "/r/a.ts", "symbolName": "x", "line": 1
         }))
@@ -1249,14 +1316,71 @@ mod tests {
         };
         let quiet = annotate(IgnoredMentions::default());
         assert!(quiet.get("isPartial").is_none(), "{quiet}");
-        assert!(quiet["next"].get("includeSkipped").is_none(), "{quiet}");
 
-        // An unfinished scan: a lead over the scope, not a partial row.
+        // Nested repositories the scan did not enter are named, whatever
+        // else it found.
+        let nested = annotate(IgnoredMentions {
+            nested_repositories: vec!["repos/a".into(), "repos/b".into()],
+            ..IgnoredMentions::default()
+        });
+        assert_eq!(
+            nested[crate::tools::paging::NOTICES],
+            json!([
+                "The scan for gitignored files did not enter 2 nested repositories (directories with their own .git) under the scope root: repos/a, repos/b."
+            ]),
+            "{nested}"
+        );
+        assert!(quiet["next"].get("includeSkipped").is_none(), "{quiet}");
+        // They are no evidence, so the row stays whole, but the lead reaches
+        // into each of them.
+        assert!(nested.get("isPartial").is_none(), "{nested}");
+        assert!(nested.get("partialReasons").is_none(), "{nested}");
+        let lead_paths = |row: &Value| {
+            row["next"]["includeSkipped"]["query"]["queries"]
+                .as_array()
+                .expect("leads")
+                .iter()
+                .map(|lead| {
+                    assert_eq!(lead["includeIgnored"], true, "{row}");
+                    lead["path"].clone()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            lead_paths(&nested),
+            [json!("/r/repos/a"), json!("/r/repos/b")],
+            "{nested}"
+        );
+        // With evidence, one lead covers it and the nested repositories.
+        let nested_hidden = annotate(IgnoredMentions {
+            files: vec!["/r/gen/g.ts".into()],
+            importing: vec!["/r/gen/g.ts".into()],
+            nested_repositories: vec!["repos/a".into()],
+            ..IgnoredMentions::default()
+        });
+        assert_eq!(
+            lead_paths(&nested_hidden),
+            [json!("/r/gen/g.ts"), json!("/r/repos/a")],
+            "{nested_hidden}"
+        );
+
+        // An unfinished scan left importers unverified: a partial row, a
+        // lead over the scope, and a note.
         let unfinished = annotate(IgnoredMentions::unfinished());
-        assert!(unfinished.get("isPartial").is_none(), "{unfinished}");
+        assert_eq!(unfinished["isPartial"], true, "{unfinished}");
+        assert_eq!(
+            unfinished["partialReasons"],
+            json!([IGNORED_REASON]),
+            "{unfinished}"
+        );
         let lead = &unfinished["next"]["includeSkipped"]["query"]["queries"][0];
         assert_eq!(lead["path"], "/r", "{unfinished}");
         assert_eq!(lead["includeIgnored"], true, "{unfinished}");
+        assert_eq!(
+            unfinished[crate::tools::paging::NOTICES],
+            json!([IGNORED_UNFINISHED_NOTICE]),
+            "{unfinished}"
+        );
 
         // Bundled copies that only spell the name: their exact lead.
         let copies = annotate(IgnoredMentions {
@@ -1276,6 +1400,7 @@ mod tests {
             rules: vec![".gitignore:1 'gen/'".into()],
             unfinished: true,
             importing: vec!["/r/gen/g.ts".into()],
+            ..IgnoredMentions::default()
         });
         assert_eq!(
             hidden["partialReasons"],
@@ -1284,39 +1409,133 @@ mod tests {
         );
         let warning = hidden["warnings"][0].as_str().expect("warning");
         assert!(
-            warning.contains("1 file that imports") && warning.contains("more may exist"),
+            warning.contains("1 imports it")
+                && !warning.contains("could not be checked")
+                && warning.contains("more may exist"),
             "{hidden}"
         );
+        // More may exist past where the scan stopped: the lead names the
+        // importer it found, then covers the scope for what it did not reach.
         assert_eq!(
-            hidden["next"]["includeSkipped"]["query"]["queries"][0]["path"], "/r/gen/g.ts",
+            lead_paths(&hidden),
+            [json!("/r/gen/g.ts"), json!("/r")],
             "{hidden}"
         );
+        let past_stop = &hidden["next"]["includeSkipped"]["query"]["queries"][1];
+        assert_eq!(past_stop["include"], json!(["*.ts"]), "{hidden}");
+        // Undecided files and nested repositories are named the same way.
+        let hidden_unchecked = annotate(IgnoredMentions {
+            files: vec!["/r/gen/big.js".into(), "/r/gen/g.ts".into()],
+            unfinished: true,
+            importing: vec!["/r/gen/g.ts".into()],
+            unchecked: vec!["/r/gen/big.js".into()],
+            nested_repositories: vec!["repos/a".into()],
+            ..IgnoredMentions::default()
+        });
+        assert_eq!(
+            lead_paths(&hidden_unchecked),
+            [
+                json!("/r/gen/g.ts"),
+                json!("/r/gen/big.js"),
+                json!("/r/repos/a"),
+                json!("/r")
+            ],
+            "{hidden_unchecked}"
+        );
+
+        // Files the check could not decide are counted apart, never as
+        // importers, and still lead.
+        let undecided = annotate(IgnoredMentions {
+            files: vec!["/r/gen/big.js".into(), "/r/gen/g.ts".into()],
+            rules: vec![".gitignore:1 'gen/'".into()],
+            importing: vec!["/r/gen/g.ts".into()],
+            unchecked: vec!["/r/gen/big.js".into()],
+            ..IgnoredMentions::default()
+        });
+        assert_eq!(undecided["partialReasons"], json!([IGNORED_REASON]));
+        let warning = undecided["warnings"][0].as_str().expect("warning");
+        assert!(
+            warning.contains("1 imports it and 1 could not be checked"),
+            "{undecided}"
+        );
+        let leads = undecided["next"]["includeSkipped"]["query"]["queries"]
+            .as_array()
+            .expect("leads")
+            .iter()
+            .map(|lead| lead["path"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(leads, [json!("/r/gen/g.ts"), json!("/r/gen/big.js")]);
+    }
+
+    /// The import check reads each ignored file through the bounded reader:
+    /// a file too large or unparsable, and every file past the check bound,
+    /// stays unchecked rather than counting as an importer.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ignored_files_the_check_cannot_decide_stay_unchecked() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = dir.path().canonicalize().expect("canonical");
+        let write = |name: &str, text: &str| {
+            let path = root.join(name);
+            std::fs::write(&path, text).expect("write");
+            path.to_string_lossy().into_owned()
+        };
+        let importer = write("imp.ts", "import { x } from './a';\nx();\n");
+        let copy = write("copy.ts", "export function x() {}\n");
+        let large = write("large.js", &"// x\n".repeat(CODE_CHECK_MAX_BYTES / 5 + 1));
+        let mut files = vec![importer.clone(), copy, large.clone()];
+        let past = (0..CODE_CHECK_MAX_FILES)
+            .map(|index| write(&format!("p{index}.ts"), "import { x } from './a';\n"))
+            .collect::<Vec<_>>();
+        files.extend(past.iter().cloned());
+        let mut ignored = IgnoredMentions {
+            files,
+            ..IgnoredMentions::default()
+        };
+        let policy = crate::tools::test_support::workspace_policy(&root);
+        check_imports(
+            &mut ignored,
+            &policy,
+            &crate::tools::cancel::NeverCancel,
+            "x",
+        )
+        .await
+        .expect("check");
+        // The first CODE_CHECK_MAX_FILES are read: the importer and all but 3 of
+        // the past files import.
+        assert_eq!(ignored.importing.len(), 1 + CODE_CHECK_MAX_FILES - 3);
+        assert_eq!(ignored.importing[0], importer);
+        let mut unchecked = vec![large];
+        unchecked.extend(past[CODE_CHECK_MAX_FILES - 3..].iter().cloned());
+        assert_eq!(ignored.unchecked, unchecked);
     }
 
     #[test]
     fn importing_is_by_name_or_namespace_member() {
-        assert!(imports_name(
-            "import { x } from './a';\nx();\n",
-            "a.ts",
-            "x"
-        ));
-        assert!(imports_name("import { x as y } from './a';\n", "a.ts", "x"));
-        assert!(imports_name(
-            "import * as a from './a';\na.x();\n",
-            "a.ts",
-            "x"
-        ));
-        assert!(!imports_name(
-            "import * as a from './a';\na.xy();\n",
-            "a.ts",
-            "x"
-        ));
+        let imports = |content: &str, file: &str| imports_name(content, file, "x");
+        assert_eq!(
+            imports("import { x } from './a';\nx();\n", "a.ts"),
+            Some(true)
+        );
+        assert_eq!(
+            imports("import { x as y } from './a';\n", "a.ts"),
+            Some(true)
+        );
+        assert_eq!(
+            imports("import * as a from './a';\na.x();\n", "a.ts"),
+            Some(true)
+        );
+        assert_eq!(
+            imports("import * as a from './a';\na.xy();\n", "a.ts"),
+            Some(false)
+        );
         // A bundled copy declaring its own `x` imports nothing of it.
-        assert!(!imports_name(
-            "import fs from 'node:fs';\nexport function x() { return fs; }\n",
-            "copy.mjs",
-            "x"
-        ));
+        assert_eq!(
+            imports(
+                "import fs from 'node:fs';\nexport function x() { return fs; }\n",
+                "copy.mjs"
+            ),
+            Some(false)
+        );
     }
 
     #[test]

@@ -45,11 +45,22 @@ fn utf16_len(s: &str) -> usize {
 /// row-0 columns and line text exclude it while byte offsets keep counting it.
 pub(crate) const BOM: char = '\u{feff}';
 
+/// The one leading-BOM rule: the bytes of the UTF-8 byte-order mark `text`
+/// starts with (3), or 0. A U+FEFF anywhere else is text.
+pub fn bom_len(text: &[u8]) -> usize {
+    let mut mark = [0; 3];
+    if text.starts_with(BOM.encode_utf8(&mut mark).as_bytes()) {
+        mark.len()
+    } else {
+        0
+    }
+}
+
 /// Hide a leading BOM from a row-0 line: returns the line text without it and
 /// `byte_column` rebased past it. Other rows (and BOM-free text) pass through.
 pub(crate) fn hide_bom_in_line(row: usize, line: &str, byte_column: usize) -> (&str, usize) {
-    match line.strip_prefix(BOM) {
-        Some(rest) if row == 0 => (rest, byte_column.saturating_sub(BOM.len_utf8())),
+    match bom_len(line.as_bytes()) {
+        bom if row == 0 && bom > 0 => (&line[bom..], byte_column.saturating_sub(bom)),
         _ => (line, byte_column),
     }
 }
@@ -121,7 +132,7 @@ impl LineIndex {
     /// `\n` only, aligned with tree-sitter rows: every position derived from
     /// a syntax tree (or a text-search line) must use this rule, or a lone `\r`
     /// shifts every later line against the grammar's own row numbering.
-    pub(crate) fn tree_sitter(content: &str) -> Self {
+    pub fn tree_sitter(content: &str) -> Self {
         Self::build(content, false)
     }
 
@@ -162,7 +173,7 @@ impl LineIndex {
             line_starts_byte,
             line_ends_byte,
             line_starts_utf16,
-            bom_utf16: u32::from(content.starts_with(BOM)),
+            bom_utf16: u32::from(bom_len(content.as_bytes()) > 0),
             utf16_checkpoints,
             ascii: content.is_ascii(),
         }
@@ -268,7 +279,7 @@ impl LineIndex {
     /// Inverse of [`byte_to_position`](Self::byte_to_position): a 0-based
     /// `(line, UTF-16 column)` to a byte offset into `content`. Clamps
     /// out-of-range input to a valid offset.
-    pub(crate) fn position_to_byte(&self, content: &str, line: u32, character: u32) -> u32 {
+    pub fn position_to_byte(&self, content: &str, line: u32, character: u32) -> u32 {
         let line_start = self
             .line_starts_byte
             .get(line as usize)
@@ -508,6 +519,14 @@ mod tests {
         assert_eq!(index.position_to_byte(src, 1, 0), row1);
         // The raw JS-string line-start table is unchanged (it counts U+FEFF).
         assert_eq!(index.line_starts_utf16(), &[0, 9]);
+    }
+
+    #[test]
+    fn bom_len_counts_only_a_leading_bom() {
+        assert_eq!(bom_len("\u{feff}foo".as_bytes()), 3);
+        assert_eq!(bom_len(b"foo\xef\xbb\xbf"), 0);
+        assert_eq!(bom_len(b"\xef\xbb"), 0);
+        assert_eq!(bom_len(b""), 0);
     }
 
     #[test]

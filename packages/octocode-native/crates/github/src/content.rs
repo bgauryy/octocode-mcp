@@ -163,9 +163,10 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         let partition = self.transport.cache_partition(context, None)?;
         let key = cache_key(request, &resolved_ref);
         // Single flight: identical concurrent reads wait for the first and
-        // then read what it cached.
+        // then read what it cached; a waiter stops on its own cancellation
+        // or deadline, not the holder's.
         let ticket = content_flights().join((partition.clone(), key.clone()));
-        let _turn = ticket.turn().await;
+        let _turn = context.budget.wait(ticket.turn()).await?;
         // The cache key holds the resolved commit SHA, so a cached body is
         // immutable: it is served without asking GitHub again. A movable ref
         // stays fresh through its own resolution, not through this entry.
@@ -188,7 +189,6 @@ impl<C: ConditionalCache> GitHubProvider<C> {
                 let (bytes, raw_response_bytes) = self
                     .fetch_via_directory_and_blob(request, &resolved_ref, context, kind)
                     .await?;
-                let bytes = Bytes::from(bytes);
                 let stored = CachedContent {
                     etag: None,
                     bytes: bytes.clone(),
@@ -320,7 +320,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         match payload.sha.as_deref().filter(|_| needs_blob) {
             Some(sha) => {
                 let (bytes, blob_bytes) = self.fetch_blob(request, sha, context, kind).await?;
-                Ok((bytes.into(), raw_response_bytes.saturating_add(blob_bytes)))
+                Ok((bytes, raw_response_bytes.saturating_add(blob_bytes)))
             }
             None => {
                 let bytes = decode_bytes(payload.encoding.as_deref(), payload.content)?;
@@ -450,10 +450,10 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         let reference = reference.unwrap_or("HEAD");
         let partition = self.transport.cache_partition(context, None)?;
         let key = ref_memo_key(owner, repo, reference);
-        // Single flight: a concurrent batch on one ref waits for the first
-        // resolution and then reads it from the memo.
+        // Single flight: a concurrent batch on one ref waits (within its own
+        // budget) for the first resolution and then reads it from the memo.
         let ticket = ref_flights().join((partition.clone(), key.clone()));
-        let _turn = ticket.turn().await;
+        let _turn = context.budget.wait(ticket.turn()).await?;
         if !force_refresh
             && let Some(sha) = self
                 .cache
@@ -488,7 +488,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         resolved_ref: &str,
         context: &RequestContext,
         kind: ContentKind,
-    ) -> Result<(Vec<u8>, usize), ProviderError> {
+    ) -> Result<(Bytes, usize), ProviderError> {
         let (parent, name) = request.path.rsplit_once('/').unwrap_or(("", &request.path));
         let mut directory_url = self.transport.endpoint().rest(&[
             "repos",
@@ -526,14 +526,15 @@ impl<C: ConditionalCache> GitHubProvider<C> {
 
     /// A blob's bytes as GitHub stores them: the raw media type answers
     /// with the bytes themselves (up to 100 MB), not a base64 JSON body a
-    /// third larger that must then be decoded.
+    /// third larger that must then be decoded. The response buffer is the
+    /// answer, shared, never copied.
     async fn fetch_blob(
         &self,
         request: &ContentRequest,
         sha: &str,
         context: &RequestContext,
         kind: ContentKind,
-    ) -> Result<(Vec<u8>, usize), ProviderError> {
+    ) -> Result<(Bytes, usize), ProviderError> {
         let blob_url = self.transport.endpoint().rest(&[
             "repos",
             &request.owner,
@@ -546,9 +547,9 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         spec.headers
             .insert(ACCEPT, HeaderValue::from_static(RAW_MEDIA_TYPE));
         let blob = self.transport.execute(spec, context).await?;
-        let bytes = blob.body.to_vec();
-        kind.check(&bytes, Some(sha))?;
-        Ok((bytes, blob.body.len()))
+        kind.check(&blob.body, Some(sha))?;
+        let size = blob.body.len();
+        Ok((blob.body, size))
     }
 }
 

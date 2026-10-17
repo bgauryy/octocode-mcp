@@ -537,6 +537,7 @@ fn first_open_waits_for_the_project_load_the_open_triggers() {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         });
         client.start().await.expect("fake server starts");
         // No progress on initialized: the initial readiness wait only settles.
@@ -600,6 +601,7 @@ fn initialize_advertises_push_diagnostics_so_servers_publish_them() {
         initialization_options: None,
         env: None,
         max_memory_mb: None,
+        source: Default::default(),
     };
     let params = initialize_params(&config).expect("initialize params");
     assert_eq!(
@@ -618,6 +620,7 @@ fn ts_config() -> JsLanguageServerConfig {
         initialization_options: None,
         env: None,
         max_memory_mb: None,
+        source: Default::default(),
     }
 }
 
@@ -1181,6 +1184,7 @@ fn configurable_server(
                 .collect(),
         ),
         max_memory_mb,
+        source: Default::default(),
     };
     (tmp, root, config)
 }
@@ -1347,7 +1351,7 @@ fn open_documents_remember_the_synced_content() {
     let mut docs = OpenDocuments::new(2);
     let (version, _) = docs.reserve("file:///a");
     assert_eq!(docs.unchanged("file:///a", 7), None, "nothing synced yet");
-    docs.record("file:///a", version, 7);
+    docs.record("file:///a", version, "/a", 7);
     assert_eq!(
         docs.unchanged("file:///a", 7),
         Some(1),
@@ -1361,13 +1365,13 @@ fn open_documents_remember_the_synced_content() {
     // A new sync forgets the old content until it is recorded.
     let (version, _) = docs.reserve("file:///a");
     assert_eq!(docs.unchanged("file:///a", 7), None);
-    docs.record("file:///a", version, 8);
+    docs.record("file:///a", version, "/a", 8);
     assert_eq!(docs.unchanged("file:///a", 8), Some(2));
     // A failed sync or an eviction forgets the content too.
     let (version, _) = docs.reserve("file:///a");
     docs.rollback("file:///a", version);
     assert_eq!(docs.unchanged("file:///a", 8), None);
-    docs.record("file:///a", 2, 8);
+    docs.record("file:///a", 2, "/a", 8);
     docs.reserve("file:///b");
     docs.reserve("file:///c");
     assert_eq!(docs.unchanged("file:///a", 8), None, "evicted");
@@ -1437,6 +1441,7 @@ fn first_page_reuses_responses_when_generation_matches() {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         });
         client.start().await.expect("fake server starts");
         let line = |scope: ResponseScope| {
@@ -1484,6 +1489,149 @@ fn first_page_reuses_responses_when_generation_matches() {
     });
 }
 
+/// Answers `textDocument/references` from the text it holds: the line of
+/// `MARK` in every open document, plus the anchor at the request count, so
+/// both a stale open document and a reused answer are visible.
+#[cfg(unix)]
+const DOCUMENT_SERVER: &str = r#"#!/usr/bin/env node
+let buf = Buffer.alloc(0);
+let count = 0;
+const docs = new Map();
+function send(m) {
+  const s = JSON.stringify(m);
+  process.stdout.write('Content-Length: ' + Buffer.byteLength(s) + '\r\n\r\n' + s);
+}
+function at(uri, line) {
+  return { uri, range: { start: { line, character: 0 }, end: { line, character: 1 } } };
+}
+function handle(msg) {
+  if (msg.method === 'initialize') {
+    send({ jsonrpc: '2.0', id: msg.id, result: { capabilities: { referencesProvider: true, textDocumentSync: 1 } } });
+  } else if (msg.method === 'textDocument/didOpen') {
+    docs.set(msg.params.textDocument.uri, msg.params.textDocument.text);
+  } else if (msg.method === 'textDocument/didChange') {
+    docs.set(msg.params.textDocument.uri, msg.params.contentChanges[0].text);
+  } else if (msg.method === 'textDocument/didClose') {
+    docs.delete(msg.params.textDocument.uri);
+  } else if (msg.method === 'textDocument/references') {
+    count += 1;
+    const result = [at(msg.params.textDocument.uri, count)];
+    for (const [uri, text] of docs) {
+      const line = text.split('\n').indexOf('MARK');
+      if (line >= 0) result.push(at(uri, line));
+    }
+    send({ jsonrpc: '2.0', id: msg.id, result });
+  } else if (msg.method === 'exit') {
+    process.exit(0);
+  } else if (msg.id !== undefined && msg.method) {
+    send({ jsonrpc: '2.0', id: msg.id, result: null });
+  }
+}
+process.stdin.on('data', (d) => {
+  buf = Buffer.concat([buf, d]);
+  for (;;) {
+    const i = buf.indexOf('\r\n\r\n');
+    if (i < 0) return;
+    const m = /Content-Length: (\d+)/i.exec(buf.slice(0, i).toString());
+    const n = Number(m[1]);
+    if (buf.length < i + 4 + n) return;
+    const msg = JSON.parse(buf.slice(i + 4, i + 4 + n).toString());
+    buf = buf.slice(i + 4 + n);
+    handle(msg);
+  }
+});
+"#;
+
+/// A document opened earlier and then edited on disk answers with its new
+/// text, from a request anchored in another file, and no answer given
+/// before the edit is reused after it; a deleted one is closed.
+#[cfg(unix)]
+#[test]
+fn open_documents_follow_their_files_and_never_replay_older_answers() {
+    use std::os::unix::fs::PermissionsExt;
+    if !node_available() {
+        return;
+    }
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let tmp = TmpDir::new();
+        let root = tmp.0.join("octocode-engine-open-documents");
+        std::fs::create_dir_all(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let script = root.join("fake-lsp.js");
+        std::fs::write(&script, DOCUMENT_SERVER).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let anchor = root.join("a.ts");
+        std::fs::write(&anchor, "use();\n".repeat(10)).unwrap();
+        let other = root.join("b.ts");
+        std::fs::write(&other, "MARK\n").unwrap();
+        let (anchor, other) = (
+            anchor.to_string_lossy().into_owned(),
+            other.to_string_lossy().into_owned(),
+        );
+        let client = NativeLspClient::new(JsLanguageServerConfig {
+            command: script.to_string_lossy().into_owned(),
+            args: Some(Vec::new()),
+            workspace_root: root.to_string_lossy().into_owned(),
+            language_id: Some("typescript".into()),
+            initialization_options: None,
+            env: None,
+            max_memory_mb: None,
+            source: Default::default(),
+        });
+        client.start().await.expect("fake server starts");
+        client
+            .open_document(other.clone(), "MARK\n")
+            .await
+            .expect("open b");
+        // (anchor line = request count, b's MARK line when b is open)
+        let ask = || {
+            let client = &client;
+            let anchor = anchor.clone();
+            let scope = ResponseScope {
+                reuse: true,
+                generation: "g".into(),
+            };
+            RESPONSE_SCOPE.scope(std::cell::RefCell::new(scope), async move {
+                let found = client
+                    .get_locations(
+                        LocationRequest::References {
+                            include_declaration: true,
+                        },
+                        anchor.clone(),
+                        0,
+                        0,
+                        &SnippetReadPolicy::default(),
+                        None,
+                    )
+                    .await
+                    .expect("references");
+                let line = |name: &str| {
+                    found
+                        .iter()
+                        .find(|snippet| snippet.uri.ends_with(name))
+                        .map(|snippet| snippet.range.start.line)
+                };
+                (line("/a.ts"), line("/b.ts"))
+            })
+        };
+        let first = ask().await;
+        assert_eq!(first.1, Some(0), "b's synced text: {first:?}");
+        assert_eq!(ask().await, first, "nothing changed: the answer is reused");
+
+        std::fs::write(&other, "x\nx\nx\nMARK\n").unwrap();
+        let edited = ask().await;
+        assert_eq!(edited.1, Some(3), "b is answered from its new text");
+        assert_ne!(edited.0, first.0, "the older answer is not replayed");
+        assert_eq!(ask().await, edited, "the new answer is reused");
+
+        std::fs::remove_file(&other).unwrap();
+        let removed = ask().await;
+        assert_eq!(removed.1, None, "a deleted file's document is closed");
+        assert_ne!(removed.0, edited.0);
+        client.stop().await.unwrap();
+    });
+}
+
 #[cfg(unix)]
 #[test]
 fn settled_requests_wait_only_when_they_reach_the_server() {
@@ -1510,6 +1658,7 @@ fn settled_requests_wait_only_when_they_reach_the_server() {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         });
         client.start().await.expect("fake server starts");
         let settle = Duration::from_millis(200);

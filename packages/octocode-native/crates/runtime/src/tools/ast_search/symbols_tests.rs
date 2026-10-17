@@ -499,3 +499,23 @@ fn a_symbols_page_size_is_held_to_the_contract_maximum() {
         assert_eq!(q.page_size(), Some(kept), "pageSize {asked}");
     }
 }
+
+/// A directory outline takes each file's declarations from the one
+/// declarations cache, not a second parse memo: a file outlined in its
+/// directory is cached for every later reader (its own outline included).
+#[test]
+fn a_directory_outline_parses_through_the_declarations_cache() {
+    let root = Fixture::new();
+    let source = "pub fn shared_outline() {}\npub struct Kept;\n";
+    root.write("src/lib.rs", source);
+    let out = super::test_rows::run(&root.0, json!({"operation":"symbols","path":root.0}))
+        .expect("symbols");
+    assert_eq!(out["filesScanned"], 1, "{out}");
+    let file = root.0.join("src/lib.rs").canonicalize().expect("canonical");
+    assert!(
+        crate::tools::declarations_cache::document(source, &file.to_string_lossy(), None, || {
+            panic!("the directory outline's parse is cached")
+        })
+        .is_some()
+    );
+}

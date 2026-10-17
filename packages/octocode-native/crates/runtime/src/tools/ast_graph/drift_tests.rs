@@ -476,7 +476,7 @@ fn a_stored_graph_never_holds_a_secret_of_the_source() {
     let stored = || {
         std::fs::read_dir(cache.path())
             .expect("cache files")
-            .map(|entry| std::fs::read_to_string(entry.expect("entry").path()).expect("file"))
+            .map(|entry| super::memo::stored_text(&entry.expect("entry").path()))
             .collect::<Vec<_>>()
     };
     run_with_cache(json!({"operation":"cycles","path":root.join("src")}));

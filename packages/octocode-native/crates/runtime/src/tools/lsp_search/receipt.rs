@@ -354,20 +354,9 @@ pub(super) fn resolved_server_receipt(
             .unwrap_or_else(|| json!({})),
         config.env.clone().unwrap_or_default()
     ]));
-    let source = if config
-        .args
-        .as_deref()
-        .unwrap_or(&[])
-        .iter()
-        .any(|argument| argument.contains("node_modules"))
-    {
-        "bundled"
-    } else {
-        "path"
-    };
     let mut receipt = json!({
         "command": config.command,
-        "source": source,
+        "source": config.source.as_str(),
         "workspaceRoot": config.workspace_root,
         "workspaceFingerprint": crate::digest::sha256(workspace.as_bytes()),
         "configurationFingerprint": crate::digest::json_sha256(&configuration),

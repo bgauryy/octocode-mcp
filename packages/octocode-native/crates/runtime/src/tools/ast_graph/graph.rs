@@ -129,6 +129,7 @@ fn build_fresh(
     let scan = octocode_engine::graph::scan_walked_graph_facts(
         scan.options,
         scan.walk,
+        octocode_engine::graph::FactsSource::Graph,
         &|_: &str| true,
         &|view: &octocode_engine::graph::GraphFactsView<'_>| Some(view.to_entry()),
         &|| cancel.check().is_err(),

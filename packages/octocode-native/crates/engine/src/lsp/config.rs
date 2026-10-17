@@ -3,7 +3,7 @@ use crate::lsp::commands::{command_resolves_to_executable, is_executable_path, i
 use crate::lsp::grammar::grammar_for_file;
 use crate::lsp::managed::{platform_id, resolve_cached_server};
 use crate::lsp::module_path::install_anchor;
-use crate::lsp::types::JsLanguageServerConfig;
+use crate::lsp::types::{JsLanguageServerConfig, ServerSource};
 use crate::text::file_extension::{JS_TS_EXTENSIONS, extension_of};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -61,6 +61,11 @@ pub struct LspDiscoveryOptions {
     /// The octocode home: the user `lsp-servers.json`, managed server
     /// installs, and jdtls workspaces.
     pub octocode_home: Option<PathBuf>,
+    /// The directory the host runs the call for (the runtime's working
+    /// directory, not necessarily the process's): the user's own project,
+    /// whose `node_modules` may supply the TypeScript server and which
+    /// trusts a workspace inside it. `None` trusts no invocation directory.
+    pub invocation_dir: Option<PathBuf>,
 }
 
 impl LspDiscoveryOptions {
@@ -628,7 +633,7 @@ fn config_from_spec(
     anchor: Option<&Path>,
     native_typescript: bool,
 ) -> JsLanguageServerConfig {
-    let (command, args) =
+    let (command, args, source) =
         resolve_spec_invocation(&spec, workspace_root, options, anchor, native_typescript);
     let mut config = JsLanguageServerConfig {
         command,
@@ -638,6 +643,7 @@ fn config_from_spec(
         initialization_options: None,
         env: None,
         max_memory_mb: None,
+        source,
     };
     // The built-in Rust route is rust-analyzer even from a managed install
     // whose file name differs.
@@ -649,21 +655,22 @@ fn config_from_spec(
     config
 }
 
-/// Resolve a spec's command + args: a managed install, else the command on
-/// `PATH`; Python prefers an installed pyright-family server. Any other
-/// server (e.g. `tsgo`) is a user `lsp-servers.json` entry.
+/// Resolve a spec's command + args, and where they came from: a managed
+/// install, else the command on `PATH`; Python prefers an installed
+/// pyright-family server. Any other server (e.g. `tsgo`) is a user
+/// `lsp-servers.json` entry.
 fn resolve_spec_invocation(
     spec: &ServerSpec,
     workspace_root: &str,
     options: &LspDiscoveryOptions,
     anchor: Option<&Path>,
     native_typescript: bool,
-) -> (String, Vec<String>) {
+) -> (String, Vec<String>, ServerSource) {
     let trust_workspace = options.trusts_project();
     if spec.language_id == "python" {
-        let path_var = std::env::var_os("PATH");
-        if let Some(invocation) = resolve_pyright_family(workspace_root, path_var.as_deref()) {
-            return invocation;
+        let path_var = crate::process_env::var_os("PATH");
+        if let Some((command, args)) = resolve_pyright_family(workspace_root, path_var.as_deref()) {
+            return (command, args, ServerSource::Path);
         }
     }
 
@@ -672,27 +679,41 @@ fn resolve_spec_invocation(
     // workspace because it comes from octocode's install tree.
     if native_typescript
         && is_typescript_only_spec(spec)
-        && let Some(tsgo) = trust_workspace
+        && let Some((tsgo, source)) = trust_workspace
             .then(|| workspace_tsgo(workspace_root))
             .flatten()
-            .or_else(|| anchor.and_then(bundled_tsgo))
+            .map(|tsgo| (tsgo, ServerSource::Workspace))
+            .or_else(|| {
+                anchor
+                    .and_then(bundled_tsgo)
+                    .map(|tsgo| (tsgo, ServerSource::Bundled))
+            })
     {
         return (
             tsgo.to_string_lossy().into_owned(),
             TSGO_ARGS.iter().map(|arg| (*arg).to_owned()).collect(),
+            source,
         );
     }
 
-    let command = options
-        .managed_server(spec.command)
+    let managed = options.managed_server(spec.command);
+    let command = managed
+        .as_ref()
         .map(|path| path.to_string_lossy().into_owned())
         .unwrap_or_else(|| spec.command.to_owned());
-    resolve_server_invocation(
+    let (command, args, source) = resolve_server_invocation(
         &command,
         spec.args.iter().map(|arg| (*arg).to_owned()).collect(),
         workspace_root,
         trust_workspace,
-    )
+        options.invocation_dir.as_deref(),
+    );
+    let source = if managed.is_some() {
+        ServerSource::Managed
+    } else {
+        source
+    };
+    (command, args, source)
 }
 
 /// Arguments that start the native TypeScript server in LSP mode.
@@ -886,7 +907,7 @@ fn server_languages_with(
 
 /// Whether a discovered server config would launch: its program is an
 /// executable (a node-launched script must exist too). Never executes it.
-fn server_command_resolves(config: &JsLanguageServerConfig) -> bool {
+pub fn server_command_resolves(config: &JsLanguageServerConfig) -> bool {
     let command = resolve_known_server_command(&config.command);
     if is_rejected_shell(&command) {
         return false;
@@ -907,7 +928,7 @@ fn server_command_resolves(config: &JsLanguageServerConfig) -> bool {
         return false;
     }
     if is_rust_analyzer_command(&command) || is_rust_analyzer_command(&config.command) {
-        let rustup_home = std::env::var_os("RUSTUP_HOME")
+        let rustup_home = crate::process_env::var_os("RUSTUP_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::home_dir().map(|home| home.join(".rustup")));
         return rustup_proxy_component_installed(&program, rustup_home.as_deref());
@@ -1076,7 +1097,7 @@ fn user_server_for_extension(
     workspace_root: &str,
     options: &LspDiscoveryOptions,
 ) -> Option<JsLanguageServerConfig> {
-    for config_path in user_config_paths(workspace_root, options) {
+    for (config_path, source) in user_config_paths(workspace_root, options) {
         let Ok(content) = std::fs::read_to_string(config_path) else {
             continue;
         };
@@ -1092,11 +1113,13 @@ fn user_server_for_extension(
             continue;
         }
         let trust_workspace = options.trusts_project();
-        let (command, args) = resolve_server_invocation(
+        // The entry is the user's choice wherever its program resolves.
+        let (command, args, _) = resolve_server_invocation(
             &server.command,
             server.args.clone(),
             workspace_root,
             trust_workspace,
+            options.invocation_dir.as_deref(),
         );
         return Some(JsLanguageServerConfig {
             command,
@@ -1106,21 +1129,30 @@ fn user_server_for_extension(
             initialization_options: server.initialization_options.clone(),
             env: server.env.clone(),
             max_memory_mb: server.max_memory_mb,
+            source,
         });
     }
     None
 }
 
-fn user_config_paths(workspace_root: &str, options: &LspDiscoveryOptions) -> Vec<PathBuf> {
+/// The `lsp-servers.json` files consulted, in order, each with the source
+/// its entries report.
+fn user_config_paths(
+    workspace_root: &str,
+    options: &LspDiscoveryOptions,
+) -> Vec<(PathBuf, ServerSource)> {
     let mut paths = Vec::new();
     if let Some(path) = options.config_path.as_ref() {
-        paths.push(path.clone());
+        paths.push((path.clone(), ServerSource::User));
     }
     if options.trusts_project() {
-        paths.push(Path::new(workspace_root).join(".octocode/lsp-servers.json"));
+        paths.push((
+            Path::new(workspace_root).join(".octocode/lsp-servers.json"),
+            ServerSource::Project,
+        ));
     }
     if let Some(home) = &options.octocode_home {
-        paths.push(home.join("lsp-servers.json"));
+        paths.push((home.join("lsp-servers.json"), ServerSource::User));
     }
     paths
 }
@@ -1164,29 +1196,29 @@ pub(crate) fn is_rust_analyzer_command(command: &str) -> bool {
         })
 }
 
-/// Resolve a server command to `(program, args)`. `trust_workspace` is the
-/// explicit opt-in (`lsp.trustProjectConfig` / trusted project
-/// config) that lets the workspace's own `node_modules` supply the
-/// TypeScript server; see [`resolve_typescript_server_cli`].
+/// Resolve a server command to `(program, args, source)`: the source is where
+/// a TypeScript server CLI was found, else [`ServerSource::Path`].
+/// `trust_workspace` is the explicit opt-in (`lsp.trustProjectConfig` /
+/// trusted project config) that lets the workspace's own `node_modules`
+/// supply the TypeScript server; see [`resolve_typescript_server_cli`].
 fn resolve_server_invocation(
     command: &str,
     args: Vec<String>,
     workspace_root: &str,
     trust_workspace: bool,
-) -> (String, Vec<String>) {
-    let current_dir = std::env::current_dir().ok();
+    invocation_dir: Option<&Path>,
+) -> (String, Vec<String>, ServerSource) {
     let managed_start = install_anchor();
-    let workspace_trusted =
-        trust_workspace || workspace_is_invocation_root(workspace_root, current_dir.as_deref());
     resolve_server_invocation_with_environment(
         command,
         args,
         workspace_root,
-        &TypeScriptServerSearch {
-            managed_start: managed_start.as_deref(),
-            current_dir: current_dir.as_deref(),
-            workspace_trusted,
-        },
+        &TypeScriptServerSearch::new(
+            managed_start.as_deref(),
+            workspace_root,
+            trust_workspace,
+            invocation_dir,
+        ),
         command_resolves_to_executable(command),
     )
 }
@@ -1201,6 +1233,25 @@ struct TypeScriptServerSearch<'a> {
     current_dir: Option<&'a Path>,
     /// Whether the workspace's own `node_modules` may supply the server.
     workspace_trusted: bool,
+}
+
+impl<'a> TypeScriptServerSearch<'a> {
+    /// The search for `workspace_root` from `invocation_dir`: the workspace
+    /// is trusted by opt-in (`trust_workspace`) or by lying in the
+    /// invocation directory, never by the process's own directory.
+    fn new(
+        managed_start: Option<&'a Path>,
+        workspace_root: &str,
+        trust_workspace: bool,
+        invocation_dir: Option<&'a Path>,
+    ) -> Self {
+        Self {
+            managed_start,
+            current_dir: invocation_dir,
+            workspace_trusted: trust_workspace
+                || workspace_is_invocation_root(workspace_root, invocation_dir),
+        }
+    }
 }
 
 /// `true` when `workspace_root` is the directory octocode was invoked in, or
@@ -1232,18 +1283,22 @@ fn resolve_server_invocation_with_environment(
     workspace_root: &str,
     search: &TypeScriptServerSearch<'_>,
     command_available_on_path: bool,
-) -> (String, Vec<String>) {
-    if let Some(cli_path) =
+) -> (String, Vec<String>, ServerSource) {
+    if let Some((cli_path, source)) =
         resolve_typescript_server_cli(command, workspace_root, search, command_available_on_path)
         && let Some(node_command) = current_node_command()
     {
         let mut resolved_args = Vec::with_capacity(args.len() + 1);
         resolved_args.push(cli_path.to_string_lossy().into_owned());
         resolved_args.extend(args);
-        return (node_command, resolved_args);
+        return (node_command, resolved_args, source);
     }
 
-    (resolve_known_server_command(command), args)
+    (
+        resolve_known_server_command(command),
+        args,
+        ServerSource::Path,
+    )
 }
 
 fn resolve_known_server_command(command: &str) -> String {
@@ -1262,12 +1317,13 @@ fn resolve_known_server_command(command: &str) -> String {
 /// `cli.mjs` path, then octocode's own install tree (ancestors of the running
 /// executable), then — only when `workspace_trusted` — the workspace's
 /// `node_modules`, then the invocation directory's (the user's own project).
+/// Returns the CLI with the source it came from.
 fn resolve_typescript_server_cli(
     command: &str,
     workspace_root: &str,
     search: &TypeScriptServerSearch<'_>,
     command_available_on_path: bool,
-) -> Option<PathBuf> {
+) -> Option<(PathBuf, ServerSource)> {
     const CLI: &str = "typescript-language-server/lib/cli.mjs";
     if !is_typescript_server_command(command) {
         return None;
@@ -1275,23 +1331,28 @@ fn resolve_typescript_server_cli(
     if command_available_on_path || is_executable_path(Path::new(command)) {
         return None;
     }
+    let from = |source: ServerSource| move |cli: PathBuf| (cli, source);
     typescript_cli_from_command(command)
+        .map(from(ServerSource::Path))
         .or_else(|| {
             search
                 .managed_start
                 .and_then(|exe| exe.parent())
                 .and_then(|dir| find_node_module_file_from(dir, CLI))
+                .map(from(ServerSource::Bundled))
         })
         .or_else(|| {
             search
                 .workspace_trusted
                 .then(|| find_node_module_file_from(Path::new(workspace_root), CLI))
                 .flatten()
+                .map(from(ServerSource::Workspace))
         })
         .or_else(|| {
             search
                 .current_dir
                 .and_then(|cwd| find_node_module_file_from(cwd, CLI))
+                .map(from(ServerSource::Workspace))
         })
 }
 
@@ -1377,7 +1438,7 @@ mod tests {
         command_resolves_to_executable, current_node_command, is_command_available,
         resolve_server_invocation, resolve_server_invocation_with_environment,
     };
-    use crate::lsp::types::JsLanguageServerConfig;
+    use crate::lsp::types::{JsLanguageServerConfig, ServerSource};
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -1393,6 +1454,7 @@ mod tests {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         };
         let languages = server_languages_with(
             |extension| match extension {
@@ -1902,8 +1964,8 @@ mod tests {
             panic!("temporary cli path is not utf-8");
         };
 
-        let (command, args) =
-            resolve_server_invocation(cli_str, vec!["--stdio".to_owned()], root_str, false);
+        let (command, args, _) =
+            resolve_server_invocation(cli_str, vec!["--stdio".to_owned()], root_str, false, None);
         assert_eq!(Some(command), current_node_command());
         assert_eq!(args.len(), 2);
         assert_eq!(
@@ -1933,7 +1995,7 @@ mod tests {
         let Some(workspace_str) = workspace_root.to_str() else {
             panic!("temporary workspace path is not utf-8");
         };
-        let (command, args) = resolve_server_invocation_with_environment(
+        let (command, args, source) = resolve_server_invocation_with_environment(
             "typescript-language-server",
             vec!["--stdio".to_owned()],
             workspace_str,
@@ -1951,6 +2013,7 @@ mod tests {
             std::fs::canonicalize(&cli).expect("canonicalize temporary cli")
         );
         assert_eq!(args[1], "--stdio");
+        assert_eq!(source, crate::lsp::types::ServerSource::Workspace);
 
         let _ = std::fs::remove_dir_all(workspace_root);
         let _ = std::fs::remove_dir_all(package_root);
@@ -2001,7 +2064,13 @@ mod tests {
             workspace_trusted: true,
             ..untrusted
         };
-        assert_eq!(resolve(&trusted), Some(checkout_cli.clone()));
+        assert_eq!(
+            resolve(&trusted),
+            Some((
+                checkout_cli.clone(),
+                crate::lsp::types::ServerSource::Workspace
+            ))
+        );
 
         // octocode's own install tree wins over the workspace.
         let install = base.join("octocode-install");
@@ -2011,7 +2080,10 @@ mod tests {
             managed_start: Some(&exe),
             ..trusted
         };
-        assert_eq!(resolve(&managed), Some(managed_cli));
+        assert_eq!(
+            resolve(&managed),
+            Some((managed_cli, crate::lsp::types::ServerSource::Bundled))
+        );
 
         // On PATH: the command runs as-is.
         assert_eq!(
@@ -2041,8 +2113,7 @@ mod tests {
             &checkout_str,
             Some(std::path::Path::new("/"))
         ));
-        if let Some(home) = std::env::var_os("HOME") {
-            let home = PathBuf::from(home);
+        if let Some(home) = std::env::home_dir() {
             assert!(
                 !super::workspace_is_invocation_root(
                     &home.join(".octocode/clones/x").to_string_lossy(),
@@ -2051,6 +2122,44 @@ mod tests {
                 "a home-directory invocation does not trust every checkout under it"
             );
         }
+
+        // The search trusts and looks up from the directory the host runs
+        // the call for, never from the process's own directory: a server
+        // answering for several directories decides per call.
+        assert_ne!(std::env::current_dir().ok(), Some(checkout.clone()));
+        let from = |dir: Option<&std::path::Path>| {
+            let search = super::TypeScriptServerSearch::new(None, &checkout_str, false, dir);
+            (
+                search.workspace_trusted,
+                search.current_dir.map(PathBuf::from),
+            )
+        };
+        assert_eq!(from(Some(&checkout)), (true, Some(checkout.clone())));
+        assert_eq!(from(Some(&elsewhere)), (false, Some(elsewhere.clone())));
+        assert_eq!(from(None), (false, None));
+        assert_eq!(
+            resolve(&super::TypeScriptServerSearch::new(
+                None,
+                &checkout_str,
+                false,
+                Some(&checkout)
+            )),
+            Some((
+                checkout_cli.clone(),
+                crate::lsp::types::ServerSource::Workspace
+            )),
+            "invoked in the checkout, its server is the user's own"
+        );
+        assert_eq!(
+            resolve(&super::TypeScriptServerSearch::new(
+                None,
+                &checkout_str,
+                false,
+                Some(&elsewhere)
+            )),
+            None,
+            "invoked elsewhere, the checkout's server is never trusted"
+        );
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -2239,6 +2348,7 @@ mod tests {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         };
         super::apply_server_default_options(&mut config, None);
         assert!(config.initialization_options.is_none());
@@ -2316,6 +2426,7 @@ mod tests {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         };
         super::apply_server_default_options(&mut config, None);
         super::apply_server_default_options(&mut config, None);
@@ -2443,6 +2554,7 @@ mod tests {
         let managed =
             default_server_for_file("src/lib.rs", "/workspace", &options).expect("rust route");
         assert_eq!(PathBuf::from(&managed.command), bin);
+        assert_eq!(managed.source, ServerSource::Managed);
         assert!(
             managed.initialization_options.is_some(),
             "headless defaults"
@@ -2455,6 +2567,7 @@ mod tests {
         let unmanaged =
             default_server_for_file("src/lib.rs", "/workspace", &options).expect("rust route");
         assert_ne!(PathBuf::from(&unmanaged.command), bin);
+        assert_eq!(unmanaged.source, ServerSource::Path);
         let _ = std::fs::remove_dir_all(home);
     }
 
@@ -2478,6 +2591,8 @@ mod tests {
         assert_eq!(unset.max_memory_mb, None, "unset: the host-derived default");
         let user = default_server_for_file("a.php", "/workspace", &options).expect("php");
         assert_eq!(user.max_memory_mb, Some(1500), "per-server wins");
+        // A user entry reports its config file, not where its program lives.
+        assert_eq!(user.source, ServerSource::User);
         assert_eq!(
             user.env
                 .as_ref()
@@ -2504,6 +2619,7 @@ mod tests {
                 initialization_options: None,
                 env: None,
                 max_memory_mb,
+                source: Default::default(),
             };
             crate::lsp::config::apply_server_default_options(&mut config, None);
             config
@@ -2539,6 +2655,7 @@ mod tests {
             initialization_options: Some(json!({"maxTsServerMemory": 1234})),
             env: None,
             max_memory_mb: Some(8192),
+            source: Default::default(),
         };
         crate::lsp::config::apply_server_default_options(&mut config, None);
         let init = config.initialization_options.expect("init");
@@ -2670,6 +2787,7 @@ mod tests {
             let config =
                 default_server_for_file_from(file, root, &untrusted, Some(&anchor)).expect(file);
             assert_eq!(PathBuf::from(&config.command), tsgo, "{file}");
+            assert_eq!(config.source, ServerSource::Bundled, "{file}");
             assert_eq!(
                 config.args.as_deref(),
                 Some(&["--lsp".to_owned(), "-stdio".to_owned()][..])
@@ -2737,6 +2855,7 @@ mod tests {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         };
         assert!(serves_requests_concurrently(&config(
             "/i/@typescript/native-preview-darwin-arm64/lib/tsgo"
@@ -2761,6 +2880,7 @@ mod tests {
             initialization_options: None,
             env: None,
             max_memory_mb: None,
+            source: Default::default(),
         };
         assert_eq!(
             super::workspace_symbol_limit(&config(

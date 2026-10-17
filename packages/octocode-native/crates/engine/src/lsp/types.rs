@@ -16,6 +16,46 @@ pub struct JsLanguageServerConfig {
     /// servers that legitimately need more (huge monorepo indexes). Internal
     /// buffer bounds do not protect the host from a runaway child — this does.
     pub max_memory_mb: Option<u32>,
+    /// Where discovery found this launch; receipts report it. Not part of
+    /// the pool key: one launch has one source.
+    #[serde(default)]
+    pub source: ServerSource,
+}
+
+/// Where a discovered language-server launch came from.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ServerSource {
+    /// A user `lsp-servers.json` entry (the octocode home's, or the file
+    /// `lsp.configPath` names).
+    User,
+    /// A trusted project's `.octocode/lsp-servers.json` entry.
+    Project,
+    /// An octocode-managed install (`OCTOCODE_LSP_CACHE_DIR`, else
+    /// `<octocode home>/lsp`).
+    Managed,
+    /// octocode's own install tree (the bundled tsgo, or its
+    /// `typescript-language-server`).
+    Bundled,
+    /// The workspace's or the invocation directory's own `node_modules`.
+    Workspace,
+    /// The command as `PATH` resolves it.
+    #[default]
+    Path,
+}
+
+impl ServerSource {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Project => "project",
+            Self::Managed => "managed",
+            Self::Bundled => "bundled",
+            Self::Workspace => "workspace",
+            Self::Path => "path",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

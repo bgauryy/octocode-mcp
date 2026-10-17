@@ -26,6 +26,11 @@ pub struct TextSearchMatch {
     pub byte_offset: u32,
     /// Assembled match + context window, truncated to `max_snippet_chars`.
     pub value: String,
+    /// Reconstruct this ordinary, context-free line from its source before
+    /// displaying it. `Some(0)` is unpriced; a positive value is the runtime's
+    /// exact redacted JSON row cost. Empty `value` is not the source text.
+    /// Nonempty values are retained redactions or a materialized page.
+    pub deferred: Option<u32>,
     /// SHA-256 of the trimmed value before clipping. Duplicate ranking uses
     /// this identity so changing the display width cannot reorder rows.
     pub value_digest: [u8; 32],
@@ -214,6 +219,10 @@ pub struct TextSearchOptions {
     /// and report it as [`TextSearchFile::source`], so a caller can prove the
     /// values later without reading the file again. `None` hashes nothing.
     pub digest_max_bytes: Option<u64>,
+    /// Keep anchors and complete value digests instead of owned snippets for
+    /// ordinary context-free, single-line searches. Requires source hashing;
+    /// other views retain their normal representation and semantics.
+    pub defer_values: bool,
 }
 
 // ── filesystem query types ───────────────────────────────────────────────────

@@ -1046,9 +1046,10 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "yamlSecretValue",
         file_context: None,
-        // An unquoted YAML scalar under a credential-named key. A bare `key:`
-        // is too common in YAML (label selectors, tolerations) to count.
-        regex: r###"(?m)^[ \t]*(?:-[ \t]+)?(?:(?:[A-Za-z0-9]+[_.-])*(?i:secret|password|passwd|passphrase|token|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?key|credential)s?(?:[_.-][A-Za-z0-9]+)*|[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)*(?:Secret|Password|Passwd|Passphrase|Token|ApiKey|AccessKey|PrivateKey|AuthKey|Credential)s?(?:[A-Z][a-z0-9]*)*)[ \t]*:[ \t]+(?P<secret>[^\s"'#$&*!|>{}\[\]:%@`][^\s"'#:]{11,})[ \t]*(?:#.*)?$"###,
+        // An unquoted YAML scalar under a credential-named key, which may sit
+        // under a slash-separated path (`secret/data/app/api_token:`). A bare
+        // `key:` is too common in YAML (label selectors, tolerations) to count.
+        regex: r###"(?m)^[ \t]*(?:-[ \t]+)?(?:[A-Za-z0-9_.-]+/)*(?:(?:[A-Za-z0-9]+[_.-])*(?i:secret|password|passwd|passphrase|token|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?key|credential)s?(?:[_.-][A-Za-z0-9]+)*|[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)*(?:Secret|Password|Passwd|Passphrase|Token|ApiKey|AccessKey|PrivateKey|AuthKey|Credential)s?(?:[A-Z][a-z0-9]*)*)[ \t]*:[ \t]+(?P<secret>[^\s"'#$&*!|>{}\[\]:%@`][^\s"'#:]{11,})[ \t]*(?:#.*)?$"###,
     },
     SecretPattern {
         name: "mapboxSecretToken",

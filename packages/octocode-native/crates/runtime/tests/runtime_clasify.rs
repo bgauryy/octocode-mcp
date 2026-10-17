@@ -722,19 +722,77 @@ async fn a_provider_failure_keeps_the_pinned_source_inspection_call() {
 }
 
 #[tokio::test]
-async fn response_pagination_is_rejected_for_clasify() {
-    let server = provider(0).await;
+async fn clasify_pages_complete_answers_once_and_replays_without_inference() {
+    let server = provider(3).await;
     let workspace = Workspace::new();
     let runtime = provider_runtime(&workspace, &server);
-    let error = runtime
+    let labels: serde_json::Map<_, _> = (0..64)
+        .map(|index| (format!("label{index:02}"), json!("criterion")))
+        .collect();
+    let questions: serde_json::Map<_, _> = (0..12)
+        .map(|index| {
+            (
+                format!("question{index:02}"),
+                json!({"type":"choice","criteria":labels,"instructions":"Choose one label."}),
+            )
+        })
+        .collect();
+    let rows: Vec<_> = (0..3)
+        .map(|index| {
+            json!({"id":format!("row{index}"),
+        "state":{"text":format!("Evidence {index}")},"questions":questions})
+        })
+        .collect();
+    let first = runtime
         .run(
-            "paged".into(),
+            "clasify-pages".into(),
             "clasify".into(),
-            json!({"queries":[state_row()],"responseLength":100}),
+            json!({"queries":rows,"responseLength":1800}),
         )
         .await
-        .expect_err("unsupported");
-    assert_eq!(error.code, "unsupportedResponsePagination");
+        .expect("first page");
+    let mut page = first.structured_content;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut pages = 0;
+    loop {
+        assert!(pages < 60, "page chain must progress");
+        for row in page["queries"].as_array().expect("query rows") {
+            for (question, answer) in row["answers"].as_object().expect("answers") {
+                assert_eq!(answer["probabilities"].as_object().unwrap().len(), 64);
+                assert!(
+                    seen.insert((row["id"].as_str().unwrap().to_owned(), question.clone())),
+                    "duplicate answer"
+                );
+            }
+        }
+        pages += 1;
+        let pagination = &page["responsePagination"];
+        if pagination["hasMore"] != true {
+            break;
+        }
+        let next = pagination["next"]["query"].clone();
+        assert!(
+            next.get("queries").is_none(),
+            "large inputs must not be echoed"
+        );
+        let next_page = runtime
+            .run(format!("page{pages}"), "clasify".into(), next.clone())
+            .await
+            .expect("page");
+        let repeated = runtime
+            .run(format!("repeat{pages}"), "clasify".into(), next)
+            .await
+            .expect("repeat");
+        assert_eq!(next_page.structured_content, repeated.structured_content);
+        assert_eq!(
+            next_page.structured_content["responsePagination"]["replayed"],
+            true
+        );
+        page = next_page.structured_content;
+    }
+    assert_eq!(seen.len(), 36);
+    assert!(pages > 1);
+    assert_eq!(sent(&server).await.len(), 3);
     runtime.close().await;
 }
 
@@ -854,6 +912,141 @@ async fn a_selection_past_its_deadline_withholds_bodies_and_recovers() {
             .contains("UNKNOWN_SELECTION_SENTINEL"),
         "{judged}"
     );
+}
+
+/// A provider that is down (503 without a retry delay) cannot judge the
+/// search, but the search succeeded: its hits come back unfiltered under an
+/// `unavailable` receipt and a warning naming the failure, unlike a refused
+/// credential (below), which the caller must fix and so stays the row's
+/// error.
+#[tokio::test]
+async fn a_provider_that_is_down_under_clasify_context_returns_the_unfiltered_hits() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let file = workspace.write("src/a.rs", "fn recovery() {}\nfn other() { recovery(); }\n");
+    let runtime = provider_runtime(&workspace, &server);
+    let row = crate::support::run(
+        &runtime,
+        "localSearch",
+        json!({"path": file.parent().unwrap(), "matchString": "recovery",
+            "clasifyContext": {"classifiers": ["Does it add hints?"]}}),
+        &[],
+    )
+    .await;
+    let data = row.data();
+    assert_ne!(row.status(), "error", "{data}");
+    assert_eq!(data["selection"]["status"], "unavailable", "{data}");
+    assert_eq!(
+        data["selection"]["reason"], "classificationProviderUnavailable",
+        "{data}"
+    );
+    let text = data.to_string();
+    assert!(
+        text.contains("fn recovery() {}"),
+        "every hit is shown: {data}"
+    );
+    assert!(text.contains("other() { recovery(); }"), "{data}");
+    assert!(
+        text.contains("HTTP 503"),
+        "the warning names the failure: {data}"
+    );
+    runtime.close().await;
+}
+
+/// The same for a read and a provider page: localFetch, ghGetFileContent
+/// and ghSearchCode show their evidence unfiltered under an `unavailable`
+/// receipt and a warning naming the failure, with no unfiltered lead that
+/// repeats it.
+#[tokio::test]
+async fn a_provider_that_is_down_under_clasify_context_shows_reads_and_code_pages_unfiltered() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    let github = MockServer::builder().start().await;
+    let sha = "1111111111111111111111111111111111111111";
+    let body = "fn recovery() {}\nfn other() { recovery(); }\n";
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/main"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"sha": sha})))
+        .mount(&github)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/contents/src%2Fa.rs"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "type":"file","encoding":"base64","content":STANDARD.encode(body),
+            "size":body.len(),"sha":"2".repeat(40),"path":"src/a.rs"
+        })))
+        .mount(&github)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "total_count":1,"incomplete_results":false,"items":[
+                {"name":"a.rs","path":"src/a.rs","sha":"2","html_url":"https://x",
+                 "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"},
+                 "text_matches":[{"fragment":"fn recovery() {}","matches":[{"text":"recovery","indices":[3,11]}]}]}
+            ]
+        })))
+        .mount(&github)
+        .await;
+    let workspace = Workspace::new();
+    let file = workspace.write("src/a.rs", body);
+    let runtime = workspace.runtime_with(
+        &[
+            ("OCTOCODE_BETA", "true".into()),
+            ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+            ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+            ("GITHUB_API_URL", format!("{}/api/v3", github.uri())),
+        ],
+        crate::support::PROVIDER_LIMITS,
+    );
+    let context = json!({"classifiers": ["Does it add hints?"]});
+    for (tool, query, shown) in [
+        (
+            "localFetch",
+            json!({"path": file, "fullContent": true, "clasifyContext": context}),
+            "other() { recovery(); }",
+        ),
+        (
+            "ghGetFileContent",
+            json!({"owner":"a","repo":"b","path":"src/a.rs","ref":"main",
+                "fullContent": true, "clasifyContext": context}),
+            "other() { recovery(); }",
+        ),
+        (
+            "ghSearchCode",
+            json!({"owner":"a","repo":"b","keywords":["recovery"], "clasifyContext": context}),
+            "src/a.rs",
+        ),
+    ] {
+        let row = crate::support::run(&runtime, tool, query, &[]).await;
+        let data = row.data();
+        assert_ne!(row.status(), "error", "{tool}: {data}");
+        assert_eq!(data["selection"]["status"], "unavailable", "{tool}: {data}");
+        assert_eq!(
+            data["selection"]["reason"], "classificationProviderUnavailable",
+            "{tool}: {data}"
+        );
+        assert!(
+            data.to_string().contains(shown),
+            "{tool}: the evidence is shown: {data}"
+        );
+        assert!(
+            data["warnings"].to_string().contains("HTTP 503"),
+            "{tool}: the warning names the failure: {data}"
+        );
+        assert!(
+            data["next"].get("unfiltered").is_none(),
+            "{tool}: no lead repeats the page: {data}"
+        );
+    }
+    runtime.close().await;
 }
 
 /// A provider that refuses the credential is not an unsure model: under

@@ -14,72 +14,157 @@ pub(super) enum LineOp {
 }
 
 /// Myers shortest edit script over lines. `None` when the script needs more
-/// than `max_edits` insertions plus deletions. Memory is O(D²) in the edit
-/// count, not O(N·M) in the file size.
+/// than `max_edits` insertions plus deletions. Linear-space Myers (divide and
+/// conquer on the middle snake): memory is O(min(N+M, max_edits)) whatever
+/// the edit count, time O((N+M)·D). Within a changed run deletions come
+/// before insertions, as a unified diff prints them.
 pub(super) fn line_diff(old: &[&str], new: &[&str], max_edits: usize) -> Option<Vec<LineOp>> {
+    let mut ops = Vec::with_capacity(old.len() + new.len());
+    // Every sub-problem's distance is at most the top one's, so its search
+    // never passes this many rounds.
+    let rounds = max_edits / 2 + 2;
+    conquer(old, new, Some(max_edits), rounds, &mut ops)?;
+    for run in ops.chunk_by_mut(|a, b| (*a == LineOp::Equal) == (*b == LineOp::Equal)) {
+        run.sort_by_key(|op| *op == LineOp::Insert);
+    }
+    Some(ops)
+}
+
+/// Appends the edit script of `old` → `new` to `ops`; `budget` bounds its
+/// edit count (the top call only: a sub-problem is never costlier).
+fn conquer(
+    old: &[&str],
+    new: &[&str],
+    budget: Option<usize>,
+    rounds: usize,
+    ops: &mut Vec<LineOp>,
+) -> Option<()> {
+    let prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+    let (old, new) = (&old[prefix..], &new[prefix..]);
+    let suffix = old
+        .iter()
+        .rev()
+        .zip(new.iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let (old, new) = (&old[..old.len() - suffix], &new[..new.len() - suffix]);
+    ops.extend(std::iter::repeat_n(LineOp::Equal, prefix));
+    let split = if old.is_empty() || new.is_empty() {
+        None
+    } else {
+        Some(middle_snake(old, new, budget, rounds)?)
+    };
+    match split {
+        // A split that does not shrink both halves cannot occur once the
+        // common ends are stripped; treat it as one replaced block anyway.
+        Some((x, y)) if (x, y) != (0, 0) && (x, y) != (old.len(), new.len()) => {
+            conquer(&old[..x], &new[..y], None, rounds, ops)?;
+            conquer(&old[x..], &new[y..], None, rounds, ops)?;
+        }
+        _ => {
+            if budget.is_some_and(|budget| old.len() + new.len() > budget) {
+                return None;
+            }
+            ops.extend(std::iter::repeat_n(LineOp::Delete, old.len()));
+            ops.extend(std::iter::repeat_n(LineOp::Insert, new.len()));
+        }
+    }
+    ops.extend(std::iter::repeat_n(LineOp::Equal, suffix));
+    Some(())
+}
+
+/// Where a shortest edit script of `old` → `new` (both non-empty, with no
+/// common first or last line) crosses its middle: the end of the forward
+/// snake that meets the reverse search. `None` when the script needs more
+/// than `budget` edits. Forward and reverse furthest-reaching paths meet
+/// after about D/2 rounds each, holding one diagonal array per direction.
+fn middle_snake(
+    old: &[&str],
+    new: &[&str],
+    budget: Option<usize>,
+    rounds: usize,
+) -> Option<(usize, usize)> {
     let (n, m) = (old.len() as isize, new.len() as isize);
-    let limit = (old.len() + new.len()).min(max_edits) as isize;
-    let offset = limit + 1;
-    let mut v = vec![0isize; (2 * offset + 1) as usize];
-    // trace[d] holds v[-(d+1)..=(d+1)] as it was before step d.
-    let mut trace: Vec<Vec<isize>> = Vec::new();
-    let mut found = false;
-    'search: for d in 0..=limit {
-        trace.push(v[(offset - d - 1) as usize..=(offset + d + 1) as usize].to_vec());
-        let mut k = -d;
-        while k <= d {
-            let at = |k: isize| (offset + k) as usize;
-            let mut x = if k == -d || (k != d && v[at(k - 1)] < v[at(k + 1)]) {
-                v[at(k + 1)]
+    let max_d = ((n + m + 1) / 2 + 1).min(rounds as isize);
+    let offset = max_d;
+    let width = (2 * max_d + 1) as usize;
+    let mut forward = vec![-1isize; width];
+    let mut reverse = vec![-1isize; width];
+    forward[(offset + 1) as usize] = 0;
+    reverse[(offset + 1) as usize] = 0;
+    let delta = n - m;
+    let odd = delta % 2 != 0;
+    let at = |k: isize| usize::try_from(offset + k).ok().filter(|i| *i < width);
+    let within = |d: isize| budget.is_none_or(|budget| d <= budget as isize);
+    // Diagonals that ran off the grid are skipped in later rounds.
+    let (mut k1_start, mut k1_end, mut k2_start, mut k2_end) = (0, 0, 0, 0);
+    for d in 0..max_d {
+        if !within(2 * d - 1) {
+            return None;
+        }
+        let mut k1 = -d + k1_start;
+        while k1 <= d - k1_end {
+            let i = at(k1)?;
+            let mut x = if k1 == -d || (k1 != d && forward[i - 1] < forward[i + 1]) {
+                forward[i + 1]
             } else {
-                v[at(k - 1)] + 1
+                forward[i - 1] + 1
             };
-            let mut y = x - k;
+            let mut y = x - k1;
             while x < n && y < m && old[x as usize] == new[y as usize] {
                 x += 1;
                 y += 1;
             }
-            v[at(k)] = x;
-            if x >= n && y >= m {
-                found = true;
-                break 'search;
+            forward[i] = x;
+            if x > n {
+                k1_end += 2;
+            } else if y > m {
+                k1_start += 2;
+            } else if odd
+                && let Some(j) = at(delta - k1)
+                && reverse[j] != -1
+                && x >= n - reverse[j]
+            {
+                // Forward round d meets reverse round d-1: D = 2d - 1.
+                return within(2 * d - 1).then_some((x as usize, y as usize));
             }
-            k += 2;
+            k1 += 2;
         }
-    }
-    if !found {
-        return None;
-    }
-    let mut ops = Vec::with_capacity(old.len() + new.len());
-    let (mut x, mut y) = (n, m);
-    for (d, snapshot) in trace.iter().enumerate().rev() {
-        let d = d as isize;
-        let get = |k: isize| snapshot[(k + d + 1) as usize];
-        let k = x - y;
-        let prev_k = if k == -d || (k != d && get(k - 1) < get(k + 1)) {
-            k + 1
-        } else {
-            k - 1
-        };
-        let prev_x = get(prev_k);
-        let prev_y = prev_x - prev_k;
-        while x > prev_x && y > prev_y {
-            ops.push(LineOp::Equal);
-            x -= 1;
-            y -= 1;
-        }
-        if d > 0 {
-            ops.push(if x == prev_x {
-                LineOp::Insert
+        let mut k2 = -d + k2_start;
+        while k2 <= d - k2_end {
+            let i = at(k2)?;
+            let mut x = if k2 == -d || (k2 != d && reverse[i - 1] < reverse[i + 1]) {
+                reverse[i + 1]
             } else {
-                LineOp::Delete
-            });
-            x = prev_x;
-            y = prev_y;
+                reverse[i - 1] + 1
+            };
+            let mut y = x - k2;
+            while x < n && y < m && old[(n - x - 1) as usize] == new[(m - y - 1) as usize] {
+                x += 1;
+                y += 1;
+            }
+            reverse[i] = x;
+            if x > n {
+                k2_end += 2;
+            } else if y > m {
+                k2_start += 2;
+            } else if !odd
+                && let Some(j) = at(delta - k2)
+                && forward[j] != -1
+            {
+                let fx = forward[j];
+                let fy = fx - (delta - k2);
+                if fx >= n - x {
+                    // Both searches ran d rounds: D = 2d.
+                    return within(2 * d).then_some((fx as usize, fy as usize));
+                }
+            }
+            k2 += 2;
         }
     }
-    ops.reverse();
-    Some(ops)
+    // Unreachable for a bounded search that ran its rounds: no meeting
+    // within them means the script is costlier than the budget allows.
+    budget.is_none().then_some((0, 0))
 }
 
 pub(super) fn create_unified_patch(path: &str, before: &str, after: &str) -> String {

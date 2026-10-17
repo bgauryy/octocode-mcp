@@ -87,7 +87,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 
 ### 3.8 Pages, leads, and failure hints
 - Follow-up calls use two channels. Both hold executable queries that run unchanged, and the runtime removes follow-ups the current surface cannot run.
-  - **`next.*` = pages and recovery:** follow the pages needed for the claim's scope. `next.unfiltered` is optional recovery of the complete view after classification; it does not make a sufficient selected answer incomplete.
+  - **`next.*` = pages and recovery:** follow the pages needed for the claim's scope. `next.unfiltered`, when offered, is optional recovery of the complete view after classification ([context selection](OCTOCODE_TOOLS.md#context-selection)); it does not make a sufficient selected answer incomplete.
   - **`hints` = optional strings:** plain text or `<action>: <tool> <JSON input>` suggestions named by purpose (`read` the top match, `readPullRequest` the fix, `viewTree` the scope); `hints` adds a sentence only for a per-call fact. Each suggestion keeps its complete validated input; duplicate text and calls appear once. A successful row shows leads only with `extras:["hints"]`, except a few default leads (`includeIgnored`, `countFiles`, `apply`, …).
 - An empty result keeps its leads. It is not an absence claim until scope, spelling, ref, and index limits are checked; the general repairs are stated once in each tool's description.
 - Errors are typed (`invalidInput`, `notFound`, `authentication`, `rateLimited`, …) and carry `retryable: true` only when a retry can help. Each class has its own CLI exit code; see the [CLI guide](../packages/octocode/docs/OCTOCODE_CLI.md#exit-codes).
@@ -101,7 +101,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 
 ### 3.10 Classifiers and clasify: selective evidence
 - `clasifyContext:{classifiers:[...],longContext?:boolean}` selects evidence on `localFetch`, `localSearch`, `ghGetFileContent` and `ghSearchCode` before it reaches the host. Optional `mainGoal` and `reasoning` add task context. Search evaluates captured matches; fetch evaluates source chunks. Both use the same evaluator, cache and provider as public `clasify`.
-- The default body contains only selected evidence in source order. The `selection` receipt counts selected, excluded and unknown units within its declared scope. Omitted evidence remains accessible through optional `next.unfiltered`; selection never proves absence outside that assessed scope.
+- The default body contains only selected evidence in source order. The `selection` receipt counts selected, excluded and unknown units within its declared scope. Recovery of omitted evidence, and what a provider or source failure returns instead: [context selection](OCTOCODE_TOOLS.md#context-selection). Selection never proves absence outside that assessed scope.
 - Use selection when it can avoid substantial reading. Prefer an adequate exact lookup for small targets. Public `clasify` supplies typed Noul, Choice, Score and Box answers over internally captured text or images, without returning the captured source body.
 - A nonblank classification credential enables context selection without another activation flag. Public `clasify` additionally needs beta. Setup, outputs and availability: [classification guide](OCTOCODE_CLASIFY.md#availability).
 
@@ -134,7 +134,7 @@ Earlier scripted tool-level comparisons measured single tool calls, not agent ou
 
 | Where plain tools win | Why |
 |---|---|
-| Per-call latency | rg answers in 3–25 ms; the CLI starts in about 200 ms per call. MCP is warm, but an LSP cold start takes seconds. |
+| Per-call latency | rg answers in 3–25 ms. A CLI call reuses warm state through `octocode serve` (unless `storage.mode = memory`): about 10 ms warm, 120 ms for a workspace's first call, 100 ms in process (one localSearch, 2026-10-17). On the CLI and MCP alike, a language server's cold start takes seconds. |
 | Whole-list GitHub reads | A full compare, a deep tree, or a long thread takes several paged calls; one `gh api --jq` pipeline takes one. |
 | Tiny answers | Bare `gh` or rg output is a few hundred characters shorter than Octocode's evidence (SHA, lines, pagination). |
 | Agent outcomes | In the agent benchmark, `rg` + `gh` still beat Octocode on quality and cost. |

@@ -15,7 +15,7 @@
 // Measures host-visible bytes (the selected view) against a direct full read.
 import fs from 'node:fs';
 import path from 'node:path';
-import { findHint, FIXTURES, REPOS, checks, collect, rowData, startServer, writeResults } from './mcp-client.mjs';
+import { findHint, FIXTURES, REPOS, checks, collect, rowData, sourceLines, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('clasify');
 // Selection needs only the caller's provider key; beta exposes public clasify.
@@ -33,12 +33,6 @@ function groundTruth(dir, file, regex) {
   const index = fs.readFileSync(full, 'utf8').split('\n').findIndex(line => re.test(line));
   return index < 0 ? null : { file: full, line: index + 1 };
 }
-
-/** localFetch content as `[lineNumber, text]` pairs (`N<TAB>text` per line). */
-const numbered = content => String(content ?? '').split('\n').flatMap(line => {
-  const match = /^(\d+)\t/.exec(line);
-  return match ? [[Number(match[1]), line.slice(match[0].length)]] : [];
-});
 
 const LOCATE = [
   { name: 'redis serverCron', dir: 'c', glob: 'src/server.c', regex: '^int serverCron\\(', target: 'The periodic timer function that runs background housekeeping tasks many times per second.' },
@@ -68,7 +62,7 @@ const MAX_SELECTED_PAGES = 20;
 async function selectedView(first) {
   const pages = [first];
   for (let lead = rowData(first)?.next?.continueWindow; lead && pages.length < MAX_SELECTED_PAGES; lead = rowData(pages.at(-1))?.next?.continueWindow) pages.push(await follow(lead));
-  const lines = pages.flatMap(page => numbered(rowData(page)?.content));
+  const lines = pages.flatMap(page => sourceLines(rowData(page)));
   return {
     pages, lines, bytes: pages.reduce((sum, page) => sum + page.bytes, 0),
     receipt: rowData(first)?.selection,
@@ -204,10 +198,10 @@ else {
         && r?.selectedItems + r?.excludedItems + r?.unknownItems === r?.totalItems && r.selectedItems < r.totalItems && view.lines.length < 429
         && view.pages.every(page => JSON.stringify(rowData(page)?.selection) === JSON.stringify(r)), `${view.pages.length} pages, ${view.lines.length} lines, ${receiptText(r)}`);
       const next = rowData(first)?.next;
-      const unfiltered = next?.unfiltered2 ?? next?.unfiltered;
+      const unfiltered = next?.unfiltered;
       const recovered = unfiltered ? [await follow(unfiltered)] : [];
       for (let lead = recovered[0] && rowData(recovered[0])?.next?.continueWindow; lead && recovered.length < 20; lead = rowData(recovered.at(-1))?.next?.continueWindow) recovered.push(await follow(lead));
-      const seen = recovered.flatMap(p => numbered(rowData(p)?.content).map(([n]) => n));
+      const seen = recovered.flatMap(p => sourceLines(rowData(p)).map(([n]) => n));
       const once = seen.length === 429 && new Set(seen).size === 429 && seen.every(n => n >= 1 && n <= 429);
       check('walk: whole unfiltered recovery drops the plan and recovers lines 1-429 exactly once', !!unfiltered && unfiltered.query?.queries?.[0]?.clasifyContext === undefined
         && recovered.every(p => !p.isError && !p.rowErrors && rowData(p)?.selection === undefined) && once && !rowData(recovered.at(-1))?.next?.continueWindow,
@@ -270,7 +264,7 @@ else {
       check('source: no source body is returned', !out.text.includes('serverCron(struct aeEventLoop'), out.text.slice(0, 160));
       const lead = findHint(row, 'read');
       const read = lead && await follow(lead);
-      const lines = numbered(read && rowData(read)?.content);
+      const lines = sourceLines(read && rowData(read));
       check('source: hints.read is a pinned localFetch of the captured range', lead?.tool === 'localFetch' && typeof lead.query?.queries?.[0]?.snapshot === 'string'
         && lines[0]?.[0] === cron.line && lines.at(-1)?.[0] === cron.line + 60, JSON.stringify(lead).slice(0, 200));
     }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, assert } from 'vitest';
 import { GitHubSearchRepoBulkQuerySchema } from '@octocodeai/config/schema';
 import { LocalSearchBulkQuerySchema } from '@octocodeai/config/schema';
 import {
@@ -8,9 +8,13 @@ import {
 import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/config/schema';
 
 const q0 = (
-  schema: { parse: (value: unknown) => { queries: unknown[] } },
+  schema: { parse: (value: unknown) => { queries?: unknown[] | undefined } },
   query: unknown
-) => schema.parse({ queries: [query] }).queries[0] as Record<string, unknown>;
+) => {
+  const parsed = schema.parse({ queries: [query] });
+  assert(parsed.queries, 'Fresh input retains its query batch');
+  return parsed.queries[0] as Record<string, unknown>;
+};
 
 describe('Unified public pagination fields', () => {
   it('ghSearchRepo uses pageSize per page and does not expose a total limit', () => {

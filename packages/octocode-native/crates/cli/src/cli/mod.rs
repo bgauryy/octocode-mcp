@@ -320,6 +320,15 @@ fn cli_host() -> HostOptions {
     }
 }
 
+/// The exit code of a login or logout; one that succeeded stops the warm
+/// servers, which may still remember the credential it replaced.
+fn credential_changed(code: u8) -> u8 {
+    if code == 0 {
+        serve::stop_all();
+    }
+    code
+}
+
 /// A runtime that could not start: its error in the command's output mode.
 fn start_failed(error: &RuntimeError, json_out: bool) -> u8 {
     emit_error(&error.code, &error.message, json_out);
@@ -392,8 +401,10 @@ async fn dispatch(command: Command, runtime: &ToolRuntime, json_out: bool) -> u8
                 hostname,
                 force,
                 refresh,
-            } => system::login(runtime, hostname.as_deref(), force, refresh, json_out).await,
-            AuthCommand::Logout => system::logout(runtime, json_out),
+            } => credential_changed(
+                system::login(runtime, hostname.as_deref(), force, refresh, json_out).await,
+            ),
+            AuthCommand::Logout => credential_changed(system::logout(runtime, json_out)),
         },
         Command::Graph { command } => graph::graph(runtime, command, json_out),
         Command::Skill { command } => skill::run(runtime, command, json_out).await,
@@ -478,8 +489,8 @@ fn config_management_response(
     )
 }
 
-/// Parse the query, then run it on the workspace's warm server (lspSearch)
-/// or in this process.
+/// Parse the query, then run it on the workspace's warm server (read-only
+/// tools) or in this process.
 async fn run_tool(tool: commands::ToolCommand, json_out: bool) -> u8 {
     let input = match tool_input(tool.name, &tool.args) {
         Ok(input) => input,
@@ -488,10 +499,10 @@ async fn run_tool(tool: commands::ToolCommand, json_out: bool) -> u8 {
             return 2;
         }
     };
-    if tool.name == ToolId::LspSearch.as_str()
-        && let Some(printed) = serve::call(tool.name, &input, json_out).await
+    if ToolId::from_name(tool.name).is_some_and(serve::runs_on_server)
+        && let Some(code) = serve::call(tool.name, &input, json_out).await
     {
-        return printed.print();
+        return code;
     }
     let runtime = match ToolRuntime::from_host(cli_host()) {
         Ok(runtime) => runtime,
@@ -512,6 +523,9 @@ fn tool_input(tool: &str, args: &ToolArgs) -> Result<Value, String> {
     serde_json::from_str::<Value>(&query_text)
         .map_err(|parse_error| format!("Invalid JSON query: {parse_error}"))
 }
+
+/// What an interrupted call says while its cancelled work drains.
+const CANCELLING: &str = "Cancelling; press Ctrl-C again to exit now.";
 
 #[derive(Debug, PartialEq, Eq)]
 enum Interrupted {
@@ -559,7 +573,7 @@ async fn execute(runtime: &ToolRuntime, tool: &str, input: Value, json_out: bool
                 execution.await
             } else {
                 runtime.requests.cancel(REQUEST);
-                eprintln!("Cancelling; press Ctrl-C again to exit now.");
+                eprintln!("{CANCELLING}");
                 if drain_after_interrupt(&mut execution, tokio::signal::ctrl_c()).await
                     == Interrupted::Forced
                 {

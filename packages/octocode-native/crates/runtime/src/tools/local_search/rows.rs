@@ -19,6 +19,17 @@ pub(super) fn project_match(
     matched: &octocode_engine::types::TextSearchMatch,
     max_chars: Option<usize>,
 ) -> SearchMatch {
+    let (mut row, value) = project_shape(matched, max_chars);
+    row.value = value.to_owned();
+    row
+}
+
+/// A row as [`project_match`] shows it, its value left empty, and the value
+/// it shows: a page cut prices the row from both without copying the value.
+pub(super) fn project_shape(
+    matched: &octocode_engine::types::TextSearchMatch,
+    max_chars: Option<usize>,
+) -> (SearchMatch, &str) {
     // matchOnly display cap: clip the exact span to the public display bound.
     let cut = max_chars.and_then(|limit| {
         matched
@@ -28,10 +39,10 @@ pub(super) fn project_match(
             .map(|(byte, _)| (byte, limit))
     });
     if let Some((byte, chars)) = cut {
-        return SearchMatch {
+        let row = SearchMatch {
             line: matched.line,
             column: Some(crate::tools::num::one_based_column(matched.column)),
-            value: matched.value[..byte].into(),
+            value: String::new(),
             byte_offset: matched.byte_offset,
             match_lines: None,
             count: matched.count,
@@ -52,15 +63,16 @@ pub(super) fn project_match(
             enclosing_line: None,
             declaration: None,
         };
+        return (row, &matched.value[..byte]);
     }
     // Content-view path: the engine already clipped the assembled snippet to
     // maxSnippetChars and reported the pre-truncation length via
     // `original_chars`; surface it as the same truncation indicator.
     let clipped = matched.original_chars.is_some();
-    SearchMatch {
+    let row = SearchMatch {
         line: matched.line,
         column: Some(crate::tools::num::one_based_column(matched.column)),
-        value: matched.value.clone(),
+        value: String::new(),
         byte_offset: matched.byte_offset,
         match_lines: None,
         count: matched.count,
@@ -73,7 +85,8 @@ pub(super) fn project_match(
         // The engine's lexical rank 3 is a declared name: the row an
         // lspSearch anchor takes. Only those rows carry the mark.
         declaration: (matched.rank == Some(3)).then_some(true),
-    }
+    };
+    (row, &matched.value)
 }
 
 /// Source line range and lines of a content-view row's ±`context` window, or

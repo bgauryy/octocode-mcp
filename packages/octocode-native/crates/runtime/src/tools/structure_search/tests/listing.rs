@@ -633,6 +633,56 @@ fn files_at_the_walk_ceiling_page_every_listed_row_and_lead_to_narrow() {
     assert!(pages.len() > 1);
 }
 
+/// A sorted listing whose walk stopped at its ceiling knows only a lower
+/// bound of its matches: it says `atLeast` (never an exact
+/// `totalAvailable` of the stop count), and that its sort ranked only the
+/// entries walked first.
+#[test]
+fn a_ranked_listing_cut_at_the_walk_ceiling_states_a_lower_bound() {
+    let ceiling = super::super::max_walk() as usize;
+    for ranked in [true, false] {
+        let cut = super::super::Cut {
+            page: 1,
+            total_pages: 1,
+            total: ceiling,
+            requested: ceiling,
+            available: ceiling + 1,
+            limit_cut: true,
+            scan_cut: true,
+            time_cut: None,
+            time_window: super::super::TimeWindow::Whole,
+            walk_position: ceiling + 1,
+            walk_offset: 0,
+            early_exit: false,
+            total_discovered: ceiling + 1,
+            scan_offset: 0,
+            covered: ceiling,
+            ranked,
+            snapshot: "snapshot".to_owned(),
+        };
+        let mut out = json!({});
+        let mut warnings = Vec::new();
+        cut.finish(
+            &mut out,
+            &json!({"operation":"files","path":"."}),
+            &mut warnings,
+        );
+        assert_eq!(out["atLeast"], ceiling + 1, "{out}");
+        assert!(out.get("totalAvailable").is_none(), "{out}");
+        assert_eq!(out["terminalLimit"], true, "{out}");
+        let warning = warnings.join(" ");
+        assert!(
+            warning.contains(&format!("with at least {} entries matched", ceiling + 1)),
+            "{warning}"
+        );
+        assert_eq!(
+            warning.contains("this sort ranks only the entries walked first"),
+            ranked,
+            "{warning}"
+        );
+    }
+}
+
 /// The files read lead skips generated and large files.
 #[test]
 fn files_read_lead_skips_generated_and_large() {

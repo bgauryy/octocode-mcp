@@ -335,8 +335,26 @@ fn scan_with_budget<T: Send>(
     budget: Option<std::time::Duration>,
 ) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
     let walked = walk_graph_fact_files(&options, admit, stop)?;
-    evaluate_walk(options, walked, keep, map, stop, budget)
+    evaluate_walk(options, walked, FactsSource::Graph, keep, map, stop, budget)
 }
+
+/// Where a scan takes each file's facts from.
+#[derive(Clone, Copy)]
+pub enum FactsSource<'a> {
+    /// Full graph facts (declarations, calls, paths, references), parsed
+    /// once per content version and kept in the scan's own memo.
+    Graph,
+    /// Declarations only, from the caller's [`DeclarationsExtraction`] and
+    /// its cache. The scan keeps no copy, so one cache holds a file's
+    /// declarations; the view's reference counts are empty.
+    Declarations(&'a DeclarationsExtraction),
+}
+
+/// A caller's declarations extraction: `(content, absolute path, parser
+/// override)` to the file's declarations facts (`None`: no extractor, a
+/// timeout).
+pub type DeclarationsExtraction =
+    dyn Fn(&str, &Path, Option<&str>) -> Option<Arc<GraphFactsDocument>> + Sync;
 
 /// The candidate files a graph-facts scan of `options` reads, in walk order:
 /// files of an outlined grammar (or mapped by `languageGlobs`) that `admit`
@@ -399,6 +417,7 @@ pub fn walk_graph_fact_files(
 pub fn scan_walked_graph_facts<T: Send>(
     options: GraphFactsScanOptions,
     walked: crate::types::FileSystemQueryResult,
+    source: FactsSource<'_>,
     keep: &(dyn Fn(&str) -> bool + Sync),
     map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
     stop: &Stop<'_>,
@@ -407,6 +426,7 @@ pub fn scan_walked_graph_facts<T: Send>(
         evaluate_walk(
             options,
             walked,
+            source,
             keep,
             map,
             stop,
@@ -425,6 +445,7 @@ pub fn scan_walked_graph_facts<T: Send>(
 fn evaluate_walk<T: Send>(
     options: GraphFactsScanOptions,
     query: crate::types::FileSystemQueryResult,
+    source: FactsSource<'_>,
     keep: &(dyn Fn(&str) -> bool + Sync),
     map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
     stop: &Stop<'_>,
@@ -446,6 +467,7 @@ fn evaluate_walk<T: Send>(
     let evaluator = EntryEvaluator {
         overrides: &overrides,
         max_file_bytes,
+        source,
         keep,
         map,
         stop,
@@ -502,6 +524,7 @@ fn evaluate_walk<T: Send>(
 struct EntryEvaluator<'s, T> {
     overrides: &'s [ParserOverride],
     max_file_bytes: u32,
+    source: FactsSource<'s>,
     keep: &'s (dyn Fn(&str) -> bool + Sync),
     map: &'s (dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
     stop: &'s Stop<'s>,
@@ -565,6 +588,23 @@ impl<T> EntryEvaluator<'_, T> {
             .filter(|meta| meta.len() == content.len() as u64)
             .and_then(|meta| SourceStamp::settled(meta, std::time::SystemTime::now()));
         let parser = selected.iter().next().copied();
+        if let FactsSource::Declarations(extract) = self.source {
+            let Some(facts) = extract(&content, path, parser) else {
+                return outcome(
+                    "graph.scan.extractFailed",
+                    "native graph-fact extraction returned no result",
+                );
+            };
+            let kept = (self.map)(&GraphFactsView {
+                relative_path: &relative_path,
+                content: &content,
+                content_digest: &content_digest,
+                source_stamp,
+                facts: &facts,
+                reference_counts: &[],
+            });
+            return Ok(Some(GraphFactsScanOutcome::Entry(relative_path, kept)));
+        }
         let memo_key = format!(
             "{content_digest}\u{0}{relative_path}\u{0}{}",
             parser.unwrap_or("")

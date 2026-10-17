@@ -19,18 +19,13 @@ pub(crate) async fn nuget(
     if let Some(name) = query.package_name() {
         return exact(name, requested_version(query.version())?, client).await;
     }
+    // The shared page bounds ([`super::page_out_of_range`]) keep `offset`
+    // below [`REACHABLE_END`] and end the last reachable page.
     let offset = state.offset.unwrap_or(0);
-    if offset >= REACHABLE_END {
-        return Ok(ArtifactProviderPage {
-            artifacts: vec![],
-            next_state: None,
-            total: None,
-            terminal_limit: Some(reach_limit()),
-            registry: None,
-        });
-    }
     let base = service_endpoint("SearchQueryService", client).await?;
-    let size = query.page_size().min((REACHABLE_END - offset) as usize);
+    let size = query
+        .page_size()
+        .min(REACHABLE_END.saturating_sub(offset) as usize);
     // NuGet rejects skip > 3000. Past it, fetch one window from skip=3000
     // (take stays <= 1000) and slice the caller's page out locally.
     let (skip, drop) = if offset > MAX_SKIP {
@@ -70,13 +65,7 @@ pub(crate) async fn nuget(
     let more = count
         .map(|count| next_offset < count)
         .unwrap_or(fetched.len() >= take);
-    let limit = if more && artifacts.is_empty() {
-        Some(TerminalLimit::short_page("NuGet"))
-    } else if more && next_offset >= REACHABLE_END {
-        Some(reach_limit())
-    } else {
-        None
-    };
+    let limit = (more && artifacts.is_empty()).then(|| TerminalLimit::short_page("NuGet"));
     Ok(ArtifactProviderPage {
         next_state: (more && limit.is_none()).then(|| ArtifactProviderState {
             offset: Some(next_offset),
@@ -92,7 +81,7 @@ pub(crate) async fn nuget(
 /// NuGet search accepts `skip <= 3000` and `take <= 1000`, so result 4000 is
 /// the last one any request can reach.
 const MAX_SKIP: u64 = 3000;
-const REACHABLE_END: u64 = MAX_SKIP + 1000;
+pub(super) const REACHABLE_END: u64 = MAX_SKIP + 1000;
 
 /// The exact NuGet version a lookup asks for: `None` for the latest release
 /// (no version, or `latest`). NuGet versions are numeric (up to four parts)
@@ -542,12 +531,6 @@ fn compare_versions(left: &str, right: &str) -> Result<Ordering, ArtifactError> 
     }
 }
 
-fn reach_limit() -> TerminalLimit {
-    TerminalLimit::result_cap(format!(
-        "NuGet search serves only the first {REACHABLE_END} results (skip <= {MAX_SKIP})."
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::test_http::RouteHttp;
@@ -863,16 +846,26 @@ mod tests {
         // Past skip=3000 the tail is sliced locally from one bounded window.
         let page = nuget(&q, &at(3002), &client).await.unwrap();
         assert_eq!(names(&page), ["pkg3002", "pkg3003"]);
-        // The final reachable page ends with an honest terminal limit.
+        // The final reachable page serves the last rows; the shared page
+        // bounds end it with an honest terminal limit, and no request
+        // starts at or past result 4000.
         let page = nuget(&q, &at(3998), &client).await.unwrap();
         assert_eq!(names(&page), ["pkg3998", "pkg3999"]);
-        assert!(page.next_state.is_none());
-        let reason =
-            |page: &ArtifactProviderPage| page.terminal_limit.as_ref().map(|limit| limit.reason);
-        assert_eq!(reason(&page), Some("providerResultCap"));
-        let page = nuget(&q, &at(4000), &client).await.unwrap();
-        assert!(page.artifacts.is_empty());
-        assert_eq!(reason(&page), Some("providerResultCap"));
+        let mut paged = q.clone();
+        paged.set_page(2000);
+        assert!(super::super::page_out_of_range(&paged).is_none());
+        paged.set_page(2001);
+        assert_eq!(
+            super::super::page_out_of_range(&paged).map(|limit| limit.reason),
+            Some("providerResultCap")
+        );
+        assert!(super::super::validate_cursor_state(ArtifactType::Nuget, &at(3999)).is_ok());
+        assert_eq!(
+            super::super::validate_cursor_state(ArtifactType::Nuget, &at(4000))
+                .expect_err("past the reach")
+                .code,
+            "invalidInput"
+        );
         assert!(
             http.0
                 .lock()

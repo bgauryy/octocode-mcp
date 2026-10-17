@@ -10,12 +10,12 @@ export function savedPageTools(active: readonly string[]): SavedPageTools {
 }
 
 /**
- * How to reach the rest of a saved page, naming the tools this session has: `clasify` to locate a target in
- * it, `localSearch` for literal text, `localFetch` for line ranges. Without any, the generic wording stands.
+ * How to reach the rest of a saved page, naming the tools this session has: `clasify` to screen unread text,
+ * `localSearch` for literal text, `localFetch` for line ranges. Without any, the generic wording stands.
  */
 export function savedPageLead(tools: SavedPageTools): string {
   const reads = [
-    tools.clasify && `locate a described target with ${OCTOCODE_TOOL_PREFIX}clasify (resource {tool:"localFetch", query:{path:<this file>, fullContent:true}}, a locate question; a hit in a table of contents is not the section, read the hit)`,
+    tools.clasify && `screen a bounded unread selection with ${OCTOCODE_TOOL_PREFIX}clasify (source {tool:"localFetch", query:{path:<this file>, ranges:<observed line ranges>}}, a noul question about one stated fact; typed answers only, read deciding evidence)`,
     tools.localSearch && `search literal text with ${OCTOCODE_TOOL_PREFIX}localSearch (headings: regex "^#{1,3} ")`,
     tools.localFetch && `read line ranges with ${OCTOCODE_TOOL_PREFIX}localFetch`,
   ].filter(Boolean);

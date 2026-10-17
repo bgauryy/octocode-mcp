@@ -4,6 +4,7 @@
 //! lines are listed as `"<line>\t<text>"` (the numbered-line form), the way
 //! `grep -n` would: with several keywords, the lines holding all of them.
 use crate::security::scan::ContentScan;
+use octocode_engine::graph::{GraphFactDeclaration, GraphFactsDocument};
 use octocode_github::{GitHubProvider, ProviderError, ProviderErrorKind, RequestContext};
 use std::path::Path;
 
@@ -66,9 +67,9 @@ pub(super) async fn resolve_commit<C: octocode_github::ConditionalCache>(
         .await
 }
 
-/// Read each path at `sha` concurrently and list its keyword lines.
-/// Cancellation and auth/rate failures propagate as `Unavailable` for the
-/// file, except cancellation, which aborts.
+/// Read each path at `sha` concurrently and list its keyword lines, the
+/// read blobs scanned on parallel threads ([`scan_all`]). Cancellation
+/// and deadline expiry abort; other read failures leave the file `Unavailable`.
 pub(super) async fn resolve_files<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
@@ -78,8 +79,9 @@ pub(super) async fn resolve_files<C: octocode_github::ConditionalCache>(
     keywords: &[String],
     goal: &str,
     context: &RequestContext,
-    security: &impl ContentScan,
+    security: &(impl ContentScan + Sync),
 ) -> Result<Vec<FileHits>, ProviderError> {
+    context.check()?;
     let reads = paths.iter().map(|path| async move {
         provider
             .get_file_content(
@@ -95,11 +97,23 @@ pub(super) async fn resolve_files<C: octocode_github::ConditionalCache>(
             .await
     });
     let fetched = futures_util::future::join_all(reads).await;
+    context.check()?;
     let mut out = Vec::with_capacity(paths.len());
-    for (path, result) in paths.iter().zip(fetched) {
+    let mut blobs = Vec::new();
+    for (path, result) in paths.iter().zip(&fetched) {
         out.push(match result {
-            Ok(content) => scan(&content.bytes, path, keywords, goal, security),
-            Err(error) if error.kind == ProviderErrorKind::Cancelled => return Err(error),
+            Ok(content) => {
+                blobs.push((out.len(), content.bytes.as_ref(), path.as_str()));
+                FileHits::Unavailable
+            }
+            Err(error)
+                if matches!(
+                    error.kind,
+                    ProviderErrorKind::Cancelled | ProviderErrorKind::Timeout
+                ) =>
+            {
+                return Err(error.clone());
+            }
             Err(error)
                 if error.kind == ProviderErrorKind::NotFound || error.status == Some(404) =>
             {
@@ -108,7 +122,206 @@ pub(super) async fn resolve_files<C: octocode_github::ConditionalCache>(
             Err(_) => FileHits::Unavailable,
         });
     }
+    let scanned = scan_all(
+        &blobs
+            .iter()
+            .map(|&(_, bytes, path)| (bytes, path))
+            .collect::<Vec<_>>(),
+        keywords,
+        goal,
+        security,
+        context,
+    )?;
+    for ((at, _, _), hits) in blobs.into_iter().zip(scanned) {
+        out[at] = hits;
+    }
     Ok(out)
+}
+
+/// [`scan`] of each `(bytes, path)`, in order, on scoped threads within the
+/// process's scan budget ([`SCANS`]). A scan that panics leaves its file
+/// `Unavailable` (its index fragments stay) rather than failing the row.
+fn scan_all(
+    files: &[(&[u8], &str)],
+    keywords: &[String],
+    goal: &str,
+    security: &(impl ContentScan + Sync),
+    context: &RequestContext,
+) -> Result<Vec<FileHits>, ProviderError> {
+    let cores = std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
+    Ok(fan_out(
+        &SCANS,
+        context,
+        cores,
+        files,
+        |&(bytes, _)| scan_weight(bytes),
+        |&(bytes, path)| scan(bytes, path, keywords, goal, security),
+    )?
+    .into_iter()
+    .map(|hits| hits.unwrap_or(FileHits::Unavailable))
+    .collect())
+}
+
+/// Blob bytes the process scans at once. A scanned file's working set (its
+/// lines, their lowercase copies and its declarations parse) runs to about
+/// 35 times its bytes, so this keeps concurrent scans near 300 MB whatever
+/// the core count, page size or number of concurrent calls, while small
+/// files still scan on every core.
+const SCAN_BUDGET_BYTES: usize = 8 * 1024 * 1024;
+
+/// The process's in-flight scan bytes: every row, and every call a
+/// long-lived server runs at once, shares it.
+static SCANS: ScanBudget = ScanBudget::new(SCAN_BUDGET_BYTES);
+
+/// The bytes [`scan`] holds for a blob: none for one it refuses unread.
+fn scan_weight(bytes: &[u8]) -> usize {
+    if bytes.len() > MAX_SCAN_BYTES {
+        0
+    } else {
+        bytes.len()
+    }
+}
+
+/// Bytes held by running scans, at most `limit`.
+struct ScanBudget {
+    limit: usize,
+    held: std::sync::Mutex<usize>,
+    freed: std::sync::Condvar,
+    #[cfg(test)]
+    waiting: std::sync::atomic::AtomicUsize,
+}
+
+impl ScanBudget {
+    const fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            held: std::sync::Mutex::new(0),
+            freed: std::sync::Condvar::new(),
+            #[cfg(test)]
+            waiting: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    /// Hold `bytes` (at most the whole budget: a larger item runs alone)
+    /// until the guard drops, waiting while other scans hold too much.
+    fn admit(&self, bytes: usize, context: &RequestContext) -> Result<Admitted<'_>, ProviderError> {
+        context.check()?;
+        let bytes = bytes.min(self.limit);
+        let mut held = self
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while bytes > self.limit - *held {
+            context.check()?;
+            let wait = context
+                .budget
+                .effective_deadline()
+                .saturating_duration_since(std::time::Instant::now())
+                .min(std::time::Duration::from_millis(10));
+            #[cfg(test)]
+            self.waiting
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            held = self
+                .freed
+                .wait_timeout(held, wait)
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .0;
+            #[cfg(test)]
+            self.waiting
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        context.check()?;
+        *held += bytes;
+        Ok(Admitted {
+            budget: self,
+            bytes,
+        })
+    }
+
+    /// Workers for `items` items, the largest weighing `largest`: one per
+    /// core, never more than the items, nor than the budget admits at once.
+    fn workers(&self, cores: usize, items: usize, largest: usize) -> usize {
+        cores.min(items).min(self.limit / largest.max(1)).max(1)
+    }
+}
+
+/// A scan's hold on its [`ScanBudget`] bytes, released on drop (a
+/// panicking scan's too).
+struct Admitted<'a> {
+    budget: &'a ScanBudget,
+    bytes: usize,
+}
+
+impl Drop for Admitted<'_> {
+    fn drop(&mut self) {
+        let mut held = self
+            .budget
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *held -= self.bytes;
+        drop(held);
+        self.budget.freed.notify_all();
+    }
+}
+
+/// `work` on each item, in order, each holding `weight(item)` bytes of
+/// `budget` while it runs; several items run on scoped threads (at most
+/// [`ScanBudget::workers`]) that each take the next item until none is
+/// left. An item whose `work` panicked is `None`; the others keep their
+/// results, on one thread or many.
+fn fan_out<I: Sync, T: Send>(
+    budget: &ScanBudget,
+    context: &RequestContext,
+    cores: usize,
+    items: &[I],
+    weight: impl Fn(&I) -> usize + Sync,
+    work: impl Fn(&I) -> T + Sync,
+) -> Result<Vec<Option<T>>, ProviderError> {
+    context.check()?;
+    let run = |item: &I| {
+        context.check()?;
+        let _held = budget.admit(weight(item), context)?;
+        context.check()?;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(item))).ok();
+        context.check()?;
+        Ok(result)
+    };
+    if items.len() < 2 {
+        return items.iter().map(run).collect();
+    }
+    let largest = items.iter().map(&weight).max().unwrap_or(0);
+    let workers = budget.workers(cores, items.len(), largest);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut out: Vec<Option<T>> = items.iter().map(|_| None).collect();
+    std::thread::scope(|scope| {
+        let tasks: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        context.check()?;
+                        let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(item) = items.get(index) else {
+                            return Ok::<_, ProviderError>(done);
+                        };
+                        done.push((index, run(item)?));
+                    }
+                })
+            })
+            .collect();
+        for task in tasks {
+            let done = match task.join() {
+                Ok(done) => done?,
+                Err(panic) => std::panic::resume_unwind(panic),
+            };
+            for (index, value) in done {
+                out[index] = value;
+            }
+        }
+        context.check()?;
+        Ok(out)
+    })
 }
 
 /// Case-insensitive keyword lines of one blob, numbered from 1.
@@ -131,18 +344,22 @@ pub(super) fn scan(
     if needles.is_empty() {
         return FileHits::Unmatched;
     }
-    let blob = Blob {
+    let mut blob = Blob {
         raw: text.lines().collect(),
         lowered: text.lines().map(str::to_lowercase).collect(),
-        key_blocks: crate::security::private_key_block_line_ranges(&text),
-        declared: crate::tools::declarations_cache::all_declarations(&text, path)
-            .unwrap_or_default(),
+        key_blocks: Vec::new(),
+        declared: Vec::new(),
         path,
     };
-    let hits = blob.hits(&needles, goal);
-    if hits.is_empty() {
+    let found = blob.found(&needles);
+    if found.is_empty() {
         return FileHits::Unmatched;
     }
+    // Only a file with a keyword line is outlined.
+    blob.key_blocks = crate::security::private_key_block_line_ranges(&text);
+    let outline = crate::tools::declarations_cache::file_document(&text, path);
+    blob.declared = hit_declarations(outline.as_deref(), &found);
+    let hits = blob.hits(found, &needles, goal);
     let anchor = blob.anchor(&hits, &needles, security);
     let listing = blob.listing(&hits, &needles, anchor.window, security);
     FileHits::Lines {
@@ -196,36 +413,71 @@ struct Listing {
 
 /// One scanned blob: its lines, as read and lowercased, the private-key
 /// blocks no listed line may show, and the declarations its grammar
-/// outlines (none for a file type without an outline).
+/// outlines on its keyword lines ([`hit_declarations`]; none for a file
+/// type without an outline), sorted by name line.
 struct Blob<'a> {
     raw: Vec<&'a str>,
     lowered: Vec<String>,
     key_blocks: Vec<(u32, u32)>,
-    declared: Vec<crate::tools::declarations_cache::Declared>,
+    declared: Vec<&'a GraphFactDeclaration>,
     path: &'a str,
 }
 
+/// The declarations of `outline` whose name line is a `found` keyword line
+/// (the only lines a hit is scored or anchored on), by name line, outline
+/// order within one line. They borrow the shared parse: the rest of the
+/// outline is never copied.
+fn hit_declarations<'a>(
+    outline: Option<&'a GraphFactsDocument>,
+    found: &[Found],
+) -> Vec<&'a GraphFactDeclaration> {
+    let mut declared: Vec<&GraphFactDeclaration> = outline
+        .into_iter()
+        .flat_map(|outline| &outline.declarations)
+        .filter(|declared| {
+            found
+                .binary_search_by_key(&(name_line(declared) - 1), |&(index, _, _)| index)
+                .is_ok()
+        })
+        .collect();
+    declared.sort_by_key(|declared| name_line(declared));
+    declared
+}
+
+/// A declaration's 1-based name line.
+fn name_line(declared: &GraphFactDeclaration) -> usize {
+    declared.selection_range.start.line as usize + 1
+}
+
+/// A keyword line before scoring: its 0-based index, the byte of its first
+/// keyword in the lowercase line and that keyword's length.
+type Found = (usize, usize, usize);
+
 impl Blob<'_> {
     /// The declaration whose name the keyword at byte `at` of line `index`
-    /// is: its name line is the hit line, and the name ends past `at`.
-    fn declares(
-        &self,
-        index: usize,
-        at: usize,
-    ) -> Option<&crate::tools::declarations_cache::Declared> {
+    /// is: its name line is the hit line, and the name ends past `at`. A
+    /// binary search finds the line's declarations, so scoring every hit
+    /// costs no pass over the whole outline.
+    fn declares(&self, index: usize, at: usize) -> Option<&GraphFactDeclaration> {
         let lower = &self.lowered[index];
-        self.declared.iter().find(|declared| {
-            declared.line == index + 1
-                && !declared.name.is_empty()
-                && lower
-                    .find(&declared.name.to_lowercase())
-                    .is_some_and(|start| start + declared.name.len() > at)
-        })
+        let from = self
+            .declared
+            .partition_point(|declared| name_line(declared) < index + 1);
+        self.declared[from..]
+            .iter()
+            .copied()
+            .take_while(|declared| name_line(declared) == index + 1)
+            .find(|declared| {
+                let name = declared.name.to_lowercase();
+                !name.is_empty()
+                    && lower
+                        .find(&name)
+                        .is_some_and(|start| start + name.len() > at)
+            })
     }
 
-    /// Every keyword line, in file order.
-    fn hits(&self, needles: &[String], goal: &str) -> Vec<Hit> {
-        let terms = goal_terms(goal, needles, &self.lowered);
+    /// Every keyword line, in file order, unscored.
+    fn found(&self, needles: &[String]) -> Vec<Found> {
         self.lowered
             .iter()
             .enumerate()
@@ -234,18 +486,29 @@ impl Blob<'_> {
                     .iter()
                     .filter_map(|needle| lower.find(needle.as_str()).map(|at| (at, needle)))
                     .min()?;
-                Some(Hit {
+                Some((index, at, needle.len()))
+            })
+            .collect()
+    }
+
+    /// The `found` keyword lines, scored against the goal.
+    fn hits(&self, found: Vec<Found>, needles: &[String], goal: &str) -> Vec<Hit> {
+        let terms = goal_terms(goal, needles, &self.lowered);
+        found
+            .into_iter()
+            .map(|(index, at, length)| Hit {
+                index,
+                at,
+                every: needles
+                    .iter()
+                    .all(|needle| self.lowered[index].contains(needle.as_str())),
+                score: hit_score(
+                    &self.lowered,
                     index,
-                    at,
-                    every: needles.iter().all(|needle| lower.contains(needle.as_str())),
-                    score: hit_score(
-                        &self.lowered,
-                        index,
-                        at + needle.len(),
-                        self.declares(index, at).is_some(),
-                        &terms,
-                    ),
-                })
+                    at + length,
+                    self.declares(index, at).is_some(),
+                    &terms,
+                ),
             })
             .collect()
     }
@@ -337,7 +600,10 @@ impl Blob<'_> {
                 crate::security::key_fragment_placeholder()
             } else {
                 listing.clipped |= line.chars().count() > MAX_LINE_CHARS;
-                let window = clip(line, lower_to_char_index(line, lower, hit.at));
+                let window = clip(
+                    line,
+                    octocode_engine::text::case_fold::Folded::of(line).char_index(hit.at),
+                );
                 security
                     .sanitize(&window, Path::new(self.path))
                     .map(|(clean, _)| clean)
@@ -367,7 +633,7 @@ impl Blob<'_> {
     /// unique in the file, and scanning leaves it unchanged.
     fn declared_head(&self, hit: &Hit, security: &impl ContentScan) -> Option<String> {
         self.declares(hit.index, hit.at)
-            .filter(|declared| declared.end > declared.start)?;
+            .filter(|declared| declared.range.end.line > declared.range.start.line)?;
         let head = self.raw[hit.index].trim();
         if head.is_empty() || head.chars().count() > MAX_LINE_CHARS {
             return None;
@@ -510,18 +776,6 @@ fn hit_shape(lower: &str, after: usize, declares: bool) -> usize {
     if declares { 2 } else { 1 }
 }
 
-/// Char index in `line` of byte offset `at` in its lowercase form (lowercasing
-/// can change byte lengths, so map through char counts).
-fn lower_to_char_index(line: &str, lower: &str, at: usize) -> usize {
-    if line.len() == lower.len() {
-        return line[..at.min(line.len())].chars().count();
-    }
-    lower
-        .get(..at)
-        .map_or(0, |prefix| prefix.chars().count())
-        .min(line.chars().count())
-}
-
 /// The line itself when short; otherwise a window starting a little before
 /// the first keyword, marked with `…`.
 fn clip(line: &str, at_char: usize) -> String {
@@ -545,6 +799,10 @@ mod tests {
     use super::*;
 
     use crate::security::scan::Passthrough;
+
+    fn test_context() -> RequestContext {
+        RequestContext::with_timeout(std::time::Duration::from_secs(30), MAX_SCAN_BYTES)
+    }
 
     /// A hit on a name the grammar's outline declares carries its
     /// declaration line, so the read lead returns the whole block; a call,
@@ -860,6 +1118,347 @@ mod tests {
             panic!("hit");
         };
         assert_eq!(best, 1);
+    }
+
+    /// A hit line whose lowercase form moves char boundaries, even at an
+    /// equal byte length, lists verbatim rather than panicking, and a long
+    /// line keeps its keyword in the window.
+    #[test]
+    fn hit_lines_that_lowercase_to_other_boundaries_list_verbatim() {
+        let lines = |text: &str, keyword: &str| match scan(
+            text.as_bytes(),
+            "a.js",
+            &[keyword.into()],
+            "",
+            &Passthrough,
+        ) {
+            FileHits::Lines { lines, .. } => lines,
+            other => panic!("{other:?}"),
+        };
+        let text = "const s = \"İéxẞ\";\n";
+        assert_eq!(text.len(), text.to_lowercase().len());
+        assert_eq!(lines(text, "éx"), ["1\tconst s = \"İéxẞ\";"]);
+        assert_eq!(lines(text, "ẞ"), ["1\tconst s = \"İéxẞ\";"]);
+        assert_eq!(lines("x = \"STRAẞE\"\n", "straße"), ["1\tx = \"STRAẞE\""]);
+        for prefix in ["İ", "ẞ", "e\u{301}", "👍🏽"] {
+            let line = format!("{}needle{}", prefix.repeat(300), "b".repeat(300));
+            let shown = &lines(&line, "needle")[0];
+            assert!(shown.starts_with("1\t…"), "{prefix}: {shown}");
+            assert!(shown.contains("needle"), "{prefix}: {shown}");
+        }
+    }
+
+    /// Scanning a page's files on parallel threads keeps each file's own
+    /// hits, in page order.
+    #[test]
+    fn parallel_scans_keep_page_order() {
+        let texts: Vec<String> = (0..17)
+            .map(|file| match file % 3 {
+                0 => format!("fn f{file}() {{}}\nneedle {file}\n"),
+                1 => "nothing here\n".to_owned(),
+                _ => format!("{}needle\n", "x\n".repeat(file)),
+            })
+            .collect();
+        let paths: Vec<String> = (0..texts.len()).map(|file| format!("f{file}.rs")).collect();
+        let files: Vec<(&[u8], &str)> = texts
+            .iter()
+            .zip(&paths)
+            .map(|(text, path)| (text.as_bytes(), path.as_str()))
+            .collect();
+        let keywords = ["needle".to_owned()];
+        let serial: Vec<FileHits> = files
+            .iter()
+            .map(|&(bytes, path)| scan(bytes, path, &keywords, "", &Passthrough))
+            .collect();
+        assert_eq!(
+            scan_all(&files, &keywords, "", &Passthrough, &test_context()).unwrap(),
+            serial
+        );
+        assert!(matches!(serial[1], FileHits::Unmatched));
+        assert!(matches!(serial[5], FileHits::Lines { first: 6, .. }));
+    }
+
+    /// A file with many declarations finds the one a hit names by its line:
+    /// declarations on other lines never match, and outline order holds on
+    /// one line.
+    #[test]
+    fn hits_find_their_declaration_by_line_among_many() {
+        let mut text = String::new();
+        for function in 0..2_000 {
+            text.push_str(&format!("def f{function}(a):\n    return a\n"));
+        }
+        text.push_str("def target_name(a):\n    return a\n");
+        let FileHits::Lines {
+            declaration, best, ..
+        } = scan(
+            text.as_bytes(),
+            "a.py",
+            &["target_name".into()],
+            "",
+            &Passthrough,
+        )
+        else {
+            panic!("hit");
+        };
+        assert_eq!(best, 4_001);
+        assert_eq!(declaration.as_deref(), Some("def target_name(a):"));
+    }
+
+    /// A scanned file keeps only the declarations named on its keyword
+    /// lines, borrowed from the shared parse: a file of 2,000 functions
+    /// with one hit holds one.
+    #[test]
+    fn only_declarations_named_on_hit_lines_are_kept() {
+        let mut text = String::new();
+        for function in 0..2_000 {
+            text.push_str(&format!("def f{function}(a):\n    return a\n"));
+        }
+        text.push_str("def target_name(a):\n    return a\n");
+        let path = format!("hit-declarations-{}.py", std::process::id());
+        let outline =
+            crate::tools::declarations_cache::file_document(&text, &path).expect("outline");
+        assert_eq!(outline.declarations.len(), 2_001);
+        let kept = hit_declarations(Some(&outline), &[(4_000, 4, 11)]);
+        let names: Vec<&str> = kept.iter().map(|declared| declared.name.as_str()).collect();
+        assert_eq!(names, ["target_name"]);
+        assert!(hit_declarations(None, &[(4_000, 4, 11)]).is_empty());
+    }
+
+    /// Fan-outs running at once (rows, or calls of a long-lived server)
+    /// share one byte budget: the bytes held by running items never pass it,
+    /// an item larger than the whole budget runs alone, and each fan-out
+    /// keeps its items' order.
+    #[test]
+    fn concurrent_fan_outs_hold_their_bytes_within_one_budget() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let budget = ScanBudget::new(10);
+        let (held, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let mut items: Vec<usize> = (0..24).map(|item| 1 + item % 4).collect();
+        items.push(25);
+        let work = |&weight: &usize| {
+            let charged = weight.min(10);
+            peak.fetch_max(held.fetch_add(charged, SeqCst) + charged, SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            held.fetch_sub(charged, SeqCst);
+            weight * 10
+        };
+        let outs = std::thread::scope(|scope| {
+            let calls: Vec<_> = (0..3)
+                .map(|_| {
+                    scope.spawn(|| {
+                        fan_out(&budget, &test_context(), 8, &items, |&weight| weight, work)
+                    })
+                })
+                .collect();
+            calls
+                .into_iter()
+                .map(|call| call.join().expect("fan-out").expect("scan"))
+                .collect::<Vec<_>>()
+        });
+        assert!(peak.load(SeqCst) <= 10, "{}", peak.load(SeqCst));
+        let expected: Vec<Option<usize>> = items.iter().map(|weight| Some(weight * 10)).collect();
+        for out in outs {
+            assert_eq!(out, expected);
+        }
+        assert_eq!(*budget.held.lock().expect("held"), 0);
+    }
+
+    /// Workers follow the cores for small blobs and the budget for large
+    /// ones: twelve 1.8 MB blobs scan four at a time on twelve cores.
+    #[test]
+    fn scan_workers_are_bounded_by_bytes_then_cores() {
+        let budget = ScanBudget::new(SCAN_BUDGET_BYTES);
+        assert_eq!(budget.workers(12, 12, 1_800_000), 4);
+        assert_eq!(budget.workers(12, 12, 20_000), 12);
+        assert_eq!(budget.workers(12, 3, 20_000), 3);
+        assert_eq!(budget.workers(12, 12, MAX_SCAN_BYTES), 4);
+        assert_eq!(budget.workers(1, 12, 0), 1);
+        assert_eq!(scan_weight(&vec![b'x'; MAX_SCAN_BYTES + 1]), 0);
+    }
+
+    /// A fan-out given one core runs on one thread, with the serial output.
+    #[test]
+    fn a_fan_out_on_one_core_runs_on_one_thread() {
+        let threads = std::sync::Mutex::new(std::collections::HashSet::new());
+        let out = fan_out(
+            &ScanBudget::new(usize::MAX),
+            &test_context(),
+            1,
+            &[1, 2, 3, 4],
+            |_| 0,
+            |&item| {
+                threads
+                    .lock()
+                    .expect("threads")
+                    .insert(std::thread::current().id());
+                item
+            },
+        );
+        assert_eq!(out.unwrap(), [Some(1), Some(2), Some(3), Some(4)]);
+        assert_eq!(threads.lock().expect("threads").len(), 1);
+    }
+
+    /// A panicking item is the only one lost, on a worker that took others
+    /// too and on the single-item path alike, and its bytes go back.
+    #[test]
+    fn a_panicking_item_loses_only_itself() {
+        let budget = ScanBudget::new(usize::MAX);
+        let work = |&item: &u32| {
+            assert_ne!(item, 2, "item 2 panics");
+            item
+        };
+        let out = fan_out(&budget, &test_context(), 1, &[1, 2, 3, 4], |_| 1, work);
+        assert_eq!(out.unwrap(), [Some(1), None, Some(3), Some(4)]);
+        assert_eq!(
+            fan_out(&budget, &test_context(), 1, &[2], |_| 1, work).unwrap(),
+            [None]
+        );
+        assert_eq!(*budget.held.lock().expect("held"), 0);
+    }
+
+    fn stopped_budget_waiter(timeout: bool, items: &[usize]) {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        use std::time::{Duration, Instant};
+
+        let budget = ScanBudget::new(1);
+        let holder_context = test_context();
+        let holder = budget.admit(1, &holder_context).expect("holder admitted");
+        let mut context = test_context();
+        if timeout {
+            context.budget.deadline = Instant::now() + Duration::from_millis(250);
+            context.budget.wait_until = context.budget.deadline;
+        }
+        let ran = AtomicUsize::new(0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                let result = fan_out(
+                    &budget,
+                    &context,
+                    4,
+                    items,
+                    |_| 1,
+                    |_| {
+                        ran.fetch_add(1, SeqCst);
+                    },
+                );
+                tx.send(result.map_err(|error| error.kind))
+                    .expect("result receiver");
+            });
+            let observe_until = Instant::now() + Duration::from_secs(2);
+            let waiting = loop {
+                if budget.waiting.load(SeqCst) != 0 {
+                    break true;
+                }
+                if Instant::now() >= observe_until {
+                    break false;
+                }
+                std::thread::yield_now();
+            };
+            if !timeout {
+                context.budget.cancellation.cancel();
+            }
+            let result = rx.recv_timeout(Duration::from_secs(2));
+            let still_held = *budget.held.lock().expect("budget");
+            let work_ran = ran.load(SeqCst);
+            // Release even on failure so a broken unbounded wait cannot hang the test.
+            drop(holder);
+            assert!(waiting, "worker must enter admission wait before stopping");
+            assert_eq!(
+                result.expect("waiter returns before holder release"),
+                Err(if timeout {
+                    ProviderErrorKind::Timeout
+                } else {
+                    ProviderErrorKind::Cancelled
+                })
+            );
+            assert_eq!(still_held, 1);
+            assert_eq!(work_ran, 0);
+        });
+        assert_eq!(*budget.held.lock().expect("budget"), 0);
+    }
+
+    #[test]
+    fn cancelled_budget_waiter_returns_before_holder_release_without_work() {
+        stopped_budget_waiter(false, &[1]);
+        stopped_budget_waiter(false, &[1, 2]);
+    }
+
+    #[test]
+    fn expired_budget_waiter_returns_before_holder_release_without_work() {
+        stopped_budget_waiter(true, &[1]);
+        stopped_budget_waiter(true, &[1, 2]);
+    }
+
+    #[test]
+    fn cancellation_between_files_stops_remaining_work() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        let budget = ScanBudget::new(1);
+        let context = test_context();
+        let ran = AtomicUsize::new(0);
+        let result = fan_out(
+            &budget,
+            &context,
+            1,
+            &[1, 2, 3],
+            |_| 1,
+            |_| {
+                ran.fetch_add(1, SeqCst);
+                context.budget.cancellation.cancel();
+            },
+        );
+        assert_eq!(result.unwrap_err().kind, ProviderErrorKind::Cancelled);
+        assert_eq!(ran.load(SeqCst), 1);
+        assert_eq!(*budget.held.lock().expect("budget"), 0);
+    }
+
+    #[test]
+    fn deadline_between_files_stops_remaining_work() {
+        use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+        use std::time::{Duration, Instant};
+        let budget = ScanBudget::new(1);
+        let mut context = test_context();
+        context.budget.deadline = Instant::now() + Duration::from_millis(100);
+        let ran = AtomicUsize::new(0);
+        let result = fan_out(
+            &budget,
+            &context,
+            1,
+            &[1, 2, 3],
+            |_| 1,
+            |_| {
+                ran.fetch_add(1, SeqCst);
+                while Instant::now() < context.budget.deadline {
+                    std::thread::park_timeout(
+                        context
+                            .budget
+                            .deadline
+                            .saturating_duration_since(Instant::now()),
+                    );
+                }
+            },
+        );
+        assert_eq!(result.unwrap_err().kind, ProviderErrorKind::Timeout);
+        assert_eq!(ran.load(SeqCst), 1);
+        assert_eq!(*budget.held.lock().expect("budget"), 0);
+    }
+
+    #[test]
+    fn stopped_scan_all_propagates_errors_instead_of_unavailable_hits() {
+        let context = test_context();
+        context.budget.cancellation.cancel();
+        let result = scan_all(
+            &[(b"needle", "a.rs")],
+            &["needle".into()],
+            "",
+            &Passthrough,
+            &context,
+        );
+        assert_eq!(result.unwrap_err().kind, ProviderErrorKind::Cancelled);
+        let mut context = test_context();
+        context.budget.deadline = std::time::Instant::now();
+        let result = scan_all(&[], &[], "", &Passthrough, &context);
+        assert_eq!(result.unwrap_err().kind, ProviderErrorKind::Timeout);
     }
 
     #[test]

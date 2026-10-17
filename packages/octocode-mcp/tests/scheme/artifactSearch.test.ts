@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, assert } from 'vitest';
 import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/config/schema';
 
 const GOAL = 'test goal';
@@ -8,6 +8,7 @@ function parsedQuery(query: Record<string, unknown>): Record<string, unknown> {
   const parsed = ArtifactSearchBulkQueryLocalSchema.parse({
     queries: [{ mainGoal: GOAL, reasoning: REASONING, ...query }],
   });
+  assert(parsed.queries, 'Fresh input retains its query batch');
   return parsed.queries[0] as Record<string, unknown>;
 }
 

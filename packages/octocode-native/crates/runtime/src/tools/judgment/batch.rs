@@ -6,7 +6,7 @@
 use super::transport::{
     ClassificationError, ReportedUsage, check_budget, check_key, endpoint, post,
 };
-use super::{EvaluationInput, Judged};
+use super::{EvaluationInput, Judged, QuestionOutcomes};
 use crate::providers::classification::ClassificationProvider;
 use crate::providers::classification::gate::GateLease;
 use futures_util::{StreamExt as _, stream};
@@ -93,14 +93,28 @@ fn grouped(
     (body.len() <= max_request_bytes(input)).then(|| (request, body.into()))
 }
 
-/// Answer every question over `state`.
-pub(crate) async fn answer(
+/// Evaluate questions through the same grouping, transport and validation path.
+pub(crate) async fn answer_questions(
     input: EvaluationInput<'_>,
     model: &str,
     connection: &Connection<'_>,
     budget: &RequestBudget,
     gate: &GateLease,
-) -> Result<Judged, ClassificationError> {
+) -> QuestionOutcomes {
+    match answer_inner(input, model, connection, budget, gate).await {
+        Ok(outcomes) => outcomes,
+        Err(error) => QuestionOutcomes::from_complete(Err(error), input.questions.len()),
+    }
+}
+
+/// Answer every question over `state`.
+async fn answer_inner(
+    input: EvaluationInput<'_>,
+    model: &str,
+    connection: &Connection<'_>,
+    budget: &RequestBudget,
+    gate: &GateLease,
+) -> Result<QuestionOutcomes, ClassificationError> {
     let questions = input.questions;
     if questions.is_empty() {
         return Err(request_error("An evaluation needs at least one question."));
@@ -112,11 +126,8 @@ pub(crate) async fn answer(
     if questions.len() > 1
         && let Some((request, body)) = grouped(input, model, provider)
     {
-        let (response, calls) = send(&request, body, input, connection, budget, gate).await?;
-        let answers = (0..questions.len())
-            .map(|index| response["answers"][provider.batch_answer_key(index).as_str()].clone())
-            .collect();
-        return judged(vec![(parse(&response, answers), calls)]);
+        let (response, calls) = send(body, input, connection, budget, gate).await?;
+        return grouped_outcomes(&request, &response, calls, provider);
     }
     // One request per question, concurrently; the gate bounds them.
     let singles = stream::iter(questions.iter())
@@ -145,8 +156,10 @@ pub(crate) async fn answer(
                     "Narrow the state, reduce image bytes, or shorten the questions.",
                 ));
             }
-            let (response, calls) =
-                send(&request, body.into(), single, connection, budget, gate).await?;
+            let (response, calls) = send(body.into(), single, connection, budget, gate).await?;
+            provider
+                .validate_response(&request, &response)
+                .map_err(|error| response_error(error, &response, calls))?;
             let answer =
                 provider
                     .extract_answer(&response)
@@ -162,7 +175,16 @@ pub(crate) async fn answer(
         .buffered(questions.len())
         .collect::<Vec<_>>()
         .await;
+    Ok(fold_singles(singles, questions.len()))
+}
+
+fn fold_singles(
+    singles: Vec<Result<(Response, u64), ClassificationError>>,
+    count: usize,
+) -> QuestionOutcomes {
+    let mut answers = Vec::with_capacity(singles.len());
     let mut parts = Vec::with_capacity(singles.len());
+    let mut models = std::collections::BTreeSet::new();
     let mut calls = 0_u64;
     let mut input_tokens = 0_u64;
     let mut output_tokens = 0_u64;
@@ -171,6 +193,8 @@ pub(crate) async fn answer(
     for single in singles {
         match single {
             Ok((part, part_calls)) => {
+                models.insert(part.model.clone());
+                answers.extend(part.answers.iter().cloned().map(Ok));
                 calls = calls.saturating_add(part_calls);
                 input_tokens = input_tokens.saturating_add(part.input_tokens);
                 output_tokens = output_tokens.saturating_add(part.output_tokens);
@@ -178,6 +202,7 @@ pub(crate) async fn answer(
                 parts.push((part, part_calls));
             }
             Err(error) => {
+                answers.push(Err(error.clone()));
                 let usage = error.usage();
                 calls = calls.saturating_add(error.provider_calls);
                 input_tokens = input_tokens.saturating_add(usage.input_tokens);
@@ -187,7 +212,7 @@ pub(crate) async fn answer(
             }
         }
     }
-    match failure {
+    let complete = match failure {
         Some(error) => Err(ClassificationError {
             provider_calls: calls,
             reported_usage: Some(Box::new(ReportedUsage {
@@ -198,19 +223,90 @@ pub(crate) async fn answer(
             ..error
         }),
         None => judged(parts),
+    };
+    if complete
+        .as_ref()
+        .err()
+        .is_some_and(|error| error.code == "invalidClassificationResponse")
+        && answers.iter().all(Result::is_ok)
+    {
+        return QuestionOutcomes::from_complete(complete, count);
+    }
+    QuestionOutcomes {
+        answers,
+        complete,
+        models,
     }
 }
 
-/// POST one request and validate the whole response against it.
-async fn send(
+fn grouped_outcomes(
     request: &Value,
+    response: &Value,
+    calls: u64,
+    provider: &dyn ClassificationProvider,
+) -> Result<QuestionOutcomes, ClassificationError> {
+    let parts = provider
+        .validate_batch_answers(request, response)
+        .map_err(|error| response_error(error, response, calls))?;
+    let failure = parts.iter().find_map(|part| part.as_ref().err()).cloned();
+    let models = parts
+        .iter()
+        .any(Result::is_ok)
+        .then(|| response["model"].as_str().unwrap_or_default().to_owned())
+        .into_iter()
+        .collect();
+    let complete = match failure {
+        Some(error) => Err(response_error(error, response, calls)),
+        None => judged(vec![(
+            parse(
+                response,
+                parts
+                    .iter()
+                    .filter_map(|part| part.as_ref().ok().cloned())
+                    .collect(),
+            ),
+            calls,
+        )]),
+    };
+    Ok(QuestionOutcomes {
+        answers: parts
+            .into_iter()
+            .map(|part| part.map_err(|error| response_error(error, response, calls)))
+            .collect(),
+        complete,
+        models,
+    })
+}
+
+fn response_error(
+    error: crate::providers::classification::ProviderContractError,
+    response: &Value,
+    calls: u64,
+) -> ClassificationError {
+    ClassificationError {
+        code: error.code().into(),
+        provider_calls: calls,
+        reported_usage: Some(Box::new(ReportedUsage {
+            input_tokens: response["usage"]["input_tokens"].as_u64().unwrap_or(0),
+            output_tokens: response["usage"]["output_tokens"].as_u64().unwrap_or(0),
+            known_usage_calls: u64::from(
+                response["usage"]["input_tokens"].as_u64().is_some()
+                    && response["usage"]["output_tokens"].as_u64().is_some(),
+            ),
+        })),
+        ..ClassificationError::invalid_response(error.message)
+    }
+}
+
+/// POST once through the shared retry, transport and accounting boundary.
+async fn send(
     body: bytes::Bytes,
     input: EvaluationInput<'_>,
     connection: &Connection<'_>,
     budget: &RequestBudget,
     gate: &GateLease,
 ) -> Result<(Value, u64), ClassificationError> {
-    let (response, calls) = post(
+    post(
         body,
         connection
             .provider
@@ -221,24 +317,7 @@ async fn send(
         connection.retries,
         gate,
     )
-    .await?;
-    connection
-        .provider
-        .validate_response(request, &response)
-        .map_err(|error| ClassificationError {
-            code: error.code().into(),
-            provider_calls: calls,
-            reported_usage: Some(Box::new(ReportedUsage {
-                input_tokens: response["usage"]["input_tokens"].as_u64().unwrap_or(0),
-                output_tokens: response["usage"]["output_tokens"].as_u64().unwrap_or(0),
-                known_usage_calls: u64::from(
-                    response["usage"]["input_tokens"].as_u64().is_some()
-                        && response["usage"]["output_tokens"].as_u64().is_some(),
-                ),
-            })),
-            ..ClassificationError::invalid_response(error.message)
-        })?;
-    Ok((response, calls))
+    .await
 }
 
 fn parse(response: &Value, answers: Vec<Value>) -> Response {
@@ -307,6 +386,104 @@ mod tests {
             assets: None,
             long_context: false,
         }
+    }
+
+    #[test]
+    fn partial_failure_keeps_successful_question_and_all_attempt_usage() {
+        let result = fold_singles(
+            vec![
+                Ok((
+                    Response {
+                        answers: vec![json!({"type":"noul","noul":0.8})],
+                        model: "jev-1.13.0".into(),
+                        input_tokens: 10,
+                        output_tokens: 2,
+                    },
+                    1,
+                )),
+                Err(ClassificationError {
+                    provider_calls: 2,
+                    ..request_error("second question failed")
+                }),
+            ],
+            2,
+        );
+        assert_eq!(
+            result.answers[0].as_ref().expect("first answer survives")["noul"],
+            json!(0.8)
+        );
+        assert!(result.answers[1].is_err());
+        let error = result
+            .complete
+            .expect_err("ordinary evaluation still reports incomplete");
+        assert_eq!(error.provider_calls, 3);
+        assert_eq!(error.usage().input_tokens, 10);
+        assert_eq!(error.usage().output_tokens, 2);
+        assert_eq!(error.usage().known_usage_calls, 1);
+    }
+
+    #[test]
+    fn grouped_partial_answers_preserve_siblings_and_count_the_post_once() {
+        let questions = vec![json!({"type":"noul","instructions":"question"}); 12];
+        let indexed: Vec<_> = questions.iter().enumerate().collect();
+        let request = jev().build_batch_request(&json!("state"), &indexed, "m", None);
+        let mut answers = serde_json::Map::new();
+        for index in 0..questions.len() {
+            answers.insert(
+                jev().batch_answer_key(index),
+                json!({"type":"noul","noul":index as f64 / 20.0}),
+            );
+        }
+        let complete =
+            json!({"model":"m","usage":{"input_tokens":10,"output_tokens":2},"answers":answers});
+        for missing in [false, true] {
+            let mut response = complete.clone();
+            if missing {
+                response["answers"]
+                    .as_object_mut()
+                    .expect("answers")
+                    .remove("answer_1");
+            } else {
+                response["answers"]["answer_1"]["noul"] = json!(2);
+            }
+            let outcomes =
+                grouped_outcomes(&request, &response, 3, jev()).expect("valid global response");
+            assert_eq!(outcomes.answers.len(), 12);
+            assert!(outcomes.answers[1].is_err());
+            for (index, answer) in outcomes
+                .answers
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != 1)
+            {
+                assert_eq!(
+                    answer.as_ref().expect("valid sibling")["noul"],
+                    json!(index as f64 / 20.0)
+                );
+            }
+            let mut usage = crate::tools::judgment::stats::ClassificationUsage::default();
+            usage.add(&outcomes.complete);
+            assert_eq!(
+                (
+                    usage.calls,
+                    usage.known_usage_calls,
+                    usage.unknown_usage_calls,
+                    usage.input_tokens,
+                    usage.output_tokens
+                ),
+                (3, 1, 2, 10, 2)
+            );
+            assert_eq!(
+                outcomes.models,
+                std::collections::BTreeSet::from(["m".into()])
+            );
+        }
+        let mut unexpected = complete.clone();
+        unexpected["answers"]["other"] = json!({"type":"noul","noul":0.2});
+        assert!(grouped_outcomes(&request, &unexpected, 1, jev()).is_err());
+        let mut invalid_model = complete;
+        invalid_model["model"] = json!("");
+        assert!(grouped_outcomes(&request, &invalid_model, 1, jev()).is_err());
     }
 
     #[test]

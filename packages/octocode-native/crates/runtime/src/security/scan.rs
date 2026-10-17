@@ -116,6 +116,10 @@ impl ContentScan for super::ContentSecurity {
 /// One memo must only ever wrap one scanner (the owning runtime's policy).
 pub struct SanitizedViewMemo {
     entries: octocode_io::memo::Memo<[u8; 32], ScanOutcome>,
+    /// One whole-source line redaction per key at a time: rows redacting
+    /// one source concurrently wait for the first and take its outcome
+    /// from the slot. Turns are blocking and held in synchronous code only.
+    redacting: octocode_io::flight::KeyedFlight<[u8; 32], Option<ScanOutcome>>,
 }
 
 type ScanOutcome = Result<(String, Vec<String>), (String, String)>;
@@ -131,6 +135,7 @@ impl SanitizedViewMemo {
                 max_weight: 32 * 1024 * 1024,
                 keep_newest: false,
             }),
+            redacting: octocode_io::flight::KeyedFlight::transient(),
         }
     }
 
@@ -149,7 +154,8 @@ impl SanitizedViewMemo {
 
     /// [`redact_lines`] of `source`, remembered per path and source digest
     /// (with the text's length as a guard), so every page of a matchString
-    /// read redacts the whole source once instead of on every page.
+    /// read, and every concurrent row reading the source, redacts the whole
+    /// source once instead of once each.
     fn redact_source_lines(
         &self,
         source: &str,
@@ -162,13 +168,16 @@ impl SanitizedViewMemo {
         }
         let named = format!("{digest}:{}", source.len());
         let key = Self::key("sourceLines", path, named.as_bytes());
-        let outcome = match self.entries.get(&key) {
-            Some(hit) => hit.value.as_ref().clone(),
-            None => {
+        // The scan holds no cancellation: a waiter waits for the one scan.
+        let Ok(outcome) = self.redacting.memoized_blocking(
+            key,
+            |key| self.entries.get(key).map(|hit| hit.value.as_ref().clone()),
+            |key| {
                 let outcome = redact_lines(inner, source, path).map(|(text, _)| (text, Vec::new()));
                 self.store(key, source.len(), outcome)
-            }
-        };
+            },
+            || Ok::<(), std::convert::Infallible>(()),
+        );
         outcome.map(|(text, _)| {
             let changed = text != source;
             (text, changed)
@@ -287,6 +296,45 @@ mod tests {
         scan.redact_source_lines(&source, Path::new("/w/b"), "d1")
             .expect("other path");
         assert_eq!(scanner.0.load(Ordering::Relaxed), 3);
+    }
+
+    /// Rows redacting one source at once scan it once: the others wait for
+    /// the first scan and share its outcome.
+    #[test]
+    fn concurrent_line_redactions_of_one_source_scan_it_once() {
+        struct Slow(AtomicUsize);
+        impl ContentScan for Slow {
+            fn sanitize(&self, text: &str, _: &Path) -> ScanOutcome {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                Ok((text.replace("SECRET", "[R]"), Vec::new()))
+            }
+        }
+        let scanner = Slow(AtomicUsize::new(0));
+        let memo = SanitizedViewMemo::new();
+        let scan = MemoizedScan::new(&scanner, &memo);
+        let source = source();
+        let gate = std::sync::Barrier::new(8);
+        let outcomes = std::thread::scope(|scope| {
+            let rows = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        gate.wait();
+                        scan.redact_source_lines(&source, Path::new("/w/a.env"), "d1")
+                    })
+                })
+                .collect::<Vec<_>>();
+            rows.into_iter()
+                .map(|row| row.join().expect("row"))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(scanner.0.load(Ordering::SeqCst), 1, "one scan for the wave");
+        assert!(outcomes.iter().all(|outcome| outcome == &outcomes[0]));
+        assert!(
+            outcomes[0]
+                .as_ref()
+                .is_ok_and(|(text, changed)| { *changed && text.ends_with("key = [R]\n") })
+        );
     }
 
     /// A whole scan that changes the line count falls back to line by line,

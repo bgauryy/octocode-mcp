@@ -19,9 +19,9 @@ mod syntax_tree;
 mod types;
 
 pub use files::rewrite_files;
-pub use files::search_files;
 #[cfg(test)]
 use files::search_files_detailed;
+pub use files::{Rebuilt, file_matches, search_files};
 pub use octo::{EXAMPLE_RULE, PatternDeclaration, RULE_INVALID};
 #[cfg(test)]
 use rewrite::rewrite;
@@ -36,13 +36,14 @@ pub use syntax_tree::{
 use types::StructuralMatch;
 pub use types::StructuralRewriteFilesOptions;
 pub use types::{
-    StructuralDetailedMatch, StructuralDiagnostic, StructuralSearchDetailedResult,
-    StructuralSearchFilesDetailedResult, StructuralSearchFilesOptions,
+    FileMatches, StructuralDemand, StructuralDetailedMatch, StructuralDiagnostic,
+    StructuralSearchDetailedResult, StructuralSearchFilesDetailedResult,
+    StructuralSearchFilesOptions,
 };
 
 use crate::signatures::languages;
 use language::AgLanguage;
-use octo::{ExecutionError, compile_matcher};
+use octo::{ExecutionError, all_matches, compile_matcher};
 use query::{StructuralQuery, invalid_query_explanation};
 
 /// Defense-in-depth cap on content handed to the single-content structural
@@ -79,7 +80,7 @@ pub(crate) fn search(
     let run = compile_matcher(&lang, &query)?;
     // The non-detailed API returns bare StructuralMatch; node_kind is only
     // surfaced by the detailed shape.
-    Ok(run(content)
+    Ok(all_matches(&run, content)
         .map_err(|err| err.to_string())?
         .into_iter()
         .map(|m| m.matched)
@@ -197,7 +198,7 @@ pub fn search_detailed(
         }
     };
 
-    let matches = match run(content) {
+    let matches = match all_matches(&run, content) {
         Ok(matches) => matches,
         Err(error) => {
             return no_matches(

@@ -169,7 +169,7 @@ pub fn execute_tree(
         budget,
     );
     if !stored && pages.len() > 1 {
-        super::memo::put(snapshot.clone(), policy, &validated.canonical, &walk);
+        super::memo::put(snapshot.clone(), policy, paths, &validated.canonical, &walk);
     }
     let mut out = tree_page(
         q,
@@ -236,6 +236,7 @@ fn walk_tree(
     let probe = super::FilterProbe::new(root, &include, &q.extensions, None)?;
     let left = super::WalkLeft::new(root, q.default_excludes.defaults());
     let discovery = paths.discovery_walk();
+    let filtered = q.filtered();
     let mut native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             path: root.to_string_lossy().into_owned(),
@@ -272,12 +273,12 @@ fn walk_tree(
             let allowed = discovery.permits_entry(path, file_type);
             // A replayed entry was counted by the window it resumes.
             let fresh = visit == Visit::Fresh;
-            if fresh
-                && !allowed
-                && (show_hidden || !dot)
-                && probe.could_list(path)
-                && super::reports_withheld(path)
-            {
+            let unseen = if allowed {
+                super::WalkLeft::unfollowed(path, file_type, filtered)
+            } else {
+                probe.could_list(path)
+            };
+            if fresh && unseen && (show_hidden || !dot) && super::reports_withheld(path) {
                 left.record_withheld(path);
             }
             if !allowed {
@@ -417,7 +418,7 @@ fn tree_page(
                         &row.name,
                         row.kind,
                         Some(i64::try_from(row.seen.0).unwrap_or(i64::MAX)),
-                        (lines > 0).then_some(lines),
+                        lines.shown_in_details(),
                         modified,
                     )
                 }

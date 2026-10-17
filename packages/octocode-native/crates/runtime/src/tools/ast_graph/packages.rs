@@ -62,7 +62,7 @@ const MAX_GO_MODULE_ANCESTORS: usize = 16;
 /// `go.mod` is in an ancestor directory: the module path joined with the
 /// root's path below the module directory.
 fn enclosing_go_module(root: &Path, read: &dyn Fn(&Path) -> Option<String>) -> Option<String> {
-    if root.join(".git").exists() {
+    if octocode_engine::search::repository::is_root(root) {
         return None;
     }
     let mut below = Vec::new();
@@ -78,7 +78,7 @@ fn enclosing_go_module(root: &Path, read: &dyn Fn(&Path) -> Option<String>) -> O
         }
         // A repository boundary ends the search: its go.mod would belong
         // to another project.
-        if dir.join(".git").exists() {
+        if octocode_engine::search::repository::is_root(dir) {
             return None;
         }
     }

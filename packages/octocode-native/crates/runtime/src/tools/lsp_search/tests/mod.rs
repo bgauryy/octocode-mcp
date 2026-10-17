@@ -344,6 +344,114 @@ async fn an_unpinned_later_page_leads_to_the_restart() {
     );
 }
 
+/// A user server for `extension` launched by `command`, through a config
+/// file written under `dir`.
+fn user_server(dir: &std::path::Path, extension: &str, command: &str) -> super::LspExecutionConfig {
+    let config = dir.join("lsp-servers.json");
+    std::fs::write(
+        &config,
+        serde_json::json!({"languageServers": {extension: {
+            "command": command, "args": [], "languageId": "plaintext"
+        }}})
+        .to_string(),
+    )
+    .expect("config");
+    super::LspExecutionConfig {
+        config_path: Some(config.to_string_lossy().into_owned()),
+        ..super::LspExecutionConfig::default()
+    }
+}
+
+/// An executable stand-in server: never started by these tests.
+#[cfg(unix)]
+fn executable(path: &std::path::Path) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, "#!/bin/sh\n").expect("server");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    path.to_string_lossy().into_owned()
+}
+
+async fn run_row(
+    row: serde_json::Value,
+    paths: &crate::policy::path::PathPolicy,
+    execution: &super::LspExecutionConfig,
+) -> serde_json::Value {
+    super::execute(
+        query(row),
+        &crate::tools::cancel::NeverCancel,
+        &octocode_engine::lsp::pool::LspClientPool::new(
+            octocode_engine::lsp::pool::LspPoolOptions::default(),
+        ),
+        paths,
+        execution,
+        None,
+    )
+    .await
+    .expect("row")
+}
+
+/// An anchor that resolves nowhere starts no server; the row still says
+/// whether the configured server would launch.
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn an_unresolved_anchor_reports_whether_its_server_would_launch() {
+    let (_dir, root, paths) = temp_workspace();
+    std::fs::write(root.join("a.ts"), "const a = 1;\n").expect("file");
+    let installed = executable(&root.join("server"));
+    let missing = root.join("missing-server").to_string_lossy().into_owned();
+    for (command, available) in [(installed, true), (missing, false)] {
+        let row = serde_json::json!({
+            "operation": "hover", "path": root.join("a.ts").to_string_lossy(),
+            "symbolName": "absent", "line": 1
+        });
+        let result = run_row(row, &paths, &user_server(&root, ".ts", &command)).await;
+        assert_eq!(result["errorCode"], "anchorUnresolved", "{result}");
+        assert_eq!(
+            result["lsp"]["serverAvailable"], available,
+            "{command}: {result}"
+        );
+    }
+}
+
+/// From a member crate, the Cargo workspace inferred for a file lies above
+/// the allowed roots. With no workspaceRoot asked for, the server runs at
+/// the allowed root and the row says so; an explicit root outside the
+/// allowed roots still fails.
+#[cfg(unix)]
+#[tokio::test(flavor = "current_thread")]
+async fn an_inferred_root_above_the_allowed_roots_falls_back_with_a_warning() {
+    let (_dir, root, _) = temp_workspace();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/a\"]\n",
+    )
+    .expect("workspace");
+    let krate = root.join("crates/a");
+    std::fs::create_dir_all(krate.join("src")).expect("crate");
+    std::fs::write(krate.join("Cargo.toml"), "[package]\nname = \"a\"\n").expect("package");
+    let file = krate.join("src/lib.rs");
+    std::fs::write(&file, "fn f() {}\n").expect("source");
+    let crates = root.join("crates");
+    let paths = crate::tools::test_support::workspace_policy(&crates);
+    let execution = user_server(&crates, ".rs", &executable(&crates.join("server")));
+    let row = serde_json::json!({
+        "operation": "hover", "path": file.to_string_lossy(),
+        "symbolName": "absent", "line": 1
+    });
+    let inferred = run_row(row.clone(), &paths, &execution).await;
+    assert_eq!(inferred["errorCode"], "anchorUnresolved", "{inferred}");
+    let warning = inferred["warnings"][0].as_str().unwrap_or_default();
+    assert!(
+        warning.contains("outside the allowed roots") && warning.contains("runs at ."),
+        "{inferred}"
+    );
+
+    let mut explicit = row;
+    explicit["workspaceRoot"] = serde_json::json!(root.to_string_lossy());
+    let refused = run_row(explicit, &paths, &execution).await;
+    assert_eq!(refused["errorCode"], "workspaceRootInvalid", "{refused}");
+}
+
 #[test]
 fn semantic_snapshot_ignores_paging_and_workflow_metadata() {
     let first: LspSearchQuery = serde_json::from_value(serde_json::json!({
@@ -673,6 +781,7 @@ fn provider_receipt_exposes_effective_invocation_and_omits_empty_optional_fields
         initialization_options: None,
         env: None,
         max_memory_mb: None,
+        source: Default::default(),
     };
     let client = octocode_engine::lsp::client::NativeLspClient::new(config.clone());
     let receipt = resolved_server_receipt(&config, &client);
@@ -709,6 +818,33 @@ fn provider_receipt_exposes_effective_invocation_and_omits_empty_optional_fields
     let client = octocode_engine::lsp::client::NativeLspClient::new(config_without_args.clone());
     let receipt = resolved_server_receipt(&config_without_args, &client);
     assert!(receipt.get("argv").is_none());
+
+    // The source is discovery's, not a guess from the argv: a user entry
+    // whose program sits in node_modules is still the user's, and a
+    // bundled server whose argv names no node_modules is still bundled.
+    for (source, argv, expected) in [
+        (
+            octocode_engine::lsp::types::ServerSource::User,
+            "/x/node_modules/typescript-language-server/lib/cli.mjs",
+            "user",
+        ),
+        (
+            octocode_engine::lsp::types::ServerSource::Bundled,
+            "--lsp",
+            "bundled",
+        ),
+    ] {
+        let config = octocode_engine::lsp::types::JsLanguageServerConfig {
+            args: Some(vec![argv.into()]),
+            source,
+            ..config_without_args.clone()
+        };
+        let client = octocode_engine::lsp::client::NativeLspClient::new(config.clone());
+        assert_eq!(
+            resolved_server_receipt(&config, &client)["source"],
+            expected
+        );
+    }
 }
 
 #[test]

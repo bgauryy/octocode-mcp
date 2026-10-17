@@ -107,3 +107,24 @@ fn workspace_policy(root: &Path) -> crate::policy::path::PathPolicy {
 
 mod blocks_and_paths;
 mod matches;
+
+/// A cold symbols view parses its source once: the outline and the
+/// declarations its spans read come from one parse, which seeds the shared
+/// declarations cache (a later reader finds it there).
+#[test]
+fn a_cold_symbols_view_seeds_the_declarations_cache_from_its_own_parse() {
+    let dir = tempfile::tempdir().expect("dir");
+    let file = dir.path().join(format!("seeded_{}.rs", std::process::id()));
+    let source = "pub fn first(value: usize) -> usize {\n    let doubled = value * 2;\n    doubled + 1\n}\n\npub struct Point;\n\nimpl Point {\n    pub fn origin() -> Self {\n        Point\n    }\n}\n";
+    std::fs::write(&file, source).expect("source");
+    let query = qj(&file, serde_json::json!({"minify": "symbols"}));
+    let out = fetch(&query, &workspace_policy(dir.path()));
+    assert!(out.error.is_none(), "{out:?}");
+    let path = file.to_string_lossy();
+    assert!(
+        crate::tools::declarations_cache::document(source, &path, None, || {
+            panic!("the symbols view's parse is cached")
+        })
+        .is_some()
+    );
+}

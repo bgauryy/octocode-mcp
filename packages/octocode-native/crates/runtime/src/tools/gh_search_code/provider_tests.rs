@@ -1100,3 +1100,230 @@ async fn empty_index_pages_keep_the_collection_when_partial_normalization_answer
         }
     }
 }
+
+/// `ref` re-reads one repository's hits: without `repo` it is rejected as
+/// invalid input before any request, and the repair is the same search
+/// without it.
+#[tokio::test]
+async fn a_ref_without_a_repo_is_invalid_input_repaired_without_it() {
+    let server = MockServer::builder().start().await;
+    let provider = one_shot_provider(&server);
+    let query: GhSearchCodeQuery = serde_json::from_value(json!({
+        "owner":"o","keywords":["needle"],"ref":"dev","pageSize":5
+    }))
+    .expect("query");
+    let context = default_context();
+    let Err(failure) = super::run(&provider, &query, Ok(&context), &Passthrough).await else {
+        panic!("a ref without a repo is rejected");
+    };
+    assert_eq!(
+        failure.error.kind,
+        octocode_github::ProviderErrorKind::Validation
+    );
+    assert!(
+        failure.message.contains("needs repo"),
+        "{}",
+        failure.message
+    );
+    let next = failure.next.expect("repair");
+    let repair = &next["repair"]["query"]["queries"][0];
+    assert!(repair.get("ref").is_none(), "{next}");
+    assert_eq!(repair["owner"], "o", "{next}");
+    assert_eq!(repair["keywords"], json!(["needle"]), "{next}");
+    assert_eq!(repair["pageSize"], 5, "{next}");
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    );
+}
+
+/// Identical searches in one batch share one request: the second waits for
+/// the first and reads the page it stored, so the duplicate spends no
+/// code-search quota.
+#[tokio::test]
+async fn identical_concurrent_searches_send_one_request() {
+    let server = MockServer::builder().start().await;
+    let search = Delayed::new(
+        Duration::from_millis(200),
+        ResponseTemplate::new(200).set_body_json(json!({
+            "total_count":1,"incomplete_results":false,"items":[
+                {"name":"app.rs","path":"app.rs","sha":"1","html_url":"https://x",
+                 "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"}}
+            ]
+        })),
+    );
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(search.clone())
+        .mount(&server)
+        .await;
+    let mut provider = one_shot_provider(&server);
+    provider.transport.cache = std::sync::Arc::new(MemoryCache::default());
+    let query: GhSearchCodeQuery = serde_json::from_value(json!({
+        "owner":"a","repo":"b","keywords":["app"],"matchIn":"path"
+    }))
+    .expect("query");
+    let context = default_context();
+    let (first, second) = futures_util::future::join(
+        execute(&provider, &query, &context, &Passthrough),
+        execute(&provider, &query, &context, &Passthrough),
+    )
+    .await;
+    assert_eq!(
+        first.expect("first").data["files"],
+        second.expect("second").data["files"]
+    );
+    assert_eq!(search.arrivals.count(), 1, "one GET /search/code");
+}
+
+/// An empty search scoped to a missing repository reads its metadata once:
+/// the rename check's 404 is the search's not-found failure, not read again
+/// by the empty page's own check.
+#[tokio::test]
+async fn an_empty_search_of_a_missing_repository_reads_it_once() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"total_count":0,"incomplete_results":false,"items":[]})),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/missing"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message":"Not Found"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let provider = one_shot_provider(&server);
+    let query: GhSearchCodeQuery =
+        serde_json::from_value(json!({"owner":"a","repo":"missing","keywords":["x"]}))
+            .expect("query");
+    let error = execute(&provider, &query, &default_context(), &Passthrough)
+        .await
+        .expect_err("a missing repository");
+    assert_eq!(error.kind, octocode_github::ProviderErrorKind::NotFound);
+    assert_eq!(
+        error.reason,
+        Some(octocode_github::ProviderErrorReason::RepositoryNotFound)
+    );
+}
+
+/// Every layout of merged searches lists each GitHub page once: page 1 of
+/// each search, then the later pages `k` to a merged page, every merged
+/// page full but the last.
+#[test]
+fn merged_pages_list_every_github_page_once_and_fill_each_page() {
+    for pages in [
+        vec![4, 0],
+        vec![0, 4],
+        vec![1, 5, 2],
+        vec![3, 3, 3],
+        vec![58, 58, 58],
+        vec![0, 0],
+        vec![7],
+        vec![2, 0, 0, 9, 1],
+    ] {
+        let k = pages.len();
+        let total = super::merged_pages(&pages);
+        let mut listed: Vec<(usize, usize)> = (0..k).map(|search| (search, 1)).collect();
+        listed.retain(|&(search, _)| pages[search] > 0);
+        for current in 2..=total {
+            let units = super::later_pages(&pages, current);
+            assert!(!units.is_empty(), "{pages:?} page {current}");
+            if current < total {
+                assert_eq!(units.len(), k, "{pages:?} page {current} is full");
+            }
+            listed.extend(units);
+        }
+        assert!(
+            super::later_pages(&pages, total.max(1) + 1).is_empty(),
+            "{pages:?}"
+        );
+        let mut expected: Vec<(usize, usize)> = pages
+            .iter()
+            .enumerate()
+            .flat_map(|(search, &count)| (1..=count).map(move |page| (search, page)))
+            .collect();
+        let mut sorted = listed.clone();
+        sorted.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(sorted, expected, "{pages:?}: every page once");
+    }
+}
+
+/// A multi-extension walk never asks an exhausted extension again and
+/// fills its pages from the live one: 12 `.ts` files and no `.rs` at
+/// pageSize 6 list 3 + 6 + 3 files over 3 pages, every file once, in 5
+/// searches (4 for `.ts`, 1 for `.rs`) instead of 8.
+#[tokio::test]
+async fn a_multi_extension_walk_skips_exhausted_searches_and_fills_its_pages() {
+    let server = MockServer::builder().start().await;
+    for page in 1..=4 {
+        let items = (0..3)
+            .map(|file| {
+                let name = format!("p{page}_{file}.ts");
+                json!({"name":name,"path":name,"sha":"1","html_url":"https://x",
+                 "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"}})
+            })
+            .collect::<Vec<_>>();
+        Mock::given(method("GET"))
+            .and(path("/api/v3/search/code"))
+            .and(wiremock::matchers::query_param_contains(
+                "q",
+                "extension:ts",
+            ))
+            .and(wiremock::matchers::query_param("page", page.to_string()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "total_count":12,"incomplete_results":false,"items":items
+            })))
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .and(wiremock::matchers::query_param_contains(
+            "q",
+            "extension:rs",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"total_count":0,"incomplete_results":false,"items":[]})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut provider = one_shot_provider(&server);
+    provider.transport.cache = std::sync::Arc::new(MemoryCache::default());
+    let mut sizes = Vec::new();
+    let mut listed = Vec::new();
+    for page in 1.. {
+        let query: GhSearchCodeQuery = serde_json::from_value(json!({
+            "owner":"a","repo":"b","keywords":["needle"],"matchIn":"path",
+            "extensions":["ts","rs"],"pageSize":6,"page":page
+        }))
+        .expect("query");
+        let out = execute(&provider, &query, &default_context(), &Passthrough)
+            .await
+            .expect("page");
+        assert_eq!(out.data["pagination"]["totalPages"], 3, "{}", out.data);
+        let paths = paths_of(&out);
+        sizes.push(paths.len());
+        listed.extend(paths);
+        if out.data["pagination"]["hasMore"] != true {
+            break;
+        }
+    }
+    assert_eq!(sizes, [3, 6, 3]);
+    let mut unique = listed.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), 12, "{listed:?}");
+    assert_eq!(listed.len(), 12, "{listed:?}");
+    let searches = server.received_requests().await.unwrap_or_default().len();
+    assert_eq!(searches, 5, "4 .ts pages and one .rs page");
+}

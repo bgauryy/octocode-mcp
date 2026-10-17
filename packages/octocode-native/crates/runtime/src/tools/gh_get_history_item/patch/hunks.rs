@@ -171,7 +171,6 @@ pub(super) fn clip_line<'a>(text: &'a str, needle: &str) -> std::borrow::Cow<'a,
     if text.chars().count() <= MATCH_LINE_CHARS {
         return text.into();
     }
-    let lower = text.to_lowercase();
     let body_end = text.trim_end_matches(['\r', '\n']).len();
     let floor = |mut at: usize| {
         at = at.min(body_end);
@@ -187,15 +186,13 @@ pub(super) fn clip_line<'a>(text: &'a str, needle: &str) -> std::borrow::Cow<'a,
         }
         at
     };
-    // Byte offsets carry over only when lowercasing kept every length.
-    let hits = if lower.len() == text.len() && !needle.is_empty() {
-        lower
-            .match_indices(needle)
-            .map(|(at, _)| (at, at + needle.len()))
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
+    // Hits are found in the lowercase line and mapped back to the chars
+    // they came from: lowercasing moves byte offsets char by char.
+    let hits = octocode_engine::text::case_fold::Folded::of(text)
+        .ranges(needle)
+        .into_iter()
+        .map(|span| (span.start, span.end))
+        .collect::<Vec<_>>();
     let mut keep: Vec<(usize, usize)> = vec![(0, ceil(1))];
     if hits.is_empty() {
         keep.push((0, ceil(MATCH_LINE_SIDE)));

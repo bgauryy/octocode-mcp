@@ -70,6 +70,59 @@ pub(crate) struct Judged {
     pub replayed: bool,
 }
 
+/// Per-question results retain successful siblings when another request fails.
+/// `complete` preserves the all-or-error contract of ordinary evaluation, and
+/// carries the usage of every attempted request exactly once.
+#[derive(Clone, Debug)]
+pub(crate) struct QuestionOutcomes {
+    pub answers: Vec<Result<Value, ClassificationError>>,
+    pub complete: Result<Judged, ClassificationError>,
+    pub models: std::collections::BTreeSet<String>,
+}
+
+impl QuestionOutcomes {
+    fn from_complete(result: Result<Judged, ClassificationError>, count: usize) -> Self {
+        let answers = match &result {
+            Ok(judged) => judged.answers.iter().cloned().map(Ok).collect(),
+            Err(error) => (0..count).map(|_| Err(error.clone())).collect(),
+        };
+        let models = result
+            .as_ref()
+            .ok()
+            .map(|judged| judged.model.clone())
+            .into_iter()
+            .collect();
+        Self {
+            answers,
+            complete: result,
+            models,
+        }
+    }
+
+    fn replayed(mut self) -> Self {
+        match &mut self.complete {
+            Ok(judged) => {
+                judged.replayed = true;
+                judged.provider_calls = 0;
+                judged.known_usage_calls = 0;
+            }
+            Err(error) => {
+                error.provider_calls = 0;
+                error.reported_usage = None;
+            }
+        }
+        for error in self
+            .answers
+            .iter_mut()
+            .filter_map(|answer| answer.as_mut().err())
+        {
+            error.provider_calls = 0;
+            error.reported_usage = None;
+        }
+        self
+    }
+}
+
 /// Provider connection and policy shared by every evaluation of a runtime.
 #[derive(Clone)]
 pub(crate) struct Evaluator {
@@ -153,6 +206,31 @@ impl Evaluator {
         budget: &RequestBudget,
         gate: &GateLease,
     ) -> Result<Judged, ClassificationError> {
+        self.evaluate_questions(input, model, budget, gate)
+            .await
+            .complete
+    }
+
+    pub(crate) async fn evaluate_questions(
+        &self,
+        input: EvaluationInput<'_>,
+        model: Option<&str>,
+        budget: &RequestBudget,
+        gate: &GateLease,
+    ) -> QuestionOutcomes {
+        match self.evaluate_shared(input, model, budget, gate).await {
+            Ok(outcomes) => outcomes,
+            Err(error) => QuestionOutcomes::from_complete(Err(error), input.questions.len()),
+        }
+    }
+
+    async fn evaluate_shared(
+        &self,
+        input: EvaluationInput<'_>,
+        model: Option<&str>,
+        budget: &RequestBudget,
+        gate: &GateLease,
+    ) -> Result<QuestionOutcomes, ClassificationError> {
         let key = self.key.as_ref().ok_or_else(|| {
             ClassificationError::new(
                 "missingConfiguration",
@@ -166,22 +244,13 @@ impl Evaluator {
         let ticket = self.judgments.flight.join(entry.resource.clone());
         let mut turn = transport::wait(budget, ticket.turn()).await?;
         transport::check_budget(budget)?;
-        if let Some(failure) = turn.as_ref() {
-            // The flight leader already counted the request it sent; a
-            // waiter that shares its failure sent none.
-            return Err(ClassificationError {
-                provider_calls: 0,
-                reported_usage: None,
-                ..failure.clone()
-            });
+        if let Some(outcomes) = turn.as_ref() {
+            return Ok(outcomes.clone().replayed());
         }
         if let Some(saved) = self.judgments.get(&entry) {
-            return Ok(Judged {
-                replayed: true,
-                provider_calls: 0,
-                known_usage_calls: 0,
-                ..saved
-            });
+            return Ok(
+                QuestionOutcomes::from_complete(Ok(saved), input.questions.len()).replayed(),
+            );
         }
         let connection = batch::Connection {
             key,
@@ -190,20 +259,17 @@ impl Evaluator {
             provider: self.provider,
             retries: self.retries,
         };
-        match batch::answer(input, model, &connection, budget, gate).await {
-            Ok(judged) => {
-                self.judgments.put(entry, &judged);
-                Ok(judged)
-            }
+        let outcomes = batch::answer_questions(input, model, &connection, budget, gate).await;
+        match &outcomes.complete {
+            Ok(judged) => self.judgments.put(entry, judged),
             Err(error) => {
-                // A caller's own deadline or cancellation is not the
-                // provider's answer; the next waiter tries for itself.
+                // Deadline/cancellation belongs to this caller, not its waiters.
                 if !matches!(error.code.as_str(), "cancelled" | "timeout") {
-                    *turn = Some(error.clone());
+                    *turn = Some(outcomes.clone());
                 }
-                Err(error)
             }
         }
+        Ok(outcomes)
     }
 
     /// Read current model names through the same authenticated transport and gate.
@@ -232,9 +298,10 @@ impl Evaluator {
             Ok((_, calls)) => *calls,
             Err(error) => error.provider_calls,
         };
-        let mut usage = stats::ClassificationUsage::default();
-        usage.add_record(&json!({"provider_calls":calls}));
-        self.record(usage);
+        self.record(stats::ClassificationUsage {
+            discovery_calls: calls,
+            ..stats::ClassificationUsage::default()
+        });
         let (response, calls) = result?;
         self.provider
             .validate_models(&response)
@@ -253,17 +320,45 @@ impl Evaluator {
     }
 }
 
+pub(crate) fn retention() -> Duration {
+    cache::TTL
+}
+
 impl stats::ClassificationUsage {
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.calls = self.calls.saturating_add(other.calls);
+        self.known_usage_calls = self
+            .known_usage_calls
+            .saturating_add(other.known_usage_calls);
+        self.unknown_usage_calls = self
+            .unknown_usage_calls
+            .saturating_add(other.unknown_usage_calls);
+        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+        self.discovery_calls = self.discovery_calls.saturating_add(other.discovery_calls);
+        self.replayed_evaluations = self
+            .replayed_evaluations
+            .saturating_add(other.replayed_evaluations);
+        self.models.extend(other.models.iter().cloned());
+    }
+
     /// Fold one evaluation in: its provider requests and reported tokens.
     pub(crate) fn add(&mut self, outcome: &Result<Judged, ClassificationError>) {
         match outcome {
-            Ok(judged) if judged.provider_calls > 0 => self.add_record(&json!({
-                "provider_calls": judged.provider_calls,
-                "known_usage_calls": judged.known_usage_calls,
-                "input_tokens": judged.input_tokens,
-                "output_tokens": judged.output_tokens,
-            })),
-            Ok(_) => {}
+            Ok(judged) => {
+                self.models.insert(judged.model.clone());
+                if judged.replayed {
+                    self.replayed_evaluations = self.replayed_evaluations.saturating_add(1);
+                }
+                if judged.provider_calls > 0 {
+                    self.add_record(&json!({
+                        "provider_calls": judged.provider_calls,
+                        "known_usage_calls": judged.known_usage_calls,
+                        "input_tokens": judged.input_tokens,
+                        "output_tokens": judged.output_tokens,
+                    }));
+                }
+            }
             Err(error) if error.provider_calls > 0 => {
                 let usage = error.usage();
                 self.add_record(&json!({

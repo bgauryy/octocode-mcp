@@ -21,6 +21,9 @@ fn ast_audit_rule_rejects_unknown_kinds_at_every_level() {
         "kind: not_a_real_node_kind_astro_999",
         "kind: function_declaration\nhas:\n  kind: not_a_real_node_kind_astro_999",
         "any:\n  - kind: identifier\n  - not:\n      kind: not_a_real_node_kind_astro_999",
+        // A bad kind beside a pattern that fails to parse is still named.
+        "pattern: 'const = ;'\ninside:\n  kind: not_a_real_node_kind_astro_999",
+        "all:\n  - pattern: 'const = ;'\n  - has:\n      kind: not_a_real_node_kind_astro_999",
     ] {
         let error = CompiledRule::new(&lang("ts"), rule)
             .err()
@@ -131,13 +134,43 @@ fn shared_pattern_context_accepts_bare_calls_in_c_family_rust_and_go() {
     }
 }
 
+/// A Rust expression fragment that only parses as a statement takes the
+/// `;` terminator whatever its kind, not only a call: `$A?`, `$X.await`,
+/// `$A as $T` and `&mut $A` compile bare and match exactly what their
+/// `;`-terminated spelling matches.
+#[test]
+fn rust_expression_fragments_take_the_statement_terminator() {
+    let source = "async fn run(v: Vec<u8>) -> Option<u8> {\n    let a = parse(v)?;\n    let b = fut.await;\n    let c = n as u64;\n    take(&mut buf);\n    None\n}\n";
+    for (pattern, expected) in [
+        ("$A?", "parse(v)?"),
+        ("$X.await", "fut.await"),
+        ("$A as $T", "n as u64"),
+        ("&mut $A", "&mut buf"),
+    ] {
+        let bare = run_pattern(source, "rs", pattern);
+        let terminated = run_pattern(source, "rs", &format!("{pattern};"));
+        assert_eq!(bare.len(), 1, "{pattern}");
+        assert_eq!(bare[0].text, expected, "{pattern}");
+        assert_eq!(
+            bare.iter().map(|m| &m.text).collect::<Vec<_>>(),
+            terminated.iter().map(|m| &m.text).collect::<Vec<_>>(),
+            "{pattern}"
+        );
+    }
+    // A bare metavariable compiles too: `$A;` unwraps to `$A`.
+    assert_eq!(
+        run_pattern(source, "rs", "$A").len(),
+        run_pattern(source, "rs", "$A;").len()
+    );
+}
+
 fn run_pattern(src: &str, ext: &str, pattern: &str) -> Vec<StructuralMatch> {
     let matcher = compile_matcher(
         &lang(ext),
         &StructuralQuery::new(Some(pattern), None).expect("query"),
     )
     .expect("compile pattern");
-    matcher(src)
+    all_matches(&matcher, src)
         .expect("complete execution")
         .into_iter()
         .map(|m| m.matched)
@@ -150,7 +183,7 @@ fn run_rule(src: &str, ext: &str, rule: &str) -> Vec<StructuralMatch> {
         &StructuralQuery::new(None, Some(rule)).expect("query"),
     )
     .expect("compile rule");
-    matcher(src)
+    all_matches(&matcher, src)
         .expect("complete execution")
         .into_iter()
         .map(|m| m.matched)
@@ -530,10 +563,10 @@ fn one_request_parses_yaml_once_across_planning_and_languages() {
     query.explanation();
     for extension in ["ts", "js"] {
         let run = compile_matcher(&lang(extension), &query).unwrap();
-        let matches = run("foo(value);").unwrap();
+        let matches = all_matches(&run, "foo(value);").unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].matched.metavars["X"], ["value"]);
-        assert!(run("foo(absent);").unwrap().is_empty());
+        assert!(all_matches(&run, "foo(absent);").unwrap().is_empty());
     }
     assert_eq!(RULE_PARSE_COUNT.with(std::cell::Cell::get), 1);
 }
@@ -717,7 +750,7 @@ fn jsx_tag_pattern_matches_elements_only_in_jsx_grammars() {
             &StructuralQuery::new(Some("<$T>"), None).expect("query"),
         ) {
             assert!(
-                matcher("let x = 1;\n")
+                all_matches(&matcher, "let x = 1;\n")
                     .map(|m| m.is_empty())
                     .unwrap_or(true),
                 "{ext}"

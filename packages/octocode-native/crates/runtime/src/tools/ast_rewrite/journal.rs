@@ -14,7 +14,25 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(test)]
+thread_local! {
+    static PERSISTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Journal writes the current thread made (tests).
+#[cfg(test)]
+pub(super) fn persists() -> usize {
+    PERSISTS.with(std::cell::Cell::get)
+}
+
+/// Writes and syncs the journal. Only a state recovery reads differently is
+/// persisted on its own: recovery treats `Planned` like `Staged` (either
+/// way the target never moved and the stage is removed) and `BackedUp` like
+/// `Promoted` (the backup decides), so staging persists once at its end and
+/// a promotion rides on the next write.
 pub(super) fn persist_journal(path: &Path, journal: &Journal) -> Result<(), RewriteError> {
+    #[cfg(test)]
+    PERSISTS.with(|count| count.set(count.get() + 1));
     let bytes = serde_json::to_vec(journal)
         .map_err(|error| RewriteError::new("transactionFailed", error.to_string()))?;
     octocode_io::atomic::write_atomic(path, &bytes, true).map_err(io_error)?;
@@ -177,7 +195,6 @@ fn stage_files(
             .set_permissions(file.permissions.clone())
             .map_err(io_error)?;
         journal.files[index].state = FileState::Staged;
-        persist_journal(journal_path, journal)?;
     }
     journal.phase = JournalPhase::Prepared;
     persist_journal(journal_path, journal)
@@ -266,7 +283,6 @@ fn promote_files(
             .and_then(|file| file.sync_all())
             .map_err(io_error)?;
         journal.files[index].state = FileState::Promoted;
-        persist_journal(journal_path, journal)?;
     }
     // A failed sync fails the transaction, which recovery rolls back from the
     // backups.
@@ -364,7 +380,12 @@ fn journal_directories(own: &Path) -> Result<Vec<PathBuf>, RewriteError> {
     };
     for entry in entries {
         let entry = entry.map_err(io_error)?;
-        if entry.file_type().map_err(io_error)?.is_dir() && entry.path() != own {
+        let kind = match entry.file_type() {
+            Ok(kind) => kind,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(io_error(error)),
+        };
+        if kind.is_dir() && entry.path() != own {
             directories.push(entry.path());
         }
     }
@@ -391,15 +412,26 @@ fn read_journals(
             continue;
         }
         let path = entry.path();
-        match fs::read(&path).map_err(io_error).and_then(|bytes| {
-            serde_json::from_slice::<Journal>(&bytes)
-                .map_err(|error| RewriteError::new("recoveryFailed", error.to_string()))
-        }) {
-            Ok(journal) => journals.push((path, journal)),
-            Err(error) => errors.push(error.message),
+        match read_journal(&path) {
+            Ok(Some(journal)) => journals.push((path, journal)),
+            Ok(None) => {}
+            Err(error) => errors.push(format!("{}: {}", path.display(), error.message)),
         }
     }
     Ok(journals)
+}
+
+fn read_journal(path: &Path) -> Result<Option<Journal>, RewriteError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        // Overlapping roots are locked; an unrelated root may retire a
+        // discovered journal before this scan reads it.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(io_error(error)),
+    };
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|error| RewriteError::new("recoveryFailed", error.to_string()))
 }
 
 fn valid_journal(boundary: &Path, journal: &Journal) -> bool {
@@ -616,6 +648,50 @@ fn finalize_committed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_journal_retired_after_discovery_is_already_settled() {
+        let state = tempfile::tempdir().unwrap();
+        let root = state.path().join("root");
+        let directory = journal_directory(state.path(), &root);
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(format!("{JOURNAL_PREFIX}settled.json"));
+        let journal = Journal {
+            version: 1,
+            id: "settled".into(),
+            root,
+            phase: JournalPhase::Committed,
+            files: Vec::new(),
+        };
+        persist_journal(&path, &journal).unwrap();
+        let discovered = fs::read_dir(&directory).unwrap().next().unwrap().unwrap();
+        assert_eq!(
+            read_journal(&discovered.path()).unwrap().unwrap().id,
+            journal.id
+        );
+        assert!(retire(&path, Vec::new()).is_empty());
+        assert!(read_journal(&discovered.path()).unwrap().is_none());
+    }
+
+    #[test]
+    fn existing_unreadable_or_malformed_journals_still_fail_recovery() {
+        let state = tempfile::tempdir().unwrap();
+        let malformed = state.path().join(format!("{JOURNAL_PREFIX}malformed.json"));
+        let unreadable = state.path().join(format!("{JOURNAL_PREFIX}directory.json"));
+        fs::write(&malformed, b"not a journal").unwrap();
+        fs::create_dir(&unreadable).unwrap();
+        let mut errors = Vec::new();
+        assert!(read_journals(state.path(), &mut errors).unwrap().is_empty());
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        for path in [malformed, unreadable] {
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.contains(path.to_str().unwrap())),
+                "{errors:?}"
+            );
+        }
+    }
 
     /// Journals on disk keep the phase and state words earlier releases
     /// wrote, so an interrupted transaction from one stays recoverable.

@@ -347,6 +347,8 @@ export function lspCallers(entry, index = 0) {
   })));
 }
 
+const SOURCE_GAP = /^(?:--|\.\.\. \[(?:lines? \d+(?:-\d+)?|\d+ gaps in lines \d+-\d+) (?:omitted|not requested|not selected)\] \.\.\.)$/;
+
 /**
  * A file-read row's source view. Reads number source lines in `content`
  * (`<line>\t<text>`, omission markers unnumbered; docs/TOOL_DATA_CONTRACT.md
@@ -361,8 +363,7 @@ export function sourceView(file) {
   // Non-adjacent windows are separated by one unnumbered `--` line (grep's
   // group separator, TOOL_DATA_CONTRACT "Numbered source content"); older
   // views used `... [lines N-M omitted] ...` markers.
-  const marker = /^(?:--|\.\.\. \[(?:lines? \d+(?:-\d+)?|\d+ gaps in lines \d+-\d+) (?:omitted|not requested)\] \.\.\.)$/;
-  const numbered = records.length > 0 && records.some(l => /^\d+\t/.test(l)) && records.every(l => /^\d+\t/.test(l) || marker.test(l));
+  const numbered = !file?.sourceLineRanges && records.length > 0 && records.some(l => /^\d+\t/.test(l)) && records.every(l => /^\d+\t/.test(l) || SOURCE_GAP.test(l));
   // Verbatim views keep `sourceLineRanges` as `{line, endLine}`; the
   // view's ranges are `{start, end}` in both branches.
   if (!numbered) return { text: content, ranges: (file?.sourceLineRanges ?? []).map(r => ({ start: r.line, end: r.endLine })), numbered: false };
@@ -377,6 +378,47 @@ export function sourceView(file) {
   });
   if (trailing !== undefined) text.push('');
   return { text: text.join('\n'), ranges, numbered: true };
+}
+
+/** Exact source [line, text] pairs from a gutter or sourceLineRanges; gaps are not evidence. */
+export function sourceLines(file) {
+  const view = sourceView(file);
+  if (view.numbered) return file.content.split('\n').flatMap(record => {
+    const match = /^(\d+)\t/.exec(record);
+    return match ? [[Number(match[1]), record.slice(match[0].length)]] : [];
+  });
+  const records = view.text.split('\n');
+  if (records.at(-1) === '') records.pop();
+  let remaining = 0;
+  for (const { start, end } of view.ranges) {
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start)
+      throw new Error('Invalid source line range');
+    remaining += end - start + 1;
+  }
+  const pairs = [];
+  let cursor = 0;
+  let previousEnd;
+  for (const { start, end } of view.ranges) {
+    // Consume only an extra marker before this range. Source text resembling a
+    // marker remains evidence when its coordinates belong to the range.
+    if (records.length - cursor > remaining && SOURCE_GAP.test(records[cursor])) {
+      const gap = /\blines? (\d+)(?:-(\d+))? /.exec(records[cursor]);
+      if ((gap && Number(gap[2] ?? gap[1]) < start)
+        || (records[cursor] === '--' && previousEnd !== undefined && start > previousEnd + 1)) cursor++;
+    }
+    for (let line = start; line <= end; line++) {
+      if (cursor >= records.length) throw new Error('Source content is shorter than its line ranges');
+      pairs.push([line, records[cursor++]]);
+      remaining--;
+    }
+    previousEnd = end;
+  }
+  if (cursor < records.length && SOURCE_GAP.test(records[cursor])) {
+    const gap = /\blines? (\d+)(?:-(\d+))? /.exec(records[cursor]);
+    if (gap && Number(gap[1]) > previousEnd) cursor++;
+  }
+  if (cursor !== records.length) throw new Error('Source content does not match its line ranges');
+  return pairs;
 }
 
 export function rowData(entry, index = 0) {

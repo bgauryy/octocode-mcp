@@ -84,6 +84,8 @@ pub async fn run<C>(
 where
     C: ConditionalCache,
 {
+    let resolved = resolved_at(query).map_err(|error| errors::failure(error, query, None))?;
+    let query = resolved.as_ref().unwrap_or(query);
     let request_context = request.map_err(|error| errors::failure(error, query, None))?;
     let error = match execute(
         provider,
@@ -158,6 +160,34 @@ where
         None
     };
     Err(errors::failure(error, query, found))
+}
+
+/// The query with its `path` as the repository names it
+/// ([`crate::tools::gh_shared::listing_path`], the rule every GitHub tool
+/// reads a repository path by), so the read, its continuations and its
+/// recovery leads name one path; `None` when it already does. A path that
+/// climbs above the root, or names only the root, is invalid input, refused
+/// before any request.
+fn resolved_at(
+    query: &GhGetFileContentQuery,
+) -> Result<Option<GhGetFileContentQuery>, ProviderError> {
+    let path = crate::tools::gh_shared::listing_path(query.path.as_str())?;
+    if path.is_empty() {
+        return Err(ProviderError::new(
+            octocode_github::ProviderErrorKind::Validation,
+            format!(
+                "Path \"{}\" names the repository root, not a file.",
+                query.path.as_str()
+            ),
+        ));
+    }
+    if path == query.path.as_str() {
+        return Ok(None);
+    }
+    Ok(Some(GhGetFileContentQuery {
+        path: path.parse().map_err(decode_display)?,
+        ..query.clone()
+    }))
 }
 
 /// The row of a read: its status from the file, and the resolved commit
@@ -327,6 +357,7 @@ fn shape(
         modified: None,
         window,
         first_page_bytes: None,
+        interior: false,
     };
     let mut content = if local.clasify_context.is_none() && local.selection.is_none() {
         process_fetched_content(
@@ -488,9 +519,11 @@ fn file_type(path: &str) -> Option<&'static str> {
     }
 }
 
-/// Last commit touching `path` at `reference` (a resolved SHA). History below
-/// a commit is immutable, so the answer is cached per (owner, repo, SHA, path)
-/// and repeated offset-0 reads skip the `commits?path=` round trip.
+/// Last commit touching `path` at `reference` (a resolved SHA), from the one
+/// source of that fact ([`octocode_github::GitHubTransport::path_last_commit`],
+/// which ghStructure's dated listings share). History below a commit is
+/// immutable, so the answer is cached per (owner, repo, SHA, path) and
+/// repeated offset-0 reads skip the round trip.
 async fn file_timestamp<C>(
     provider: &GitHubProvider<C>,
     query: &GhGetFileContentQuery,
@@ -526,40 +559,19 @@ where
     {
         return (date, author);
     }
-    let Ok(page) = provider
+    let Ok(stamp) = provider
         .transport
-        .list_commits(
-            &octocode_github::CommitListRequest {
-                owner: query.owner.to_string(),
-                repo: query.repo.to_string(),
-                branch: Some(reference.to_owned()),
-                path: Some(query.path.to_string()),
-                author: None,
-                since: None,
-                until: None,
-                page: 1,
-                per_page: 1,
-            },
+        .path_last_commit(
+            query.owner.as_str(),
+            query.repo.as_str(),
+            reference,
+            query.path.as_str(),
             context,
         )
         .await
     else {
         return (None, None);
     };
-    let stamp = page.items.first().map_or((None, None), |commit| {
-        (
-            commit
-                .pointer("/commit/committer/date")
-                .or_else(|| commit.pointer("/commit/author/date"))
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-            commit
-                .pointer("/author/login")
-                .or_else(|| commit.pointer("/commit/author/name"))
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-        )
-    });
     if let Some(partition) = &partition
         && let Ok(bytes) = serde_json::to_vec(&stamp)
     {
@@ -1102,12 +1114,14 @@ mod tests {
             serde_json::json!({"message":"Not Found"}),
         )
         .await;
-        Mock::given(method("GET"))
-            .and(path("/api/v3/repos/a/b/commits"))
-            .and(wiremock::matchers::query_param("path", "a.txt"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(
-                serde_json::json!([{"author":{"login":"ada-l"},"commit":{"committer":{"date":"2026-01-02T00:00:00Z"},"author":{"name":"Ada"}}}]),
-            ))
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(wiremock::matchers::body_string_contains("a.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!(
+                {"data":{"repository":{"object":{"committedDate":"2026-01-03T00:00:00Z",
+                    "p0":{"nodes":[{"committedDate":"2026-01-02T00:00:00Z",
+                        "author":{"name":"Ada","user":{"login":"ada-l"}}}]}}}}}
+            )))
             .expect(1)
             .mount(&server)
             .await;
@@ -1474,6 +1488,61 @@ mod tests {
         );
     }
 
+    /// The row's response window sizes a ranged read's page: a smaller
+    /// window serves fewer lines, a larger one more, and each page ends in
+    /// the tool's own `continueWindow` at the read commit, so a small
+    /// `responseLength` never falls through to text pages of the response.
+    #[tokio::test]
+    async fn the_response_window_sizes_the_read_page() {
+        let server = MockServer::builder().start().await;
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let body: String = (1..=3000)
+            .map(|line| format!("let value_{line} = compute({line});\n"))
+            .collect();
+        mount_json(
+            &server,
+            "/api/v3/repos/a/b/contents/src%2Fbig.rs",
+            200,
+            json!({"type":"file","encoding":"base64","content":STANDARD.encode(&body)}),
+        )
+        .await;
+        let provider = mock_provider(&server, RetryPolicy::default());
+        let query: GhGetFileContentQuery = serde_json::from_value(json!({
+            "owner":"a","repo":"b","path":"src/big.rs","ref":sha,"ranges":["1-3000"],
+            "mainGoal":"test","reasoning":"test"
+        }))
+        .expect("query");
+        let mut lines = Vec::new();
+        for window in [5_000, 20_000, 50_000] {
+            let read = execute_default_regex(
+                &provider,
+                &query,
+                &default_context(),
+                Some(window),
+                &Safe,
+                &NeverCancel,
+            )
+            .await
+            .expect("read");
+            let file = &read.file;
+            let row = serde_json::to_value(&read).expect("row");
+            let chars = crate::tools::stream_page::json_chars(&row);
+            assert!(chars <= window, "window {window}: row of {chars} chars");
+            let next = file.next.as_ref().expect("next");
+            let page = &next["continueWindow"]["query"]["queries"][0];
+            assert_eq!(page["ref"], sha, "{next}");
+            lines.push(
+                file.content
+                    .content
+                    .as_deref()
+                    .unwrap_or_default()
+                    .lines()
+                    .count(),
+            );
+        }
+        assert!(lines[0] < lines[1] && lines[1] < lines[2], "{lines:?}");
+    }
+
     async fn run_default(
         provider: &GitHubProvider<NoCache>,
         query: Value,
@@ -1493,6 +1562,60 @@ mod tests {
             None,
         )
         .await
+    }
+
+    /// ghGetFileContent reads a path by the one repository-path rule
+    /// ghStructure lists by: `.`, `..` and repeated slashes resolve before
+    /// the one contents request, and the row names the resolved path; a
+    /// path above the root, or the root itself, is invalid input with no
+    /// request sent.
+    #[tokio::test]
+    async fn paths_resolve_like_listings_or_are_refused_unsent() {
+        let server = MockServer::builder().start().await;
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        mount_json(
+            &server,
+            "/api/v3/repos/a/b/contents/README.md",
+            200,
+            json!({"type":"file", "encoding":"base64", "content":STANDARD.encode("# Title\n")}),
+        )
+        .await;
+        let provider = mock_provider(&server, RetryPolicy::default());
+        let read = run_default(
+            &provider,
+            json!({"owner":"a","repo":"b","path":"src/.//../README.md","ref":sha}),
+        )
+        .await
+        .unwrap_or_else(|failure| panic!("{}", failure.message));
+        assert_eq!(
+            read.output.data["path"], "README.md",
+            "{}",
+            read.output.data
+        );
+        let requests = server.received_requests().await.expect("requests");
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        for refused in ["../x.md", "src/../../x.md", "src/..", "./"] {
+            let Err(failure) = run_default(
+                &provider,
+                json!({"owner":"a","repo":"b","path":refused,"ref":sha}),
+            )
+            .await
+            else {
+                panic!("{refused} is refused");
+            };
+            assert_eq!(
+                failure.error.kind,
+                octocode_github::ProviderErrorKind::Validation,
+                "{refused}"
+            );
+            assert!(
+                failure.message.contains(refused),
+                "{refused}: {}",
+                failure.message
+            );
+        }
+        let requests = server.received_requests().await.expect("requests");
+        assert_eq!(requests.len(), 1, "refusals send nothing: {requests:?}");
     }
 
     /// A path whose case differs is answered by one listing walk at the

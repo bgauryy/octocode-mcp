@@ -884,6 +884,15 @@ fn read_nodes(nodes: &mut Reader, tables: &mut GraphTables) -> Result<(), String
     }) {
         return Err("graph node references are out of range".into());
     }
+    // A file key is joined onto the snapshot root to read the file, so it
+    // must name a path below it.
+    if tables
+        .nodes
+        .iter()
+        .any(|node| node.kind == NodeKind::File && !is_relative_key(tables.str(node.key)))
+    {
+        return Err("graph file key is not a root-relative path".into());
+    }
     // Rebuild `path#suffix` keys for symbols stored as suffixes.
     for index in suffixed {
         let node = tables.nodes[index];
@@ -899,6 +908,15 @@ fn read_nodes(nodes: &mut Reader, tables: &mut GraphTables) -> Result<(), String
         tables.strings.push(full);
     }
     Ok(())
+}
+
+/// A path below its root: every component is a plain name (no root,
+/// drive, `.` or `..`).
+fn is_relative_key(key: &str) -> bool {
+    !key.is_empty()
+        && std::path::Path::new(key)
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
 }
 
 fn read_edges(edges: &mut Reader, tables: &mut GraphTables, strings: u32) -> Result<(), String> {

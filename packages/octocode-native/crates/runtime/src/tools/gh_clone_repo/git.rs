@@ -100,86 +100,7 @@ pub(super) fn checkout_status(
     Ok(status)
 }
 
-/// Check out `reference` (a full commit SHA, a branch or a tag) with
-/// `depth` commits of history, limited to `sparse_paths`.
-pub(super) fn checkout(
-    context: &CloneContext<'_>,
-    repository_url: &str,
-    reference: &str,
-    sparse_paths: Option<&[String]>,
-    depth: u64,
-    target: &Path,
-) -> Result<(), CloneError> {
-    if octocode_github::is_full_sha(reference) {
-        checkout_commit(
-            context,
-            repository_url,
-            reference,
-            sparse_paths,
-            depth,
-            target,
-        )
-    } else {
-        checkout_branch(
-            context,
-            repository_url,
-            reference,
-            sparse_paths,
-            depth,
-            target,
-        )
-    }
-}
-
-/// `git clone` of one branch or tag.
-fn checkout_branch(
-    context: &CloneContext<'_>,
-    repository_url: &str,
-    branch: &str,
-    sparse_paths: Option<&[String]>,
-    depth: u64,
-    target: &Path,
-) -> Result<(), CloneError> {
-    let mut args: Vec<OsString> = vec!["clone".into()];
-    if sparse_paths.is_some() {
-        args.extend(["--filter", "blob:none", "--sparse"].map(OsString::from));
-    }
-    args.extend([
-        OsString::from("--depth"),
-        OsString::from(depth.to_string()),
-        OsString::from("--single-branch"),
-        OsString::from("--branch"),
-        OsString::from(branch),
-    ]);
-    args.extend([
-        OsString::from("--"),
-        OsString::from(repository_url),
-        target.as_os_str().to_owned(),
-    ]);
-    run(
-        context,
-        args,
-        clone_timeout(context),
-        if sparse_paths.is_some() {
-            "sparse clone"
-        } else {
-            "full clone"
-        },
-        Some(repository_url),
-    )?;
-    if let Some(paths) = sparse_paths {
-        run(
-            context,
-            sparse_set_args(context, target, "HEAD", paths),
-            sparse_timeout(context),
-            "set sparse checkout paths",
-            Some(repository_url),
-        )?;
-    }
-    Ok(())
-}
-
-/// `sparse-checkout set` arguments for `sparse_paths` at `rev`. Cone mode
+/// `sparse-checkout set` arguments for `sparse_paths` at the fetched commit. Cone mode
 /// always includes every file beside each cone directory, so when any path is
 /// a file every path becomes an exact anchored non-cone pattern (a directory
 /// as `/dir/`); directories alone (and paths that do not resolve, left for
@@ -187,7 +108,6 @@ fn checkout_branch(
 fn sparse_set_args(
     context: &CloneContext<'_>,
     target: &Path,
-    rev: &str,
     sparse_paths: &[String],
 ) -> Vec<OsString> {
     let paths = sparse_paths
@@ -196,7 +116,7 @@ fn sparse_set_args(
         .collect::<Vec<_>>();
     // ls-tree reads tree objects only, so it never lazily fetches a blob;
     // `-z` keeps unusual paths unquoted.
-    let mut ls_tree = scoped(target, &["ls-tree", "-z", rev, "--"]);
+    let mut ls_tree = scoped(target, &["ls-tree", "-z", "FETCH_HEAD", "--"]);
     ls_tree.extend(paths.iter().map(OsString::from));
     let files = run(
         context,
@@ -251,7 +171,9 @@ fn file_pattern(path: &str) -> String {
     pattern
 }
 
-fn checkout_commit(
+/// Check out `commit` (a full SHA: `run` pins every row to one) with
+/// `depth` commits of history, limited to `sparse_paths`.
+pub(super) fn checkout(
     context: &CloneContext<'_>,
     repository_url: &str,
     commit: &str,
@@ -312,7 +234,7 @@ fn checkout_commit(
     if let Some(paths) = sparse_paths {
         run(
             context,
-            sparse_set_args(context, target, "FETCH_HEAD", paths),
+            sparse_set_args(context, target, paths),
             sparse_timeout(context),
             "set sparse commit paths",
             Some(repository_url),

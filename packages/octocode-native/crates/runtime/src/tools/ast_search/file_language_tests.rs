@@ -242,7 +242,7 @@ fn an_overridden_outline_is_cached_under_the_parser_it_used() {
     let typescript =
         crate::tools::ast_rule::primary_extension("typescript").expect("typescript extension");
     let cached =
-        crate::tools::declarations_cache::extract(SCRIPT, &canonical, Some(&typescript), || {
+        crate::tools::declarations_cache::document(SCRIPT, &canonical, Some(&typescript), || {
             panic!("the typescript outline is cached")
         });
     assert!(cached.is_some(), "the overridden parse is cached");
@@ -253,6 +253,6 @@ fn an_overridden_outline_is_cached_under_the_parser_it_used() {
         crate::tools::ast_rule::primary_extension("javascript").expect("javascript extension");
     assert_ne!(javascript, typescript);
     let other =
-        crate::tools::declarations_cache::extract(SCRIPT, &canonical, Some(&javascript), || None);
+        crate::tools::declarations_cache::document(SCRIPT, &canonical, Some(&javascript), || None);
     assert!(other.is_none(), "another override never reuses the entry");
 }

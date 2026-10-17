@@ -6,7 +6,10 @@
 //!   goes with its last value);
 //! - a scalar that differs from one listed enum value only by case or edge
 //!   whitespace becomes that value;
-//! - a number outside its bounds is clamped to the nearest bound;
+//! - a number outside its bounds is clamped to the nearest bound, except a
+//!   size or count of zero or less (a field whose minimum is positive): it is
+//!   dropped, so the field's default applies (lossy, named), and clamped
+//!   only when the row cannot go without it;
 //! - a typed value sent as JSON text becomes that value, after validation;
 //! - a literal string becomes a single-item array only when that array
 //!   satisfies the field schema;
@@ -54,6 +57,9 @@ enum Edit {
         index: usize,
         envelope: Vec<String>,
     },
+    /// A size or count below a positive minimum: dropped (lossy) so its
+    /// default applies, else (the field is required) set to `bound`.
+    Unsized(Vec<String>, Value),
     /// A field removed and the field that says it set beside it.
     Respell {
         remove: Vec<String>,
@@ -76,7 +82,9 @@ pub(crate) struct Repair {
 /// `check` refuses the result with no issue left to fix. `check` returns
 /// the issues of a candidate (empty: refused for a reason no edit fixes);
 /// the issues a pass reveals are fixed by the next. A relocation the rows
-/// do not accept falls back to dropping the field (lossy).
+/// do not accept falls back to dropping the field (lossy, named at the
+/// caller's envelope path), and an unsized field the row requires to
+/// clamping it.
 pub(crate) fn repair_input(
     input: &Value,
     issues: &[ValidationIssue],
@@ -98,9 +106,16 @@ fn repair_pass(
         .iter()
         .map(|issue| fix(input, issue))
         .collect::<Option<Vec<_>>>()?;
-    let relocates = edits.iter().any(|edit| matches!(edit, Edit::IntoRows(_)));
-    let attempt = |relocate: bool| {
-        let repair = apply(input, &edits, relocate)?;
+    let relocated: Vec<&str> = edits
+        .iter()
+        .filter_map(|edit| match edit {
+            Edit::IntoRows(field) => Some(field.as_str()),
+            _ => None,
+        })
+        .collect();
+    let unsized_fields = edits.iter().any(|edit| matches!(edit, Edit::Unsized(..)));
+    let attempt = |preference: Preference| {
+        let repair = apply(input, &edits, preference)?;
         match check(&repair.input) {
             Ok(()) => Some(repair),
             Err(revealed) => {
@@ -112,10 +127,52 @@ fn repair_pass(
             }
         }
     };
-    attempt(true).or_else(|| relocates.then(|| attempt(false)).flatten())
+    // A relocated field a later pass drops from the rows was not accepted
+    // there: drop it where the caller set it instead, so the lead names it.
+    let rejected_relocation = |repair: &Repair| {
+        repair.dropped.iter().any(|path| {
+            let path: Vec<&str> = path.split('.').collect();
+            matches!(path.as_slice(), ["queries", _, field] if relocated.contains(field))
+        })
+    };
+    // The preferred form first, then each fallback the edits have.
+    let forms = |has_fallback: bool| {
+        if has_fallback {
+            vec![true, false]
+        } else {
+            vec![true]
+        }
+    };
+    let mut refused = None;
+    for drop_unsized in forms(unsized_fields) {
+        for relocate in forms(!relocated.is_empty()) {
+            let preference = Preference {
+                relocate,
+                drop_unsized,
+            };
+            let Some(repair) = attempt(preference) else {
+                continue;
+            };
+            if relocate && rejected_relocation(&repair) {
+                refused.get_or_insert(repair);
+                continue;
+            }
+            return Some(repair);
+        }
+    }
+    refused
 }
 
-fn apply(input: &Value, edits: &[Edit], relocate: bool) -> Option<Repair> {
+/// Which form of the edits that have a fallback a pass applies: preferred,
+/// an envelope field relocates into the rows (else it is dropped) and an
+/// unsized field is dropped (else clamped).
+#[derive(Clone, Copy)]
+struct Preference {
+    relocate: bool,
+    drop_unsized: bool,
+}
+
+fn apply(input: &Value, edits: &[Edit], preference: Preference) -> Option<Repair> {
     let mut repaired = input.clone();
     let mut removals = Vec::new();
     let mut dropped = Vec::new();
@@ -143,7 +200,12 @@ fn apply(input: &Value, edits: &[Edit], relocate: bool) -> Option<Repair> {
                 dropped.push(path.join("."));
                 removals.push(path.clone());
             }
-            Edit::IntoRows(field) if relocate => {
+            Edit::Unsized(path, _) if preference.drop_unsized => {
+                dropped.push(path.join("."));
+                removals.push(path.clone());
+            }
+            Edit::Unsized(path, bound) => *pointer_mut(&mut repaired, path)? = bound.clone(),
+            Edit::IntoRows(field) if preference.relocate => {
                 let value = repaired.get(field)?.clone();
                 for row in repaired.get_mut("queries")?.as_array_mut()? {
                     let row = row.as_object_mut()?;
@@ -315,6 +377,12 @@ fn fix(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
                 (Some(bound), _) | (None, Some(bound)) => bound,
                 (None, None) => return None,
             };
+            // Zero or less of a positive size or count asks for no usable
+            // amount: clamping it to the minimum serves one unit (a page of
+            // one char), so the default applies instead.
+            if number <= 0.0 && bound > 0.0 {
+                return Some(Edit::Unsized(path, bound_value(bound)));
+            }
             Some(Edit::Set(path, bound_value(bound)))
         }
         "schema.type" => {
@@ -710,6 +778,59 @@ mod tests {
         };
         let dropped = repair_input(&input, &[root], only(rows_refuse)).expect("lossy fallback");
         assert_eq!(dropped.dropped, ["mainGoal"]);
+    }
+
+    /// Zero of a positive size (`responseLength: 0`) is dropped so the
+    /// default applies, named as lossy, instead of becoming one-char pages;
+    /// a field the row requires is clamped to its minimum instead.
+    #[test]
+    fn an_unsized_field_drops_to_its_default_unless_required() {
+        let input = json!({"responseLength":0,"queries":[{"path":"a","line":-2}]});
+        let unsized_issue = |path: &[&str], received| {
+            issue(
+                "schema.range",
+                path,
+                Some(json!({"minimum":1,"maximum":50000})),
+                Some(json!(received)),
+            )
+        };
+        let length = unsized_issue(&["responseLength"], 0);
+        let repaired = repair_input(&input, std::slice::from_ref(&length), always).expect("drop");
+        assert_eq!(repaired.input, json!({"queries":[{"path":"a","line":-2}]}));
+        assert_eq!(repaired.dropped, ["responseLength"]);
+        let line = unsized_issue(&["queries", "0", "line"], -2);
+        let requires_line = |candidate: &Value| match candidate.pointer("/queries/0/line") {
+            Some(_) => Ok(()),
+            None => Err(vec![issue(
+                "schema.required",
+                &["queries", "0", "line"],
+                None,
+                None,
+            )]),
+        };
+        let repaired = repair_input(&input, &[line], requires_line).expect("clamp");
+        assert_eq!(repaired.input["queries"][0]["line"], 1);
+        assert!(repaired.dropped.is_empty());
+    }
+
+    /// An unknown envelope field the rows refuse is named where the caller
+    /// set it, never at the row path the relocation tried.
+    #[test]
+    fn a_refused_relocation_names_the_envelope_field() {
+        let check = |value: &Value| {
+            crate::contracts::prepare_many_and_validate("localFetch", value.clone())
+                .map(|_| ())
+                .map_err(|error| error.issues)
+        };
+        let input = json!({"queries":[{"path":"a.txt","mainGoal":"g","reasoning":"r"}],
+            "bogusTop":1,"responseLength":0});
+        let issues = check(&input).expect_err("unknown field and unsized page");
+        let repaired = repair_input(&input, &issues, check).expect("lossy repair");
+        assert_eq!(repaired.dropped, ["bogusTop", "responseLength"]);
+        assert_eq!(
+            repaired.input,
+            json!({"queries":[{"path":"a.txt","mainGoal":"g","reasoning":"r"}]})
+        );
     }
 
     #[test]

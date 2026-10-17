@@ -52,9 +52,14 @@ process environment / MCP client env block
 
 ## What is a setting
 
-A setting is something a user chooses: a credential, an endpoint, a feature switch, a tool list, a scope, a storage mode, a model or a presentation format. Internal limits (timeouts, retries, waits, page sizes, cache sizes and TTLs, concurrency, spend caps, memory caps) are code constants in `RuntimeLimits` (`packages/octocode-native/crates/runtime/src/runtime/limits.rs`), never settings: no `.env` or `.octocoderc` can change them, and tests set non-default limits through `ToolRuntime::with_limits`. The contract has no number field type.
+A setting is something a user chooses: a credential, an endpoint, a feature switch, a tool list, a scope, a storage mode, a model or a presentation format. Internal limits (timeouts, retries, waits, page sizes, cache sizes and TTLs, concurrency, spend caps, memory caps) are code constants, never settings: no `.env` or `.octocoderc` can change them. The contract has no number field type. A limit lives in one of two places:
 
-To retire a setting, delete its field and add its path and variable to `removed.settings` / `removed.environment` with the reason (the fixed value or the replacement). A removed name is reported once as `removed_setting` and ignored, never a load failure, and `config set` refuses it.
+- **`RuntimeLimits::DEFAULT`** (`packages/octocode-native/crates/runtime/src/runtime/limits.rs`) when several surfaces share it or tests vary it through `ToolRuntime::with_limits`.
+- **A named constant next to its single use** otherwise (for example `PREPARED_MIN_BYTES` in `crates/runtime/src/tools/local_fetch/executor.rs`, `IDLE_EXIT` in `crates/cli/src/cli/serve.rs`). Its doc comment gives the rationale. When it bounds evidence, the response discloses the cut (a warning, a `*Clipped` flag or a continuation), never a silent gap.
+
+Docs link to the constant instead of copying its value.
+
+To retire a setting, delete its field and add its path and variable to `removed.settings` / `removed.environment` with the reason (the fixed value or the replacement). A reason that states a `RuntimeLimits` value is pinned by `limits::tests::removed_limit_settings_state_the_default_values`: change the limit and the reason together. A removed name is reported once as `removed_setting` and ignored, never a load failure, and `config set` refuses it.
 
 ## Add a normal setting
 

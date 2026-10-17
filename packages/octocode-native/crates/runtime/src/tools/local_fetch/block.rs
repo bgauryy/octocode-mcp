@@ -5,7 +5,7 @@
 //! clasify locate; a file type without one keeps the requested window.
 
 use super::types::LineRange;
-use crate::tools::declarations_cache::{Declared, all_declarations};
+use crate::tools::declarations_cache::{Declared, all_declarations, file_document};
 
 /// Largest declaration a block read returns in one window.
 pub const BLOCK_MAX_LINES: usize = 400;
@@ -20,18 +20,45 @@ pub(crate) fn declarations(content: &str, path: &str) -> Option<Vec<Declared>> {
     (!declared.is_empty()).then_some(declared)
 }
 
+/// A file's outline as a block read widens with it: the multi-line
+/// declarations, and the lines of the one-line ones (nothing to widen to,
+/// which is not the same as no declaration at all).
+struct Blocks {
+    declared: Vec<Declared>,
+    one_line: Vec<usize>,
+}
+
+impl Blocks {
+    /// `None` when the file type has no outline or the outline is empty.
+    fn of(content: &str, path: &str) -> Option<Self> {
+        let (declared, one_line): (Vec<Declared>, Vec<Declared>) = all_declarations(content, path)?
+            .into_iter()
+            .partition(|declared| declared.end > declared.start);
+        if declared.is_empty() && one_line.is_empty() {
+            return None;
+        }
+        let mut one_line: Vec<usize> = one_line.iter().map(|declared| declared.start).collect();
+        one_line.sort_unstable();
+        one_line.dedup();
+        Some(Self { declared, one_line })
+    }
+
+    fn spans(&self) -> Vec<(usize, usize)> {
+        self.declared.iter().map(|d| (d.start, d.end)).collect()
+    }
+
+    fn is_one_line(&self, line: usize) -> bool {
+        self.one_line.binary_search(&line).is_ok()
+    }
+}
+
 /// The line spans (`"3, 7-9"`) the parser could not parse and recovered
 /// from (Flow types, a newer syntax); `None` after a clean parse.
 fn unparsed_lines(content: &str, path: &str) -> Option<String> {
-    let raw = crate::tools::declarations_cache::extract(content, path, None, || {
-        octocode_engine::portable::extract_declarations(content, path)
-    })?;
-    let facts: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let spans = facts["errorLines"]
-        .as_array()?
+    let spans = file_document(content, path)?
+        .error_lines
         .iter()
-        .filter_map(|span| Some((span.get(0)?.as_u64()?, span.get(1)?.as_u64()?)))
-        .map(|(start, end)| {
+        .map(|&[start, end]| {
             if start == end {
                 start.to_string()
             } else {
@@ -43,7 +70,8 @@ fn unparsed_lines(content: &str, path: &str) -> Option<String> {
 }
 
 /// Why a block may miss its enclosing declaration: the parser recovered
-/// from syntax errors, named with the skipped line spans.
+/// from syntax errors, named with the skipped line spans. A read states it
+/// once, however many of its windows it explains.
 fn recovered_parse(content: &str, path: &str) -> Option<String> {
     unparsed_lines(content, path).map(|lines| {
         format!(
@@ -67,6 +95,19 @@ fn declaration_spans(content: &str, path: &str) -> Option<Vec<(usize, usize)>> {
     declarations(content, path).map(|declared| declared.iter().map(|d| (d.start, d.end)).collect())
 }
 
+/// `lines` as a warning names them: `line 4` or `lines 4, 9`.
+fn named_lines(lines: &[usize]) -> String {
+    let list = lines
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match lines {
+        [_] => format!("line {list}"),
+        _ => format!("lines {list}"),
+    }
+}
+
 /// Whether a source line is part of the doc comment or attribute run that
 /// leads a declaration: a comment in the comment syntax of the file's
 /// grammar, an attribute (`#[…]`) or a decorator (`@…`).
@@ -80,14 +121,13 @@ fn leads_declaration(path: &str, line: &str) -> bool {
 /// Declaration spans for a block read: each widened up over the doc
 /// comments and attributes directly above it, so the window holds the
 /// declaration as written. Document headings keep their own spans.
-fn block_spans(content: &str, path: &str) -> Option<Vec<(usize, usize)>> {
+fn block_spans(content: &str, path: &str, blocks: &Blocks) -> Vec<(usize, usize)> {
     let lines: Vec<&str> = content.lines().collect();
-    Some(
-        declaration_spans(content, path)?
-            .into_iter()
-            .map(|span| with_docs(&lines, path, span))
-            .collect(),
-    )
+    blocks
+        .spans()
+        .into_iter()
+        .map(|span| with_docs(&lines, path, span))
+        .collect()
 }
 
 /// `span` widened up over the doc comment and attribute run directly above
@@ -151,19 +191,21 @@ pub fn widen_ranges(
     warnings: &mut Vec<String>,
     rest: &mut Vec<LineRange>,
 ) -> Vec<LineRange> {
-    let Some(spans) = block_spans(content, path) else {
+    let Some(blocks) = Blocks::of(content, path) else {
         warnings.push(no_outline(content, path));
         return ranges;
     };
-    ranges
+    let spans = block_spans(content, path, &blocks);
+    let (mut unenclosed, mut one_line) = (vec![], vec![]);
+    let widened = ranges
         .into_iter()
         .map(|range| {
             let Some((first, last)) = innermost(&spans, range.start) else {
-                warnings.push(format!(
-                    "block: no declaration encloses line {}; returned the requested lines.{}",
-                    range.start,
-                    recovered_parse(content, path).unwrap_or_default()
-                ));
+                if blocks.is_one_line(range.start) {
+                    one_line.push(range.start);
+                } else {
+                    unenclosed.push(range.start);
+                }
                 return range;
             };
             let start = first.min(range.start);
@@ -187,7 +229,26 @@ pub fn widen_ranges(
                 end,
             }
         })
-        .collect()
+        .collect();
+    if !one_line.is_empty() {
+        warnings.push(format!(
+            "block: {} {} a one-line declaration, nothing to widen; returned the requested lines.",
+            named_lines(&one_line),
+            if one_line.len() == 1 {
+                "holds"
+            } else {
+                "each hold"
+            },
+        ));
+    }
+    if !unenclosed.is_empty() {
+        warnings.push(format!(
+            "block: no declaration encloses {}; returned the requested lines.{}",
+            named_lines(&unenclosed),
+            recovered_parse(content, path).unwrap_or_default()
+        ));
+    }
+    widened
 }
 
 /// The innermost declaration containing `line`.
@@ -219,28 +280,30 @@ pub fn widen_matches(
     oversized_spans: &mut Vec<LineRange>,
     blocks: &mut Vec<super::types::DeclaredBlock>,
 ) -> Vec<LineRange> {
-    let Some(declared) = declarations(content, path) else {
+    let Some(outline) = Blocks::of(content, path) else {
         warnings.push(no_outline(content, path));
         return windows;
     };
-    let spans: Vec<(usize, usize)> = declared.iter().map(|d| (d.start, d.end)).collect();
-    let declaration_first = hits.iter().any(|&hit| declares(&declared, hit));
+    let spans = outline.spans();
+    let declared = &outline.declared;
+    let declaration_first = hits.iter().any(|&hit| declares(declared, hit));
     let lines: Vec<&str> = content.lines().collect();
     let mut oversized = 0;
     let mut unenclosed = 0;
+    let mut one_line = 0;
     let mut call_sites = 0;
     let widened = hits
         .iter()
         .zip(windows)
         .map(|(&hit, window)| match innermost(&spans, hit) {
-            Some(_) if declaration_first && !declares(&declared, hit) => {
+            Some(_) if declaration_first && !declares(declared, hit) => {
                 call_sites += 1;
                 window
             }
             // A hit on the declaration's head reads it as written, docs
             // included; a hit inside reads the declaration it sits in.
             Some((start, end)) if end + 1 - start <= BLOCK_MAX_LINES => {
-                if let Some(owner) = innermost_declared(&declared, hit)
+                if let Some(owner) = innermost_declared(declared, hit)
                     && !owner.name.is_empty()
                     && !blocks.iter().any(|block| block.line == owner.line)
                 {
@@ -262,6 +325,10 @@ pub fn widen_matches(
                 oversized_spans.push(LineRange { start, end });
                 window
             }
+            None if outline.is_one_line(hit) => {
+                one_line += 1;
+                window
+            }
             None => {
                 unenclosed += 1;
                 window
@@ -272,6 +339,11 @@ pub fn widen_matches(
     if call_sites > 0 {
         warnings.push(format!(
             "block: {call_sites} match(es) are not declaration heads; they keep their context window, and only the declarations matched by name widen."
+        ));
+    }
+    if one_line > 0 {
+        warnings.push(format!(
+            "block: {one_line} match(es) are one-line declarations, nothing to widen; those keep their match context window."
         ));
     }
     if unenclosed > 0 {
@@ -520,6 +592,82 @@ mod tests {
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(
             warnings[0].starts_with("block: 1 match(es) sit outside any declaration;"),
+            "{warnings:?}"
+        );
+    }
+
+    /// A hit on a one-line declaration is not outside every declaration:
+    /// the warning says there is nothing to widen.
+    #[test]
+    fn one_line_declarations_are_named_as_such_not_as_outside() {
+        let source =
+            "pub struct Id(u8);\npub struct Name(String);\n\nfn body() {\n    1;\n}\n// trailing\n";
+        let mut warnings = vec![];
+        let windows = widen_matches(
+            source,
+            "m.rs",
+            &[1, 2, 7],
+            vec![
+                LineRange { start: 1, end: 1 },
+                LineRange { start: 2, end: 2 },
+                LineRange { start: 7, end: 7 },
+            ],
+            &mut warnings,
+            &mut vec![],
+            &mut vec![],
+        );
+        assert_eq!(windows[0], LineRange { start: 1, end: 1 });
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(
+            warnings[0].starts_with("block: 2 match(es) are one-line declarations"),
+            "{warnings:?}"
+        );
+        assert!(
+            warnings[1].starts_with("block: 1 match(es) sit outside any declaration"),
+            "{warnings:?}"
+        );
+        let mut warnings = vec![];
+        widen_ranges(
+            source,
+            "m.rs",
+            vec![LineRange { start: 2, end: 2 }],
+            &mut warnings,
+            &mut vec![],
+        );
+        assert_eq!(
+            warnings,
+            [
+                "block: line 2 holds a one-line declaration, nothing to widen; returned the requested lines."
+            ]
+        );
+    }
+
+    /// Several unenclosed ranges of one recovered parse share one warning,
+    /// which names the parse recovery once.
+    #[test]
+    fn unenclosed_ranges_state_the_recovered_parse_once() {
+        let flow = "// @flow\ntype Dispatch<A> = A => void;\nconst a = 1;\nconst b = 2;\nexport function useState<S>(init: S): [S, Dispatch<S>] {\n  return [init, () => {}];\n}\n";
+        let mut warnings = vec![];
+        widen_ranges(
+            flow,
+            "Hooks.js",
+            vec![
+                LineRange { start: 1, end: 1 },
+                LineRange { start: 3, end: 3 },
+                LineRange { start: 4, end: 4 },
+            ],
+            &mut warnings,
+            &mut vec![],
+        );
+        let notes = warnings
+            .iter()
+            .filter(|warning| warning.contains("could not parse lines"))
+            .count();
+        assert_eq!(notes, 1, "{warnings:?}");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.starts_with("block: no declaration encloses lines 1, ")),
             "{warnings:?}"
         );
     }

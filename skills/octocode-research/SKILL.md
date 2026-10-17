@@ -51,7 +51,7 @@ Trace only `entry → transformations → state → output → consumers`; switc
 
 ## Classifiers or clasify?
 
-Use classification when its answer changes what you read next. For noisy searches or large fetches with many plausible passages, use `clasifyContext:{classifiers:[...]}` on `localSearch`, `localFetch`, `ghSearchCode` or `ghGetFileContent` to receive selected evidence. To choose among unread files, docs or images, use `clasify` with source references or image assets; discover concrete targets first. Exact anchors, small reads, identity and exhaustive coverage use ordinary tools.
+Use classification when its answer changes what you read next. For noisy searches or large fetches with many plausible passages, use `clasifyContext:{classifiers:[...]}` on `localSearch`, `localFetch` or scoped `ghGetFileContent` to receive selected evidence. Use ordinary `ghSearchCode` to discover paths before screening pinned file sources. To choose among unread files, docs or images, use `clasify` with source references or image assets; discover concrete targets first. For shared questions about individual text regions across resources, use its `sections` operation when the live schema exposes it. Exact anchors, small reads, identity and exhaustive coverage use ordinary tools.
 
 Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` add a short task context to inline selection. Read [clasify](references/clasify.md) for scopes and typed requests; avoid repeating the same relevance decision in both routes. Read deciding evidence before a source claim; stop when it answers the question. If an unknown/error could change the conclusion, [inspect the underlying evidence](references/clasify.md#recover-from-unknown-or-error); otherwise name the unresolved scope.
 
@@ -59,7 +59,7 @@ Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` ad
 
 - Unfamiliar or failed call: `schema <name> --view query`. Env and availability: [octocode](references/octocode.md#16-public-tools); never print credentials.
 - Batch up to 5 independent rows; dependent probes stay sequential. Omit research metadata when it adds no useful context.
-- Copy needed paging calls unchanged. `next.unfiltered` recovers the complete original view, including selected evidence; use it for unresolved coverage or completeness, not automatically after a sufficient answer. Name unread scope. Paging and optional `hints`: [octocode](references/octocode.md#read-results-and-recover).
+- Copy needed paging calls unchanged and name unread scope. For classification, distinguish selected pages, unjudged candidates and recovery reads using the [recovery guide](references/clasify.md#recover-from-unknown-or-error). Paging and optional `hints`: [octocode](references/octocode.md#read-results-and-recover).
 
 ## Resources
 

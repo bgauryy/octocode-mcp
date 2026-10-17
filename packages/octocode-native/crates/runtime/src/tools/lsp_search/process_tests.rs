@@ -90,6 +90,7 @@ fn config(root: &Path, script: &Path, pids: Option<&Path>) -> JsLanguageServerCo
             .collect()
         }),
         max_memory_mb: None,
+        source: Default::default(),
     }
 }
 
@@ -1451,7 +1452,7 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
     );
     let warned = row["warnings"].to_string();
     assert!(
-        warned.contains("1 file") && warned.contains(".gitignore:1 'gen/'"),
+        warned.contains("1 imports it") && warned.contains(".gitignore:1 'gen/'"),
         "{row}"
     );
     let lead = &row["next"]["includeSkipped"];
@@ -1844,6 +1845,7 @@ fn a_tsgo_that_fails_to_start_falls_back_to_tsserver_and_says_so() {
         root_only: false,
         config: config(&root, &missing, None),
         fallback,
+        root_note: None,
     };
     tokio::runtime::Runtime::new().expect("rt").block_on(async {
         let pool = LspClientPool::new(LspPoolOptions {

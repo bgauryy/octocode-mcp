@@ -38,11 +38,13 @@ pub(crate) mod selection;
 pub(crate) mod selection_errors;
 pub(crate) mod source;
 pub(crate) mod source_capture;
+pub(crate) mod source_sections;
 pub(crate) mod stream_page;
 pub(crate) mod structure_search;
 pub(crate) mod symbol_outline;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub(crate) mod workers;
 
 /// Listings this small lead to an outline read of their top file
 /// (`read`, `minify:"symbols"`): a few files, so one more read costs
