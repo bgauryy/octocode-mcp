@@ -24,10 +24,12 @@ fn is_bare_word(pattern: &str) -> bool {
 /// (`src/api`, `src/api/x.ts`) also matches everything under it, and a bare
 /// word (`local_fetch`) also matches everything under a directory whose name
 /// contains it, so naming a directory scopes to its files instead of
-/// matching nothing.
+/// matching nothing. A blank entry names nothing and adds no glob (it would
+/// read as `**`, which matches every path and lifts every ignore).
 pub fn include_globs(patterns: &[String]) -> Vec<String> {
     patterns
         .iter()
+        .filter(|pattern| !pattern.trim().trim_start_matches("./").is_empty())
         .flat_map(|pattern| {
             let trimmed = pattern.trim().trim_start_matches("./");
             let glob = include_glob(pattern);
@@ -63,6 +65,16 @@ pub fn parent_glob_warning(include: &[String], exclude: &[String]) -> Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_blank_entry_adds_no_glob() {
+        let globs = include_globs(&["".to_owned(), "  ".to_owned(), "./".to_owned()]);
+        assert!(globs.is_empty(), "{globs:?}");
+        assert_eq!(
+            include_globs(&["".to_owned(), "src".to_owned()]),
+            ["*src*", "**/*src*/**"]
+        );
+    }
 
     #[test]
     fn a_glob_with_a_parent_segment_is_found() {

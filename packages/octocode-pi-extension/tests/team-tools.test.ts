@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentsView } from '../src/team/panel.js';
-import { MESSAGE_TYPE, Team } from '../src/team/session.js';
+import { Team } from '../src/team/session.js';
+import { INTERNAL_MESSAGE_TYPE } from '../src/shared/messages.js';
 import { registerCollab } from '../src/team/tools.js';
 import { registerActivity } from '../src/ui/activity.js';
 import { registerAgentTool, type AgentControl } from '../src/subagents/tool.js';
@@ -129,8 +130,8 @@ describe('team tools on a fake Pi', () => {
     const sent = await run(send, { to: b.team.id, message: 'please review src/a.ts', replyRequired: false }, a.ctx);
     expect(text(sent)).toMatch(new RegExp(`Queued message #\\d+ for ${b.team.id} as an FYI \\(no reply requested\\)\\.`));
     expect(sent.details).toMatchObject({ to: [b.team.id] });
-    await vi.waitFor(() => expect(b.sent.some((entry) => entry.message.customType === MESSAGE_TYPE)).toBe(true), { timeout: 5_000 });
-    const delivered = b.sent.find((entry) => entry.message.customType === MESSAGE_TYPE)!;
+    await vi.waitFor(() => expect(b.sent.some((entry) => entry.message.customType === INTERNAL_MESSAGE_TYPE)).toBe(true), { timeout: 5_000 });
+    const delivered = b.sent.find((entry) => entry.message.customType === INTERNAL_MESSAGE_TYPE)!;
     expect(delivered.message.details.messages).toEqual([expect.objectContaining({ from: a.team.id, text: 'please review src/a.ts' })]);
 
     await expect(run(send, { to: 'nobody-0000', message: 'hi' }, a.ctx)).rejects.toThrow();
@@ -146,7 +147,7 @@ describe('team tools on a fake Pi', () => {
     const sent = await run(send, { to: b.team.id, message: 'which file?' }, a.ctx);
     // An unmarked message goes out as an FYI, and the sender is told so.
     expect(text(sent)).toMatch(new RegExp(`Queued message #\\d+ for ${b.team.id} as an FYI \\(no reply requested\\)\\.`));
-    const mail = (agent: typeof a) => agent.sent.filter((entry) => entry.message.customType === MESSAGE_TYPE).flatMap((entry) => entry.message.details.messages);
+    const mail = (agent: typeof a) => agent.sent.filter((entry) => entry.message.customType === INTERNAL_MESSAGE_TYPE).flatMap((entry) => entry.message.details.messages);
     await vi.waitFor(() => expect(mail(b)).toHaveLength(1), { timeout: 5_000 });
     expect(mail(b)[0]).toMatchObject({ from: a.team.id, text: 'which file?', replyRequired: false });
 
@@ -220,7 +221,7 @@ describe('team tools on a fake Pi', () => {
     await a.emit('agent_settled', {}, a.ctx);
     await vi.waitFor(() => expect(b.team.members().find((entry) => entry.id === a.team.id)!.status).toBe('idle'), { timeout: 3_000 });
 
-    const renderer = a.renderers.get(MESSAGE_TYPE);
+    const renderer = a.renderers.get(INTERNAL_MESSAGE_TYPE);
     const message = { details: { messages: [{ from: 'reviewer-1a2b', text: 'first\nsecond', replyRequired: true, at: Date.parse('2026-01-01T10:00:00Z') }] } };
     const collapsed = rendered(renderer(message, { expanded: false }, theme));
     expect(collapsed).toContain('from reviewer-1a2b');

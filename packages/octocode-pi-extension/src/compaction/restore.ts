@@ -111,7 +111,8 @@ export function restoreFiles(candidates: readonly WorkedFile[], shown: ReadonlyS
     if (text === undefined) continue;
     const view = windowOf(text, room, candidate.line);
     if (view.text.length === 0 && text.length > 0) continue;
-    const display = path.relative(cwd, file).startsWith('..') ? file : path.relative(cwd, file);
+    const relative = path.relative(cwd, file);
+    const display = relative.startsWith('..') ? file : relative;
     const from = candidate.line && view.first > 1 ? ', from where you last read or changed it' : '';
     const note = view.cut ? `\n[… shown lines ${view.first}–${view.last} of ${view.total}${from}; read the file with an offset for the rest]` : '';
     // The file's text stays exact; a file that itself contains `</file>` gets a tag it cannot close by accident.

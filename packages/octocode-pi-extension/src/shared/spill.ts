@@ -23,9 +23,14 @@ export function spillLabel(label: string): string {
  * undefined when it could not be written. The session sweep removes old files. Never throws.
  */
 export function saveFullOutput(text: string, label: string): string | undefined {
+  return saveTimestamped(text, label, 'txt');
+}
+
+/** Writes `data` owner-only to a new `<session folder>/output/<label>-<timestamp>-<n>.<extension>`; undefined on failure. */
+function saveTimestamped(data: string | Uint8Array, label: string, extension: string): string | undefined {
   try {
-    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${Date.now()}-${++written}.txt`);
-    fs.writeFileSync(file, text, { flag: 'wx', mode: PRIVATE_FILE_MODE });
+    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${Date.now()}-${++written}.${extension}`);
+    fs.writeFileSync(file, data, { flag: 'wx', mode: PRIVATE_FILE_MODE });
     return file;
   } catch {
     return undefined;
@@ -124,13 +129,7 @@ export const imageExtension = (mimeType: string): string | undefined => IMAGE_EX
  * absolute path, or undefined when it could not be written. The session sweep removes old files. Never throws.
  */
 export function saveImageFile(base64: string, mimeType: string, label: string): string | undefined {
-  try {
-    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${Date.now()}-${++written}.${imageExtension(mimeType) ?? 'img'}`);
-    fs.writeFileSync(file, Buffer.from(base64, 'base64'), { flag: 'wx', mode: PRIVATE_FILE_MODE });
-    return file;
-  } catch {
-    return undefined;
-  }
+  return saveTimestamped(Buffer.from(base64, 'base64'), label, imageExtension(mimeType) ?? 'img');
 }
 
 /**

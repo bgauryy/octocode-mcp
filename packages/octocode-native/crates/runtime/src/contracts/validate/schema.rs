@@ -540,13 +540,17 @@ fn validate_string(
                 line_range_message(value, path),
             );
         }
-        schema_issue(
-            "schema.type",
-            path.to_vec(),
-            "Expected string",
-            schema,
-            value,
-        )
+        // A list for a row field that takes one string: each value is its
+        // own row of the batch.
+        let message = match (path, value) {
+            ([queries, _, _], Value::Array(items))
+                if queries == "queries" && items.iter().all(Value::is_string) =>
+            {
+                "Expected one string, not a list; send one queries[] row per value"
+            }
+            _ => "Expected string",
+        };
+        schema_issue("schema.type", path.to_vec(), message, schema, value)
     })?;
     check_size(
         schema,
@@ -755,19 +759,26 @@ fn check_size(
 /// Agents often send a boolean for an on/off enum (`regex:true`,
 /// `minify:false`); name the value that means what they intended.
 pub(super) fn boolean_enum_hint(values: &[Value], received: &Value) -> Option<String> {
+    let pick = boolean_enum_value(values, received)?;
+    Some(format!(" — booleans are not accepted; use \"{pick}\""))
+}
+
+/// The enum value a boolean means: `false` the off value (`none`,
+/// `literal`, `off`), `true` the first other value.
+pub(super) fn boolean_enum_value<'a>(values: &'a [Value], received: &Value) -> Option<&'a str> {
     let on = received.as_bool()?;
     let off = ["none", "literal", "off"]
         .iter()
         .find(|name| values.iter().any(|v| v.as_str() == Some(**name)));
-    let pick = if on {
+    if on {
         values
             .iter()
             .filter_map(Value::as_str)
             .find(|v| Some(v) != off)
     } else {
-        off.copied()
-    }?;
-    Some(format!(" — booleans are not accepted; use \"{pick}\""))
+        let off = off?;
+        values.iter().filter_map(Value::as_str).find(|v| v == off)
+    }
 }
 
 #[cfg(test)]

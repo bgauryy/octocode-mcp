@@ -32,20 +32,19 @@ impl ToolOutcome {
             return class;
         }
         if self.all_failed {
+            // A rejected row ends the call as rejected input, as in a batch
+            // where other rows answered.
+            if rows.iter().any(is_invalid_input_row) {
+                return ExitClass::InvalidInput;
+            }
             return match self.failure {
-                Some(FailureKind::Execution) if all_rows_invalid_input(value) => {
-                    ExitClass::InvalidInput
-                }
                 Some(kind) => ExitClass::Failed(kind),
                 // A row a later stage failed (a provider page whose
                 // classification failed) states its code; the same code
-                // ends the call the same way on every tool.
-                None if !all_rows_invalid_input(value) => {
-                    failed_rows(rows).map_or(ExitClass::InvalidInput, ExitClass::Failed)
-                }
-                // A refusal with no failure kind (a gate or admission-time
-                // validation) is the caller's request, never success.
-                None => ExitClass::InvalidInput,
+                // ends the call the same way on every tool. A refusal with
+                // no row (a gate or admission-time validation) is the
+                // caller's request, never success.
+                None => failed_rows(rows).map_or(ExitClass::InvalidInput, ExitClass::Failed),
             };
         }
         // Batch precedence, worst row first: a rejected row (2), a failed
@@ -163,16 +162,16 @@ fn shared_failure(mut kinds: impl Iterator<Item = FailureKind>) -> Option<Failur
     })
 }
 
-fn all_rows_invalid_input(value: &Value) -> bool {
-    value["results"]
-        .as_array()
-        .is_some_and(|rows| !rows.is_empty() && rows.iter().all(is_invalid_input_row))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn all_rows_invalid_input(value: &Value) -> bool {
+        value["results"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty() && rows.iter().all(is_invalid_input_row))
+    }
 
     #[test]
     fn missing_local_path_is_not_found_other_errors_are_execution() {
@@ -236,6 +235,27 @@ mod tests {
             outcome(json!({}), None, true).exit_class(),
             ExitClass::InvalidInput
         );
+    }
+
+    /// Every row failed and one rejected its input: rejected input (2), as
+    /// in a batch where other rows answered.
+    #[test]
+    fn a_failed_batch_with_a_rejected_row_is_invalid_input() {
+        let rows = json!({"results":[
+            {"status":"error","data":{"errorCode":"invalidPattern"}},
+            {"status":"error","data":{"errorCode":"pathNotFound"}}
+        ]});
+        for failure in [
+            Some(FailureKind::Execution),
+            Some(FailureKind::NotFound),
+            None,
+        ] {
+            assert_eq!(
+                outcome(rows.clone(), failure, true).exit_class(),
+                ExitClass::InvalidInput,
+                "{failure:?}"
+            );
+        }
     }
 
     /// A directory given to a file read (or a file to a listing) is

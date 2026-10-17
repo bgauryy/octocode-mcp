@@ -5,7 +5,8 @@
 //! - an array value the schema's enum does not list is dropped (the field
 //!   goes with its last value);
 //! - a scalar that differs from one listed enum value only by case or edge
-//!   whitespace becomes that value;
+//!   whitespace becomes that value, and a boolean for an on/off enum the
+//!   value it means (`regex:true` → `"rust"`);
 //! - a number outside its bounds is clamped to the nearest bound, except a
 //!   size or count of zero or less (a field whose minimum is positive): it is
 //!   dropped, so the field's default applies (lossy, named), and clamped
@@ -13,6 +14,9 @@
 //! - a typed value sent as JSON text becomes that value, after validation;
 //! - a literal string becomes a single-item array only when that array
 //!   satisfies the field schema;
+//! - a list sent to a row field that takes one value, every item of which
+//!   that field accepts, becomes one row per item (the row's other fields
+//!   copied into each);
 //! - a field that applies only with a sibling the row lacks is dropped (it
 //!   had no effect);
 //! - a `start…`/`end…` pair of line numbers becomes the one span of the
@@ -56,6 +60,12 @@ enum Edit {
     Flatten {
         index: usize,
         envelope: Vec<String>,
+    },
+    /// Row `index` sent a list to `field`, which takes one value: one row
+    /// per item, each with the row's other fields.
+    Split {
+        index: usize,
+        field: String,
     },
     /// A size or count below a positive minimum: dropped (lossy) so its
     /// default applies, else (the field is required) set to `bound`.
@@ -226,10 +236,26 @@ fn apply(input: &Value, edits: &[Edit], preference: Preference) -> Option<Repair
                     .insert(field.clone(), value.clone());
                 removals.push(remove.clone());
             }
-            Edit::Wrap | Edit::Flatten { .. } => {}
+            Edit::Wrap | Edit::Flatten { .. } | Edit::Split { .. } => {}
         }
     }
     remove_all(&mut repaired, removals)?;
+    // Splits change row indices, so they apply after every edit that names
+    // one, later rows first; two lists in one row have no single reading.
+    let mut splits = edits
+        .iter()
+        .filter_map(|edit| match edit {
+            Edit::Split { index, field } => Some((*index, field)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    splits.sort_by_key(|(index, _)| std::cmp::Reverse(*index));
+    if splits.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return None;
+    }
+    for (index, field) in splits {
+        split(&mut repaired, index, field)?;
+    }
     dropped.sort();
     dropped.dedup();
     Some(Repair {
@@ -274,6 +300,44 @@ fn flatten(input: &mut Value, index: usize, envelope: &[String]) -> Option<()> {
         object.entry(field).or_insert(value);
     }
     Some(())
+}
+
+/// Replaces row `index` of `input.queries` with one row per item of its
+/// list-valued `field`, each keeping the row's other fields.
+fn split(input: &mut Value, index: usize, field: &str) -> Option<()> {
+    let rows = input.get_mut("queries")?.as_array_mut()?;
+    let row = rows.get(index)?.as_object()?;
+    let items = row.get(field)?.as_array()?;
+    let lifted = items
+        .iter()
+        .map(|item| {
+            let mut row = row.clone();
+            row.insert(field.to_owned(), item.clone());
+            Value::Object(row)
+        })
+        .collect::<Vec<_>>();
+    rows.splice(index..=index, lifted);
+    Some(())
+}
+
+/// A list sent to a row field (`queries.N.field`) whose schema takes one
+/// value, when the field accepts every item: one row per item.
+fn split_list(issue: &ValidationIssue) -> Option<Edit> {
+    let [queries, index, field] = issue.path.as_slice() else {
+        return None;
+    };
+    (queries == "queries").then_some(())?;
+    let items = issue.received.as_ref()?.as_array()?;
+    let schema = issue.schema.as_ref()?;
+    let accepted = !items.is_empty()
+        && items.iter().all(|item| {
+            super::validate_input_schema(schema, schema, &mut item.clone(), &mut Vec::new()).is_ok()
+        });
+    accepted.then_some(())?;
+    Some(Edit::Split {
+        index: index.parse().ok()?,
+        field: field.clone(),
+    })
 }
 
 /// The edit that clears `issue`, when there is one.
@@ -344,6 +408,14 @@ fn fix(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
             if pointer(input, parent)?.is_array() {
                 return Some(Edit::Remove(path));
             }
+            // A boolean for an on/off enum means the value the error names.
+            if let Some(value) = issue
+                .received
+                .as_ref()
+                .and_then(|received| super::schema::boolean_enum_value(allowed, received))
+            {
+                return Some(Edit::Set(path, Value::from(value)));
+            }
             let received = issue.received.as_ref()?.as_str()?.trim();
             let mut matches = allowed.iter().filter(|value| {
                 value
@@ -385,6 +457,7 @@ fn fix(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
             }
             Some(Edit::Set(path, bound_value(bound)))
         }
+        "schema.type" if issue.received.as_ref().is_some_and(Value::is_array) => split_list(issue),
         "schema.type" => {
             let text = issue.received.as_ref()?.as_str()?.trim();
             let value = match issue.schema.as_ref()?.get("type")?.as_str()? {
@@ -910,6 +983,76 @@ mod tests {
                 assert!(repair.dropped.is_empty());
             }
         }
+    }
+
+    /// A boolean for an on/off enum becomes the value it means.
+    #[test]
+    fn a_boolean_for_an_on_off_enum_becomes_its_value() {
+        for (allowed, received, expected) in [
+            (json!(["literal", "rust", "pcre2"]), true, json!("rust")),
+            (json!(["literal", "rust", "pcre2"]), false, json!("literal")),
+            (json!(["off", "on", "dotall"]), true, json!("on")),
+        ] {
+            let input = json!({"queries":[{"field": received}]});
+            let problem = issue(
+                "schema.enum",
+                &["queries", "0", "field"],
+                Some(json!({"enum": allowed})),
+                Some(json!(received)),
+            );
+            let repaired = repair_input(&input, &[problem], always).expect("exact");
+            assert_eq!(repaired.input["queries"][0]["field"], expected);
+            assert!(repaired.dropped.is_empty());
+        }
+    }
+
+    /// A list for a one-value row field becomes one row per item, the row's
+    /// other fields copied, later rows keeping their order; a list the field
+    /// rejects an item of, an empty list, or two lists in one row has no lead.
+    #[test]
+    fn a_list_for_a_one_value_field_becomes_one_row_per_item() {
+        let string = json!({"type":"string","minLength":1});
+        let list = |row: &str, field: &str, received: Value| {
+            issue(
+                "schema.type",
+                &["queries", row, field],
+                Some(string.clone()),
+                Some(received),
+            )
+        };
+        let input = json!({"queries":[
+            {"matchString":["a","b"],"path":"src"},
+            {"matchString":"c","path":"lib"}
+        ]});
+        let repaired = repair_input(
+            &input,
+            &[list("0", "matchString", json!(["a", "b"]))],
+            always,
+        )
+        .expect("exact");
+        assert_eq!(
+            repaired.input,
+            json!({"queries":[
+                {"matchString":"a","path":"src"},
+                {"matchString":"b","path":"src"},
+                {"matchString":"c","path":"lib"}
+            ]})
+        );
+        assert!(repaired.dropped.is_empty());
+        for received in [json!([]), json!(["a", ""]), json!(["a", 1])] {
+            let input = json!({"queries":[{"matchString": received.clone()}]});
+            let problem = list("0", "matchString", received.clone());
+            assert!(
+                repair_input(&input, &[problem], always).is_none(),
+                "{received}"
+            );
+        }
+        let input = json!({"queries":[{"matchString":["a","b"],"path":["x","y"]}]});
+        let both = [
+            list("0", "matchString", json!(["a", "b"])),
+            list("0", "path", json!(["x", "y"])),
+        ];
+        assert!(repair_input(&input, &both, always).is_none());
     }
 
     /// A bare array of rows becomes the envelope, exactly.

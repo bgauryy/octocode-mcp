@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MESSAGE_TYPE, Team, USER_SENDER } from '../src/team/session.js';
+import { Team } from '../src/team/session.js';
+import { INTERNAL_MESSAGE_TYPE, USER_SENDER } from '../src/shared/messages.js';
 import { registerCollab } from '../src/team/tools.js';
 import { TeamStore } from '../src/team/store.js';
 import { agentsCommand } from '../src/subagents/command.js';
@@ -46,7 +47,7 @@ function family(idle = false) {
   return { cwd, db, parent, parentId, child, store };
 }
 
-const mail = (sent: Array<{ message: any; options: any }>) => sent.filter((entry) => entry.message.customType === MESSAGE_TYPE && entry.message.details?.messages?.some((m: { id?: number }) => typeof m.id === 'number'));
+const mail = (sent: Array<{ message: any; options: any }>) => sent.filter((entry) => entry.message.customType === INTERNAL_MESSAGE_TYPE && entry.message.details?.messages?.some((m: { id?: number }) => typeof m.id === 'number'));
 
 describe('interrupt', () => {
   it('retries held mail when an interactive session temporarily refuses the settlement send', async () => {
@@ -63,7 +64,7 @@ describe('interrupt', () => {
     expect(mail(child.sent)).toHaveLength(0);
     vi.spyOn(child.ctx, 'isIdle').mockReturnValue(true);
     await vi.waitFor(() => expect(mail(child.sent)).toHaveLength(1), { timeout: 3_000 });
-    await child.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: mail(child.sent)[0]!.message.details }] }, child.ctx);
+    await child.emit('context', { messages: [{ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: mail(child.sent)[0]!.message.details }] }, child.ctx);
     const store = TeamStore.open(cwd, db);
     stores.push(store);
     expect(store.recent().find((entry) => entry.id === id)?.state).toBe('delivered');
@@ -100,7 +101,7 @@ describe('interrupt', () => {
     expect(continued!.message.content).toContain('stop, use the v2 API instead');
     // It stays in the team for the continued run instead of leaving.
     expect(parent.team.members().map((member) => member.id)).toContain(child.team.id);
-    await child.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: continued!.message.details }] }, child.ctx);
+    await child.emit('context', { messages: [{ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: continued!.message.details }] }, child.ctx);
     expect(store.recent().find((entry) => entry.id === id)?.state).toBe('delivered');
     // The continued run's own settle ends it as usual.
     await child.emit('agent_settled', {}, child.ctx);

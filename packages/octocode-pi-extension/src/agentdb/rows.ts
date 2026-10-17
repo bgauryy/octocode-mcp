@@ -1,4 +1,4 @@
-/** One SQLite result row as \`node:sqlite\` returns it. */
+/** One SQLite result row as `node:sqlite` returns it. */
 export type Row = Record<string, unknown>;
 
 /** A numeric column, or 0 when it is NULL or not a number. */

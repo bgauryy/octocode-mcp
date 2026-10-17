@@ -6,6 +6,7 @@ import { CHARS_PER_TOKEN } from '../shared/tokens.js';
 import { contentText, cutText, errorMessage, escapeRegExp, isRecord } from '../shared/util.js';
 import { carriedSavedResults, SAVED_RESULTS_DETAILS, savedResultPaths, savedResultsBlock, withoutModelSavedResults, withoutSavedResults } from './saved-results.js';
 import { sharedSummary } from './shared-summary.js';
+import { notify } from '../shared/commands.js';
 
 /**
  * The compaction summary. Pi's own summary (goal, constraints, progress, decisions, next steps, critical context, file
@@ -182,7 +183,7 @@ export function summarizerView<T>(messages: readonly T[]): T[] {
 
 /** The cache-sharing request was unusable: the summary is written as a standalone request, which bills the whole input. */
 function notifyStandalone(ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, reason: string): void {
-  if (ctx.hasUI) ctx.ui.notify(`Octocode could not write the compaction summary from the prompt cache (${reason}); it uses a standalone request that pays for the whole input.`, 'warning');
+  if (ctx.hasUI) notify(ctx.ui, `Octocode could not write the compaction summary from the prompt cache (${reason}); it uses a standalone request that pays for the whole input.`, 'warning');
 }
 
 /** Octocode's compaction result, or undefined to let Pi write its default summary. */
@@ -221,7 +222,7 @@ export async function writeSummary(
     const details = saved.length > 0 ? { ...(isRecord(result.details) ? result.details : {}), [SAVED_RESULTS_DETAILS]: saved } : result.details;
     return { compaction: { ...result, summary: `${withoutModelSavedResults(result.summary)}${savedResultsBlock(saved)}${messages}${note}`, details } };
   } catch (error) {
-    if (!event.signal.aborted && ctx.hasUI) ctx.ui.notify(`Octocode's compaction summary failed (${errorMessage(error)}); Pi writes its default summary.`, 'warning');
+    if (!event.signal.aborted && ctx.hasUI) notify(ctx.ui, `Octocode's compaction summary failed (${errorMessage(error)}); Pi writes its default summary.`, 'warning');
     return undefined;
   }
 }

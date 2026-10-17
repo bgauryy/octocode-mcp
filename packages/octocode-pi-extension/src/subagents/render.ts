@@ -2,8 +2,8 @@ import type { Usage } from '@earendil-works/pi-ai';
 import type { AgentToolResult, MessageRenderer, Theme, ToolRenderResultOptions } from '@earendil-works/pi-coding-agent';
 import { Box, type Component } from '@earendil-works/pi-tui';
 import { fencedParts } from '../shared/fence.js';
-import { formatCost, formatDuration, formatTokenUsage, shortPath } from '../shared/format.js';
-import { bodyLines, clip, timingOf, plural, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
+import { formatCost, formatDuration, formatTokenUsage, shortPath, toolCallCount } from '../shared/format.js';
+import { bodyLines, clip, timingOf, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
 import { contentText, isRecord } from '../shared/util.js';
 import type { ReportStatus } from './report.js';
 
@@ -86,7 +86,7 @@ type Progress = Pick<RunDetails, 'id' | 'toolCalls' | 'denied' | 'input' | 'cach
 
 /** `inky-kraken · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12`, then `extra` (a duration), then the model. */
 function runStats(details: Progress, ...extra: string[]): string {
-  return [details.id, plural(details.toolCalls, 'tool call'), deniedLabel(details), formatTokenUsage(details), formatCost(details), ...extra, modelLabel(details)].filter(Boolean).join(' · ');
+  return [details.id, toolCallCount(details.toolCalls), deniedLabel(details), formatTokenUsage(details), formatCost(details), ...extra, modelLabel(details)].filter(Boolean).join(' · ');
 }
 
 export const capitalize = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;

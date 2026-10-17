@@ -1,11 +1,9 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import type { Component } from '@earendil-works/pi-tui';
-import { timingOf, resultBlock, resultText, spillPath, toolHeader } from '../shared/render.js';
+import { clip, timingOf, resultBlock, resultText, spillPath, toolHeader, type RenderContext } from '../shared/render.js';
 import { redactSecrets } from '../shared/sanitize.js';
-import { firstLine } from '../shared/util.js';
+import { clipText } from '../shared/util.js';
 import { snapshotFileOf } from './snapshot.js';
-
-type RenderContext = Parameters<typeof toolHeader>[1];
 
 /** The browser arguments the header shows. */
 interface BrowserCallArgs {
@@ -19,8 +17,8 @@ interface BrowserCallArgs {
 
 /** `● Browser(navigate https://example.com)`: the action and its target (URL, element, key, or expression). */
 export function browserCallHeader(args: BrowserCallArgs, theme: Theme, context: RenderContext): Component {
-  const target = args.url ?? (args.ref !== undefined ? `[${args.ref}]` : undefined) ?? args.key ?? (args.expression ? firstLine(args.expression).slice(0, 80) : undefined);
-  const typed = args.action === 'type' && args.text ? ` ${JSON.stringify(redactSecrets(args.text).slice(0, 60))}` : '';
+  const target = args.url ?? (args.ref !== undefined ? `[${args.ref}]` : undefined) ?? args.key ?? (args.expression ? clip(args.expression, 80) : undefined);
+  const typed = args.action === 'type' && args.text ? ` ${JSON.stringify(clipText(redactSecrets(args.text), 60))}` : '';
   return toolHeader(theme, context, 'Browser', `${args.action ?? ''}${target ? ` ${target}` : ''}${typed}`);
 }
 

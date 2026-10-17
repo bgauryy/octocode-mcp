@@ -345,10 +345,10 @@ const RETIRED_SCAN_ROOTS = [
   'skills',
   'skills-dev',
   'skills-beta',
-  'octocode-local-testing/harness',
-  'packages/octocode-benchmark/compare/github-questions',
-  'octocode-local-testing/validate/local',
-  'octocode-local-testing/validate/github/tasks.json',
+  'packages/octocode-benchmark/local/e2e/harness',
+  'packages/octocode-benchmark/external/questions',
+  'packages/octocode-benchmark/local/e2e/validate/local',
+  'packages/octocode-benchmark/local/e2e/validate/github/tasks.json',
 ];
 // Recorded tool outputs (old runs) keep the names they were recorded with.
 const RETIRED_SKIP_DIRS = new Set(['node_modules', 'raw', 'probes', 'results']);

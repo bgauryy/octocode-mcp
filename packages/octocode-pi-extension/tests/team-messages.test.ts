@@ -1,7 +1,8 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { EXTERNAL_SENDER, messageText, USER_SENDER } from '../src/team/routing.js';
+import { messageText } from '../src/team/routing.js';
+import { EXTERNAL_SENDER, USER_SENDER } from '../src/shared/messages.js';
 import type { Member, Message } from '../src/team/model.js';
 import { userProof, userProofValid } from '../src/team/proof.js';
 import { TeamStore } from '../src/team/store.js';

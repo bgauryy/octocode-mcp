@@ -6,7 +6,8 @@ import { registerHooks } from '../src/hooks/register.js';
 import { interpret } from '../src/hooks/runner.js';
 import type { MessageEnvelope } from '../src/shared/messages.js';
 import { fingerprint, projectConfigFiles, saveDecision } from '../src/shared/trust.js';
-import { Team, MESSAGE_TYPE } from '../src/team/session.js';
+import { Team } from '../src/team/session.js';
+import { INTERNAL_MESSAGE_TYPE } from '../src/shared/messages.js';
 import { registerCollab } from '../src/team/tools.js';
 import { TeamStore } from '../src/team/store.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
@@ -83,7 +84,7 @@ describe('message hooks', () => {
   it('observes actual internal and API delivery once without acknowledging, replying or changing context', async () => {
     const command = `cat >> received.jsonl; printf '\\n' >> received.jsonl; echo '{"decision":"block","reason":"reply now"}'`;
     const { fire, ctx, cwd, sent } = await setup({ PostMessageReceive: group(command) });
-    const mail = { role: 'custom', customType: MESSAGE_TYPE, details: { messages: [{ id: 4, from: 'agent-a', to: 'agent-b', text: 'internal body', replyTo: 3 }] } };
+    const mail = { role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: { messages: [{ id: 4, from: 'agent-a', to: 'agent-b', text: 'internal body', replyTo: 3 }] } };
     const apiMessage = inbound({ channel: 'external', from: 'api-client', id: 'api-1', text: 'raw external body' });
     const api = { role: 'custom', customType: 'octocode-external-message', content: 'fenced body', details: { message: apiMessage } };
     const messages = [mail, api];

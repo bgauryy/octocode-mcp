@@ -5,7 +5,8 @@ import { formatCost, formatDuration, shortPath, toolCallCount } from '../shared/
 import { addReply, emptyTotals, errorMessage, firstLine, modelLookup, settleWithin, unpricedModel, type ModelLookup } from '../shared/util.js';
 import { AgentsView } from '../team/panel.js';
 import { checkGoal, GOAL_DESCRIPTION } from '../team/identity.js';
-import { USER_SENDER, type Team } from '../team/session.js';
+import type { Team } from '../team/session.js';
+import { USER_SENDER } from '../shared/messages.js';
 import { teamWorkspace } from '../team/store.js';
 import { timedTool } from '../shared/render.js';
 import { fenceUntrusted, headerText } from '../shared/fence.js';
@@ -24,6 +25,7 @@ import { saveShot, shotsDir, type Shot } from './screenshots.js';
 import { agentsCommand, stopBackground, type BackgroundRun } from './command.js';
 import type { RelayHost } from './relay.js';
 import type { Subcommand } from '../shared/commands.js';
+import { notify } from '../shared/commands.js';
 import { createWorktree, describePrune, finishWorktree, isolationReport, pendingRefs, pruneWorktrees, recordWorktreePid, type Worktree } from './worktree.js';
 
 /** What the rest of the extension may do with the subagents this session started. */
@@ -332,7 +334,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     void pruneWorktrees(ctx.cwd)
       .then(describePrune, (error: unknown) => ({ text: `Could not prune orphaned subagent worktrees: ${errorMessage(error)}`, level: 'warning' as const }))
       .then((note) => {
-        if (note && ctx.hasUI) ctx.ui.notify(note.text, note.level);
+        if (note && ctx.hasUI) notify(ctx.ui, note.text, note.level);
       })
       // The session may have been replaced meanwhile (/new, /resume): its ctx then throws, and nobody is left to tell.
       .catch(() => undefined);
@@ -343,7 +345,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     description:
       'Delegate a self-contained task to a fresh Pi session that does not inherit this conversation. ' +
       `Foreground calls return the report; background calls return the agent's name and its report arrives later. At most ${maxSubagents()} run at once; a call past that waits for one to finish. ` +
-      'A long report names its full file. Review the result before integrating it. Never poll or sleep for a background report. ' +
+      'A long report names its full file. Never poll or sleep for a background report. ' +
       'A subagent updates only backlog items you claimed: claim one first and name its id in the task.',
     promptSnippet: 'Delegate bounded work to a subagent',
     parameters: Type.Object({

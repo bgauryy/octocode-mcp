@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Inbox } from '../src/team/inbox.js';
-import { Mail, MESSAGE_TYPE } from '../src/team/mail.js';
+import { Mail } from '../src/team/mail.js';
+import { INTERNAL_MESSAGE_TYPE } from '../src/shared/messages.js';
 import type { Member } from '../src/team/model.js';
 import { Team } from '../src/team/session.js';
 import { INBOX_BATCH_SIZE, TeamStore } from '../src/team/store.js';
@@ -92,7 +93,7 @@ describe('team delivery efficiency', () => {
     try {
       store.send('sender', [recipient], 'read me', { replyRequired: false });
       vi.advanceTimersByTime(1_000);
-      const context = sent.map(({ message }) => ({ role: 'custom', customType: MESSAGE_TYPE, details: message.details }));
+      const context = sent.map(({ message }) => ({ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: message.details }));
       team.onContext(context);
       expect(store.pending(recipient)).toEqual([]);
       const scan = vi.spyOn(context, 'flatMap');
@@ -102,7 +103,7 @@ describe('team delivery efficiency', () => {
       expect(quick).not.toHaveBeenCalled();
       store.send('sender', [recipient], 'new mail', { replyRequired: false });
       vi.advanceTimersByTime(1_000);
-      team.onContext(sent.map(({ message }) => ({ role: 'custom', customType: MESSAGE_TYPE, details: message.details })));
+      team.onContext(sent.map(({ message }) => ({ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: message.details })));
       expect(store.pending(recipient)).toEqual([]);
     } finally { team.stop(); store.close(); }
   });

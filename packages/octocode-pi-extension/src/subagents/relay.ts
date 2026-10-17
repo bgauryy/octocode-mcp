@@ -7,6 +7,7 @@ import { headerText } from '../shared/fence.js';
 import { withDialog } from '../shared/locks.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { stringList } from '../shared/util.js';
+import { notify } from '../shared/commands.js';
 
 /**
  * A subagent's dialogs, answered by its parent. The child runs in Pi's RPC mode: its `ctx.ui.select`, `confirm` and `input`
@@ -193,7 +194,7 @@ export class ChildRelay {
     if (!this.#limited) {
       this.#limited = true;
       try {
-        ui.notify(`${this.#label()} sent more than ${RELAY_MAX_DIALOGS} approval dialogs within a minute: the rest of that minute is denied.`, 'warning');
+        notify(ui, `${this.#label()} sent more than ${RELAY_MAX_DIALOGS} approval dialogs within a minute: the rest of that minute is denied.`, 'warning');
       } catch {
         // The UI is gone; the denial stands.
       }

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { OctocodeApi, optionsFromEnv, transportsFor, type AgentDirectory, type ApiOperations } from './bridge.js';
-import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
+import { notify, say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { errorMessage } from '../shared/util.js';
 
@@ -56,7 +56,7 @@ export function registerApi(pi: ExtensionAPI, commands: Subcommands, agents: Age
       }
       if (failure === undefined) return;
       // Print and JSON modes have no UI to notify: the reason goes to stderr (see `say`) so a headless run knows why the API is off.
-      if (ctx.hasUI) ctx.ui.notify(errorMessage(failure), 'warning');
+      if (ctx.hasUI) notify(ctx.ui, errorMessage(failure), 'warning');
       else process.stderr.write(`${sanitizeTerminalText(errorMessage(failure))}\n`);
     },
     stop: () => api.stop(),

@@ -13,6 +13,7 @@ import { RESTORE_SHARE, RESTORE_TOTAL_CHARS, deliverRestoredFiles, recentFiles, 
 import { THRASH_MESSAGE, ThrashBreaker, contextTokens, needsDownshiftCompaction, toolDefinitionChars } from './pacing.js';
 import type { Api, Model } from '@earendil-works/pi-ai';
 import { carryFileLists, windowBudget, writeSummary } from './summary.js';
+import { notify } from '../shared/commands.js';
 
 /**
  * Tool results and call arguments stay verbatim until Pi compacts (a long result is bounded and spilled to a file when
@@ -62,7 +63,7 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
   let pendingRestore: PendingRestore | undefined;
   pi.on('session_before_compact', async (event, ctx) => {
     if (event.reason !== 'manual' && thrash.tripped()) {
-      if (ctx.hasUI) ctx.ui.notify(THRASH_MESSAGE, 'error');
+      if (ctx.hasUI) notify(ctx.ui, THRASH_MESSAGE, 'error');
       ctx.abort();
       return { cancel: true };
     }
@@ -102,7 +103,7 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
     const reserve = reserveTokensFor(pi.getSettings(), event.model);
     if (!needsDownshiftCompaction(event.previousModel, event.model, contextTokens(ctx, toolDefinitionChars(pi)), reserve)) return;
     downshiftFrom = event.previousModel;
-    if (ctx.hasUI) ctx.ui.notify(`The context does not fit ${event.model.id}'s window; compacting first on ${event.previousModel!.id}.`, 'info');
+    if (ctx.hasUI) notify(ctx.ui, `The context does not fit ${event.model.id}'s window; compacting first on ${event.previousModel!.id}.`, 'info');
     ctx.compact({ onError: () => (downshiftFrom = undefined) });
   });
   pi.on('session_compact', async (event, ctx) => {
@@ -122,6 +123,7 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
   });
   pi.on('session_tree', async (_event, ctx) => {
     tooLarge.reset();
+    restoreCandidates = [];
     pendingRestore = undefined;
     guard.restore(contextReads(ctx));
   });

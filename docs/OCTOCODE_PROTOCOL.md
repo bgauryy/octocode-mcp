@@ -121,7 +121,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 
 ## 4. Strengths and limits
 
-Earlier scripted tool-level comparisons measured single tool calls, not agent outcomes. Agent-against-agent results, including where Octocode loses, are in the [benchmark results](../packages/octocode-benchmark/results/SUMMARY.md).
+Earlier scripted tool-level comparisons measured single tool calls, not agent outcomes. Agent-against-agent results, including where Octocode loses, are in the [benchmark results](../packages/octocode-benchmark/results/overview/SUMMARY.md).
 
 | Where Octocode wins | Evidence |
 |---|---|

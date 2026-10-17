@@ -1,12 +1,10 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { INTERNAL_MESSAGE_TYPE } from '../shared/messages.js';
+import { INTERNAL_MESSAGE_TYPE, USER_SENDER } from '../shared/messages.js';
 import { userProofValid } from './proof.js';
 import { spillIntact } from './spill.js';
-import { deadLetterText, messageText, USER_SENDER } from './routing.js';
+import { deadLetterText, messageText } from './routing.js';
 import type { DeadLetter, MailDetails, Message } from './model.js';
 import type { TeamStore } from './store.js';
-
-export const MESSAGE_TYPE = INTERNAL_MESSAGE_TYPE;
 
 /** Puts team mail and team notices in front of this agent's model, one Pi custom message each (`MailDetails`). */
 export class Mail {
@@ -118,7 +116,7 @@ export class Mail {
 
   private inject(content: string, details: MailDetails, options: { triggerTurn?: boolean; deliverAs: 'steer' }): boolean {
     try {
-      this.pi.sendMessage({ customType: MESSAGE_TYPE, content, display: true, details }, options);
+      this.pi.sendMessage({ customType: INTERNAL_MESSAGE_TYPE, content, display: true, details }, options);
       return true;
     } catch {
       return false; // The session ended or is not ready.
@@ -128,7 +126,7 @@ export class Mail {
 
 /** The ids of the messages to `me` that a Pi message carries, when it is team mail (details are untrusted data). */
 export function mailIds(message: { role?: string; customType?: string; details?: unknown }, me: string): number[] {
-  if (message.role !== 'custom' || message.customType !== MESSAGE_TYPE) return [];
+  if (message.role !== 'custom' || message.customType !== INTERNAL_MESSAGE_TYPE) return [];
   const mail = (message.details as Partial<MailDetails> | undefined)?.messages;
   return Array.isArray(mail) ? mail.flatMap((entry) => (typeof entry?.id === 'number' && entry.to === me ? [entry.id] : [])) : [];
 }

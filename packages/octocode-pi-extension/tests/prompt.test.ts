@@ -11,7 +11,7 @@ describe('prompt', () => {
     // A missing or refusing server has a stated recovery.
     expect(root).toContain('If an Octocode tool is missing or refuses a path, say so and fall back to shell search.');
     // Octocode wins over Pi's generic "Use bash for file operations like ls, rg, find" for code search only.
-    expect(root).toContain('Use it instead of ls, rg, grep or find in bash.');
+    expect(root).toContain('Use it instead of ls, rg, grep or find in bash; this overrides the general rule to use bash for them.');
     expect(root).toContain('Use `read` for a file you will edit, and bash for builds, tests, git and running commands.');
     expect(root).not.toContain('tool_search');
     expect(root).not.toMatch(/instead of bash\b|instead of `read`/);
@@ -76,7 +76,12 @@ describe('prompt', () => {
   it('gives a read-only agent one investigate-and-report rule instead of the rules about changing files', () => {
     const reader = octocodePrompt({ octocode: true, profiles: [], canDelegate: false, canWrite: false });
     // It may write its scratch folder and the output path its task names (through bash), and nothing else.
-    expect(reader).toContain('- Investigate and report; do not modify the repository. Shell and MCP tools can still write, so run only read-only commands, and write only your scratch folder and the output path your task names (with bash; without it, put that content in the report).');
+    expect(reader).toContain('- Investigate and report; do not modify the repository. Shell and MCP tools can still write, so run only read-only commands, and write only your scratch folder and the output path your task names.');
+    // It names only the writers this agent has: a web profile has neither bash nor MCP.
+    const web = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: false, canShell: false, canMcp: false });
+    expect(web).toContain('- Investigate and report; do not modify the repository. Put what you produce in your report.');
+    expect(web).not.toMatch(/Shell|MCP tools/);
+    expect(octocodePrompt({ octocode: true, profiles: [], canDelegate: false, canWrite: false, canShell: false })).toContain('MCP tools can still write, so call only read-only ones, and put what you produce in your report.');
     expect(reader).not.toContain('a file you will edit');
     expect(reader).toContain('Use `read` for files you know.');
     for (const rule of ['Make the smallest complete change', 'Never weaken or delete tests', 'When you changed files']) expect(reader).not.toContain(rule);
@@ -101,5 +106,7 @@ describe('prompt', () => {
     const root = octocodePrompt({ octocode: false, profiles: [], canDelegate: true });
     expect(root).toContain('- Inside a Pi team use `coordinate`, `sendMessage` and `agent`; use the agents-communication tools only to reach agents outside Pi (Claude Code, Codex, other hosts); Pi honors their file locks.');
     expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: false })).not.toContain('agents-communication');
+    // Without the agent tool, the rule does not name it.
+    expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: true, canUseAgent: false })).toContain('- Inside a Pi team use `coordinate` and `sendMessage`; use the agents-communication tools');
   });
 });

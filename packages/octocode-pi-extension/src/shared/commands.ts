@@ -1,17 +1,27 @@
 import type { AutocompleteItem } from '@earendil-works/pi-tui';
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { withDialog } from './locks.js';
 import { sanitizeTerminalText } from './sanitize.js';
+
+type NoticeLevel = 'info' | 'warning' | 'error';
+
+/**
+ * Shows a notification. Pi draws notify text as is, and notices carry file names, error messages, hook commands and
+ * server text, so every notice goes through `sanitizeTerminalText` here. The one exception is the machine-read audit
+ * relay (`childAuditMessage`), which a parent parses and never draws.
+ */
+export function notify(ui: Pick<ExtensionUIContext, 'notify'>, text: string, level: NoticeLevel = 'info'): void {
+  ui.notify(sanitizeTerminalText(text), level);
+}
 
 /**
  * Shows a command's output. With a UI (TUI, and RPC, which forwards notifications) it is a notification. Print and
  * JSON modes have no UI (`notify` does nothing there) and Pi reserves stdout for the final answer or the JSONL event
  * stream, so the text goes to stderr: visible in a terminal, and never mixed into `-p` output or `--mode json` records.
  */
-export function say(ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, text: string, level: 'info' | 'warning' | 'error' = 'info'): void {
-  const safe = sanitizeTerminalText(text);
-  ctx.ui.notify(safe, level);
-  if (!ctx.hasUI) process.stderr.write(`${safe}\n`);
+export function say(ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, text: string, level: NoticeLevel = 'info'): void {
+  notify(ctx.ui, text, level);
+  if (!ctx.hasUI) process.stderr.write(`${sanitizeTerminalText(text)}\n`);
 }
 
 /**

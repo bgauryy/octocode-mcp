@@ -7,7 +7,7 @@ import { HOUR_MS } from '../shared/util.js';
 import { EditLog } from './edits.js';
 import { num, type Row } from '../agentdb/rows.js';
 import { ancestorKeys, leaseKey, overlappingRequests } from './lease-key.js';
-import { text, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic } from './model.js';
+import { text, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic, WAKE } from './model.js';
 
 /** Makes the `proof` of message `id` for `recipient` (see `userProof`); undefined for a recipient the caller cannot sign for. */
 type SignProof = (id: number, recipient: string) => string | undefined;
@@ -355,7 +355,7 @@ export class TeamStore {
       const id = Number(lastInsertRowid);
       const insert = this.db.prepare('INSERT INTO deliveries (message, recipient, wake, proof) VALUES (?, ?, ?, ?)');
       for (const recipient of recipients) {
-        const wake = options.interrupt ? 2 : options.wake || options.replyRequired || recipient === asker ? 1 : 0;
+        const wake = options.interrupt ? WAKE.interrupt : options.wake || options.replyRequired || recipient === asker ? WAKE.wake : WAKE.none;
         insert.run(id, recipient, wake, options.sign?.(id, recipient) ?? null);
       }
       if (options.replyTo !== undefined) this.db.prepare('UPDATE deliveries SET completed_at = ? WHERE message = ? AND recipient = ? AND completed_at IS NULL').run(now, options.replyTo, from);

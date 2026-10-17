@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { plural, statusColor } from '../shared/render.js';
 import { errorMessage } from '../shared/util.js';
+import { notify } from '../shared/commands.js';
 
 type Send = ExtensionAPI['sendMessage'];
 type Message = Parameters<Send>[0];
@@ -94,8 +95,8 @@ export class Delivery {
     }
     if (!ctx.hasUI) return;
     try {
-      if (kept > 0) ctx.ui.notify(`Interrupt kept ${plural(kept, 'queued message')}: added to the conversation without starting a turn.`, 'info');
-      if (failures.length > 0) ctx.ui.notify(`Interrupt lost ${plural(failures.length, 'queued message')}: could not add ${failures.length === 1 ? 'it' : 'them'} to the conversation (${failures[0]}).`, 'warning');
+      if (kept > 0) notify(ctx.ui, `Interrupt kept ${plural(kept, 'queued message')}: added to the conversation without starting a turn.`, 'info');
+      if (failures.length > 0) notify(ctx.ui, `Interrupt lost ${plural(failures.length, 'queued message')}: could not add ${failures.length === 1 ? 'it' : 'them'} to the conversation (${failures[0]}).`, 'warning');
     } catch {
       // The session was replaced: nobody is left to tell.
     }

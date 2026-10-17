@@ -103,6 +103,12 @@ pub struct TextSearchStats {
     /// Root-relative paths of the directories `exclude_dir` pruned, sorted:
     /// what the search did not cover.
     pub pruned_dirs: Option<Vec<String>>,
+    /// Files with a match that `file_contains_all` / `file_contains_none`
+    /// removed: why a filtered search can come back empty.
+    pub file_terms_dropped: Option<u32>,
+    /// Non-empty directories at `max_depth` the walk did not enter: the
+    /// files below them were not searched.
+    pub depth_cut_dirs: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

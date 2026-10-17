@@ -266,6 +266,16 @@ impl Found<'_> {
         // default-excluded and hidden paths (`skippedPaths`) with the same
         // search over them. An empty page proves which of them hold a match
         // below, in `disclose_unsearched`.
+        // Directories the depth limit left unentered are coverage the walk
+        // never had: disclosed once, with the same search at every depth.
+        if first_disclosure
+            && let Some(dirs) = self.scanned.depth_cut_dirs.filter(|count| *count > 0)
+        {
+            warnings.push(format!(
+                "{dirs} dir(s) at maxDepth were not entered; files below them were not searched."
+            ));
+            add("expandDepth".into(), unlimited_depth_lead(query));
+        }
         if first_disclosure {
             warnings.extend(self.skipped.withheld.notice());
             let causes = self.skipped_causes();
@@ -285,26 +295,34 @@ impl Found<'_> {
             add("viewFileCount".into(), count_lead(query));
             hints.push(format!("{total} matches."));
         }
-        // An unset `regex` runs as a regex only when the text reads only as
-        // one; an empty literal search whose text has regex characters says
-        // the other reading exists.
+        // An unset `regex` is literal; an empty literal search whose text has
+        // regex characters says the other reading exists.
         let literal_missed = self.empty
             && query.regex.is_none()
-            && query.regex_mode() == LocalSearchQueryRegex::Literal
             && query
                 .match_string
                 .contains(super::types::REGEX_METACHARACTERS);
-        // The other reading is offered as the call that runs it, when the
-        // text compiles as a regex.
-        if literal_missed
-            && octocode_engine::portable::validate_text_pattern(&query.match_string, false, false)
-                .valid
-        {
+        // The other reading is offered as the call that runs it, under the
+        // engine the text compiles in (lookaround compiles only in pcre2).
+        let engine = literal_missed
+            .then(|| regex_engine(&query.match_string))
+            .flatten();
+        if let Some(engine) = engine {
             warnings
                 .push("matchString ran as literal text; a lead reruns it as a regex.".to_owned());
-            add("findSimilar".into(), regex_lead(query));
+            add("findSimilar".into(), regex_lead(query, engine));
         } else if literal_missed {
             warnings.push("matchString ran as literal text.".to_owned());
+        }
+        // Files whose match the `fileHas`/`fileLacks` terms removed: the
+        // empty page is the filter's, not the pattern's.
+        if self.empty
+            && let Some(dropped) = self.scanned.file_terms_dropped.filter(|count| *count > 0)
+        {
+            warnings.push(format!(
+                "{dropped} file(s) matched matchString but fileHas/fileLacks removed them."
+            ));
+            add("broadenSearch".into(), unfiltered_terms_lead(query));
         }
         if self.empty && self.walk_complete && self.first_page() {
             disclose_variants(query, self.paths, search_options, next, hints, cancel);
@@ -316,6 +334,7 @@ impl Found<'_> {
                     self.paths,
                     search_options,
                     excluded_counts(self.skipped),
+                    self.skipped.hidden.len(),
                     next,
                     hints,
                     cancel,
@@ -649,6 +668,7 @@ pub(super) fn disclose_unsearched(
     paths: &PathPolicy,
     search_options: &TextSearchOptions,
     excluded: Option<String>,
+    hidden: usize,
     next: &mut Option<Value>,
     hints: &mut Vec<String>,
     cancel: &impl CancellationCheck,
@@ -681,9 +701,14 @@ pub(super) fn disclose_unsearched(
             } else {
                 ""
             };
+            let listed = if query.result_view == LocalSearchQueryResultView::FilesWithout {
+                "lack a match"
+            } else {
+                "match"
+            };
             (
                 vec![format!(
-                    "{at_least}{} file(s) match in skipped paths ({}).",
+                    "{at_least}{} file(s) {listed} in skipped paths ({}).",
                     diagnosis.found().count,
                     diagnosis.labels()
                 )],
@@ -696,13 +721,20 @@ pub(super) fn disclose_unsearched(
             let ignored = unsearched_ignored(&root, walk);
             let mut found = vec![];
             let mut causes = vec![];
-            let may_hold_matches = !ignored.is_empty();
+            let hidden = if walk.hidden { 0 } else { hidden };
+            let may_hold_matches = !ignored.is_empty() || hidden > 0;
             if !ignored.is_empty() {
                 found.push(format!(
                     "{} ignored directory(s) were not searched; the check of them timed out.",
                     ignored.len()
                 ));
                 causes.push(Cause::Ignored);
+            }
+            if hidden > 0 {
+                found.push(format!(
+                    "{hidden} hidden path(s) were not searched; the check of them timed out."
+                ));
+                causes.push(Cause::Hidden);
             }
             if let Some(counts) = excluded.filter(|_| walk.default_excludes) {
                 found.push(format!(
@@ -915,6 +947,8 @@ pub(super) fn one_edit_spellings(term: &str) -> Option<Vec<String>> {
 /// each one-edit spelling found with the files holding it.
 #[derive(Default)]
 struct Spellings {
+    /// Files holding the searched text in another case.
+    folded_files: usize,
     variant_files: usize,
     near: std::collections::BTreeMap<String, usize>,
     near_files: usize,
@@ -923,11 +957,12 @@ struct Spellings {
 }
 
 /// One bounded walk over the query's own scope and walk (its default
-/// excludes included, as the `findSimilar` lead runs it) for `variants`
-/// anywhere in a line and `near` spellings as whole words, naming which
-/// occur in which files.
+/// excludes included, as the `findSimilar` lead runs it) for `folded` (the
+/// searched text) in any case, `variants` anywhere in a line and `near`
+/// spellings as whole words, naming which occur in which files.
 fn probe_spellings(
     mut options: TextSearchOptions,
+    folded: Option<&str>,
     variants: &[String],
     near: &[String],
     paths: &PathPolicy,
@@ -942,6 +977,7 @@ fn probe_spellings(
             .join("|")
     };
     options.pattern = [
+        folded.map(|text| format!("(?i:{})", regex::escape(text))),
         (!variants.is_empty()).then(|| alternation(variants)),
         (!near.is_empty()).then(|| format!(r"\b(?:{})\b", alternation(near))),
     ]
@@ -968,6 +1004,8 @@ fn probe_spellings(
     options.max_snippet_chars = variants
         .iter()
         .chain(near)
+        .map(String::as_str)
+        .chain(folded)
         .map(|term| u32::try_from(term.len()).unwrap_or(u32::MAX))
         .max();
     options.sort = Some("path".into());
@@ -1002,6 +1040,13 @@ fn probe_spellings(
                 .map(|span| span.value.as_str())
                 .collect::<std::collections::BTreeSet<_>>()
         };
+        if folded.is_some_and(|text| {
+            file.matches
+                .iter()
+                .any(|span| span.value != text && span.value.to_lowercase() == text.to_lowercase())
+        }) {
+            spellings.folded_files += 1;
+        }
         if !holds(variants).is_empty() {
             spellings.variant_files += 1;
         }
@@ -1036,11 +1081,48 @@ fn variants_lead(query: &LocalSearchQuery, variants: &[String], whole_word: bool
     Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
-/// The same search with `matchString` read as a regex (`regex:"rust"`).
-fn regex_lead(query: &LocalSearchQuery) -> Value {
+/// The same search without its `maxDepth`, from page 1.
+fn unlimited_depth_lead(query: &LocalSearchQuery) -> Value {
     let mut lead = restart_fields(query);
     if let Some(fields) = lead.as_object_mut() {
-        fields.insert("regex".into(), json!("rust"));
+        fields.remove("maxDepth");
+    }
+    Continuation::new(ToolId::LocalSearch, lead).build()
+}
+
+/// The same search without its `fileHas`/`fileLacks` terms, from page 1.
+fn unfiltered_terms_lead(query: &LocalSearchQuery) -> Value {
+    let mut lead = restart_fields(query);
+    if let Some(fields) = lead.as_object_mut() {
+        fields.remove("fileHas");
+        fields.remove("fileLacks");
+    }
+    Continuation::new(ToolId::LocalSearch, lead).build()
+}
+
+/// The engine `text` compiles in as a regex: `rust`, else `pcre2`.
+fn regex_engine(text: &str) -> Option<&'static str> {
+    use octocode_engine::portable::validate_text_pattern;
+    if validate_text_pattern(text, false, false).valid {
+        Some("rust")
+    } else {
+        validate_text_pattern(text, false, true)
+            .valid
+            .then_some("pcre2")
+    }
+}
+
+/// The same search with `matchString` read as a regex under `engine`, and
+/// across lines when the regex matches a line break, so the lead runs.
+fn regex_lead(query: &LocalSearchQuery, engine: &str) -> Value {
+    let mut lead = restart_fields(query);
+    if let Some(fields) = lead.as_object_mut() {
+        fields.insert("regex".into(), json!(engine));
+        if query.multiline == LocalSearchQueryMultiline::Off
+            && octocode_engine::portable::matches_line_break(&query.match_string, false)
+        {
+            fields.insert("multiline".into(), json!("on"));
+        }
     }
     Continuation::new(ToolId::LocalSearch, lead).build()
 }
@@ -1062,16 +1144,25 @@ pub(super) fn disclose_variants(
     {
         return;
     }
+    // A search that ran case-sensitively (`sensitive`, or smart case on
+    // text with an uppercase letter) also probes the text in any case.
+    let case_sensitive = match query.case_mode {
+        LocalSearchQueryCaseMode::Sensitive => true,
+        LocalSearchQueryCaseMode::Smart => query.match_string.chars().any(char::is_uppercase),
+        LocalSearchQueryCaseMode::Insensitive => false,
+    };
+    let folded = case_sensitive.then_some(query.match_string.as_str());
     let variants = identifier_variants(&query.match_string).unwrap_or_default();
     let mut near = one_edit_spellings(&query.match_string).unwrap_or_default();
     // A case style one edit away (`parse_config` → `parse-config`) is
     // named as a variant.
     near.retain(|spelling| variants.binary_search(spelling).is_err());
-    if variants.is_empty() && near.is_empty() {
+    if folded.is_none() && variants.is_empty() && near.is_empty() {
         return;
     }
     let found = probe_spellings(
         options.clone(),
+        folded,
         &variants,
         &near,
         paths,
@@ -1079,8 +1170,18 @@ pub(super) fn disclose_variants(
         cancel,
     );
     let floor = if found.cut { "at least " } else { "" };
-    let (hint, lead) = if found.variant_files > 0 {
+    let (name, hint, lead) = if found.folded_files > 0 {
         (
+            "ignoreCase",
+            format!(
+                "No match for {}; it matches ignoring case in {floor}{} file(s).",
+                query.match_string, found.folded_files
+            ),
+            ignore_case_lead(query),
+        )
+    } else if found.variant_files > 0 {
+        (
+            "findSimilar",
             format!(
                 "No match for {}; its other spellings match in {floor}{} file(s).",
                 query.match_string, found.variant_files
@@ -1090,6 +1191,7 @@ pub(super) fn disclose_variants(
     } else if found.near_files > 0 {
         let names = found.near.keys().cloned().collect::<Vec<_>>();
         (
+            "findSimilar",
             format!(
                 "No match for {}; near spellings match in {floor}{} file(s): {}.",
                 query.match_string,
@@ -1103,8 +1205,17 @@ pub(super) fn disclose_variants(
     };
     hints.insert(0, hint);
     if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
-        map.insert("findSimilar".into(), lead);
+        map.insert(name.into(), lead);
     }
+}
+
+/// The same search with `caseMode:"insensitive"`, from page 1.
+fn ignore_case_lead(query: &LocalSearchQuery) -> Value {
+    let mut lead = restart_fields(query);
+    if let Some(fields) = lead.as_object_mut() {
+        fields.insert("caseMode".into(), json!("insensitive"));
+    }
+    Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
 /// Matches at which a line view leads to its per-file counts.
@@ -1619,8 +1730,11 @@ fn probe_lifted(
         include_ignored: walk.ignored,
         include_hidden: walk.hidden,
     };
-    options.files_only = Some(true);
-    options.files_without_match = Some(false);
+    // The files the row's view lists: those without a match for a
+    // `filesWithout` row, else those with one.
+    let without = options.files_without_match == Some(true);
+    options.files_only = Some(!without);
+    options.files_without_match = Some(without);
     options.count_lines_per_file = Some(false);
     options.count_matches_per_file = Some(false);
     options.only_matching = Some(false);

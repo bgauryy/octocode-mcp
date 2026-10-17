@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type SessionInfo } from '@earendil-works/pi-coding-agent';
-import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
+import { notify, say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { formatCost } from '../shared/format.js';
 import { isWithin, sessionDir, sessionsRoot } from '../shared/home.js';
 import { contentText, errorMessage } from '../shared/util.js';
@@ -62,7 +62,6 @@ function details(row: ListedSession, current: string | undefined): string {
   ].join('\n');
 }
 
-/** Pi's sessions, newest first, matching `query` (name, messages, id, branch), with their extras. */
 /** This session as Pi would list it: it has no file before its first reply (or ever, with --no-session). */
 function currentInfo(ctx: ExtensionCommandContext): SessionInfo {
   const manager = ctx.sessionManager;
@@ -82,6 +81,7 @@ function currentInfo(ctx: ExtensionCommandContext): SessionInfo {
   };
 }
 
+/** Pi's sessions, newest first, matching `query` (name, messages, id, branch), with their extras. */
 async function listSessions(ctx: ExtensionCommandContext, index: SessionIndex | undefined, all: boolean, query: string): Promise<ListedSession[]> {
   const infos = all ? await SessionManager.listAll() : await SessionManager.list(ctx.cwd, ctx.sessionManager.getSessionDir());
   if (!infos.some((info) => info.id === ctx.sessionManager.getSessionId())) infos.push(currentInfo(ctx));
@@ -158,7 +158,7 @@ function uniqueLines(lines: string[]): string[] {
 }
 
 async function resume(ctx: ExtensionCommandContext, row: ListedSession, current: string | undefined): Promise<void> {
-  if (row.info.id === current) return ctx.ui.notify('That is the current session.', 'info');
+  if (row.info.id === current) return notify(ctx.ui, 'That is the current session.', 'info');
   if (live(row) && !(await ctx.ui.confirm('Session is running', `Another Pi process (pid ${runningPid(row.extra?.pid, row.extra?.pid_started)}) has this session open. Resume it here as well?`))) return;
   await ctx.switchSession(row.info.path);
 }
@@ -168,7 +168,7 @@ async function rename(pi: ExtensionAPI, ctx: ExtensionCommandContext, row: Liste
   const name = shownLine((await ctx.ui.input('New session name', row.info.name ?? '')) ?? '', 200);
   if (!name) return;
   pi.setSessionName(name);
-  ctx.ui.notify(`Renamed to "${name}".`, 'info');
+  notify(ctx.ui, `Renamed to "${name}".`, 'info');
 }
 
 /** The folder `forget` may delete: a session's own, strictly inside the sessions folder; undefined for an id that names anything else. */
@@ -182,15 +182,15 @@ function forgettableDir(id: string): string | undefined {
 }
 
 async function forget(ctx: ExtensionCommandContext, index: SessionIndex | undefined, row: ListedSession, current: string | undefined): Promise<void> {
-  if (row.info.id === current) return ctx.ui.notify('The current session cannot be forgotten while it runs.', 'warning');
+  if (row.info.id === current) return notify(ctx.ui, 'The current session cannot be forgotten while it runs.', 'warning');
   // Its process would keep writing output, logs and checkpoints into the folder, and its extras would come back.
-  if (live(row) && row.extra?.pid !== process.pid) return ctx.ui.notify(`That session is open in another Pi process (pid ${row.extra?.pid}); close it there first.`, 'warning');
+  if (live(row) && row.extra?.pid !== process.pid) return notify(ctx.ui, `That session is open in another Pi process (pid ${row.extra?.pid}); close it there first.`, 'warning');
   // Never let a malformed id resolve to the sessions folder itself or outside it: the delete is recursive.
   const dir = forgettableDir(row.info.id);
-  if (!dir) return ctx.ui.notify(`Refusing to forget "${title(row)}": its id does not name a session folder.`, 'warning');
+  if (!dir) return notify(ctx.ui, `Refusing to forget "${title(row)}": its id does not name a session folder.`, 'warning');
   const ok = await ctx.ui.confirm('Forget Octocode data', `Delete Octocode's saved output, bash logs, checkpoints and extras for "${title(row)}"? Pi's session file stays.`);
   if (!ok) return;
   fs.rmSync(dir, { recursive: true, force: true });
   index?.forget(row.info.id);
-  ctx.ui.notify(`Forgot Octocode data for "${title(row)}".`, 'info');
+  notify(ctx.ui, `Forgot Octocode data for "${title(row)}".`, 'info');
 }

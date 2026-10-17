@@ -243,7 +243,8 @@ describe('collaboration prompt', () => {
 describe('Team', () => {
   it('injects a parent message into a running child, tracks the reply and enforces reservations', async () => {
     const { vi } = await import('vitest');
-    const { MESSAGE_TYPE, Team } = await import('../src/team/session.js');
+    const { Team } = await import('../src/team/session.js');
+    const { INTERNAL_MESSAGE_TYPE } = await import('../src/shared/messages.js');
     vi.useFakeTimers();
     const cwd = repo();
     const env = { OCTOCODE_AGENT_DB: path.join(tmp(), 'team.sqlite') };
@@ -278,7 +279,7 @@ describe('Team', () => {
       expect(content).toContain(`replyTo ${(asked as { id: number }).id}`);
       expect(childLog[0]!.options).toEqual({ triggerTurn: true, deliverAs: 'steer' });
       // Awaiting a reply once Pi puts it in front of the child's model.
-      child.onContext([{ role: 'custom', customType: MESSAGE_TYPE, details: childLog[0]!.message.details }]);
+      child.onContext([{ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: childLog[0]!.message.details }]);
       expect(main.members().find((m) => m.id === 'researcher-1234')?.pending).toBe(1);
 
       // A reply defaults to FYI, so it never asks the asker to answer again (no ping-pong of woken agents).
@@ -402,7 +403,7 @@ describe('Team safety', () => {
   };
 
   it('delivers a message over the limit: its head and the path of a private file with all of it, within the limit', async () => {
-    const { MESSAGE_MAX_CHARS } = await import('../src/team/session.js');
+    const { MESSAGE_MAX_CHARS } = await import('../src/team/routing.js');
     const { vi } = await import('vitest');
     vi.stubEnv('OCTOCODE_HOME', tmp());
     try {

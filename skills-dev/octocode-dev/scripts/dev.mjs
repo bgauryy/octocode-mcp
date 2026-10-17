@@ -35,8 +35,8 @@ const TASKS = {
   'skills:check': ['Skill lint, shared report viewer, and skill script tests', SKILL_CHECKS],
   // Not in test:ci: it drives the built native binary and addon, so CI runs it in its own `e2e` job after build:dev.
   'test:tools': ['End-to-end health of every tool via CLI and MCP, hermetic: driver self-test, then every lead explored (needs build:dev; [tool,...] [--deep])', [
-    ['node', ['--test', path.join(ROOT, 'octocode-local-testing/harness/tool-health/driver.test.mjs')]],
-    ['node', [path.join(ROOT, 'octocode-local-testing/harness/tool-health.mjs')]],
+    ['node', ['--test', path.join(ROOT, 'packages/octocode-benchmark/local/e2e/harness/tool-health/driver.test.mjs')]],
+    ['node', [path.join(ROOT, 'packages/octocode-benchmark/local/e2e/harness/tool-health.mjs')]],
   ]],
   lint: ['Run every workspace lint script', [health('run', 'lint')]],
   'lint:ci': ['Lint without benchmark or native', [health('run', 'lint', ...CI_EXCLUDE)]],

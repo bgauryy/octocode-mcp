@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { notify } from '../src/shared/commands.js';
 import { resultBlock, resultText, toolHeader } from '../src/shared/render.js';
 import { redactSecrets, secretProblem, sanitizeTerminalText, storedText, visibleControls } from '../src/shared/sanitize.js';
 import { rendered, theme } from './fake-pi.js';
@@ -36,6 +37,12 @@ describe('sanitizeTerminalText', () => {
     expect(resultText({ content: [{ type: 'text', text: '\u001b]0;title\u0007ok\u001b[1m!' }] })).toBe('ok!');
     expect(rendered(resultBlock(theme, { expanded: true }, { summary: '\u001b]0;t\u0007done', body: '\u001b[31mred\u001b[0m\n\u202eevil' }))).toBe('  ⎿  done\n     red\n     evil');
     expect(rendered(toolHeader(theme, {}, 'Mcp', '\u001b[2Jx\u202ey'))).toBe('○ Mcp(xy)');
+  });
+
+  it('is applied to every notification, since Pi draws notify text as is', () => {
+    const shown = vi.fn();
+    notify({ notify: shown }, 'Skipped profiles:\n\u001b]0;pwned\u0007evil.md: bad\u202e', 'warning');
+    expect(shown).toHaveBeenCalledWith('Skipped profiles:\nevil.md: bad', 'warning');
   });
 });
 

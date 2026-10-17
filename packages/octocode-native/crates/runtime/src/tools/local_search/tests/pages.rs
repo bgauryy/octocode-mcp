@@ -205,6 +205,12 @@ fn match_page_ceiling_preserves_evidence_and_discloses_terminal_suffix() {
     assert!(body["next"].get("nextMatchPage").is_none(), "{body}");
     assert!(body["next"].get("nextPage").is_some(), "{body}");
     assert_eq!(body["terminalLimit"], true, "{body}");
+    assert!(
+        body["warnings"]
+            .to_string()
+            .contains("matchPage 1000 is the last match page a continuation names"),
+        "{body}"
+    );
 }
 
 #[test]

@@ -507,7 +507,7 @@ export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, permission:
     name: 'file',
     label: 'File',
     description:
-      'Create, edit or delete files in this repository; other paths need the user\'s confirmation. Queries run in order and report individual outcomes; a failure does not roll back earlier changes. Put replacements for one file in one query. ' +
+      'Create, edit or delete files in this repository; other paths need approval in manual and workspace permission modes. Queries run in order and report individual outcomes; a failure does not roll back earlier changes. Put replacements for one file in one query. ' +
       'Read an existing file with `read` first: an unread file, or a write or delete over a changed one, is refused; an edit applies if each oldText still matches once. Inspect every outcome.',
     promptSnippet: 'Create, edit or delete files (guarded)',
     promptGuidelines: [

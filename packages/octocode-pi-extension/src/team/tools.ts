@@ -11,7 +11,8 @@ import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../s
 import { EDIT_RETENTION_MINUTES } from './edits.js';
 import { describeChanges, describeConflicts, describeMembers, mutatedPaths, senderLabel } from './routing.js';
 import { checkGoal, GOAL_DESCRIPTION } from './identity.js';
-import { MESSAGE_TYPE, type Team } from './session.js';
+import type { Team } from './session.js';
+import { INTERNAL_MESSAGE_TYPE } from '../shared/messages.js';
 import type { MailDetails } from './model.js';
 
 const DEFAULT_CHANGES_WINDOW_MIN = 60;
@@ -60,7 +61,7 @@ export function registerCollab(
 
 function registerMessageRenderer(pi: ExtensionAPI): void {
   // Agent messages are shown in full, collapsed or not: they are short (a long one arrives as its start plus a file path) and the user reads them.
-  pi.registerMessageRenderer(MESSAGE_TYPE, (message, { outputPad }, theme) => {
+  pi.registerMessageRenderer(INTERNAL_MESSAGE_TYPE, (message, { outputPad }, theme) => {
     const mail = (message.details as Partial<MailDetails> | undefined)?.messages;
     const box = new Box(outputPad ?? 1, 0);
     // Details are another process's data: anything but a batch shows the text the model got.
@@ -165,15 +166,14 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
     label: 'Send message',
     description:
       'Send steering, a question or evidence to a live agent in this repository, or to every agent in your session tree. Delivery is queued: a busy recipient reads it at its next step, and you are told if it left unread. ' +
-      'To redirect a subagent you started now, set interrupt: its current step stops (a running tool is cancelled) and it continues with your message. ' +
       'A finished subagent that lingers (its report says so, and for how long) resumes with your message; one that does not takes no more messages, so give it a new `agent` task. A long message arrives as its start plus the path of a file with the full text.',
     promptSnippet: 'Message a subagent or teammate',
-    promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker, a decision or evidence. Make it self-contained, reply in the existing thread with replyTo (no `to` needed: it goes to that message\'s sender), set replyRequired only for a question you need answered, and skip acknowledgements and completion pings (final reports arrive automatically).'],
+    promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker, a decision or evidence. Make it self-contained and skip acknowledgements and completion pings (final reports arrive automatically).'],
     parameters: Type.Object({
       to: Type.Optional(Type.String({ description: 'Agent id, role, "parent" or "all" (your session tree). Omit it when replyTo is set: the message goes to the sender of that message' })),
-      message: Type.String({ description: 'Self-contained text; for long results send a file path' }),
+      message: Type.String({ description: 'The message text' }),
       replyRequired: Type.Optional(Type.Boolean({ description: 'true: a request (a question or task you need answered); wakes an idle recipient. false (the default): an FYI, no reply needed' })),
-      replyTo: Type.Optional(Type.Integer({ description: 'Number of the message you answer (send to its sender); answering a question wakes the asker' })),
+      replyTo: Type.Optional(Type.Integer({ description: 'Number of the message you answer, to reply in its thread (no `to` needed); answering a question wakes the asker' })),
       interrupt: Type.Optional(Type.Boolean({ description: 'true: stop the current step of one subagent you started (its running tool is cancelled) and continue it with this message, for a changed plan or wrong direction. Default false: read at its next step' })),
     }),
     async execute(_id, params, signal) {

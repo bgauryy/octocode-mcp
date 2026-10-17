@@ -1,0 +1,137 @@
+# Octocode MCP (local) — clasify on vs off, Sonnet 5.5 runners — 2026-10-09 (single pass)
+
+**Status:** supplementary probe, **not** a headline campaign (1 pass, not 3). Headline claims
+stay in [`SUMMARY.md`](../overview/SUMMARY.md).
+
+## Outcome
+
+- **Sonnet 5.5 never called `clasify`.** The tool was listed in all 30 clasify-arm sessions
+  (13 tools vs 12) and was called in 0 of 30. On this GitHub question set, the two arms ran
+  the same tools. The only real difference between them is the extra tool schema in context.
+- **So the two arms are at parity, as expected.** The char ratio is 1.04× (95% CI 0.93–1.16,
+  median 0.99×), and Sonnet input tokens are 0.97× (CI 0.87–1.10). Cost was $2.58 vs $2.62
+  for 30 questions. The judge preferred no-clasify 21–9, but correctness split +3 / =18 / −9
+  (sign test p ≈ 0.15, not significant). The gaps are run-to-run variance, not a clasify
+  effect. In most of the 9 losses the answer admits it inferred a field it didn't read.
+- **Octocode MCP + Sonnet 5.5 is the leanest Octocode configuration measured so far.** Mean
+  chars per question are 10.4k–11.3k, against 22.1k for the CLI v18 campaign. See the
+  cross-campaign table below and its caveats.
+
+## Setup
+
+| Item | Value |
+|---|---|
+| Questions | `compare/github-questions/` v2, Q1–Q30, 1 pass |
+| Runner | `claude -p --model claude-sonnet-5-5`, one fresh process per (question, arm) |
+| Isolation | `--tools ""` (no built-ins), `--strict-mcp-config`, `--setting-sources ""`, `--disable-slash-commands`, empty cwd, no session persistence |
+| Server | local `packages/octocode-mcp/dist/index.js` (sha256 `dd8eaadd…`), native addon darwin-arm64 (sha256 `209dc06f…`), repo HEAD `3a612899d` + uncommitted tree; fingerprint unchanged start→end |
+| Arm `mcp-clasify` | provider key from trusted home `.env`; startup probe passed; `clasify` listed |
+| Arm `mcp-noclasify` | `OCTOCODE_CLASSIFICATION_API=""`, so `clasify` isn't registered |
+| Prompt | `compare/bin/mcp_runner_prompt.md` + the question. The primer is the MCP's own server instructions + tool descriptions (not counted) |
+| Measurement | `compare/bin/mcp_log_proxy.mjs`: a transparent stdio proxy that logs one row per `tools/call`. model-out = `<tool> <JSON args>`; model-in = compact JSON of `structuredContent` (the channel Claude Code feeds the model); answer via `record_answer.py`. All 60 logs pass `sumlog.py --strict` |
+| Judge | GPT-5.5 (pi, `guy-provider-openai`), blind X/Y with seeded per-question shuffle, identity-redacted, rubric `JUDGING.md` + `example-verdict.md`, ground truth rebuilt with read-only `gh` |
+| Concurrency | 6 runners in parallel → GitHub code-search rate limits (see Failed calls) |
+
+This campaign ran on a first MCP-only harness (a logging stdio proxy, `run_mcp_runner.sh`), since
+replaced by `compare/bin/run_arm.sh`, which measures every arm from the agent transcript. On the
+same MCP call both methods counted 2,245 characters, so these numbers carry over unchanged. Its
+runs and judgments are in [runs/mcp-clasify-ab-111154-2026-10-09.json](run.json).
+
+Artifacts are in `campaigns/mcp-clasify-ab-111154-2026-10-09/` (gitignored): per-question JSONL
+and artifacts, `runs/<arm>-p1-Qn/{result.json,answer.md,tools-list.json}`, `judge/Qn.md`,
+`judge/MAP.secret.txt`, `summary.json`, `aggregate.py`.
+
+## Summary (paired, per question)
+
+| Metric | mcp-clasify | mcp-noclasify |
+|---|---:|---:|
+| Correctness mean /10 | 9.00 | 9.23 |
+| Correctness paired win/tie/loss (C vs N) | 3 / 18 / 9 (p ≈ 0.15) | |
+| Depth / workflow mean | 4.10 / 4.50 | 4.17 / 4.47 |
+| Judge winner (correctness first, chars tiebreak) | 9 | 21 |
+| Total chars (Σ30) | 313,115 | 337,551 |
+| Mean / median chars per Q | 10,437 / 8,214 | 11,252 / 8,155 |
+| **Char ratio N/C, geo-mean (95% CI)** | **1.04× (0.93–1.16)**, median 0.99×, C leaner 14/30 | |
+| Tool calls / failed | 87 / 9 | 86 / 10 |
+| `clasify` calls | **0** | n/a |
+| Sonnet input tokens (incl. cache) / output | 2.26M / 44k | 2.23M / 45k |
+| Cost (Sonnet only) | $2.58 | $2.62 |
+| Median wall time per Q | 19.1 s | 18.3 s |
+| tools/list size (system-prompt overhead, not in chars) | 17.2k chars | 14.5k chars |
+
+## Cross-campaign context (not a paired matchup)
+
+Historical columns are per-question means from [`PER_QUESTION_SUMMARY.md`](../overview/PER_QUESTION_SUMMARY.md).
+Those came from the August CLI-v18 campaigns, with different runner agents, a different time,
+3 passes, and a CLI transport. Read this table as orientation only. Never pool it with the headline.
+
+| Historical arm (Aug) | ÷ mcp-clasify, geo (CI) | ÷ mcp-noclasify, geo (CI) | MCP leaner |
+|---|---:|---:|---:|
+| Octocode CLI v18 (local) | 2.13× (1.83–2.46) | 2.04× (1.76–2.38) | 30/30 · 29/30 |
+| plain `gh` | 4.33× (2.68–6.83) | 4.16× (2.62–6.45) | 25/30 |
+| `gh` + RTK | 8.28× (5.03–13.86) | 7.96× (4.98–13.10) | 28/30 |
+| `gh` + Headroom | 7.44× (4.23–13.37) | 7.15× (4.04–12.92) | 27/30 |
+
+Correctness for the MCP arms (9.0 / 9.2) is in the same band as the historical arms (8.7–9.4),
+but a different judge run produced it.
+
+## Per question
+
+| Q | Chars C | Chars N | N/C | Calls C / N | Corr C / N | Winner | CLI v18 | gh | gh+RTK | gh+HR |
+|---|---:|---:|---:|---|---|---|---:|---:|---:|---:|
+| Q1 | 6,482 | 4,529 | 0.70× | 2 / 2 | 10 / 10 | N | 14,697 | 19,773 | 27,925 | 28,202 |
+| Q2 | 6,102 | 7,574 | 1.24× | 4 / 3 | 9 / 9 | C | 19,159 | 731 | 26,361 | 1,322 |
+| Q3 | 8,573 | 7,970 | 0.93× | 6 / 4 | 9 / 9 | N | 9,586 | 7,921 | 27,777 | 75,103 |
+| Q4 | 8,271 | 12,077 | 1.46× | 3 / 4 | 8 / 8 | N | 26,201 | 131,764 | 136,621 | 257,472 |
+| Q5 | 38,579 | 24,738 | 0.64× | 3 / 2 | 10 / 9 | C | 48,933 | 151,486 | 70,432 | 135,064 |
+| Q6 | 6,636 | 5,646 | 0.85× | 7 / 5 | 10 / 10 | N | 14,593 | 42,905 | 53,565 | 41,147 |
+| Q7 | 5,787 | 6,091 | 1.05× | 1 / 1 | 10 / 9 | C | 8,761 | 9,072 | 10,855 | 15,960 |
+| Q8 | 4,387 | 4,278 | 0.98× | 3 / 2 | 10 / 10 | N | 14,574 | 23,947 | 63,101 | 59,135 |
+| Q9 | 9,749 | 6,905 | 0.71× | 4 / 2 | 10 / 10 | N | 16,399 | 55,362 | 66,358 | 73,325 |
+| Q10 | 7,104 | 8,339 | 1.17× | 5 / 5 | 10 / 10 | C | 12,246 | 13,200 | 10,552 | 9,377 |
+| Q11 | 8,156 | 6,216 | 0.76× | 2 / 3 | 9 / 9 | C | 25,508 | 93,021 | 376,970 | 522,136 |
+| Q12 | 5,330 | 5,835 | 1.09× | 1 / 1 | 9 / 10 | N | 17,036 | 82,360 | 98,514 | 82,695 |
+| Q13 | 16,348 | 10,797 | 0.66× | 2 / 2 | 10 / 10 | N | 19,547 | 10,644 | 10,721 | 483,845 |
+| Q14 | 2,626 | 3,648 | 1.39× | 1 / 2 | 8 / 9 | N | 7,596 | 10,390 | 8,312 | 6,093 |
+| Q15 | 6,328 | 6,185 | 0.98× | 1 / 1 | 9 / 8 | C | 7,378 | 4,893 | 4,836 | 4,769 |
+| Q16 | 3,620 | 3,715 | 1.03× | 3 / 3 | 8 / 9 | N | 10,731 | 23,578 | 1,057,962 | 959,745 |
+| Q17 | 12,120 | 11,696 | 0.97× | 2 / 2 | 10 / 10 | N | 15,109 | 232,760 | 179,720 | 6,844,627 |
+| Q18 | 4,423 | 2,985 | 0.67× | 3 / 1 | 10 / 10 | N | 12,772 | 12,178 | 8,244 | 7,614 |
+| Q19 | 12,466 | 17,977 | 1.44× | 2 / 5 | 9 / 9 | C | 16,525 | 179,627 | 166,806 | 186,059 |
+| Q20 | 8,349 | 11,048 | 1.32× | 2 / 2 | 9 / 10 | N | 15,816 | 48,996 | 114,467 | 80,465 |
+| Q21 | 25,562 | 44,391 | 1.74× | 5 / 6 | 8 / 9 | N | 65,468 | 297,100 | 430,307 | 310,655 |
+| Q22 | 17,077 | 13,931 | 0.82× | 3 / 3 | 10 / 10 | N | 53,622 | 12,611 | 425,890 | 13,237 |
+| Q23 | 8,293 | 10,614 | 1.28× | 1 / 4 | 9 / 9 | C | 17,085 | 212,408 | 182,346 | 170,490 |
+| Q24 | 13,114 | 12,891 | 0.98× | 8 / 4 | 8 / 9 | N | 16,067 | 70,767 | 114,119 | 72,038 |
+| Q25 | 9,908 | 9,310 | 0.94× | 2 / 2 | 8 / 8 | N | 15,775 | 17,807 | 26,187 | 21,315 |
+| Q26 | 4,806 | 4,263 | 0.89× | 3 / 3 | 10 / 10 | N | 16,594 | 66,256 | 50,292 | 24,089 |
+| Q27 | 5,209 | 5,152 | 0.99× | 1 / 1 | 7 / 8 | N | 7,930 | 8,780 | 14,515 | 12,124 |
+| Q28 | 29,078 | 31,567 | 1.09× | 3 / 3 | 7 / 9 | N | 62,423 | 1,472,374 | 6,964,358 | 835,870 |
+| Q29 | 10,997 | 22,457 | 2.04× | 2 / 5 | 8 / 9 | N | 41,495 | 100,557 | 211,918 | 108,554 |
+| Q30 | 7,635 | 14,726 | 1.93× | 2 / 3 | 8 / 8 | C | 33,689 | 32,215 | 117,539 | 35,424 |
+
+Correctness splits (judge one-liners, C = clasify arm): the C losses on Q14, Q16 and Q20
+admit inferring a field they didn't read. Q28 C left the live-history data structure as
+Unknown. Q21 and Q24 C overstated one detail each. Q29 C cited the older 2025-11-25 spec file.
+The C wins on Q5, Q7 and Q15 are the mirror image. None involves clasify.
+
+## Failed calls (19 total, counted)
+
+- **15 GitHub code-search rate limits.** Six concurrent runners shared one token. Both arms
+  were hit about equally (C 6, N 9). This is a harness artifact: run with concurrency ≤3 next time.
+- **2 input-schema errors (C).** One was `ghGetHistoryItem` commit with a `sections` value
+  outside `files|patches`, the other `astSearch` with `queries: []`. Both were self-corrected.
+- **1 repo not found (C).** The call asked for `expressjs/router`; the repo now lives at
+  `pillarjs/router`.
+
+## Bottom line
+
+On targeted GitHub research, Sonnet 5.5 never reaches for `clasify`, whether or not it's
+offered. The arms are tied on chars, tokens and cost. The 21–9 judge split doesn't reach
+significance and has no causal path, because clasify was never called. Testing clasify's
+value needs a question set built for it (described targets in large unread files, wide local
+searches, judging supplied state), or a prompt that routes to it. This set can't show an
+effect. Separately, local Octocode MCP with Sonnet 5.5 used about 2× fewer chars per question
+than the August CLI-v18 campaign, and about 4× / 8× / 7× fewer than plain gh / gh+RTK /
+gh+Headroom. Those are cross-campaign comparisons; confirming them needs a fresh paired
+3-pass run.

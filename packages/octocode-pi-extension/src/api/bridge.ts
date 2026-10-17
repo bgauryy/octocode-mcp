@@ -11,7 +11,7 @@ import { saveFullOutput } from '../shared/spill.js';
 import { envFlag } from '../shared/env.js';
 import { formatClock } from '../shared/format.js';
 import { clip, resultBlock } from '../shared/render.js';
-import { EXTERNAL_MESSAGE_TYPE, type MessageEnvelope } from '../shared/messages.js';
+import { EXTERNAL_MESSAGE_TYPE, EXTERNAL_SENDER, USER_SENDER, type MessageEnvelope } from '../shared/messages.js';
 import { sha256 } from '../shared/atomic.js';
 import { capChars, contentText, errorMessage, isRecord, isStaleSessionError, toolHint } from '../shared/util.js';
 
@@ -20,7 +20,7 @@ const API_HTTP_ENV = 'OCTOCODE_API_HTTP';
 /** Session entry (`pi.appendEntry`, never sent to the model) written for every turn an API client starts. */
 const EXTERNAL_AUDIT_TYPE = 'octocode-external';
 /** Senders a client may not claim: the user, the team's own API sender, and (checked per call) any live agent. */
-const RESERVED_SENDERS = new Set(['user', 'external']);
+const RESERVED_SENDERS = new Set([USER_SENDER, EXTERNAL_SENDER]);
 
 const RESULT_MAX_CHARS = 64_000;
 /** `messages.list` page size: the default, and the most one page holds (a larger `limit` gets this many; `earlier` reaches the rest). */

@@ -4,6 +4,7 @@ import { Text } from '@earendil-works/pi-tui';
 import { sharedAgentDb } from '../agentdb/db.js';
 import { currentSessionId, repoKey } from '../shared/home.js';
 import type { Subcommands } from '../shared/commands.js';
+import { notify } from '../shared/commands.js';
 import { expandKey, plural } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { addUsage, contentText, emptyUsage, entryMessage, errorMessage, modelLookup, spendOf, unpricedModel, type ModelLookup } from '../shared/util.js';
@@ -118,7 +119,7 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
     } catch (error) {
       if (warned || !ctx.hasUI) return;
       warned = true;
-      ctx.ui.notify(`Octocode session index unavailable: ${errorMessage(error)}`, 'warning');
+      notify(ctx.ui, `Octocode session index unavailable: ${errorMessage(error)}`, 'warning');
     }
   };
   /** Records where git stands now, without waiting for it. */

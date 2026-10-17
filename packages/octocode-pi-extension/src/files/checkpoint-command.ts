@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { sessionDir } from '../shared/home.js';
-import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
+import { notify, say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { withDialog } from '../shared/locks.js';
 import { plural } from '../shared/render.js';
 import { errorMessage } from '../shared/util.js';
@@ -63,7 +63,7 @@ export function registerCheckpoints(pi: ExtensionAPI, checkpoints: Checkpoints, 
     if (parent && parent !== id) {
       const branch = ctx.sessionManager.getBranch().map((entry) => entry.id);
       await inheritCheckpoints(checkpointDir(parent), dir, branch).catch((error: unknown) => {
-        if (ctx.hasUI) ctx.ui.notify(`Octocode could not carry the checkpoints to this fork (${errorMessage(error)}); /octocode rewind will not reach the parent's turns.`, 'warning');
+        if (ctx.hasUI) notify(ctx.ui, `Octocode could not carry the checkpoints to this fork (${errorMessage(error)}); /octocode rewind will not reach the parent's turns.`, 'warning');
       });
     }
     checkpoints.open(dir);

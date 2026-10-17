@@ -6,13 +6,10 @@ import { keysOverlap } from './lease-key.js';
 import type { DeadLetter, Lease, Member, Message } from './model.js';
 import { cutText, errorMessage, firstLine } from '../shared/util.js';
 import { visibleControls } from '../shared/sanitize.js';
+import { EXTERNAL_SENDER, USER_SENDER } from '../shared/messages.js';
 
 /** Pure text and routing helpers for the team: recipients, what `coordinate list` prints, which paths a call edits. */
 
-/** Sender id for messages typed by the user with `/agents tell`. */
-export const USER_SENDER = 'user';
-/** Sender id for messages from a local API client (`agents.tell`): not the user, and nobody to reply to. */
-export const EXTERNAL_SENDER = 'external';
 /** A message body stays bounded when sent and when projected from another process into context. */
 export const MESSAGE_MAX_CHARS = 8_000;
 /** Senders that are not agents: they cannot be replied to, and their messages wake the recipient. */

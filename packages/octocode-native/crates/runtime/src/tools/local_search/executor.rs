@@ -271,6 +271,11 @@ fn settle_row(
         &mut next,
         &mut warnings,
     );
+    warnings.extend(match_page_ceiling_warning(
+        query,
+        page.leftover_matches,
+        next.as_ref(),
+    ));
     Ok(LocalSearchResult {
         status,
         stats,
@@ -410,6 +415,30 @@ fn page_ceiling_warning(
     .then(|| {
         format!(
             "Page {page} is the last page a continuation names; {past} later file pages need a narrower path or include."
+        )
+    })
+}
+
+/// Hits left in the shown files past the last match page a continuation can
+/// name: that a narrower search reaches them.
+fn match_page_ceiling_warning(
+    query: &LocalSearchQuery,
+    leftover_matches: bool,
+    next: Option<&Value>,
+) -> Option<String> {
+    let match_page = query.match_page().max(1);
+    (leftover_matches
+        && next.is_none_or(|next| next.get("nextMatchPage").is_none())
+        && crate::tools::paging::admitted(
+            crate::tools::id::ToolId::LocalSearch,
+            None,
+            "matchPage",
+            match_page as usize + 1,
+        )
+        .is_none())
+    .then(|| {
+        format!(
+            "matchPage {match_page} is the last match page a continuation names; later hits in the shown files need a narrower path or include."
         )
     })
 }

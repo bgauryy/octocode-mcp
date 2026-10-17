@@ -413,6 +413,8 @@ struct CollectResult {
     binary_files: Vec<String>,
     binary_file_count: u32,
     skipped_binary_count: u32,
+    file_terms_dropped: u32,
+    depth_cut_dirs: u32,
     /// Skipped binary files per lowercased extension, most files first.
     skipped_binary_extensions: Vec<BinaryExtensionCount>,
     /// Root-relative directories the prune list skipped, sorted.
@@ -443,6 +445,8 @@ struct CollectState {
     binary_files: Mutex<Vec<String>>,
     binary_file_count: AtomicU64,
     skipped_binary_count: AtomicU32,
+    file_terms_dropped: AtomicU32,
+    depth_cut_dirs: AtomicU32,
     skipped_binary_extensions: Mutex<HashMap<String, (u32, BTreeSet<String>)>>,
     pruned_dirs: Mutex<Vec<String>>,
     cancelled: AtomicBool,
@@ -472,6 +476,8 @@ impl CollectState {
             binary_files: Mutex::new(Vec::new()),
             binary_file_count: AtomicU64::new(0),
             skipped_binary_count: AtomicU32::new(0),
+            file_terms_dropped: AtomicU32::new(0),
+            depth_cut_dirs: AtomicU32::new(0),
             skipped_binary_extensions: Mutex::new(HashMap::new()),
             pruned_dirs: Mutex::new(Vec::new()),
             cancelled: AtomicBool::new(false),
@@ -596,6 +602,8 @@ impl CollectState {
             },
             binary_file_count: saturate_u32(self.binary_file_count.load(Ordering::Relaxed)),
             skipped_binary_count: self.skipped_binary_count.load(Ordering::Relaxed),
+            file_terms_dropped: self.file_terms_dropped.load(Ordering::Relaxed),
+            depth_cut_dirs: self.depth_cut_dirs.load(Ordering::Relaxed),
             pruned_dirs: {
                 let mut dirs = self
                     .pruned_dirs
@@ -1685,6 +1693,7 @@ impl WalkScope<'_> {
             .as_ref()
             .is_some_and(|terms| !terms.pass(copied, &file))
         {
+            state.file_terms_dropped.fetch_add(1, Ordering::Relaxed);
             return WalkState::Continue;
         }
         let demoted =
@@ -1774,6 +1783,15 @@ impl WalkScope<'_> {
             let relative = dent.path().strip_prefix(&opts.path).unwrap_or(dent.path());
             state.record_pruned(crate::text::slash_path(relative));
             return Err(WalkState::Skip);
+        }
+        // A directory at the depth limit is yielded but never entered (the
+        // walk counts root files as `max_depth` 0): one that holds entries
+        // is a part of the tree left unsearched.
+        if is_dir
+            && opts.max_depth.map(|max| max as usize + 1) == Some(dent.depth())
+            && std::fs::read_dir(dent.path()).is_ok_and(|mut entries| entries.next().is_some())
+        {
+            state.depth_cut_dirs.fetch_add(1, Ordering::Relaxed);
         }
         if !dent.file_type().is_some_and(|t| t.is_file()) {
             return Err(WalkState::Continue);
@@ -1994,6 +2012,8 @@ fn build_result(
         binary_files,
         binary_file_count,
         skipped_binary_count,
+        file_terms_dropped,
+        depth_cut_dirs,
         skipped_binary_extensions,
         pruned_dirs,
         cancelled,
@@ -2111,6 +2131,8 @@ fn build_result(
         skipped_binary_extensions: (!skipped_binary_extensions.is_empty())
             .then_some(skipped_binary_extensions),
         pruned_dirs: (!pruned_dirs.is_empty()).then_some(pruned_dirs),
+        file_terms_dropped: (file_terms_dropped > 0).then_some(file_terms_dropped),
+        depth_cut_dirs: (depth_cut_dirs > 0).then_some(depth_cut_dirs),
     };
 
     TextSearchResult { files, stats }

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { OctocodeMcp } from './mcp/octocode.js';
 import { isOctocodeTool } from './shared/octocode-tools.js';
-import { envFlag } from './shared/env.js';
+import { envFlag, MCP_ENV } from './shared/env.js';
 import { octocodePrompt } from './prompt.js';
 import type { AgentProfile } from './subagents/profiles.js';
 import { AGENT_COLLABORATE_ENV } from './team/store.js';
@@ -76,6 +76,9 @@ export function registerTurnSetup(pi: ExtensionAPI, options: { isSubagent: boole
       canDelegate: !options.isSubagent,
       canUseAgent: selected.includes('agent'),
       canWrite,
+      canShell: selected.includes('bash'),
+      // A profile with `mcp: false` starts its child with MCP switched off and without Pi's MCP (`subagents/process`).
+      canMcp: octocode || envFlag(process.env, MCP_ENV, true),
       ...(octocode && instructions ? { octocodeInstructions: instructions } : {}),
       // Subagent-only, and the same for every child of one run mode: nothing per-child may enter the prompt.
       ...(options.isSubagent && envFlag(process.env, AGENT_COLLABORATE_ENV) ? { collaborate: true } : {}),

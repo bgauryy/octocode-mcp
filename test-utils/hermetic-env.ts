@@ -1,7 +1,7 @@
 /**
  * hermetic-env.ts — the one definition of a hermetic test environment, shared
  * by test-utils/external-effects-guard.ts (vitest) and
- * octocode-local-testing/harness (Node imports this file by type stripping, so
+ * packages/octocode-benchmark/local/e2e/harness (Node imports this file by type stripping, so
  * it uses erasable TypeScript only).
  *
  * A hermetic environment has a fresh empty Octocode home and gh config dir, no

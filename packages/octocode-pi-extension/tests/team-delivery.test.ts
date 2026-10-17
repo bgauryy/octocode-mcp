@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LEASE_IDLE_MS } from '../src/team/held.js';
-import { MESSAGE_TYPE, parentProcessGone, Team, USER_SENDER } from '../src/team/session.js';
+import { parentProcessGone, Team } from '../src/team/session.js';
+import { INTERNAL_MESSAGE_TYPE, USER_SENDER } from '../src/shared/messages.js';
 import { registerCollab } from '../src/team/tools.js';
 import { leaseAge, resolveTarget, sessionTree } from '../src/team/routing.js';
 import type { Member } from '../src/team/model.js';
@@ -107,14 +108,14 @@ describe('broadcast scope', () => {
 });
 
 /** The team messages Pi was handed, in order. */
-const teamMail = (sent: Array<{ message: any; options: any }>) => sent.filter((entry) => entry.message.customType === MESSAGE_TYPE && Array.isArray(entry.message.details?.messages));
+const teamMail = (sent: Array<{ message: any; options: any }>) => sent.filter((entry) => entry.message.customType === INTERNAL_MESSAGE_TYPE && Array.isArray(entry.message.details?.messages));
 /**
  * Pi is about to call the model with this message in the conversation: it emits `context` with the messages. (An FYI
  * appended while idle, or flushed at the end of a turn, reaches extensions no other way: Pi's append never emits
  * message_start to them.)
  */
 const seen = (who: ReturnType<typeof agent>, entry: { message: any }) =>
-  who.emit('context', { messages: [{ role: 'user', content: 'task' }, { role: 'custom', customType: MESSAGE_TYPE, content: entry.message.content, details: entry.message.details }] }, who.ctx);
+  who.emit('context', { messages: [{ role: 'user', content: 'task' }, { role: 'custom', customType: INTERNAL_MESSAGE_TYPE, content: entry.message.content, details: entry.message.details }] }, who.ctx);
 
 describe('delivery acknowledgement', () => {
   it('records a message delivered only once the model sees it', async () => {
@@ -213,7 +214,7 @@ describe('delivery acknowledgement', () => {
     store.save(row('peer-000001'));
     store.save(row('other-000002'));
     const id = store.send('peer-000001', ['other-000002'], 'not for b', { replyRequired: false }).id!;
-    await b.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: { messages: [{ id, to: 'other-000002' }] } }, { role: 'custom', customType: MESSAGE_TYPE, details: { from: 'team', text: 'notice' } }, { role: 'custom', customType: MESSAGE_TYPE, details: null }] }, b.ctx);
+    await b.emit('context', { messages: [{ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: { messages: [{ id, to: 'other-000002' }] } }, { role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: { from: 'team', text: 'notice' } }, { role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: null }] }, b.ctx);
     expect(store.pending('other-000002').map((message) => message.id)).toEqual([id]);
   });
 
@@ -287,7 +288,7 @@ describe('dead letters', () => {
     // Dead letters are checked with the 5-second heartbeat.
     await vi.waitFor(() => expect(a.sent.some((entry) => String(entry.message.content).startsWith(`Message #${id} to ${b.team.id ?? ''}`))).toBe(true), { timeout: 8_000 });
     const notice = a.sent.find((entry) => String(entry.message.content).includes(`Message #${id}`))!;
-    expect(notice.message).toMatchObject({ customType: MESSAGE_TYPE, content: expect.stringContaining('was not read') });
+    expect(notice.message).toMatchObject({ customType: INTERNAL_MESSAGE_TYPE, content: expect.stringContaining('was not read') });
     expect(notice.message.content).toContain('"please check auth.ts"');
     expect(notice.options).toEqual({ triggerTurn: false, deliverAs: 'steer' });
     // Once only.
@@ -509,7 +510,7 @@ describe('panel sanitizing', () => {
 });
 
 describe('delivery edge cases', () => {
-  const mailOf = (sent: Array<{ message: any }>) => sent.filter((entry) => entry.message.customType === MESSAGE_TYPE && entry.message.details?.messages?.some((m: { id?: number }) => typeof m.id === 'number'));
+  const mailOf = (sent: Array<{ message: any }>) => sent.filter((entry) => entry.message.customType === INTERNAL_MESSAGE_TYPE && entry.message.details?.messages?.some((m: { id?: number }) => typeof m.id === 'number'));
 
   it('leaves the team before ending a subagent whose parent is gone, so its row does not wait for a sweep', () => {
     vi.useFakeTimers();
@@ -569,7 +570,7 @@ describe('delivery edge cases', () => {
     idle.team.join();
     await sender.team.send(idle.team.id!, 'are you there?', { replyRequired: true });
     await vi.waitFor(() => expect(mailOf(idle.sent)).toHaveLength(1), { timeout: 3_000 });
-    await idle.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: mailOf(idle.sent)[0]!.message.details }] }, idle.ctx);
+    await idle.emit('context', { messages: [{ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: mailOf(idle.sent)[0]!.message.details }] }, idle.ctx);
     vi.setSystemTime(Date.now() + 11_000);
     await vi.advanceTimersByTimeAsync(2_000);
     expect(idle.ctx.ui.notes).toEqual([]);
@@ -586,7 +587,7 @@ describe('delivery edge cases', () => {
       await sender.team.send(receiver.team.id!, text, { replyRequired: false });
     }
     await vi.waitFor(() => expect(mailOf(receiver.sent)).toHaveLength(1), { timeout: 3_000 });
-    await receiver.emit('context', { messages: [{ role: 'custom', customType: MESSAGE_TYPE, details: mailOf(receiver.sent)[0]!.message.details }] }, receiver.ctx);
+    await receiver.emit('context', { messages: [{ role: 'custom', customType: INTERNAL_MESSAGE_TYPE, details: mailOf(receiver.sent)[0]!.message.details }] }, receiver.ctx);
     // The messages are wiped and their numbers start again, as in a replaced database.
     const { DatabaseSync } = await import('node:sqlite');
     const raw = new DatabaseSync(db);

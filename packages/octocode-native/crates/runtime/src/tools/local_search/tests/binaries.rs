@@ -477,6 +477,173 @@ fn an_unset_regex_reads_every_text_literally() {
     }
 }
 
+/// An empty literal search offers the regex reading under the engine the
+/// text compiles in (lookaround: pcre2), across lines when it matches a line
+/// break, and every such lead runs and finds the line.
+#[test]
+fn a_literal_miss_leads_to_the_regex_reading_that_runs() {
+    let files = [(
+        "p.txt",
+        "price 100 dollars\nprice 200 euros\nstart\nmiddle\n",
+    )];
+    let run = |fields: serde_json::Value| search_fixture(&files, ls_query(fields, None));
+    for (text, engine, across_lines) in [
+        ("price (?=\\d+ euros)", "pcre2", false),
+        ("(?<=price )200", "pcre2", false),
+        ("start\\nmiddle", "rust", true),
+    ] {
+        let missed = run(serde_json::json!({"matchString": text}));
+        assert_eq!(
+            missed["matchedLineCount"].as_u64().unwrap_or(0),
+            0,
+            "{missed}"
+        );
+        let retry = &missed["next"]["findSimilar"];
+        let row = retry.pointer("/query/queries/0").unwrap_or(&retry["query"]);
+        assert_eq!(row["regex"], engine, "{text}: {missed}");
+        assert_eq!(row["multiline"] == "on", across_lines, "{text}: {missed}");
+        let retried = run(row.clone());
+        assert_eq!(retried["matchedLineCount"], 1, "{text}: {retried}");
+    }
+}
+
+/// An empty page the `fileHas`/`fileLacks` terms caused says so, and its
+/// `broadenSearch` lead (the same search without them) finds the matches.
+#[test]
+fn an_empty_page_the_file_terms_caused_names_them() {
+    let files = [("a.txt", "needle\n"), ("b.txt", "needle\nother\n")];
+    let run = |fields: serde_json::Value| search_fixture(&files, ls_query(fields, None));
+    for filter in [
+        serde_json::json!({"fileHas": ["absent"]}),
+        serde_json::json!({"fileLacks": ["needle"]}),
+    ] {
+        let mut fields = serde_json::json!({"matchString": "needle"});
+        fields
+            .as_object_mut()
+            .unwrap()
+            .extend(filter.as_object().unwrap().clone());
+        let empty = run(fields);
+        assert_eq!(
+            empty["matchedLineCount"].as_u64().unwrap_or(0),
+            0,
+            "{empty}"
+        );
+        assert!(
+            empty["warnings"]
+                .to_string()
+                .contains("2 file(s) matched matchString but fileHas/fileLacks removed them"),
+            "{empty}"
+        );
+        let lead = &empty["next"]["broadenSearch"];
+        let row = lead.pointer("/query/queries/0").unwrap_or(&lead["query"]);
+        assert!(
+            row.get("fileHas").is_none() && row.get("fileLacks").is_none(),
+            "{row}"
+        );
+        assert_eq!(run(row.clone())["matchedLineCount"], 2, "{row}");
+    }
+    let kept = run(serde_json::json!({"matchString": "needle", "fileHas": ["other"]}));
+    assert_eq!(kept["matchedLineCount"], 1, "{kept}");
+    assert!(kept["next"].get("broadenSearch").is_none(), "{kept}");
+}
+
+/// A case-sensitive miss (smart case on uppercase text, or `sensitive`)
+/// whose text matches in another case says so, and its `ignoreCase` lead
+/// finds it.
+#[test]
+fn a_case_only_miss_leads_to_ignore_case() {
+    let files = [("a.ts", "const structuredContent = 1;\n")];
+    let run = |fields: serde_json::Value| search_fixture(&files, ls_query(fields, None));
+    for fields in [
+        serde_json::json!({"matchString": "STRUCTUREDCONTENT"}),
+        serde_json::json!({"matchString": "StructuredContent", "caseMode": "sensitive"}),
+    ] {
+        let empty = run(fields);
+        assert_eq!(
+            empty["matchedLineCount"].as_u64().unwrap_or(0),
+            0,
+            "{empty}"
+        );
+        assert!(
+            empty["hints"]
+                .to_string()
+                .contains("matches ignoring case in 1 file(s)"),
+            "{empty}"
+        );
+        let lead = &empty["next"]["ignoreCase"];
+        let row = lead.pointer("/query/queries/0").unwrap_or(&lead["query"]);
+        assert_eq!(row["caseMode"], "insensitive", "{empty}");
+        assert_eq!(run(row.clone())["matchedLineCount"], 1, "{row}");
+    }
+}
+
+/// A `maxDepth` cut is disclosed once with the same search at every depth;
+/// an empty directory at the limit hides nothing and is not counted.
+#[test]
+fn a_max_depth_cut_is_disclosed_with_a_deeper_lead() {
+    let files = [
+        ("top.txt", "needle\n"),
+        ("a/b/deep.txt", "needle\n"),
+        ("a/c/x.txt", "other\n"),
+    ];
+    let run = |fields: serde_json::Value| search_fixture(&files, ls_query(fields, None));
+    let cut = run(serde_json::json!({"matchString": "needle", "maxDepth": 1}));
+    assert_eq!(cut["matchedLineCount"], 1, "{cut}");
+    assert!(
+        cut["warnings"]
+            .to_string()
+            .contains("1 dir(s) at maxDepth were not entered"),
+        "{cut}"
+    );
+    let lead = &cut["next"]["expandDepth"];
+    let row = lead.pointer("/query/queries/0").unwrap_or(&lead["query"]);
+    assert!(row.get("maxDepth").is_none(), "{row}");
+    assert_eq!(run(row.clone())["matchedLineCount"], 2, "{row}");
+    let whole = run(serde_json::json!({"matchString": "needle", "maxDepth": 3}));
+    assert!(whole["next"].get("expandDepth").is_none(), "{whole}");
+}
+
+/// An empty `filesWithout` row (every searched file matches) names skipped
+/// paths only for files there that lack a match, never the matching files
+/// it already searched.
+#[test]
+fn an_empty_files_without_row_probes_for_files_without_a_match() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    fs::create_dir(root.path().join(".git")).expect("repository marker");
+    // Every file the default walk skips matches too (the hidden `.gitignore`).
+    fs::write(root.path().join(".gitignore"), "# the\nskip/\n").expect("gitignore");
+    fs::write(root.path().join("a.txt"), "the\n").expect("a");
+    let (policy, security) = policy_for(root.path());
+    let path = root.path().to_string_lossy().into_owned();
+    let run = |fields: serde_json::Value| {
+        let request = ls_query(fields, None);
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+            .expect("search")
+    };
+    let row = serde_json::json!({"path": path, "matchString": "the", "resultView": "filesWithout"});
+    let plain = run(row.clone());
+    assert!(plain.files.is_empty());
+    assert!(
+        !plain.hints.join(" | ").contains("skipped paths"),
+        "{:?}",
+        plain.hints
+    );
+    assert!(
+        plain
+            .next
+            .as_ref()
+            .is_none_or(|next| next.get("includeSkipped").is_none())
+    );
+    fs::create_dir(root.path().join("skip")).expect("ignored dir");
+    fs::write(root.path().join("skip/b.txt"), "zzz\n").expect("b");
+    let found = run(row);
+    let hints = found.hints.join(" | ");
+    assert!(
+        hints.contains("1 file(s) lack a match in skipped paths (ignored)"),
+        "{hints}"
+    );
+}
+
 /// An include whose files all sit in ignored paths is not a scope miss: the
 /// row names the skip cause and its lifting lead, and neither claims that
 /// include/exclude matched no file nor leads to a listing that skips them too.
@@ -675,6 +842,21 @@ fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
             .expect("search")
     });
     assert!(result.next.is_none(), "{:?}", result.next);
+    // A hidden path is named too, and the lead lifts it.
+    fs::create_dir(plain.path().join(".hid")).expect("hidden dir");
+    fs::write(plain.path().join(".hid/a.txt"), "absent\n").expect("hidden");
+    let result = crate::tools::empty_walk::with_probe_budget(std::time::Duration::ZERO, || {
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+            .expect("search")
+    });
+    let hints = result.hints.join(" | ");
+    assert!(
+        hints.contains("1 hidden path(s) were not searched"),
+        "{hints}"
+    );
+    let next = result.next.as_ref().expect("lead");
+    let lead = &next["includeSkipped"]["query"]["queries"][0];
+    assert_eq!(lead["includeHidden"], true, "{next}");
 }
 
 /// Once the hint names the skipped paths that hold a match, the generic count

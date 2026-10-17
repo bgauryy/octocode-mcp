@@ -1,6 +1,7 @@
 import { isContextOverflow, type AssistantMessage } from '@earendil-works/pi-ai';
 import type { AgentActivityOutcome, ContextEditEntryDraft, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { contextChars, isRequestTooLarge, planTooLargeRecovery, type ContextEntry } from './images.js';
+import { notify } from '../shared/commands.js';
 
 /**
  * Recovery from a request rejected as too large (HTTP 413). A bodiless gateway 413 is a plain error to Pi (no
@@ -33,7 +34,7 @@ export class TooLargeRecovery {
       this.reset();
       if (ctx.hasUI && !piRecovers) {
         const kb = Math.round(contextChars(entries) / 1024);
-        ctx.ui.notify(`The provider rejected the request as too large (about ${kb} KB of context; no images left to remove). Run /compact, or /tree back to before the large output.`, 'warning');
+        notify(ctx.ui, `The provider rejected the request as too large (about ${kb} KB of context; no images left to remove). Run /compact, or /tree back to before the large output.`, 'warning');
       }
       return undefined;
     }

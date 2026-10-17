@@ -12,7 +12,6 @@ use serde_json::json;
 pub(super) fn check_pattern(query: &LocalSearchQuery) -> Result<(), ToolError> {
     let mode = query.regex_mode();
     if query.multiline == LocalSearchQueryMultiline::Off
-        && mode != LocalSearchQueryRegex::Pcre2
         && octocode_engine::portable::matches_line_break(
             &query.match_string,
             mode == LocalSearchQueryRegex::Literal,
@@ -39,8 +38,8 @@ pub(super) fn check_pattern(query: &LocalSearchQuery) -> Result<(), ToolError> {
 }
 
 /// The engine compiles `matchString` inside its own wrapper group, so the raw
-/// parse error echoes that internal pattern. Report the caller's pattern and
-/// the parser's reason instead.
+/// parse error echoes that internal pattern, and a PCRE2 offset counts the
+/// wrapper. Report the caller's pattern and the parser's reason instead.
 pub(super) fn regex_error_message(match_string: &str, raw: Option<&str>) -> String {
     let reason = raw
         .and_then(|raw| {
@@ -52,6 +51,15 @@ pub(super) fn regex_error_message(match_string: &str, raw: Option<&str>) -> Stri
         })
         .filter(|reason| !reason.is_empty())
         .unwrap_or("invalid regex pattern");
+    let reason = match reason.split_once(" at offset ") {
+        Some((head, tail)) => match tail.split_once(": ") {
+            Some((offset, rest)) if offset.bytes().all(|b| b.is_ascii_digit()) => {
+                format!("{head}: {rest}")
+            }
+            _ => reason.to_owned(),
+        },
+        None => reason.to_owned(),
+    };
     format!("Invalid regex matchString `{match_string}`: {reason}")
 }
 
@@ -89,9 +97,10 @@ fn line_break_pattern(query: &LocalSearchQuery) -> ToolError {
     }
 }
 
-/// A `language` that names no ripgrep file type. Given as a file extension
-/// (`rs`), the error names the type whose files carry it and the repair runs
-/// the same search with that type; otherwise the engine's own error stands.
+/// A `language` that names no ripgrep file type. Given in another case
+/// (`Rust`) or as a file extension (`rs`), the error names the type and the
+/// repair runs the same search with it; otherwise the engine's own error
+/// stands.
 pub(super) fn check_language(query: &LocalSearchQuery) -> Result<(), ToolError> {
     let Some(language) = query
         .language
@@ -111,16 +120,23 @@ pub(super) fn check_language(query: &LocalSearchQuery) -> Result<(), ToolError> 
     }
     let extension = language.trim_start_matches("*.").trim_start_matches('.');
     let glob = format!("*.{extension}");
-    let Some(name) = definitions
+    let (name, reason) = if let Some(definition) = definitions
         .iter()
-        .find(|definition| {
-            definition
-                .globs()
-                .iter()
-                .any(|candidate| candidate.eq_ignore_ascii_case(&glob))
-        })
-        .map(|definition| definition.name().to_owned())
-    else {
+        .find(|definition| definition.name().eq_ignore_ascii_case(language))
+    {
+        let name = definition.name().to_owned();
+        let reason = format!("the type is \"{name}\"");
+        (name, reason)
+    } else if let Some(definition) = definitions.iter().find(|definition| {
+        definition
+            .globs()
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(&glob))
+    }) {
+        let name = definition.name().to_owned();
+        let reason = format!("{glob} files are type \"{name}\"");
+        (name, reason)
+    } else {
         return Ok(());
     };
     let mut repaired = caller_fields(query);
@@ -131,7 +147,7 @@ pub(super) fn check_language(query: &LocalSearchQuery) -> Result<(), ToolError> 
         }))),
         ..ToolError::new(
             "invalidInput",
-            format!("unrecognized file type: {language}; {glob} files are type \"{name}\"."),
+            format!("unrecognized file type: {language}; {reason}."),
         )
     })
 }
@@ -237,13 +253,21 @@ mod repair_tests {
             regex_error_message("[", None),
             "Invalid regex matchString `[`: invalid regex pattern"
         );
+        // A PCRE2 offset counts the wrapper group, not the caller's text.
+        assert_eq!(
+            regex_error_message(
+                "foo(",
+                Some("PCRE2: error compiling pattern at offset 8: missing closing parenthesis")
+            ),
+            "Invalid regex matchString `foo(`: PCRE2: error compiling pattern: missing closing parenthesis"
+        );
     }
 
     /// A `\n` in a line-by-line search names the one fact and
     /// repairs to `multiline:"on"`, with no generic advice.
     #[test]
     fn a_line_break_pattern_repairs_to_multiline() {
-        for (text, regex) in [("\\n", "rust"), ("a\nb", "literal")] {
+        for (text, regex) in [("\\n", "rust"), ("a\\nb", "pcre2"), ("a\nb", "literal")] {
             let query: LocalSearchQuery = serde_json::from_value(serde_json::json!({
                 "path": ".", "matchString": text, "regex": regex, "resultView": "countLines"
             }))

@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult
 import { Box, Text } from '@earendil-works/pi-tui';
 import { formatDuration } from '../shared/format.js';
 import { resultBlock } from '../shared/render.js';
-import { say, type Subcommands } from '../shared/commands.js';
+import { notify, say, type Subcommands } from '../shared/commands.js';
 import { HOOKS_ENV, envFlag } from '../shared/env.js';
 import { redactSecrets, sanitizeTerminalText, visibleControls } from '../shared/sanitize.js';
 import { configFileLines, repoKey, tildePath } from '../shared/home.js';
@@ -170,7 +170,7 @@ function createDispatcher(session: HookSession, timings: Map<string, HookTiming>
     if (ms >= SLOW_HOOK_MS && !slowWarned.has(key) && ctx.hasUI && event !== 'SessionStart' && event !== 'Notification') {
       slowWarned.add(key);
       const why = event === 'PreToolUse' ? ': every tool call in a batch waits for it' : '';
-      ctx.ui.notify(`Slow ${event} hook (${formatDuration(ms)})${why}. ${sanitizeTerminalText(clipText(hook.command, 80))}`, 'warning');
+      notify(ctx.ui, `Slow ${event} hook (${formatDuration(ms)})${why}. ${clipText(hook.command, 80)}`, 'warning');
     }
     return result;
   };
@@ -188,7 +188,7 @@ function createDispatcher(session: HookSession, timings: Map<string, HookTiming>
     const key = `${event}\0${hook.command}`;
     if (ctx.hasUI && !failureWarned.has(key)) {
       failureWarned.add(key);
-      ctx.ui.notify(`${event} hook ${failure}: ${command}. ${closed ? 'The call was denied (failClosed).' : 'The call was allowed (hooks fail open); set "failClosed": true on the hook to deny instead.'}`, 'warning');
+      notify(ctx.ui, `${event} hook ${failure}: ${command}. ${closed ? 'The call was denied (failClosed).' : 'The call was allowed (hooks fail open); set "failClosed": true on the hook to deny instead.'}`, 'warning');
     }
     return closed ? `${event} hook ${failure} and is set to failClosed: ${command}` : undefined;
   };
@@ -228,7 +228,7 @@ function createDispatcher(session: HookSession, timings: Map<string, HookTiming>
     if (dispatchWarned.has(event)) return;
     dispatchWarned.add(event);
     try {
-      if (ctx.hasUI) ctx.ui.notify(`${event} hooks could not run: ${sanitizeTerminalText(errorMessage(error))}`, 'warning');
+      if (ctx.hasUI) notify(ctx.ui, `${event} hooks could not run: ${errorMessage(error)}`, 'warning');
     } catch {
       // The session was replaced.
     }
@@ -279,7 +279,7 @@ function registerSessionStartHooks(pi: ExtensionAPI, session: HookSession, { dis
     session.errors = loaded.errors;
     session.root = undefined;
     pending = [];
-    if (loaded.errors.length > 0 && ctx.hasUI) ctx.ui.notify(`Ignoring invalid hook config: ${loaded.errors.join('; ')}`, 'warning');
+    if (loaded.errors.length > 0 && ctx.hasUI) notify(ctx.ui, `Ignoring invalid hook config: ${loaded.errors.join('; ')}`, 'warning');
     startHooks(ctx, START_SOURCE[event.reason] ?? 'startup', true);
   });
   // Claude Code runs SessionStart again (source `compact`) after a compaction: its context comes with the next prompt.

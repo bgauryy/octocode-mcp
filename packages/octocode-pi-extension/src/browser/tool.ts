@@ -253,7 +253,7 @@ export function registerBrowserTool(pi: ExtensionAPI, browser: BrowserTool): voi
       'screenshot(format?): jpeg (default) or png, shrunk to fit; result names the full-size file\n' +
       'dialog(accept?, text?), upload(ref, files), download(ref?)\n' +
       'tabs, console, info, close, attach(port: an open browser)\n' +
-      'An element keeps its number while it stays on the page; a new document renumbers. Actions report what changed, so a fresh snapshot is rarely needed. A wait that times out fails with the current snapshot. Private/local addresses the agent opens (navigate, tab) and uploads outside the workspace need the user\'s confirmation. ' +
+      'An element keeps its number while it stays on the page; a new document renumbers. Actions report what changed, so a fresh snapshot is rarely needed. A wait that times out fails with the current snapshot. Private/local addresses the agent opens (navigate, tab) and uploads outside the workspace need approval in manual and workspace permission modes. ' +
       'Requests the page itself starts (images, frames, scripts, fetch, redirects) to a private or local address are blocked without asking, except the address you opened. WebSockets: a launched Chrome blocks them through a filtering proxy (as it does DNS rebinding); in an attached or persistent-profile Chrome only the page and its requests are checked, so a page WebSocket to a private address is not stopped and is only reported.',
     promptSnippet: 'Inspect rendered pages and act on current element refs',
     promptGuidelines: ['Inspect the outcome before repeating a browser click or submission, and use existing user authorization for actions with side effects.'],

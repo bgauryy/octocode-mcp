@@ -22,6 +22,10 @@ interface PromptInputs {
   collaborate?: boolean;
   /** Whether a file-writing tool is active; a read-only subagent hands long results back in its report instead. */
   canWrite?: boolean;
+  /** Whether `bash` is active; a read-only agent without it can write nothing, so it is told to put its results in the report. */
+  canShell?: boolean;
+  /** Whether MCP servers may run (a profile with `mcp: false` has none); their tools can write too. */
+  canMcp?: boolean;
   /** The Octocode MCP server's own instructions, verbatim, once it has connected (Pi puts a direct tool's namespace instructions in no prompt). */
   octocodeInstructions?: string;
 }
@@ -36,7 +40,7 @@ export function octocodePrompt(input: PromptInputs): string {
     ? [
         // The server's instructions own search-then-read order and paging; the `web` guideline owns web precedence.
         '- Use Octocode MCP (`mcp__octocode__*`) to check code before you rely on it, here or outside this repository:',
-        '  - Here: where something is defined or used, who calls it; trace flows, impact and failures. Use it instead of ls, rg, grep or find in bash.',
+        '  - Here: where something is defined or used, who calls it; trace flows, impact and failures. Use it instead of ls, rg, grep or find in bash; this overrides the general rule to use bash for them.',
         '  - Outside: how a dependency or library behaves, which API or version a package has, an upstream issue, PR, commit or release, or other implementations. Use it instead of answering from memory.',
         `- ${readOnly ? 'Use `read` for files you know.' : 'Use `read` for a file you will edit, and bash for builds, tests, git and running commands.'} If an Octocode tool is missing or refuses a path, say so and fall back to shell search.`,
       ]
@@ -73,8 +77,16 @@ export function octocodePrompt(input: PromptInputs): string {
       ];
 
   // A read-only agent gets one investigate-and-report rule instead of the rules about changing files.
+  // It names only the tools this agent has that can still write (a web profile has neither bash nor MCP).
+  const shell = input.canShell !== false;
+  const writers = [shell && 'Shell', input.canMcp !== false && 'MCP'].filter(Boolean).join(' and ');
+  const readOnlyRule = !writers
+    ? 'Put what you produce in your report.'
+    : shell
+      ? `${writers} tools can still write, so run only read-only commands, and write only your scratch folder and the output path your task names.`
+      : 'MCP tools can still write, so call only read-only ones, and put what you produce in your report.';
   const changing = readOnly
-    ? ['- Investigate and report; do not modify the repository. Shell and MCP tools can still write, so run only read-only commands, and write only your scratch folder and the output path your task names (with bash; without it, put that content in the report).']
+    ? [`- Investigate and report; do not modify the repository. ${readOnlyRule}`]
     : ['- Make the smallest complete change: code, tests and docs. Preserve user changes; avoid unrelated edits.'];
   const checks = readOnly ? [] : ['- Never weaken or delete tests, skip checks, or special-case inputs to make a check pass; fix the code or report the failure.'];
 
@@ -103,7 +115,7 @@ export function octocodePrompt(input: PromptInputs): string {
     '',
     '# Communication',
     // A subagent's tools and task already name its teammates; only the main session meets a second coordination system.
-    ...(input.canDelegate ? ['- Inside a Pi team use `coordinate`, `sendMessage` and `agent`; use the agents-communication tools only to reach agents outside Pi (Claude Code, Codex, other hosts); Pi honors their file locks.'] : []),
+    ...(input.canDelegate ? [`- Inside a Pi team use ${input.canUseAgent === false ? '`coordinate` and `sendMessage`' : '`coordinate`, `sendMessage` and `agent`'}; use the agents-communication tools only to reach agents outside Pi (Claude Code, Codex, other hosts); Pi honors their file locks.`] : []),
     `- Lead with results and path:line references; omit preambles and repetition.${readOnly ? '' : ' When you changed files, state what, where and verification.'}`,
   ].join('\n');
 }

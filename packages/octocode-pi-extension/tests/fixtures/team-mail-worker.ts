@@ -1,5 +1,6 @@
 import { Permission } from '../../src/permission/ask.js';
-import { MESSAGE_TYPE, Team } from '../../src/team/session.js';
+import { Team } from '../../src/team/session.js';
+import { INTERNAL_MESSAGE_TYPE } from '../../src/shared/messages.js';
 import { fakeCtx, fakePi } from '../fake-pi.js';
 
 /**
@@ -24,7 +25,7 @@ process.stdout.write(`ready ${id}\n`);
 
 let reported = 0;
 setInterval(() => {
-  const mail = fake.sent.filter((entry) => entry.message.customType === MESSAGE_TYPE);
+  const mail = fake.sent.filter((entry) => entry.message.customType === INTERNAL_MESSAGE_TYPE);
   for (const entry of mail.slice(reported)) process.stdout.write(`${JSON.stringify({ content: entry.message.content })}\n`);
   reported = mail.length;
 }, 25);

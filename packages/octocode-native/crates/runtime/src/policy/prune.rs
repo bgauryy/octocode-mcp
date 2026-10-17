@@ -102,14 +102,18 @@ impl PruneMode {
     }
 
     /// [`Self::directories`] less the names an `include` glob reaches into by
-    /// name (`build/*.rs`, `**/dist/**`, a bare `build`): naming a pruned
-    /// directory asks for its files. Credential stores stay pruned.
+    /// name (`build/*.rs`, `**/dist/**`, a bare `build` read as `*build*`): a
+    /// segment that matches the name, other than a bare wildcard (`*`,
+    /// `**`), asks for its files. Credential stores stay pruned.
     pub fn directories_with_includes(self, defaults: bool, include: &[String]) -> Vec<String> {
-        let named = |name: &str| {
-            include
-                .iter()
-                .any(|glob| glob.split(['/', '\\']).any(|segment| segment == name))
-        };
+        let segments = include
+            .iter()
+            .flat_map(|glob| glob.split(['/', '\\']))
+            .filter(|segment| !segment.is_empty() && segment.chars().any(|c| c != '*'))
+            .filter_map(|segment| globset::Glob::new(segment).ok())
+            .map(|glob| glob.compile_matcher())
+            .collect::<Vec<_>>();
+        let named = |name: &str| segments.iter().any(|segment| segment.is_match(name));
         let mut names = self.directories(defaults);
         names.retain(|name| CREDENTIAL_DIRECTORY_NAMES.contains(&name.as_str()) || !named(name));
         names
@@ -197,12 +201,18 @@ mod tests {
         let include = [
             "build/*.rs".to_owned(),
             "src/**".to_owned(),
+            "*.ts".to_owned(),
             ".ssh/*".to_owned(),
         ];
         let names = PruneMode::SearchSafe.directories_with_includes(true, &include);
         assert!(!names.iter().any(|name| name == "build"), "{names:?}");
         assert!(names.iter().any(|name| name == "dist"), "{names:?}");
         assert!(names.iter().any(|name| name == ".ssh"), "{names:?}");
+        // A bare word reaches the include as `*word*` and `**/*word*/**`.
+        let bare = crate::policy::include::include_globs(&["dist".to_owned()]);
+        let names = PruneMode::SearchSafe.directories_with_includes(true, &bare);
+        assert!(!names.iter().any(|name| name == "dist"), "{names:?}");
+        assert!(names.iter().any(|name| name == "build"), "{names:?}");
         assert_eq!(
             PruneMode::SearchSafe.directories_with_includes(true, &[]),
             PruneMode::SearchSafe.directories(true)

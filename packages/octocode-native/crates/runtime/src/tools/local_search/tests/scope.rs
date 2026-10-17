@@ -867,27 +867,30 @@ fn mixed_value_reads_are_one_executable_expand_values_call() {
     );
 }
 
-/// A `language` given as a file extension is not a ripgrep type name: the
-/// error names the type that holds those files, and the repair runs the same
+/// A `language` given as a file extension or in another case is not a
+/// ripgrep type name: the error names the type, and the repair runs the same
 /// search with it.
 #[test]
-fn an_extension_as_language_repairs_to_its_type_name() {
+fn an_extension_or_case_variant_as_language_repairs_to_its_type_name() {
     let root = tempfile::tempdir().expect("fixture directory");
     fs::write(root.path().join("a.rs"), "fn alpha() {}\n").expect("fixture");
     let (policy, security) = policy_for(root.path());
-    let request = ls_query(
-        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "language": "rs"}),
-        None,
-    );
-    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
-        .expect_err("rs is not a type name");
-    assert_eq!(error.code, "invalidInput", "{error:?}");
-    assert!(error.message.contains("\"rust\""), "{error:?}");
-    let next = error.next.as_deref().expect("repair");
-    assert_eq!(
-        next["repair"]["query"]["queries"][0]["language"], "rust",
-        "{next}"
-    );
+    for language in ["rs", ".RS", "Rust"] {
+        let request = ls_query(
+            serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "language": language}),
+            None,
+        );
+        let error =
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+                .expect_err("not a type name");
+        assert_eq!(error.code, "invalidInput", "{error:?}");
+        assert!(error.message.contains("\"rust\""), "{error:?}");
+        let next = error.next.as_deref().expect("repair");
+        assert_eq!(
+            next["repair"]["query"]["queries"][0]["language"], "rust",
+            "{next}"
+        );
+    }
 }
 
 /// An `include` that names a default-pruned directory (`build/*.rs`) asks

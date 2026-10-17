@@ -11,6 +11,7 @@ import { AuditLog, childAuditMessage, RELAY_VIA, WARN_ACTIONS, type AuditEntry }
 import { permissionHeader } from './header.js';
 import { auditLine, auditLines, cardLines, foldLines, computeCard, NO_REASON, transcriptPurpose } from './effect.js';
 import { ACTION_CLASSES, actionNoun, asksIn, chipText, CHIPS, decide, kindOf, modeAllowing, modeAllowingReasons, parseGrants, PERMISSION_ID, reasonAsks, startMode, UNGRANTABLE, type ActionClass, type ActionCount, type AskReason, type PermissionMode } from './mode.js';
+import { notify } from '../shared/commands.js';
 
 /**
  * What a check decided. `lasts` on an allow says how far it reaches: `call` for this call only (the mode allowed it, or the
@@ -158,7 +159,7 @@ export class Permission {
     this.#mode = mode;
     this.clearGrants();
     this.#log.reset(this.#recorded(ctx));
-    if (warning && !this.#warned && interactive(ctx, this.#isSubagent)) ctx.ui.notify(warning, 'warning');
+    if (warning && !this.#warned && interactive(ctx, this.#isSubagent)) notify(ctx.ui, warning, 'warning');
     if (warning) this.#warned = true;
     if (mode === 'full' && !ctx.hasUI && !this.#isSubagent) {
       this.#stderr(`octocode: permission mode full: every action runs without asking and is recorded in ${ctx.sessionManager.getSessionFile() ?? 'this session (not saved to a file)'}; /octocode permission log lists them.\n`);
@@ -195,7 +196,7 @@ export class Permission {
     else this.#invalidate();
     this.paint(ctx);
     this.#record({ action: 'mode', what: [`${from} → ${mode}`], allowed: true, via: 'user' });
-    if (interactive(ctx, this.#isSubagent)) ctx.ui.notify(`Permission mode: ${mode}. ${modeSummary(mode)}`, mode === 'full' ? 'warning' : 'info');
+    if (interactive(ctx, this.#isSubagent)) notify(ctx.ui, `Permission mode: ${mode}. ${modeSummary(mode)}`, mode === 'full' ? 'warning' : 'info');
     // Hidden and turn-neutral: during a run Pi appends it after the current turn's results, so the model reads it next.
     this.#pi.sendMessage({ customType: PERMISSION_ID, content: `[${PERMISSION_ID}] mode is now ${mode}: ${modeSummary(mode)}`, display: false, details: { mode } }, { triggerTurn: false });
   }

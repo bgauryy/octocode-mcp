@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Permission } from '../permission/ask.js';
-import { USER_SENDER } from '../team/session.js';
+import { USER_SENDER } from '../shared/messages.js';
 import { claimRun, lingerSeconds, maxSubagents, subagentLimitError, type AgentRuns, type Run } from './claim.js';
 import { askSpawn } from './profiles.js';
 

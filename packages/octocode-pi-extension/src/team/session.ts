@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import type { MessageEnvelope } from '../shared/messages.js';
+import { USER_SENDER, type MessageEnvelope } from '../shared/messages.js';
 import { addReply, cutText, errorMessage } from '../shared/util.js';
 import { fenceUntrusted, headerText } from '../shared/fence.js';
 import { storedText, visibleControls } from '../shared/sanitize.js';
-import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget, USER_SENDER } from './routing.js';
+import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget } from './routing.js';
 import { AGENT_ID_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
 import { envFlag, ownNonce, SUBAGENT_ENV } from '../shared/env.js';
 import { interactive } from '../shared/interactive.js';
@@ -23,8 +23,6 @@ import { agentName, LINE_MAX, newMember } from './identity.js';
 import { TeamTicker, type TeamView } from './ticker.js';
 
 export type { TeamView } from './ticker.js';
-export { MESSAGE_TYPE } from './mail.js';
-export { EXTERNAL_SENDER, MESSAGE_MAX_CHARS, USER_SENDER } from './routing.js';
 /** Refresh the agent's row at least this often so peers can tell it is alive (and its leases stay valid). */
 const HEARTBEAT_MS = 5_000;
 /** How often a subagent checks that the Pi process that started it still runs. */

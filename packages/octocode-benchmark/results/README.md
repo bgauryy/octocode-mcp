@@ -1,100 +1,73 @@
-# Results
+# Benchmark results
 
-Start with [MATRIX.md](MATRIX.md): every arm against the newest Octocode MCP version and against
-each other. [index.html](index.html) is the same as a dashboard. Rebuild both with
-`compare/bin/matrix_summary.py`, then
-`skills/octocode-benchmark/dashboard/build_datasets.py --static results/index.html`.
-Each campaign's runs and judgments live in [runs/](runs/), one JSON per campaign.
+Each result directory contains a brief README, its detailed report when available, and associated data or dashboards. Raw campaign evidence remains in `../campaigns/` (gitignored).
 
-## Current harness (fresh isolated agents, transcript-measured)
+[Run and reproduce benchmarks](../README.md) · [Overview matrix and dashboard](overview/README.md)
 
-| Campaign | Arms | Report |
-|---|---|---|
-| Output quality audit (Oct 16) | Frozen 20.2.0 output-audit build 2 vs lean gh; Sonnet 5.5, 30×1; 30 isolated Sol judgments. Correctness 8/10 both; MCP 1.22× characters (95% CI 1.05–1.42), leaner 6/30; 12 malformed-input failures | [Report](output-quality-2026-10-16.md), [data](runs/output-quality-2026-10-16.json) |
-| Build 4 release check (Oct 16) | Frozen Octocode 20.2.0 build 4 MCP vs lean gh; Sonnet 5.5, 30×1; 30 isolated GPT-6.1 Sol judgments. Correctness 8/10 vs 8/10; MCP 1.18× characters (95% CI 1.02–1.36), leaner 12/30. Invalid judge stages retained; later fixes unmeasured | [Report](release-fixes-2026-10-16.md), [data](runs/release-fixes-2026-10-16.json) |
-| Local release review (Oct 15) | Octocode 20.2.0 local MCP vs lean gh; Sonnet 5.5, 30×1, GPT-6.1 Sol judge. Correctness 9/10 both; MCP 1.31× characters (95% CI 1.16–1.47), leaner 5/30 | [Report](release-review-rebuilt-2026-10-15.md), [data](runs/release-review-rebuilt-2026-10-15.json) |
-| Current gated JEV, local MCP (Oct 13) | Terra, 40 local + 30 GitHub, ON/OFF; 140/140 valid cells, 70 blind comparisons. Zero goals/clasify use; local input tokens tied, GitHub +12.6%; JEV probes accounted separately | [Report](gated-jev-2026-10-13.md), [local dashboard](gated-jev-local.html), [GitHub dashboard](gated-jev-github.html) |
-| Selective goals/clasify guidance (Oct 13) | Off / old / revised, Terra, 40 local + 30 GitHub + 12 transfer questions; 244/246 valid cells, 162 quality comparisons. Lower local goal adoption; no general model-token saving demonstrated | [Report](selective-guidance-2026-10-13.md), [data](selective-guidance-2026-10-13.json) |
-| Terra goals/JEV off vs on (Oct 13) | 40 pinned local + 30 GitHub questions, 8-question Terraform slice; local 20.2.0 MCP, Terra researchers, Sonnet source-checking judge. 70/70 valid pairs; no general token-saving benefit demonstrated | [Report](terra-goals-2026-10-13.md), [local dashboard](local-goals.html), [local matrix](LOCAL_MATRIX.md) |
-| pi-local-now-vs-published-231129 (Oct 12) | Octocode local 20.x after the fix round vs published 19.1.0 (and vs local-before), pi runner Sonnet 5.5, codex gpt-5.5 judge, 30 × 1: median wall 41.7 → 26.5 s (published 24.9), 0 rateLimited, correctness and chars unchanged, missing `queries` wrapper 7 → 12 | [pi-local-now-vs-published-231129-2026-10-12.md](pi-local-now-vs-published-231129-2026-10-12.md) |
-| pi-local-vs-published-164221 (Oct 12) | Octocode local 20.x vs published 19.1.0 vs gh lean, pi runner Sonnet 5.5, codex gpt-5.5 judge, 30 × 1 (not comparable with claude-runner campaigns) | [pi-local-vs-published-164221-2026-10-12.md](pi-local-vs-published-164221-2026-10-12.md) |
-| lean-vs-mcp-114934 (Oct 9) | Octocode v20 MCP vs gh lean, Sonnet 5.5, 30 × 1 | Correctness tied, gh-lean 0.71× characters, time tied ([data](runs/lean-vs-mcp-114934-2026-10-09.json)) |
-| mcp-clasify-ab-111154 (Oct 9) | Octocode v20 MCP, clasify on vs off, Sonnet 5.5, 30 × 1 | [mcp-clasify-ab-111154-2026-10-09.md](mcp-clasify-ab-111154-2026-10-09.md) |
-
-## August 2026 CLI campaigns (previous harness)
-
-### Full 30 Q × 3 passes per matchup (local build v18.1.1, gpt-5.5 judge)
-
-Three full pairwise matchups over the complete 30-question v2 set, 3 passes each, local build
-`out/octocode.js` v18.1.1; blind neutral **gpt-5.5** judge, X/Y randomized per question,
-leanest-path enforced, 95% bootstrap CIs.
-
-- **[Octocode vs gh+RTK](full-octocode-vs-rtk-162848-2026-08-07.md)** — correctness parity
-  (9.29 / 9.42), Octocode **reliably ~3.2× leaner** (per-Q geo-mean 3.21×, 95% CI 2.36–4.46,
-  median 2.83×, leaner 67/89, wins 56/33). Supersedes the earlier 2-pass RTK "parity"
-  snapshot — the larger 3-pass run resolves toward Octocode leaner (CI now well above 1×).
-- **[Octocode vs gh+Headroom](full-octocode-vs-headroom-134213-2026-08-07.md)** — Octocode
-  more correct (9.30 / 8.62) **and** ~2.6× leaner (per-Q geo-mean 2.62×, 95% CI 1.87–3.71,
-  median 2.77×, leaner 63/88, wins 60/28).
-
-- **[Octocode vs plain gh](full-octocode-vs-gh-152630-2026-08-07.md)** — correctness parity
-  (9.19 / 9.27), Octocode **reliably ~2.0× leaner** (per-Q geo-mean 1.99×, 95% CI 1.52–2.61,
-  median 2.16×, leaner 67/89, wins 51/38). Plain `gh` is the leanest baseline, so the margin is
-  smaller but still significant.
-
-**Net:** at near-ceiling correctness parity, Octocode delivers answers in ~2.0× fewer characters
-than plain `gh`, ~2.6× fewer than gh+Headroom, and ~3.2× fewer than gh+RTK (all CIs above 1×) —
-a leaner context window and better model attention, with the margin widening on deep, large-file,
-multi-hop research.
-
-### Published-CLI validation (npx octocode@18.2.2)
-
-- **[Octocode vs gh+RTK — published CLI](full-octocode-vs-rtk-011533-2026-08-08.md)** — first full
-  30×3 run against the **published** `npx octocode@18.2.2` (not the local build). Correctness parity
-  (8.78 / 8.96, sign p=0.40), Octocode **~2.4× leaner** (per-Q geo-mean 2.37×, 95% CI 1.70–3.35×,
-  median 2.26×, leaner 66/90, p<0.0001; judge wins 47/43). Confirms the shipped artifact tracks the
-  local-build result (~3.2×); pooled 11.09× is outlier-driven (Q28=24.9%, leave-one-out 8.73×).
-- **[Octocode vs gh+Headroom — published CLI](full-octocode-vs-headroom-091618-2026-08-08.md)** — full
-  30×3 run against **published** `npx octocode@18.2.2` vs compressed gh+Headroom 0.34.0. Correctness
-  parity (8.68 / 8.68, sign p=0.59), Octocode **~2.3× leaner** (per-Q geo-mean 2.27×, 95% CI
-  1.70–3.01×, median 2.60×, leaner 67/90, p<0.0001; judge wins 47/43). Compression narrows but does
-  not close the gap; pooled 5.77× outlier-driven (Q28=20.3%, leave-one-out 4.98×).
-
-### Superseded (earlier, smaller runs)
-
-- [campaign-2pass-183432](campaign-2pass-183432-2026-08-06.md) (25×2, published CLI) — found
-  vs-Headroom 2.87× (stable) but vs-RTK parity (CI 0.70–2.05 straddled 1×). The RTK result is
-  now resolved by the 30×3 run above. Per-pass: [P1 175653](campaign-175653-2026-08-06.md).
-
-## Historical reports (restored, prior methodology)
-
-Kept for traceability; superseded by the 2-pass campaign above and not summed into the
-headline (different harness generations / single-pass or v1 suite):
-
-| Report | Note |
+| Result | Description |
 |---|---|
-| [gh+RTK 011611](octocode-vs-gh-rtk-011611-2026-08-06.md) | 25×1 v2, published CLI; RTK char win overstated by single pass |
-| [gh+RTK 200641](octocode-vs-gh-rtk-200641-2026-08-05.md) · [183927](octocode-vs-gh-rtk-183927-2026-08-05.md) · [191906](octocode-vs-gh-rtk-191906-2026-08-05.md) | earlier v1/interim RTK runs |
-| [gh+Headroom 011859](octocode-vs-gh-headroom-011859-2026-08-06.md) | 25×1 v2 |
-| [gh+Headroom 1845](octocode-vs-gh-headroom-1845-2026-08-05.md) · [200034](octocode-vs-gh-headroom-200034-2026-08-05.md) | 20×3 and earlier Headroom runs |
-
-Historical complete reports may remain in this directory for traceability but
-are not silently pooled across different harness generations. Invalid and
-incomplete reports are removed rather than included with caveats in the
-headline calculation.
-
-Write new reports as
-`<comparison-name>-<HHMMSS>-<YYYY-MM-DD>.md` using
-[output guidance](../skills/octocode-benchmark/output.md). Measurement is in Unicode
-characters delivered to the runner; correctness takes precedence over
-footprint. Failed probes inside a complete run remain counted.
-
-## Supplementary probes (not headline campaigns)
-
-The October 13 feature checks are separate from autonomous agent measurements: [local ranking](local-ranking-2026-10-13.md), [all 13 read tools](read-tool-ranking-2026-10-13.md), [PR/AST/LSP classification](review-classification-2026-10-13.md), and [red/white selective semantics](selective-semantics-2026-10-13.md). They retain exact-route controls, full-traversal overhead and unsuccessful judgments.
-
-| Comparison | Report | Outcome |
-|---|---|---|
-| Local Octocode **MCP**, Sonnet 5.5 runners: clasify on vs off | [mcp-clasify-ab-111154](mcp-clasify-ab-111154-2026-10-09.md) | 30×1, `claude -p` per question behind a logging stdio proxy, GPT-5.5 blind judge. `clasify` was offered in 30/30 sessions and called 0 times, so the arms tied (chars 1.04×, CI 0.93–1.16; cost $2.58 vs $2.62; correctness 9.0 vs 9.2, p≈0.15). Mean ~10.8k chars/Q, about 2× leaner than the Aug CLI-v18 campaign (cross-campaign, orientation only). |
-| Live 3-arm run (`octocode@18.2.2` vs `gh`+RTK and `gh`+Headroom) | [live-3arm-130222](live-3arm-130222-2026-08-09.md) | 30×1 fresh live run with three isolated runner agents and two blind judges. All 90 logs strict-valid. Octocode was leaner than RTK on 19/30 (geo 1.58×) and leaner than Headroom on 20/30 (geo 1.56×). Single pass only — not a headline replacement. |
-| Octocode (local build, prompt+desc fixes) vs `gh` + RTK | [localfix-020431](octocode-vs-gh-rtk-localfix-020431-2026-08-06.md) | 25×1, arm B = local out/octocode.js. Octocode more correct this pass (mean 9.72/9.24; paired B 5 win/17 tie/3 loss, p≈0.73 n.s.), ~3.2× leaner (geo-mean 3.24×), leaner 20/25. Targeted fixes improved Q21 (verbatim node value) & Q25 (diff-over-comment). Local-build probe, not a published-CLI headline; Q25 contested. |
+| [GATED_JEV_GITHUB_MATRIX](GATED_JEV_GITHUB_MATRIX/README.md) | Benchmark matrix — Gated JEV (current local MCP) · gated-jev-github30-2026-10-13 · mcp-clasify vs every other tool |
+| [GATED_JEV_LOCAL_MATRIX](GATED_JEV_LOCAL_MATRIX/README.md) | Benchmark matrix — Gated JEV (current local MCP) · gated-jev-local40-2026-10-13 · local-mcp-clasify vs every other tool |
+| [LOCAL_MATRIX](LOCAL_MATRIX/README.md) | Benchmark matrix — Local 20.2.0 goals ablation · local40-terra-goals-2026-10-13 · local-mcp-clasify vs every other tool |
+| [SELECTIVE_GUIDANCE_GITHUB_MATRIX](SELECTIVE_GUIDANCE_GITHUB_MATRIX/README.md) | Benchmark matrix — Octocode selective guidance · selective-guidance-github30-2026-10-13 · mcp-clasify-revised vs every other tool |
+| [SELECTIVE_GUIDANCE_LOCAL_MATRIX](SELECTIVE_GUIDANCE_LOCAL_MATRIX/README.md) | Benchmark matrix — Octocode selective guidance · selective-guidance-local40-2026-10-13 · local-mcp-clasify-revised vs every other tool |
+| [SELECTIVE_GUIDANCE_TRANSFER_MATRIX](SELECTIVE_GUIDANCE_TRANSFER_MATRIX/README.md) | Benchmark matrix — Octocode selective guidance · selective-guidance-transfer12-2026-10-13 · local-mcp-clasify-revised vs every other tool |
+| [campaign-175653-2026-08-06](campaign-175653-2026-08-06/README.md) | 3-arm campaign — Octocode vs gh+RTK vs gh+Headroom (25×1, 2026-08-06) |
+| [campaign-2pass-183432-2026-08-06](campaign-2pass-183432-2026-08-06/README.md) | 3-arm campaign, 2 passes — Octocode vs gh+RTK vs gh+Headroom (25×2, 2026-08-06) |
+| [full-octocode-vs-gh-152630-2026-08-07](full-octocode-vs-gh-152630-2026-08-07/README.md) | Full campaign — Octocode (local build) vs plain `gh` |
+| [full-octocode-vs-headroom-091618-2026-08-08](full-octocode-vs-headroom-091618-2026-08-08/README.md) | Full campaign — Octocode (published npx CLI **v18.2.2**) vs gh + Headroom |
+| [full-octocode-vs-headroom-134213-2026-08-07](full-octocode-vs-headroom-134213-2026-08-07/README.md) | Full campaign — Octocode (local build) vs gh + Headroom |
+| [full-octocode-vs-rtk-011533-2026-08-08](full-octocode-vs-rtk-011533-2026-08-08/README.md) | Full campaign — Octocode (published npx CLI **v18.2.2**) vs gh + RTK |
+| [full-octocode-vs-rtk-162848-2026-08-07](full-octocode-vs-rtk-162848-2026-08-07/README.md) | Full campaign — Octocode (local build) vs gh + RTK |
+| [gated-jev-2026-10-13](gated-jev-2026-10-13/README.md) | Current local MCP: JEV enabled versus disabled |
+| [gated-jev-accounting-2026-10-13](gated-jev-accounting-2026-10-13/README.md) | gated jev accounting 2026 10 13 |
+| [gated-jev-evidence-2026-10-13](gated-jev-evidence-2026-10-13/README.md) | gated jev evidence 2026 10 13 |
+| [gated-jev-github](gated-jev-github/README.md) | gated jev github |
+| [gated-jev-github-datasets](gated-jev-github-datasets/README.md) | gated jev github datasets |
+| [gated-jev-github30-2026-10-13](gated-jev-github30-2026-10-13/README.md) | Paired ablation report |
+| [gated-jev-local](gated-jev-local/README.md) | gated jev local |
+| [gated-jev-local-datasets](gated-jev-local-datasets/README.md) | gated jev local datasets |
+| [gated-jev-local40-2026-10-13](gated-jev-local40-2026-10-13/README.md) | Paired ablation report |
+| [github30-terra-goals-2026-10-13](github30-terra-goals-2026-10-13/README.md) | github30-terra-goals-2026-10-13 |
+| [lean-vs-mcp-114934-2026-10-09](lean-vs-mcp-114934-2026-10-09/README.md) | Octocode v20 MCP vs gh-lean — 2026-10-09 (30 × 1) |
+| [lean-vs-mcp-30q-2026-10-10](lean-vs-mcp-30q-2026-10-10/README.md) | Octocode mcp-v9 vs gh-lean vs published 19.1.0 — 2026-10-10 (30 × 1) |
+| [live-3arm-130222-2026-08-09](live-3arm-130222-2026-08-09/README.md) | Live 3-arm benchmark run — 2026-08-09 (single pass) |
+| [local-30q-2026-10-10](local-30q-2026-10-10/README.md) | Octocode local tools vs a lean shell — 2026-10-10 (30 × 1, corpus-local) |
+| [local-3arm-q1-10-2026-10-09](local-3arm-q1-10-2026-10-09/README.md) | local-3arm-q1-10-2026-10-09 |
+| [local-goals](local-goals/README.md) | local goals |
+| [local-native-terra-2026-10-17](local-native-terra-2026-10-17/README.md) | Native CLI versus shell: quality review |
+| [local-overview](local-overview/README.md) | local overview |
+| [local-ranking-2026-10-13](local-ranking-2026-10-13/README.md) | Local relevance ranking: measured context savings |
+| [local40-terra-goals-2026-10-13](local40-terra-goals-2026-10-13/README.md) | local40-terra-goals-2026-10-13 |
+| [mcp-clasify-ab-111154-2026-10-09](mcp-clasify-ab-111154-2026-10-09/README.md) | Octocode MCP (local) — clasify on vs off, Sonnet 5.5 runners — 2026-10-09 (single pass) |
+| [octocode-vs-gh-headroom-011859-2026-08-06](octocode-vs-gh-headroom-011859-2026-08-06/README.md) | Octocode vs `gh` + Headroom — 2026-08-06 |
+| [octocode-vs-gh-headroom-1845-2026-08-05](octocode-vs-gh-headroom-1845-2026-08-05/README.md) | Octocode CLI vs `gh` + Headroom — Run Report |
+| [octocode-vs-gh-headroom-200034-2026-08-05](octocode-vs-gh-headroom-200034-2026-08-05/README.md) | Octocode vs `gh` + Headroom — 200034-2026-08-05 |
+| [octocode-vs-gh-rtk-011611-2026-08-06](octocode-vs-gh-rtk-011611-2026-08-06/README.md) | Octocode CLI vs `gh` + `rtk` — 011611 2026-08-06 |
+| [octocode-vs-gh-rtk-183927-2026-08-05](octocode-vs-gh-rtk-183927-2026-08-05/README.md) | Octocode vs `gh` + RTK — full 20-question run (183927, 2026-08-05) |
+| [octocode-vs-gh-rtk-191906-2026-08-05](octocode-vs-gh-rtk-191906-2026-08-05/README.md) | Octocode vs `gh` + RTK — full 20-question run, pass 2 (191906, 2026-08-05) |
+| [octocode-vs-gh-rtk-200641-2026-08-05](octocode-vs-gh-rtk-200641-2026-08-05/README.md) | Octocode CLI vs `gh` + `rtk` — 200641 2026-08-05 |
+| [octocode-vs-gh-rtk-localfix-020431-2026-08-06](octocode-vs-gh-rtk-localfix-020431-2026-08-06/README.md) | Octocode CLI (local build w/ prompt+desc fixes) vs `gh` + `rtk` — 020431 2026-08-06 |
+| [output-quality-2026-10-16](output-quality-2026-10-16/README.md) | Output quality audit: frozen build 2 versus lean gh |
+| [overview](overview/README.md) | overview |
+| [pi-local-163239-2026-10-12](pi-local-163239-2026-10-12/README.md) | pi-local-163239-2026-10-12 |
+| [pi-local-now-vs-published-231129-2026-10-12](pi-local-now-vs-published-231129-2026-10-12/README.md) | Local build after the fix round vs published 19.1.0 (pi runner), Oct 12 2026 |
+| [pi-local-vs-published-164221-2026-10-12](pi-local-vs-published-164221-2026-10-12/README.md) | The local build beats published 19.1.0 on correctness and output size, with no evidence gaps, but it is slower under concurrent load. The file guard refused my two main outputs (the results write-up and `report.md`), so the full report is below. It flagged the writes as "untrusted or private text" and said not to retry; please write it to those paths or get approval. |
+| [pi-published-161933-2026-10-12](pi-published-161933-2026-10-12/README.md) | pi-published-161933-2026-10-12 |
+| [read-tool-ranking-2026-10-13](read-tool-ranking-2026-10-13/README.md) | --- |
+| [release-fixes-2026-10-16](release-fixes-2026-10-16/README.md) | Build 4 release check: Octocode MCP versus lean gh |
+| [release-review-rebuilt-2026-10-15](release-review-rebuilt-2026-10-15/README.md) | Local release review: Octocode MCP versus lean gh |
+| [review-classification-2026-10-13](review-classification-2026-10-13/README.md) | --- |
+| [runs](runs/README.md) | runs |
+| [selective-guidance-2026-10-13](selective-guidance-2026-10-13/README.md) | Selective goals and clasify guidance |
+| [selective-guidance-github30](selective-guidance-github30/README.md) | selective guidance github30 |
+| [selective-guidance-github30-2026-10-13](selective-guidance-github30-2026-10-13/README.md) | selective-guidance-github30-2026-10-13 |
+| [selective-guidance-github30-datasets](selective-guidance-github30-datasets/README.md) | selective guidance github30 datasets |
+| [selective-guidance-local40](selective-guidance-local40/README.md) | selective guidance local40 |
+| [selective-guidance-local40-2026-10-13](selective-guidance-local40-2026-10-13/README.md) | selective-guidance-local40-2026-10-13 |
+| [selective-guidance-local40-datasets](selective-guidance-local40-datasets/README.md) | selective guidance local40 datasets |
+| [selective-guidance-transfer12](selective-guidance-transfer12/README.md) | selective guidance transfer12 |
+| [selective-guidance-transfer12-2026-10-13](selective-guidance-transfer12-2026-10-13/README.md) | selective-guidance-transfer12-2026-10-13 |
+| [selective-guidance-transfer12-datasets](selective-guidance-transfer12-datasets/README.md) | selective guidance transfer12 datasets |
+| [selective-semantics-2026-10-13](selective-semantics-2026-10-13/README.md) | --- |
+| [terra-goals-2026-10-13](terra-goals-2026-10-13/README.md) | Terra with and without JEV — 40 local and 30 GitHub questions |

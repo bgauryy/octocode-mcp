@@ -14,7 +14,7 @@ import { parseArgs } from 'node:util';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { createLocalAcceptanceFixture } from './local-acceptance-fixture.mjs';
-import { suggestedCall } from '../../../../octocode-local-testing/harness/lead-predicates.mjs';
+import { suggestedCall } from '../../../../packages/octocode-benchmark/local/e2e/harness/lead-predicates.mjs';
 const suggestion = (data, action) => (data?.hints ?? []).map(suggestedCall).find(call => call?.key === action);
 
 const { values } = parseArgs({

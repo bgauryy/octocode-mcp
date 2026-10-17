@@ -11,6 +11,7 @@ import { visibleControls } from '../shared/sanitize.js';
 import type { Tool } from '@earendil-works/pi-mcp';
 import { OctocodeServer, type Launch, type ServerStatus } from './client.js';
 import { octocodeToolDefinition, TurnBudget } from './tools.js';
+import { notify } from '../shared/commands.js';
 
 /**
  * Octocode MCP (local code, LSP, GitHub and package registry research) runs on this extension's own MCP client
@@ -208,7 +209,7 @@ export class OctocodeMcp {
     const ctx = this.ctx;
     if (!ctx?.hasUI) return;
     try {
-      ctx.ui.notify(text, 'warning');
+      notify(ctx.ui, text, 'warning');
     } catch {
       // The session ended before the server gave up.
     }

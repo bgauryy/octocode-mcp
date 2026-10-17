@@ -2,7 +2,8 @@ import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
 import { say, wordCompletions, type Subcommand } from '../shared/commands.js';
 import { errorMessage } from '../shared/util.js';
 import { describeMembers } from '../team/routing.js';
-import { USER_SENDER, type Team } from '../team/session.js';
+import type { Team } from '../team/session.js';
+import { USER_SENDER } from '../shared/messages.js';
 import { USER_STOP } from './process.js';
 import { mergeAgent, pendingRefs } from './worktree.js';
 

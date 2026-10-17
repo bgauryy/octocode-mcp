@@ -4,6 +4,7 @@ import { Inbox } from './inbox.js';
 import { mailIds, type Mail } from './mail.js';
 import type { Message } from './model.js';
 import type { TeamStore } from './store.js';
+import { notify } from '../shared/commands.js';
 
 /** Consecutive failed ticks (about 30s) before the agent hears that the team database is unavailable. */
 const FAILED_TICKS_NOTICE = 30;
@@ -105,6 +106,6 @@ export class Delivery {
     }
     if (this.wakeReported || Date.now() - this.wakeHandedAt < WAKE_STUCK_MS) return;
     this.wakeReported = true;
-    if (ctx.hasUI) ctx.ui.notify('A team message should have started a turn, but Pi did not run one (select a model with /model and sign in with /login). The message stays queued; its sender is told it went unread if this session ends first.', 'warning');
+    if (ctx.hasUI) notify(ctx.ui, 'A team message should have started a turn, but Pi did not run one (select a model with /model and sign in with /login). The message stays queued; its sender is told it went unread if this session ends first.', 'warning');
   }
 }

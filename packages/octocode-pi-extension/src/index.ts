@@ -4,7 +4,7 @@ import { registerApi } from './api/register.js';
 import { registerExternal } from './external/register.js';
 import { externalPermissionDialog } from './external/permission-dialog.js';
 import type { ExternalAgents } from './external/manager.js';
-import type { MessageEnvelope } from './shared/messages.js';
+import { EXTERNAL_SENDER, type MessageEnvelope } from './shared/messages.js';
 import { registerAskUser } from './ask/tool.js';
 import { registerCompaction } from './compaction/register.js';
 import { registerReadDedupe } from './files/dedupe.js';
@@ -24,7 +24,7 @@ import { PROFILE_DECLARABLE } from './permission/mode.js';
 import { createProvenance } from './permission/provenance.js';
 import { pruneSnapshots } from './permission/snapshot.js';
 import { userBashGate } from './permission/user-bash.js';
-import { Subcommands } from './shared/commands.js';
+import { notify, Subcommands } from './shared/commands.js';
 import { projectTrust, registerTrustCommand } from './shared/trust.js';
 import { errorMessage, firstLine, MINUTE_MS, settleWithin } from './shared/util.js';
 import { plural, stopRowTimers } from './shared/render.js';
@@ -40,7 +40,7 @@ import { registerModelsCommand } from './subagents/models-command.js';
 import { loadProfiles, type AgentProfile } from './subagents/profiles.js';
 import { maxSubagents } from './subagents/claim.js';
 import { registerAgentTool, type AgentControl } from './subagents/tool.js';
-import { EXTERNAL_SENDER, spilledMessage, Team } from './team/session.js';
+import { spilledMessage, Team } from './team/session.js';
 import { registerCollab } from './team/tools.js';
 import { registerTurnSetup } from './turn.js';
 import { registerActivity } from './ui/activity.js';
@@ -102,7 +102,7 @@ export default function octocode(pi: ExtensionAPI): void {
     // report started, rewriting the whole prompt cache twice per report).
     const minimum = minimumPiVersion();
     if (minimum && versionBelow(VERSION, minimum) && interactive(ctx, isSubagent)) {
-      ctx.ui.notify(`Pi ${VERSION} is older than the ${minimum} Octocode needs: prompt caching and other features misbehave. Update: npm i -g @earendil-works/pi-coding-agent@latest`, 'warning');
+      notify(ctx.ui, `Pi ${VERSION} is older than the ${minimum} Octocode needs: prompt caching and other features misbehave. Update: npm i -g @earendil-works/pi-coding-agent@latest`, 'warning');
     }
   });
   // Every result, nested codemode calls included, before any later call can repeat its text.
@@ -206,9 +206,9 @@ export default function octocode(pi: ExtensionAPI): void {
     profiles = loadProfiles(ctx.cwd, undefined, await projectTrust(ctx), process.env, (file, error) => skipped.push(`${file}: ${errorMessage(error)}`));
     // After the profiles: the main session leaves `browser` to the profiles that carry it.
     turn.settleTools();
-    if (skipped.length > 0 && interactive(ctx, isSubagent)) ctx.ui.notify(`Skipped subagent profiles that could not be read:\n${skipped.join('\n')}`, 'warning');
+    if (skipped.length > 0 && interactive(ctx, isSubagent)) notify(ctx.ui, `Skipped subagent profiles that could not be read:\n${skipped.join('\n')}`, 'warning');
     const ignored = [...profiles.values()].filter((profile) => profile.ignoredPermissions?.length);
-    if (ignored.length > 0 && interactive(ctx, isSubagent)) ctx.ui.notify(`Ignored permissions a subagent profile cannot declare (only ${PROFILE_DECLARABLE.join(', ')}):\n${ignored.map((profile) => `${profile.name}: ${profile.ignoredPermissions!.join(', ')}`).join('\n')}`, 'warning');
+    if (ignored.length > 0 && interactive(ctx, isSubagent)) notify(ctx.ui, `Ignored permissions a subagent profile cannot declare (only ${PROFILE_DECLARABLE.join(', ')}):\n${ignored.map((profile) => `${profile.name}: ${profile.ignoredPermissions!.join(', ')}`).join('\n')}`, 'warning');
     await api?.start(ctx);
     // The models.dev index, refreshed in the background, so the first subagent of the day routes with it.
     if (!isSubagent) currentCatalog();

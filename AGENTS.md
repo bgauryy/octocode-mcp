@@ -63,7 +63,7 @@ Package versions are independent; the release line is listed under Release.
   skills; `skills-dev/`: skills for working on this repo. `.agents/skills/` entries are symlinks
   to those folders: edit the canonical folder.
 - `.claude-plugin/`, `.agents/plugins/`: plugin marketplace entries. `releases/`: packed plugin
-  archives. `octocode-local-testing/`: end-to-end suites against the built MCP server and CLI.
+  archives. `packages/octocode-benchmark/local/e2e/`: end-to-end suites against the built MCP server and CLI.
   `test-utils/`: shared test helpers. `assets/`: images. `MANIFEST.md`: the
   research-driven-development vision.
 
@@ -88,7 +88,7 @@ $DEV verify                      # dedupe, docs, and each package's verify
 Without `setup`, `@octocodeai/octocode-core` resolves from npm at the version pinned in
 `packages/octocode-config/package.json`. The local MCP server is the stdio command
 `node packages/octocode-mcp/dist/index.js`. End-to-end suites:
-`node octocode-local-testing/harness/run-all.mjs`. CI runs `$DEV lint:ci` and `$DEV test:ci` (which starts with `$DEV skills:check`; run that after editing anything under `skills/`).
+`node packages/octocode-benchmark/local/e2e/harness/run-all.mjs`. CI runs `$DEV lint:ci` and `$DEV test:ci` (which starts with `$DEV skills:check`; run that after editing anything under `skills/`).
 
 Change rules:
 

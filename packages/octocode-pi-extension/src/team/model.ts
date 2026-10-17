@@ -145,6 +145,8 @@ export function toLease(row: Row): Lease {
   return { id: num(row['id']), path: String(row['path']), kind: row['kind'] === 'tree' ? 'tree' : 'file', owner: String(row['owner']), reason: String(row['reason']), acquiredAt: num(row['acquired_at']), expiresAt: num(row['expires_at']) };
 }
 
+/** `deliveries.wake`: whether a delivery may start an idle recipient's turn, and whether it interrupts the current one. */
+export const WAKE = { none: 0, wake: 1, interrupt: 2 } as const;
 
 /** A message waiting for `to`, from a row that also carries the sender's role and goal (`sender_role`, `sender_goal`) while it is still on the team. */
 export function toMessage(row: Row, to: string): Message {
@@ -155,8 +157,8 @@ export function toMessage(row: Row, to: string): Message {
   return {
     id: num(row['id']), from: String(row['sender']), to, text: String(row['body']), at: num(row['created_at']), replyRequired: row['reply_required'] === 1,
     ...(typeof replyTo === 'number' ? { replyTo } : {}),
-    wake: num(wake) >= 1,
-    ...(wake === 2 ? { interrupt: true } : {}),
+    wake: num(wake) >= WAKE.wake,
+    ...(wake === WAKE.interrupt ? { interrupt: true } : {}),
     ...(typeof row['proof'] === 'string' ? { proof: row['proof'] } : {}),
     ...(role ? { sender: { role, ...(goal ? { goal } : {}) } } : {}),
   };

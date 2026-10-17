@@ -1051,7 +1051,7 @@
       ],
       "text": true,
       "allow": [
-        "octocode-local-testing/harness/version-compare/"
+        "packages/octocode-benchmark/local/e2e/harness/version-compare/"
       ]
     },
     {

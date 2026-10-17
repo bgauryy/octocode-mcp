@@ -9,6 +9,7 @@ import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { addReply, emptyTotals, entryMessage, isRecord, modelLookup, spendOf, unpricedModel, type Spend, type UsageTotals } from '../shared/util.js';
 import { autoCompactAt } from '../shared/tokens.js';
 import { QUEUED_STATUS } from './delivery.js';
+import { notify } from '../shared/commands.js';
 
 /**
  * Octocode's two-line footer, in the order other coding agents converged on: line 1 is what the agent is and is doing
@@ -257,7 +258,7 @@ function registerUnpricedNotice(pi: ExtensionAPI): void {
     const model = unpricedModel(event.message, modelLookup(ctx));
     if (!model) return;
     warned = true;
-    ctx.ui.notify(`${sanitizeTerminalText(model)} has no pricing in models.json; its usage is not in the cost`, 'warning');
+    notify(ctx.ui, `${model} has no pricing in models.json; its usage is not in the cost`, 'warning');
   });
 }
 
@@ -286,7 +287,7 @@ function registerReasoningNotice(pi: ExtensionAPI): void {
     const compat: unknown = twin.compat;
     const adaptive = isRecord(compat) && compat['forceAdaptiveThinking'] === true;
     const fields = `"reasoning": true${adaptive ? ' and "compat": { "forceAdaptiveThinking": true }' : ''}`;
-    ctx.ui.notify(sanitizeTerminalText(`${key} does not declare reasoning in models.json, so Pi never asks it to think. ${twin.provider}/${twin.id} declares it: add ${fields} to its entry.`), 'warning');
+    notify(ctx.ui, `${key} does not declare reasoning in models.json, so Pi never asks it to think. ${twin.provider}/${twin.id} declares it: add ${fields} to its entry.`, 'warning');
   };
   pi.on('session_start', async (event, ctx) => {
     warned.clear();
