@@ -16,6 +16,9 @@ import { askSpawn, profileReach } from '../src/subagents/profiles.js';
 import { fakeCtx, fakePi, fakePermission } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
+/** A child's saved session, as `childSession` names it. */
+const SESSION = { dir: '/s/session', id: 'inky-kraken' };
+
 describe('subagent permissions', () => {
   it('sets the child mode and grant from the parent, never from the inherited environment', () => {
     const env = subagentProcessEnv(undefined, { OCTOCODE_PERMISSION: 'full', OCTOCODE_PERMISSION_GRANTS: 'file.outside' }, { id: 'a-1', permission: { mode: 'manual', grants: ['shell'] } });
@@ -137,12 +140,12 @@ describe('subagents', () => {
 
   it('parses profile frontmatter and builds child pi arguments', () => {
     const profile = parseProfile('fallback', '---\nname: researcher\ndescription: Reads code\ntools: read,grep\n---\nBe precise.');
-    expect(profile).toEqual({ name: 'researcher', description: 'Reads code', prompt: 'Be precise.', tools: 'read,grep', hash: expect.stringMatching(/^[0-9a-f]{16}$/) });
+    expect(profile).toEqual({ name: 'researcher', description: 'Reads code', prompt: 'Be precise.', tools: 'read,grep,sendMessage,coordinate,archive', hash: expect.stringMatching(/^[0-9a-f]{16}$/) });
     const dir = tmp();
-    const args = buildAgentArgs(profile, 'anthropic/claude', '/ext/index.js', dir);
+    const args = buildAgentArgs(profile, 'anthropic/claude', '/ext/index.js', dir, SESSION);
     const promptFile = args[args.indexOf('--append-system-prompt') + 1]!;
     expect(args).toEqual([
-      '--mode', 'rpc', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--model', 'anthropic/claude', '--tools', 'read,grep', '--append-system-prompt', promptFile,
+      '--mode', 'rpc', '--session-dir', SESSION.dir, '--session-id', SESSION.id, '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--model', 'anthropic/claude', '--tools', 'read,grep,sendMessage,coordinate,archive', '--append-system-prompt', promptFile,
     ]);
     expect(path.dirname(promptFile)).toBe(dir);
     expect(fs.readFileSync(promptFile, 'utf8')).toBe('Be precise.');
@@ -152,18 +155,18 @@ describe('subagents', () => {
     const dir = tmp();
     const decoy = path.join(tmp(), 'secret.txt');
     fs.writeFileSync(decoy, 'not the prompt');
-    const args = buildAgentArgs({ name: 'p', description: '', prompt: decoy }, undefined, '/ext/index.js', dir);
+    const args = buildAgentArgs({ name: 'p', description: '', prompt: decoy }, undefined, '/ext/index.js', dir, SESSION);
     const promptFile = args[args.indexOf('--append-system-prompt') + 1]!;
     expect(promptFile).not.toBe(decoy);
     expect(fs.readFileSync(promptFile, 'utf8')).toBe(decoy);
     if (process.platform !== 'win32') expect(fs.statSync(promptFile).mode & 0o777).toBe(0o600);
     // No prompt, no file.
-    expect(buildAgentArgs({ name: 'p', description: '', prompt: '' }, undefined, '/ext/index.js', dir)).not.toContain('--append-system-prompt');
+    expect(buildAgentArgs({ name: 'p', description: '', prompt: '' }, undefined, '/ext/index.js', dir, SESSION)).not.toContain('--append-system-prompt');
   });
 
   it('keeps the task out of the arguments: RPC takes it as a prompt command, so no task text can become a flag or an @file', () => {
     const profile = parseProfile('p', '---\ntools: read\n---\n- Be careful.');
-    const parsed = parseArgs(buildAgentArgs(profile, 'faux/model', '/ext/index.js', tmp()));
+    const parsed = parseArgs(buildAgentArgs(profile, 'faux/model', '/ext/index.js', tmp(), SESSION));
     expect(parsed.mode).toBe('rpc');
     expect(parsed.messages).toEqual([]);
     expect(parsed.fileArgs).toEqual([]);
@@ -174,7 +177,7 @@ describe('subagents', () => {
   });
 
   it('loads Pi\'s built-in MCP in children unless the profile turns MCP off', () => {
-    const args = buildAgentArgs({ name: 'plain', description: '', prompt: '', mcp: false }, undefined, '/ext/index.js');
+    const args = buildAgentArgs({ name: 'plain', description: '', prompt: '', mcp: false }, undefined, '/ext/index.js', undefined, SESSION);
     expect(args).not.toContain('builtin:mcp');
     expect(args).not.toContain('builtin:tool-search');
   });
@@ -182,9 +185,9 @@ describe('subagents', () => {
   it('maps excludeTools frontmatter to --exclude-tools', () => {
     const profile = parseProfile('reviewer', '---\nexcludeTools: file\n---\nReview.');
     expect(profile.excludeTools).toBe('file');
-    const args = buildAgentArgs(profile, undefined, '/ext/index.js', tmp());
+    const args = buildAgentArgs(profile, undefined, '/ext/index.js', tmp(), SESSION);
     expect(args).toEqual([
-      '--mode', 'rpc', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--exclude-tools', 'file,edit,write', '--append-system-prompt', args[args.indexOf('--append-system-prompt') + 1],
+      '--mode', 'rpc', '--session-dir', SESSION.dir, '--session-id', SESSION.id, '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--exclude-tools', 'file,edit,write', '--append-system-prompt', args[args.indexOf('--append-system-prompt') + 1],
     ]);
   });
 
@@ -238,7 +241,7 @@ describe('subagents', () => {
     expect(profile?.prompt).not.toContain('cua');
     expect(subagentProcessEnv(profile, { PATH: '/usr/bin' })).toMatchObject({ OCTOCODE_SUBAGENT: '1', OCTOCODE_BROWSER_VISIBLE: '1', PATH: '/usr/bin' });
     expect(subagentProcessEnv(undefined, {})).not.toHaveProperty('OCTOCODE_BROWSER_VISIBLE');
-    expect(buildAgentArgs(profile, undefined, '/ext/index.js')).toContain('--exclude-tools');
+    expect(buildAgentArgs(profile, undefined, '/ext/index.js', undefined, SESSION)).toContain('--exclude-tools');
   });
 
   it('caps running subagents at OCTOCODE_MAX_SUBAGENTS, default 3', () => {

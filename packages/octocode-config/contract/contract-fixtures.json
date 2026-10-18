@@ -556,7 +556,8 @@
       "queries": [
         {
           "owner": "bgauryy",
-          "repo": "octocode"
+          "repo": "octocode",
+          "historyDepth": 1
         }
       ]
     }
@@ -2761,6 +2762,21 @@
         }
       ]
     }
+  },
+  {
+    "id": "structure-search.depth-range",
+    "tool": "structureSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "files",
+          "path": "/r",
+          "minDepth": 3,
+          "maxDepth": 2
+        }
+      ]
+    },
+    "accepted": false
   },
   {
     "id": "ast-search.unsupported-0",

@@ -1,7 +1,7 @@
 [package]
 name = "octocode-native"
 version.workspace = true
-publish = false
+publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 autobins = false
@@ -13,6 +13,9 @@ description = "Native Octocode tool execution library"
 
 [lib]
 crate-type = ["rlib"]
+# Internal crate: tests are unit and integration tests, run by nextest, which
+# cannot run doctests. `cargo shear --check-test-targets` flags a doctest here.
+doctest = false
 
 [[test]]
 name = "integration"
@@ -38,10 +41,9 @@ octocode-io = { path = "../io" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-serde_yaml_ng = { workspace = true }
 regex = { workspace = true }
 # Generated contract types use ECMAScript pattern validation.
-regress = { workspace = true }
+regress = "0.12"
 url = { workspace = true }
 base64 = { workspace = true }
 sha2 = { workspace = true }
@@ -102,7 +104,6 @@ windows-native-keyring-store = "1"
 [lints]
 workspace = true
 
-# `regress` backs the generated contract types (included code); the rest exist
-# only to unify features under `dev-unify`.
-[package.metadata.cargo-machete]
-ignored = ["regress", "hyper", "hyper-util", "bitflags", "fastrand", "slab"]
+# These exist only to unify features under `dev-unify`; no code uses them.
+[package.metadata.cargo-shear]
+ignored = ["hyper", "hyper-util", "bitflags", "fastrand", "slab"]

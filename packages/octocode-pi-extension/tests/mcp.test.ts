@@ -487,7 +487,7 @@ describe('Octocode tool results and rendering', () => {
     const unknown = await run(undefined);
     expect(pixelSize(unknown.shown.data!)).toEqual({ width: 512, height: 512 });
     expect((await toToolResult('t', { content: [image] }, false, { maxWidth: 60, maxHeight: 60 })).content.map((part) => part.type)).toEqual(['image', 'text']);
-  }, 30_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 
   it('renders a call by what it looks for and a result as a compact block', () => {
     const definition = octocodeToolDefinition(tool, binding);

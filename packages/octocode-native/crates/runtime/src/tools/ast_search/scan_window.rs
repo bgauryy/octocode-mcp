@@ -2,6 +2,7 @@
 //! scope ended: the lead's `maxFiles` and `scanOffset` stay inside the
 //! contract, and a cut that no valid call can continue is terminal.
 use crate::tools::id::query_limits::ast_search;
+use crate::tools::num::u32_of_usize;
 
 /// The fields a continuation sets: a raised `maxFiles` (an explicit-limit cut
 /// only) and the `scanOffset` the scan resumes from.
@@ -54,10 +55,9 @@ pub(super) fn expand_scan(
                 scan_offset,
             }),
         Some(limit) => ((limit as usize) < limits.max_files && within(limit)).then(|| ScanWindow {
-            max_files: Some(
-                u32::try_from((limit as usize).saturating_mul(2).min(limits.max_files))
-                    .unwrap_or(u32::MAX),
-            ),
+            max_files: Some(u32_of_usize(
+                (limit as usize).saturating_mul(2).min(limits.max_files),
+            )),
             scan_offset: limit,
         }),
     }

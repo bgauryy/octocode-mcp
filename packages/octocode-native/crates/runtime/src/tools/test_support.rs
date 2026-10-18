@@ -43,6 +43,38 @@ impl Fixture {
     }
 }
 
+/// Creates a FIFO (named pipe) at `path`, owner read/write only.
+#[cfg(unix)]
+pub(crate) fn make_fifo(path: &Path) {
+    let name = std::ffi::CString::new(path.to_string_lossy().as_bytes()).expect("path has no NUL");
+    // SAFETY: `name` is a valid NUL-terminated C string that outlives the call.
+    let made = unsafe { libc::mkfifo(name.as_ptr(), 0o600) };
+    assert_eq!(made, 0, "mkfifo {}", path.display());
+}
+
+/// Whether `node` runs on this machine.
+pub(crate) fn node_available() -> bool {
+    std::process::Command::new("node")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+/// Gate for a test that needs `node`: `true` when it can run. Without node a
+/// local run skips the test; under `CI` it fails instead, so a runner that
+/// lacks node cannot silently lose the coverage.
+pub(crate) fn require_node() -> bool {
+    if node_available() {
+        return true;
+    }
+    assert!(
+        std::env::var_os("CI").is_none(),
+        "node is required to run this test in CI"
+    );
+    eprintln!("skipping: node not available");
+    false
+}
+
 /// A tool's raw executor `row` for `query`, shaped and finalized as the
 /// response stage ships it: `{results:[row]}` with its public `next`.
 pub(crate) fn published(tool: ToolId, query: &Value, row: &Value) -> Value {

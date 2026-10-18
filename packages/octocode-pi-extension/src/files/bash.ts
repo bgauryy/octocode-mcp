@@ -7,9 +7,10 @@ import { SUBAGENT_ENV, envFlag } from '../shared/env.js';
 import { PRIVATE_FILE_MODE } from '../shared/home.js';
 import { formatDuration, shortPath } from '../shared/format.js';
 import { plural, statusColor, timedTool, toolHeader } from '../shared/render.js';
+import { STATUS } from '../shared/status.js';
 import { moveFile } from '../shared/sweep.js';
 import { renderBashResult, renderJobMessage, RERUN_HINT, type BashDetails } from './render.js';
-import { contentText, errorMessage, firstLine, isRecord } from '../shared/util.js';
+import { contentText, errorMessage, firstLine, isRecord, wholeSeconds } from '../shared/util.js';
 import { BashJobs, JOB_TYPE, jobReport, reapOrphanJobs, shellEnv, shellSettings, type BashJob, type JobExit, type OrphanJob, type ShellSettings } from './bash-jobs.js';
 import { foregroundOperations, strayNote } from './bash-run.js';
 
@@ -83,7 +84,7 @@ export function registerBashTool(
   const reportedAtShutdown = new WeakSet<BashJob>();
   const showJobs = () => {
     try {
-      if (current) current.ui.setStatus('octocode-bash', jobs.jobs.size > 0 ? statusColor(current, 'accent', `${jobs.jobs.size} bash job${jobs.jobs.size === 1 ? '' : 's'}`) : undefined);
+      if (current) current.ui.setStatus(STATUS.bash, jobs.jobs.size > 0 ? statusColor(current, 'accent', `${jobs.jobs.size} bash job${jobs.jobs.size === 1 ? '' : 's'}`) : undefined);
     } catch {
       // The session was replaced.
     }
@@ -125,7 +126,7 @@ export function registerBashTool(
     for (const job of running) {
       job.stopped ??= reason;
       reportedAtShutdown.add(job);
-      report(job, { code: null, signal: null, seconds: Math.round((now - job.startedAt) / 1000) }, false);
+      report(job, { code: null, signal: null, seconds: wholeSeconds(now - job.startedAt) }, false);
     }
     if (reason === 'reload') jobs.noteReload(running);
     // A job that exited just before reports its own status once its last output drained (within the drain time).

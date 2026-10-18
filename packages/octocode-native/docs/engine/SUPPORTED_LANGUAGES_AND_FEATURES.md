@@ -8,13 +8,13 @@ npx octocode schema | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end
 
 ## Language matrix
 
-The default build registers **28 extensions in 11 language families**, from one registry (`crates/engine/src/signatures/languages.rs`; the expected set is asserted in `languages_tests.rs`). Structural match, syntax trees, symbols, signatures, graph facts, and LSP grammar adapters all derive from it. Built-in language-server routes are a separate table (`crates/engine/src/lsp/config.rs`) covering **27 extensions**: Assembly has no route, and CUDA routes to `clangd` without a grammar.
+The default build registers **30 extensions in 12 language families**, from one registry (`crates/engine/src/signatures/languages.rs`; the expected set is asserted in `languages_tests.rs`). Structural match, syntax trees, symbols, signatures, graph facts, and LSP grammar adapters all derive from it. Built-in language-server routes are a separate table (`crates/engine/src/lsp/config.rs`) covering **27 extensions**: Assembly has no route.
 
 | Language | Extensions | Native AST (match, tree, symbols, rewrite) | Cross-file graph links | Built-in LSP route |
 |---|---|---|---|---|
 | C | `c` `h` | Yes; `.h` defaults to C (see [C++ headers](#c-headers)) | Quoted relative includes | `clangd` |
 | C++ | `cc` `cpp` `cxx` `hh` `hpp` `hxx` | Yes | Quoted relative includes | `clangd` |
-| CUDA *(optional grammar)* | `cu` `cuh` | Only with `tree-sitter-cuda`; absent from the default build | Quoted relative includes, only with the grammar | `clangd` |
+| CUDA | `cu` `cuh` | Yes | Quoted relative includes | `clangd` |
 | Assembly | `asm` `assembly` `s` | Yes; symbols are labels and directives | None | Custom server only |
 | C# | `cs` | Yes | None | `csharp-ls` |
 | Go | `go` | Yes | None | `gopls` |
@@ -33,9 +33,9 @@ Languages with no native grammar (Kotlin, PHP, CSS, HTML, JSON, TOML, YAML, Ruby
 
 `.h` selects C. `astSearch match` with `language:"cpp"` parses `.h` files as C++ for a file or a directory; tree and symbols accept that override for a single file. For directory `symbols` and `astTopology`, pass `languageGlobs:{"cpp":["include/**/*.h"]}`: globs are relative to the scan root, win over the extension, carry into continuations, and report conflicting parser matches as skipped files. The override does not change clangd: for C++ header LSP, provide `compile_commands.json` or a `.clangd` fragment such as `If: { PathMatch: include/.*\.h }` with `CompileFlags: { Add: [-xc++] }` (`PathMatch` is a regular expression, not a glob).
 
-### CUDA opt-in
+### Grammar features
 
-`tree-sitter-cuda` is declared and locked. For one build, enable `--features octocode-engine/tree-sitter-cuda`; to ship it, add it to the engine's `portable-default` feature, update the expected set in `languages_tests.rs` and the counts here, and build and test all six platform packages. It costs about 6.8 MiB in the addon ([measurement](../DEPENDENCY_AUDIT.md#footprint-interpretation)).
+Every grammar above ships in the default build. Assembly, C++, C#, CUDA and Scala are optional engine features, all enabled by `portable-default`; a build without one returns the typed unsupported result for its extensions, and `languages_tests.rs` derives the expected set from the enabled features. CUDA is the largest grammar, about 6.8 MiB per artifact ([measurement](../DEPENDENCY_AUDIT.md#footprint-interpretation)).
 
 ## Structural matchers
 

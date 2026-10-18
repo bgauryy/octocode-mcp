@@ -10,6 +10,7 @@ use crate::providers::artifact::{
     github_slug, invalid_registry_url, page_out_of_range, reachable_end,
 };
 use crate::tools::id::ToolId;
+use crate::tools::num::usize_of;
 use crate::tools::paging;
 use crate::tools::result::Continuation;
 use octocode_github::RequestBudget;
@@ -206,7 +207,7 @@ fn discovery_page(
     next_query.set_cursor(next_state.and_then(|next| next.token.as_deref()));
     let unreachable = more.then(|| page_out_of_range(&next_query)).flatten();
     let facts = crate::response::pages::PageFacts::open(
-        usize::try_from(current).unwrap_or(usize::MAX),
+        usize_of(current),
         Some(query.page_size()),
         more && unreachable.is_none(),
     );
@@ -233,7 +234,7 @@ fn discovery_page(
     if !more {
         return;
     }
-    let next = usize::try_from(next_query.page()).unwrap_or(usize::MAX);
+    let next = usize_of(next_query.page());
     // The contract's last page: the row ends at that terminal limit.
     if paging::next_cursor(data, ToolId::ArtifactSearch, None, "page", next).is_none() {
         data["pagination"]["hasMore"] = json!(false);
@@ -278,12 +279,16 @@ pub(crate) fn last_reachable_page(query: &ArtifactSearchQuery) -> u64 {
 
 /// A repaired row's `page` past the deepest page its query reaches,
 /// lowered to that page: the schema's `maximum` admits pages no search of
-/// this size reaches. `None` when the row is no discovery query or its page
-/// is reachable.
-pub(crate) fn reachable_page(row: &serde_json::Value) -> Option<u64> {
-    let query: ArtifactSearchQuery = serde_json::from_value(row.clone()).ok()?;
+/// this size reaches. Any other row (no discovery query, or a reachable
+/// page) stays as it is.
+pub(crate) fn settle_repaired_row(row: &mut Value) {
+    let Ok(query) = serde_json::from_value::<ArtifactSearchQuery>(row.clone()) else {
+        return;
+    };
     let last = last_reachable_page(&query);
-    (query.page() > last).then_some(last)
+    if query.page() > last {
+        row["page"] = json!(last);
+    }
 }
 
 /// A row whose `repository` URL is a GitHub repository names its `owner` and
@@ -643,62 +648,78 @@ mod anchor_tests {
         );
     }
 
-    /// NuGet search reaches its first 4,000 rows: the page that ends them
-    /// is the terminal limit, stating the total and the reach, through the
-    /// same rule as every bounded registry.
+    /// NuGet search reaches its first 4,000 rows and crates.io its first
+    /// 1,000: the page that ends them is the terminal limit, stating the
+    /// total and the reach, through the same rule as every bounded registry,
+    /// whether the registry pages by offset or by page number.
     #[test]
-    fn nuget_discovery_ends_at_its_reach() {
-        let page = |page: u64| {
-            let query = typed(&json!({"ecosystem":"nuget","keywords":["json"],
-                "pageSize":100,"page":page}));
-            let offset = page * 100;
-            let data = respond(
-                &query,
-                ArtifactProviderPage {
-                    artifacts: (offset as usize - 100..offset as usize)
-                        .map(|n| {
-                            ArtifactItem::new(
-                                ArtifactType::Nuget,
-                                format!("pkg{n}"),
-                                format!("https://www.nuget.org/packages/pkg{n}"),
-                            )
-                        })
-                        .collect(),
-                    next_state: Some(crate::providers::artifact::ArtifactProviderState {
+    fn bounded_discovery_ends_at_its_reach() {
+        for (artifact_type, by_offset, last_page, reach) in [
+            (ArtifactType::Nuget, true, 40, 4000),
+            (ArtifactType::Crates, false, 10, 1000),
+        ] {
+            let page = |page: u64| {
+                let query = typed(&json!({"ecosystem":artifact_type,"keywords":["json"],
+                    "pageSize":100,"page":page}));
+                let offset = page * 100;
+                let next_state = if by_offset {
+                    crate::providers::artifact::ArtifactProviderState {
                         offset: Some(offset),
                         ..Default::default()
-                    }),
-                    total: Some(50_000),
-                    terminal_limit: None,
-                    registry: None,
-                },
-            )
-            .expect("rows");
-            let mut placed = json!({"results": [{"index": 0, "data": data.clone()}]});
-            crate::response::notices::place(&mut placed, "results");
-            crate::contracts::validate_output(ToolId::ArtifactSearch.as_str(), &placed)
-                .expect("contract-valid nuget page");
-            data
-        };
-        let first = page(1);
-        assert_eq!(
-            first[crate::tools::paging::NOTICES],
-            json!([
-                "nuget matched 50000 results; paging reaches only the first 4000 (through page 40)."
-            ]),
-            "{first}"
-        );
-        let last = page(40);
-        assert_eq!(last["pagination"]["hasMore"], json!(false), "{last}");
-        assert!(last["next"].get("nextPage").is_none(), "{last}");
-        assert_eq!(last["terminalLimit"], true, "{last}");
-        assert_eq!(
-            last["warnings"],
-            json!([
-                "nuget matched 50000 results; paging reaches only the first 4000, which end on this page."
-            ]),
-            "{last}"
-        );
+                    }
+                } else {
+                    crate::providers::artifact::ArtifactProviderState {
+                        page: Some(page + 1),
+                        ..Default::default()
+                    }
+                };
+                let data = respond(
+                    &query,
+                    ArtifactProviderPage {
+                        artifacts: (offset as usize - 100..offset as usize)
+                            .map(|n| {
+                                ArtifactItem::new(
+                                    artifact_type,
+                                    format!("pkg{n}"),
+                                    format!("https://example.org/pkg{n}"),
+                                )
+                            })
+                            .collect(),
+                        next_state: Some(next_state),
+                        total: Some(50_000),
+                        terminal_limit: None,
+                        registry: None,
+                    },
+                )
+                .expect("rows");
+                let mut placed = json!({"results": [{"index": 0, "data": data.clone()}]});
+                crate::response::notices::place(&mut placed, "results");
+                crate::contracts::validate_output(ToolId::ArtifactSearch.as_str(), &placed)
+                    .expect("contract-valid bounded page");
+                data
+            };
+            let first = page(1);
+            assert_eq!(
+                first[crate::tools::paging::NOTICES],
+                json!([format!(
+                    "{artifact_type} matched 50000 results; paging reaches only the first {reach} (through page {last_page})."
+                )]),
+                "{first}"
+            );
+            let before = page(last_page - 1);
+            assert!(before["next"].get("nextPage").is_some(), "{before}");
+            let last = page(last_page);
+            assert_eq!(last["pagination"]["hasMore"], json!(false), "{last}");
+            assert!(last["next"].get("nextPage").is_none(), "{last}");
+            assert_eq!(last["terminalLimit"], true, "{last}");
+            assert_eq!(
+                last["warnings"],
+                json!([format!(
+                    "{artifact_type} matched 50000 results; paging reaches only the first {reach}, which end on this page."
+                )]),
+                "{last}"
+            );
+        }
     }
 
     /// An empty discovery states no advice: its one lead re-runs the
@@ -752,6 +773,23 @@ mod anchor_tests {
         assert_eq!(
             latest["repair"]["query"]["queries"][0],
             json!({"ecosystem":"npm","packageName":"zod"})
+        );
+        // A bare Maven artifact name is no coordinate: its repair searches it.
+        let bare = typed(&json!({"ecosystem":"maven","packageName":"guava"}));
+        let error = ArtifactError {
+            searchable_name: true,
+            ..ArtifactError::new("invalidInput", "not a groupId:artifactId")
+        };
+        let next = leads::with_repair(error, &bare).next.expect("lead");
+        assert_eq!(
+            next["broadenSearch"]["query"]["queries"][0],
+            json!({"ecosystem":"maven","keywords":["guava"]}),
+            "{next}"
+        );
+        assert!(
+            leads::with_repair(ArtifactError::new("invalidInput", "x"), &bare)
+                .next
+                .is_none()
         );
         // PyPI has no keyword search: an unknown package has no repair.
         let pypi = typed(&json!({"ecosystem":"pypi","packageName":"nope"}));
@@ -865,7 +903,10 @@ mod page_tests {
             ("nuget", 30, 134),
             ("nuget", 7, 572),
             ("nuget", 1, 1000),
-            ("crates", 100, 1000),
+            // crates.io serves relevance results below 1,000.
+            ("crates", 100, 10),
+            ("crates", 30, 34),
+            ("crates", 1, 1000),
         ] {
             let query = typed(&json!({"ecosystem":ecosystem,"keywords":["x"],
                 "pageSize":page_size}));

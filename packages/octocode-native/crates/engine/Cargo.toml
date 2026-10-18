@@ -3,43 +3,24 @@ name = "octocode-engine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish = false
+publish.workspace = true
 description = "Rust native Octocode engine for context compression, structural search, and LSP semantic navigation"
 license.workspace = true
 repository.workspace = true
 keywords = ["llm", "context", "lsp", "search"]
 categories = ["development-tools", "text-processing"]
 
-# Mirrors the root [workspace.lints] floor, plus the library-only stdout/stderr
-# denials and style lints below.
-[lints.rust]
-dead_code = "deny"
-unused_imports = "deny"
-unused_variables = "deny"
-unused_mut = "deny"
-let_underscore_drop = "allow"   # allow intentional best-effort let _ = result; patterns
+# No doctests: nextest runs the tests (crates/runtime/Cargo.toml).
+[lib]
+doctest = false
 
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-# Correctness / safety
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-todo = "deny"
-unimplemented = "deny"
-dbg_macro = "deny"
-print_stdout = "deny"
-print_stderr = "deny"
-# Style / idiomatic
-use_self = "warn"
-cloned_instead_of_copied = "warn"
-redundant_closure_for_method_calls = "warn"
-semicolon_if_nothing_returned = "warn"
+[lints]
+workspace = true
 
 [dependencies]
 aho-corasick = "1"
-ast-grep-core = "0.50.0"
-ast-grep-config = "0.50.0"
+ast-grep-core = "0.51.0"
+ast-grep-config = "0.51.0"
 grep-matcher = "0.1.9"
 grep-pcre2 = "0.1.10"
 grep-regex = "0.1.14"
@@ -59,7 +40,7 @@ regex = { workspace = true }
 regex-syntax = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml_ng = { workspace = true }
+serde-saphyr = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 toml = { workspace = true }
@@ -109,17 +90,12 @@ harness = false
 
 [features]
 default = ["portable-default"]
-portable-default = ["tree-sitter-asm", "tree-sitter-large-grammars", "tree-sitter-scala"]
+portable-default = ["tree-sitter-asm", "tree-sitter-cuda", "tree-sitter-large-grammars", "tree-sitter-scala"]
 tree-sitter-asm = ["dep:tree-sitter-asm"]
 tree-sitter-cpp = ["dep:tree-sitter-cpp"]
 tree-sitter-c-sharp = ["dep:tree-sitter-c-sharp"]
 tree-sitter-cuda = ["dep:tree-sitter-cuda"]
-# CUDA is intentionally excluded from the default bundle: its tree-sitter parse
-# tables are ~7 MB of `__const` — the single largest grammar — for a niche
-# GPU-kernel language. `.cu`/`.cuh` still route to `clangd` for LSP navigation
-# (see crates/engine/src/lsp/config.rs), so semantic nav survives; only native
-# signatures/structural parsing is gated off. Re-enable by adding
-# "tree-sitter-cuda" to `portable-default` above (the optional dependency and
-# the `tree-sitter-cuda` feature are kept).
+# CUDA ships in the default build; its parse tables are the largest grammar
+# (about 6.8 MiB per artifact, docs/DEPENDENCY_AUDIT.md#footprint-interpretation).
 tree-sitter-large-grammars = ["tree-sitter-cpp", "tree-sitter-c-sharp"]
 tree-sitter-scala = ["dep:tree-sitter-scala"]

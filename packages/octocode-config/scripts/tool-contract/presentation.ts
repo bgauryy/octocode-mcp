@@ -57,10 +57,17 @@ export function toolHelpSection(
     );
   } else if (variants.length > 1) {
     lines.push('', 'Required fields, by operation:');
-    const width = Math.max(...variants.map(variant => variant.name.length));
-    for (const variant of variants)
+    const forms = variants.map(variant => ({
+      ...variant,
+      label:
+        typeof variant.example?.operation === 'string'
+          ? variant.example.operation
+          : variant.name,
+    }));
+    const width = Math.max(...forms.map(form => form.label.length));
+    for (const form of forms)
       lines.push(
-        `  ${variant.name.padEnd(width)}  ${variant.requires.join(', ')}`.trimEnd()
+        `  ${form.label.padEnd(width)}  ${form.requires.join(', ')}`.trimEnd()
       );
   }
   const example = variants
@@ -156,17 +163,19 @@ const fieldNames = (schema: Json): string[] =>
  * field → the operations that take it. The runtime rejects the field on any
  * other operation, so no per-operation view lists it there.
  */
-const OPERATION_CONTROLS: Record<string, Record<string, string[]>> =
-  Object.fromEntries(
-    buildEnforcementContractIr().tools.flatMap(tool =>
-      (tool.rules as readonly { opcode: string; args?: unknown }[])
-        .filter(rule => rule.opcode === 'operation_controls')
-        .map(rule => [
-          tool.name,
-          (rule.args as { fields: Record<string, string[]> }).fields,
-        ])
-    )
-  );
+const OPERATION_CONTROLS: Record<
+  string,
+  Record<string, string[]>
+> = Object.fromEntries(
+  buildEnforcementContractIr().tools.flatMap(tool =>
+    (tool.rules as readonly { opcode: string; args?: unknown }[])
+      .filter(rule => rule.opcode === 'operation_controls')
+      .map(rule => [
+        tool.name,
+        (rule.args as { fields: Record<string, string[]> }).fields,
+      ])
+  )
+);
 
 /**
  * One operation's published row: a variant shared by several operations is
@@ -284,7 +293,10 @@ function rendered(
       Object.entries(operationSchemas(inputSchema)).map(
         ([operation, schema]) => [
           `operation=${operation}`,
-          view(definition, operationRow(name, operation, publishedJson(schema))),
+          view(
+            definition,
+            operationRow(name, operation, publishedJson(schema))
+          ),
         ]
       )
     ),

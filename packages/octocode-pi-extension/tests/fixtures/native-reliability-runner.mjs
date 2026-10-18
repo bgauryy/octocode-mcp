@@ -12,7 +12,16 @@ const fixtureDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(fixtureDir, '../..');
 const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
+/**
+ * How many times longer than on an idle machine every wait in this run may take: the run starts a handful of node
+ * processes and makes hundreds of round trips between them, so its time follows the CPU it gets. One minute of load
+ * average per core is one extra share, capped so a scale that never settles still fails. Every wait here is a failure
+ * bound or a hold that a deadline must stay clear of, so scaling both keeps their ratio.
+ */
+export const loadScale = () => Math.min(10, Math.max(1, Math.ceil(os.loadavg()[0] / os.cpus().length)));
+
 export async function runNativeReliability(output = process.env.PI_NATIVE_RELIABILITY_RECEIPT) {
+  const scale = loadScale();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pi-native-reliability-'));
   fs.chmodSync(root, 0o700);
   const cwd = path.join(root, 'repo');
@@ -45,8 +54,8 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
     fixtureHashes: Object.fromEntries(['native-reliability-worker.mjs', 'native-reliability-runner.mjs'].map((file) => [file, hash(path.join(fixtureDir, file))])),
     bundleSha256: hash(bundle), cases: [], processes: [], errors: [], maxConcurrentProcesses: 0, startedAt: new Date().toISOString(),
   };
-  const deadline = setTimeout(() => children.forEach((peer) => peer.child.kill('SIGKILL')), 115_000);
-  async function waitFor(check, label, timeout = 10_000) {
+  const deadline = setTimeout(() => children.forEach((peer) => peer.child.kill('SIGKILL')), 115_000 * scale);
+  async function waitFor(check, label, timeout = 10_000 * scale) {
     const end = Date.now() + timeout;
     while (Date.now() < end) { if (await check()) return; await pause(20); }
     throw new Error(`Timed out: ${label}`);
@@ -82,7 +91,7 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
     const peer = { name, child, ready, exited, events, command(action, input = {}) {
       return new Promise((resolve, reject) => {
         const id = ++sequence;
-        const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${name} ${action} exceeded deadline`)); }, 20_000);
+        const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${name} ${action} exceeded deadline`)); }, 20_000 * scale);
         pending.set(id, { resolve, reject, timer });
         child.send({ id, action, ...input }, (error) => { if (error) { pending.delete(id); clearTimeout(timer); reject(error); } });
       });
@@ -115,7 +124,7 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
     assert.equal(leaseState().leases.length, 2);
     const connection = await tool(a, { action: 'connect', transport: 'pi', instanceId: rb.instanceId, cwd });
     assert(!connection.details.error, JSON.stringify(connection));
-    const calls = await Promise.all(Array.from({ length: 24 }, (_, i) => caught(tool(a, { action: 'prompt', id: connection.details.id, text: `NONCE=burst_${i} HOLD_MS=400`, timeoutMs: 5_000 }))));
+    const calls = await Promise.all(Array.from({ length: 24 }, (_, i) => caught(tool(a, { action: 'prompt', id: connection.details.id, text: `NONCE=burst_${i} HOLD_MS=${400 * scale}`, timeoutMs: 5_000 * scale }))));
     const answers = calls.filter((call) => call.ok && !call.value.details.error);
     const refused = calls.filter((call) => call.ok && call.value.details.error);
     assert.equal(answers.length, 1, JSON.stringify(calls));
@@ -127,7 +136,7 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
 
     const independent = [];
     for (let i = 0; i < 24; i++) independent.push(await PiBackend.connect({ instanceId: rb.instanceId, cwd }, env));
-    const pressure = await Promise.all(independent.map((backend, i) => caught(backend.prompt(`NONCE=independent_${i} HOLD_MS=400`, { key: `independent-${i}`, timeoutMs: 5000 }))));
+    const pressure = await Promise.all(independent.map((backend, i) => caught(backend.prompt(`NONCE=independent_${i} HOLD_MS=${400 * scale}`, { key: `independent-${i}`, timeoutMs: 5_000 * scale }))));
     const accepted = pressure.filter((attempt) => attempt.ok);
     const rejected = pressure.filter((attempt) => !attempt.ok);
     assert.equal(accepted.length, 1, JSON.stringify(pressure));
@@ -145,12 +154,12 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
       outcomes: pressure, providerExecutions: 1 });
 
     await a.command('native-connect', { input: { instanceId: rb.instanceId, cwd } });
-    const keyedInput = { instanceId: rb.instanceId, key: 'repeated-key', text: 'NONCE=repeated_key HOLD_MS=2400', timeoutMs: 1000 };
+    const keyedInput = { instanceId: rb.instanceId, key: 'repeated-key', text: `NONCE=repeated_key HOLD_MS=${2_400 * scale}`, timeoutMs: 1_000 * scale };
     const attempts = [await caught(a.command('native-prompt', { input: keyedInput })), await caught(a.command('native-prompt', { input: keyedInput }))];
     assert(attempts.every((attempt) => !attempt.ok && attempt.error.execution === 'accepted'), JSON.stringify(attempts));
     await idle(rb.instanceId);
     for (let i = 0; i < 24; i++) {
-      const answer = await a.command('native-prompt', { input: { ...keyedInput, timeoutMs: 5000 } });
+      const answer = await a.command('native-prompt', { input: { ...keyedInput, timeoutMs: 5_000 * scale } });
       assert.match(answer.text, /NONCE=repeated_key/);
       attempts.push({ ok: true, value: answer });
     }
@@ -163,7 +172,7 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
     for (let cycle = 1; cycle <= 3; cycle++) {
       const old = ra;
       const nonce = `controller_death_${cycle}`;
-      const input = { instanceId: rb.instanceId, key: nonce, text: `NONCE=${nonce} HOLD_MS=1200`, timeoutMs: 5000 };
+      const input = { instanceId: rb.instanceId, key: nonce, text: `NONCE=${nonce} HOLD_MS=${1_200 * scale}`, timeoutMs: 5_000 * scale };
       const pending = caught(a.command('native-prompt', { input }));
       await waitFor(() => nonceCount(b, nonce) === 1, 'accepted before controller death');
       await crash(a);
@@ -187,7 +196,7 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
     for (let cycle = 1; cycle <= 3; cycle++) {
       const old = rb;
       const nonce = `peer_death_${cycle}`;
-      const input = { instanceId: old.instanceId, key: nonce, text: `NONCE=${nonce} HOLD_MS=5000`, timeoutMs: 8000 };
+      const input = { instanceId: old.instanceId, key: nonce, text: `NONCE=${nonce} HOLD_MS=${5_000 * scale}`, timeoutMs: 8_000 * scale };
       const pending = caught(a.command('native-prompt', { input }));
       await waitFor(() => nonceCount(b, nonce) === 1, 'accepted before peer death');
       await crash(b);
@@ -205,7 +214,7 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
       assert(!JSON.stringify(before).includes(nonce));
       await a.command('native-connect', { input: { instanceId: rb.instanceId, cwd } });
       const freshNonce = `fresh_peer_${cycle}`;
-      const recovery = await a.command('native-prompt', { input: { instanceId: rb.instanceId, key: freshNonce, text: `NONCE=${freshNonce}`, timeoutMs: 5000 } });
+      const recovery = await a.command('native-prompt', { input: { instanceId: rb.instanceId, key: freshNonce, text: `NONCE=${freshNonce}`, timeoutMs: 5_000 * scale } });
       assert.match(recovery.text, new RegExp(`NONCE=${freshNonce}`));
       assert.equal(nonceCount(b, nonce), 0); assert.equal(nonceCount(b, freshNonce), 1);
       peers.push({ cycle, oldPeer: old, replacement: rb, failure, staleConnect, oldConnection, recovery, oldRequestReplayed: false, leasesAfterCrash: 1 });
@@ -215,14 +224,14 @@ export async function runNativeReliability(output = process.env.PI_NATIVE_RELIAB
     const capacity = [];
     for (let i = 0; i < 127; i++) {
       const nonce = `capacity_${i}`;
-      const response = await a.command('native-prompt', { input: { instanceId: rb.instanceId, key: nonce, text: `NONCE=${nonce}`, timeoutMs: 5000 } });
+      const response = await a.command('native-prompt', { input: { instanceId: rb.instanceId, key: nonce, text: `NONCE=${nonce}`, timeoutMs: 5_000 * scale } });
       assert.match(response.text, new RegExp(`NONCE=${nonce}(?:$|\\s)`));
       capacity.push(nonce);
     }
-    const overflow = await caught(a.command('native-prompt', { input: { instanceId: rb.instanceId, key: 'capacity_overflow', text: 'NONCE=capacity_overflow', timeoutMs: 5000 } }));
+    const overflow = await caught(a.command('native-prompt', { input: { instanceId: rb.instanceId, key: 'capacity_overflow', text: 'NONCE=capacity_overflow', timeoutMs: 5_000 * scale } }));
     assert(!overflow.ok && overflow.error.message.includes('key capacity'), JSON.stringify(overflow));
     assert.equal(overflow.error.execution, 'not-sent');
-    const earliest = await a.command('native-prompt', { input: { instanceId: rb.instanceId, key: 'fresh_peer_3', text: 'NONCE=fresh_peer_3', timeoutMs: 5000 } });
+    const earliest = await a.command('native-prompt', { input: { instanceId: rb.instanceId, key: 'fresh_peer_3', text: 'NONCE=fresh_peer_3', timeoutMs: 5_000 * scale } });
     assert.match(earliest.text, /NONCE=fresh_peer_3/);
     assert.equal(nonceCount(b, 'fresh_peer_3'), 1); assert.equal(nonceCount(b, 'capacity_overflow'), 0);
     passed('128-key session capacity retains old receipts and refuses new input', { acceptedKeys: 128, newTurns: capacity.length, overflow, earliest, earliestExecutions: 1, overflowExecutions: 0 });

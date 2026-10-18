@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn failed_hierarchy_expansion_is_an_error_or_a_marked_partial_row() {
     // Nothing expanded and the provider failed: surface the error.
-    assert!(expansion_outcome(Vec::new(), vec![engine_error("boom")]).is_err());
+    assert!(expansion_outcome(Vec::new(), vec![expansion_error("boom")]).is_err());
     // Nothing expanded and nothing failed: a genuine empty result.
     let (items, failures) = expansion_outcome(Vec::new(), Vec::new()).expect("empty");
     assert!(items.is_empty() && failures.is_empty());
@@ -19,7 +19,7 @@ fn failed_hierarchy_expansion_is_an_error_or_a_marked_partial_row() {
     }));
     let (items, failures) = expansion_outcome(
         vec![serde_json::json!({"from": {"symbolName": "caller"}})],
-        vec![engine_error("LSP error: deeper level")],
+        vec![expansion_error("LSP error: deeper level")],
     )
     .expect("partial expansion keeps what was found");
     let mut row = items_payload(&q, "callers", serde_json::json!(items), TEST_BUDGET);
@@ -43,9 +43,9 @@ fn failed_hierarchy_expansion_is_an_error_or_a_marked_partial_row() {
     // The disclosure is one count plus next.retry; every distinct failure
     // is listed once, with its count, in the verbose `expansionFailures`.
     let mut failures = (0..6)
-        .map(|n| engine_error(&format!("LSP error: node {n}")))
+        .map(|n| expansion_error(&format!("LSP error: node {n}")))
         .collect::<Vec<_>>();
-    failures.extend((0..4).map(|_| engine_error("LSP error: timeout")));
+    failures.extend((0..4).map(|_| expansion_error("LSP error: timeout")));
     let mut row = items_payload(&q, "callers", serde_json::json!(items), TEST_BUDGET);
     mark_partial_expansion(&mut row, &q, &failures);
     let warnings = row["warnings"].as_array().cloned().unwrap_or_default();
@@ -78,6 +78,32 @@ fn failed_hierarchy_expansion_is_an_error_or_a_marked_partial_row() {
         crate::response::extras::all_paths(crate::tools::id::ToolId::LspSearch)
             .contains(&"results[].data.expansionFailures")
     );
+}
+
+/// `next.retry` only when asking again can change the answer: a relation
+/// the walk could not establish is partial without it; a timed-out request
+/// beside it keeps it.
+#[test]
+fn a_partial_walk_retries_only_a_transient_failure() {
+    let q = query(serde_json::json!({
+        "operation": "subtypes", "mainGoal": "test", "reasoning": "test",
+        "path": "file:///repo/a.ts", "symbolName": "Base", "line": 1
+    }));
+    let items = serde_json::json!([{"name": "Child"}]);
+    let unestablished = LspFailure::unestablished("No resolved immediate heritage");
+    let mut row = items_payload(&q, "subtypes", items.clone(), TEST_BUDGET);
+    mark_partial_expansion(&mut row, &q, std::slice::from_ref(&unestablished));
+    assert_eq!(row["isPartial"], true, "{row}");
+    assert_eq!(
+        row["partialReasons"],
+        serde_json::json!(["typeHierarchyExpansionFailed"])
+    );
+    assert!(row.pointer("/next/retry").is_none(), "{row}");
+
+    let timeout = LspFailure::overdue("no answer in time".into());
+    let mut row = items_payload(&q, "subtypes", items, TEST_BUDGET);
+    mark_partial_expansion(&mut row, &q, &[unestablished, timeout]);
+    assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
 }
 
 #[tokio::test(flavor = "current_thread")]

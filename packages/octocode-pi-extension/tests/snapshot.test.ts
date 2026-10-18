@@ -25,6 +25,24 @@ function repo(): string {
   return cwd;
 }
 
+/**
+ * Runs `work` with a `git` first on PATH that never answers, so a snapshot's deadline passes however fast the machine
+ * is. A 1 ms deadline against the real git races it: under load the answer can arrive before the timer is served.
+ */
+async function withHungGit<T>(work: () => Promise<T>): Promise<T> {
+  const bin = tmp();
+  if (process.platform === 'win32') fs.writeFileSync(path.join(bin, 'git.cmd'), '@ping -n 31 127.0.0.1 >nul\r\n');
+  else fs.writeFileSync(path.join(bin, 'git'), '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });
+  const saved = process.env['PATH'];
+  process.env['PATH'] = `${bin}${path.delimiter}${saved ?? ''}`;
+  try {
+    return await work();
+  } finally {
+    if (saved === undefined) delete process.env['PATH'];
+    else process.env['PATH'] = saved;
+  }
+}
+
 const SNAPSHOT_NAMESPACE = 'refs/octocode/snapshots';
 const SNAPSHOT_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -55,7 +73,8 @@ describe('snapshots', () => {
     const empty = fs.realpathSync(tmp());
     git(empty, 'init', '-q');
     expect(await takeSnapshot(empty)).toEqual({ none: 'no commit yet' });
-    expect(await takeSnapshot(repo(), { timeoutMs: 1 })).toEqual({ none: 'snapshot timed out' });
+    const cwd = repo();
+    expect(await withHungGit(() => takeSnapshot(cwd, { timeoutMs: 200 }))).toEqual({ none: 'snapshot timed out' });
   });
 
   it('prunes refs older than seven days and keeps the rest', async () => {
@@ -71,8 +90,11 @@ describe('snapshots', () => {
   });
 });
 
+// A bound for the git commands of a snapshot (milliseconds alone); the cases that test the timeout pass 1 ms.
+const SNAPSHOT_WORK_MS = 60_000;
+
 describe('a destructive shell call', () => {
-  function started(mode: 'full' | 'workspace', cwd: string, options: { snapshotMs?: number } = { snapshotMs: 5_000 }) {
+  function started(mode: 'full' | 'workspace', cwd: string, options: { snapshotMs?: number } = { snapshotMs: SNAPSHOT_WORK_MS }) {
     const fake = fakePi();
     const permission = new Permission({ pi: fake.pi, env: { OCTOCODE_PERMISSION: mode }, isSubagent: false, stderr: () => undefined, ...options });
     const ctx = fakeCtx({ cwd });
@@ -109,11 +131,11 @@ describe('a destructive shell call', () => {
 
   it('says undo: none when the snapshot timed out, and still runs the call', async () => {
     const cwd = repo();
-    const full = started('full', cwd, { snapshotMs: 1 });
-    expect(await full.permission.check(full.ctx, request(cwd))).toEqual({ allowed: true, via: 'mode', lasts: 'call' });
+    const full = started('full', cwd, { snapshotMs: 200 });
+    expect(await withHungGit(() => full.permission.check(full.ctx, request(cwd)))).toEqual({ allowed: true, via: 'mode', lasts: 'call' });
     expect(full.audit()[0]!.snapshot).toBeUndefined();
-    const asked = started('workspace', cwd, { snapshotMs: 1 });
-    await asked.permission.check(asked.ctx, request(cwd));
+    const asked = started('workspace', cwd, { snapshotMs: 200 });
+    await withHungGit(() => asked.permission.check(asked.ctx, request(cwd)));
     expect(asked.shown[0]).toContain('▸ undo: none (snapshot timed out)');
   });
 

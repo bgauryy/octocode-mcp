@@ -1,5 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used)]
 //! GitHub tools keep the requested scope and filters, and say when evidence
 //! is bounded or a provider path fell back.
 
@@ -8,13 +6,9 @@ use crate::support;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use support::{Workspace, call, row_data, row_status};
+use support::{Workspace, call, github_api, row_data, row_status};
 use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
-
-fn api(server: &MockServer) -> [(&'static str, String); 1] {
-    [("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]
-}
 
 async fn requested_paths(server: &MockServer) -> Vec<String> {
     server
@@ -78,7 +72,7 @@ async fn pull_request_graphql_fallback_is_observable_and_equivalent() {
         .mount(&rejected)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&rejected));
+    let runtime = workspace.runtime(&github_api(&rejected));
     let outcome = call(&runtime, "ghGetHistoryItem", reviews_query(true))
         .await
         .expect("REST fallback");
@@ -122,7 +116,7 @@ async fn pull_request_graphql_fallback_is_observable_and_equivalent() {
         .expect(1)
         .mount(&served)
         .await;
-    let runtime = workspace.runtime(&api(&served));
+    let runtime = workspace.runtime(&github_api(&served));
     let outcome = call(&runtime, "ghGetHistoryItem", reviews_query(true))
         .await
         .expect("GraphQL read");
@@ -168,7 +162,7 @@ async fn issue_closing_references_past_the_read_limit_are_disclosed() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
@@ -232,7 +226,7 @@ async fn archived_pull_request_listing_enforces_the_filter() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let outcome = call(
         &runtime,
         "ghSearchHistory",
@@ -273,7 +267,7 @@ async fn incomplete_code_search_page_is_partial_without_extras() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let outcome = call(
         &runtime,
         "ghSearchCode",
@@ -341,7 +335,7 @@ async fn pull_request_commit_details_load_concurrently_in_order() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",

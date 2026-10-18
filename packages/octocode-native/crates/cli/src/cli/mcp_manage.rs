@@ -109,7 +109,7 @@ fn inspect_continue_main(client: &ClientSpec, path: &Path, yaml: bool) -> Value 
         return row;
     };
     let parsed = if yaml {
-        serde_yaml_ng::from_str::<Value>(&text)
+        octocode_engine::portable::yaml_to_json(&text)
             .map_err(|_| "Continue configuration is not valid YAML.".to_owned())
     } else {
         octocode_native::config::parse_config_json(&text)
@@ -191,7 +191,7 @@ pub(super) fn parse_document(format: ConfigFormat, text: &str) -> Result<Value, 
             .ok()
             .and_then(|value| serde_json::to_value(value).ok())
             .ok_or_else(|| "Agent config is not valid TOML.".to_owned()),
-        ConfigFormat::Yaml => serde_yaml_ng::from_str::<Value>(text)
+        ConfigFormat::Yaml => octocode_engine::portable::yaml_to_json(text)
             .map_err(|_| "Agent config is not valid YAML.".to_owned()),
     }?;
     if !value.is_object() {
@@ -697,7 +697,7 @@ fn render_toml(text: &str, keys: &[String], next: Option<&Value>) -> Result<Stri
     ensure_expected(ConfigFormat::Toml, rendered, &expected)
 }
 
-/// Line-based so user comments and formatting outside the Octocode entry survive; `serde_yaml_ng` re-serialization would drop them.
+/// Line-based so user comments and formatting outside the Octocode entry survive; `serde-saphyr` re-serialization would drop them.
 fn render_yaml(text: &str, keys: &[String], next: Option<&Value>) -> Result<String, String> {
     let expected = expected_root(ConfigFormat::Yaml, text, keys, next)?;
     let mut lines: Vec<&str> = text.split_inclusive('\n').collect();
@@ -763,7 +763,7 @@ fn render_yaml(text: &str, keys: &[String], next: Option<&Value>) -> Result<Stri
                 .take(start + 1)
                 .map(str::len)
                 .sum::<usize>();
-            let encoded = serde_yaml_ng::to_string(&json!({"octocode":next}))
+            let encoded = serde_saphyr::to_string(&json!({"octocode":next}))
                 .map_err(|_| "Cannot encode agent entry as YAML.")?;
             let block: String = encoded.lines().map(|line| format!("  {line}\n")).collect();
             rendered.insert_str(insertion, &block);
@@ -783,7 +783,7 @@ fn render_yaml(text: &str, keys: &[String], next: Option<&Value>) -> Result<Stri
                 rendered.push('\n');
             }
             rendered.push_str(
-                &serde_yaml_ng::to_string(&json!({"extensions":{"octocode":next}}))
+                &serde_saphyr::to_string(&json!({"extensions":{"octocode":next}}))
                     .map_err(|_| "Cannot encode agent entry as YAML.")?,
             );
         }

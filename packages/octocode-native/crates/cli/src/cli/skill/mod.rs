@@ -32,21 +32,14 @@ pub(super) async fn run(runtime: &ToolRuntime, command: SkillCommand, json_outpu
     match result {
         Ok((value, text, exit)) => {
             let written = if json_output {
-                super::write_json(&value, false)
+                super::write_json(&value)
             } else {
                 super::write_text(&text)
             };
             if written == 0 { exit } else { written }
         }
         Err(error) => {
-            if json_output {
-                super::write_json(
-                    &json!({"success":false,"error":error,"errorCode":"invalidInput"}),
-                    false,
-                );
-            } else {
-                eprintln!("octocode skill: {error}");
-            }
+            super::emit_error("invalidInput", &error, json_output);
             2
         }
     }
@@ -72,7 +65,7 @@ fn target(platform: SkillPlatform, project: Option<&Path>) -> Result<SkillInstal
         },
         home_dir: if project.is_none() {
             Some(
-                std::env::home_dir()
+                octocode_io::env::home_dir()
                     .ok_or("Cannot resolve the user home directory")?
                     .to_string_lossy()
                     .into_owned(),

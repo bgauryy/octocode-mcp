@@ -1,7 +1,5 @@
 //! ghGetHistoryItem compare views through the runtime against a mock
 //! GitHub: file pages, patch windows, include scopes and both refs pinned.
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
 
 use crate::support::{self, Run as _};
 

@@ -1,0 +1,12 @@
+# cargo-nextest config: `yarn test:rust` runs every Rust test with nextest
+# (one process per test). Reference: https://nexte.st/docs/configuration/reference/
+
+[profile.default]
+# Mark a test slow after 60s and kill it after 3 minutes, so a hung test fails
+# instead of stalling the run.
+slow-timeout = { period = "60s", terminate-after = 3 }
+
+# CI (`NEXTEST_PROFILE=ci`): run every test and print each failure again at the end.
+[profile.ci]
+fail-fast = false
+failure-output = "immediate-final"

@@ -2,9 +2,9 @@
 //! processes honor each other's limits.
 use super::{KeyFacts, KeyState, now_ms, pause};
 use crate::ProviderError;
+use octocode_io::lock::TryLock;
 use std::{
     collections::BTreeMap,
-    fs::TryLockError,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant, SystemTime},
@@ -335,20 +335,6 @@ fn open_lock_file(path: &Path) -> Option<std::fs::File> {
     }
 }
 
-/// One non-blocking attempt at the exclusive advisory lock: `Some(true)` when
-/// taken, `Some(false)` when a peer holds it, `None` when the filesystem does
-/// not support locking.
-fn try_lock_once(file: &std::fs::File, path: &Path) -> Option<bool> {
-    match file.try_lock() {
-        Ok(()) => Some(true),
-        Err(TryLockError::WouldBlock) => Some(false),
-        Err(TryLockError::Error(error)) => {
-            warn_unshared("lock", path, &error);
-            None
-        }
-    }
-}
-
 /// Exclusive advisory lock on the `<state>.lock` sidecar, polled so that the
 /// wait yields to the runtime and ends at the `deadline` or on cancellation.
 /// `Ok(None)` when the file cannot be opened or the filesystem does not
@@ -357,15 +343,21 @@ async fn lock_file(
     path: &Path,
     deadline: Instant,
     cancellation: &CancellationToken,
-) -> Result<Option<std::fs::File>, ProviderError> {
-    let Some(file) = open_lock_file(path) else {
+) -> Result<Option<octocode_io::lock::LockedFile>, ProviderError> {
+    let Some(mut file) = open_lock_file(path) else {
         return Ok(None);
     };
     loop {
-        match try_lock_once(&file, path) {
-            Some(true) => return Ok(Some(file)),
-            None => return Ok(None),
-            Some(false) => pause(LOCK_POLL, deadline, cancellation).await?,
+        match octocode_io::lock::try_lock(file) {
+            Ok(TryLock::Locked(lock)) => return Ok(Some(lock)),
+            Ok(TryLock::Busy(busy)) => {
+                file = busy;
+                pause(LOCK_POLL, deadline, cancellation).await?;
+            }
+            Err(error) => {
+                warn_unshared("lock", path, &error);
+                return Ok(None);
+            }
         }
     }
 }

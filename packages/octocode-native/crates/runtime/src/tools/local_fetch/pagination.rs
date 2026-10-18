@@ -30,17 +30,21 @@ fn oversized_line_end(
     line_page_bytes: usize,
 ) -> Option<(usize, usize)> {
     let bytes = content.as_bytes();
-    let line_start = bytes[..offset]
+    // Only a line that ends within the page matters, and only its length
+    // against the line page: the scans stop at the page's end and, behind
+    // the offset, a line page's length. A line start further back than that
+    // makes the line oversized whatever its exact start, so it is not found.
+    let behind = offset.saturating_sub(line_page_bytes);
+    let line_start = bytes[behind..offset]
         .iter()
         .rposition(|byte| *byte == b'\n')
-        .map_or(0, |at| at + 1);
-    let line_end = bytes[offset..]
+        .map_or(behind, |at| behind + at + 1);
+    let line_end = bytes[offset..end.min(bytes.len())]
         .iter()
         .position(|byte| *byte == b'\n')
-        .map_or(bytes.len(), |at| offset + at + 1);
+        .map(|at| offset + at + 1)?;
     // The 1-based line at `offset` is also the 0-based index of the next.
-    (line_end - line_start > line_page_bytes && end >= line_end && line_end < bytes.len())
-        .then_some((line_end, line))
+    (line_end - line_start > line_page_bytes && line_end < bytes.len()).then_some((line_end, line))
 }
 
 /// A byte page's default size: [`LINE_PAGE_BYTES`], never over the line
@@ -365,9 +369,10 @@ fn advance_lines(view: &str, mut at: usize, count: usize) -> Option<usize> {
 /// were already redacted over the full file before selection.
 ///
 /// Offsets stay in raw-view coordinates. A redacted line is sliced to the
-/// page's raw range on its sanitized text: a secret cut by a page boundary
-/// shows its placeholder on the page its span ends in, never raw bytes, and
-/// the page keeps the offset and length it states. Returns
+/// page's raw range on its sanitized text, never raw bytes: a secret the
+/// page's end cuts extends the page to the secret's end, so its placeholder
+/// shows on the page it starts on and `next_offset` resumes after it, and an
+/// offset inside a secret starts the page at its placeholder. Returns
 /// `Ok(None)` when redaction changes the line structure even over the whole
 /// view; the caller then falls back to the whole-view scan.
 pub fn sanitize_byte_page(
@@ -417,8 +422,10 @@ const ANCHOR_BYTES: usize = 32;
 /// Text between placeholders is identical in both, so the walk advances in
 /// lockstep there and re-synchronizes after each placeholder on the unchanged
 /// text that follows it. A position inside a redacted span maps to that
-/// span's placeholder, so a slice never contains secret bytes.
-fn clean_offset(raw: &str, clean: &str, raw_at: usize) -> usize {
+/// span's placeholder start, so a slice never contains secret bytes, and
+/// also names where the span ends: `(raw_end, clean_end)`, the byte after
+/// the span in `raw` and after its placeholder in `clean`.
+fn clean_offset(raw: &str, clean: &str, raw_at: usize) -> (usize, Option<(usize, usize)>) {
     let (mut i, mut j) = (0usize, 0usize);
     while i < raw_at && j < clean.len() {
         if clean[j..].starts_with(REDACTION_PREFIX) {
@@ -438,7 +445,7 @@ fn clean_offset(raw: &str, clean: &str, raw_at: usize) -> usize {
                 raw[i..].find(anchor).map_or(raw.len(), |at| i + at)
             };
             if resumes > raw_at {
-                return j;
+                return (j, Some((resumes, placeholder_end)));
             }
             i = resumes;
             j = placeholder_end;
@@ -452,7 +459,7 @@ fn clean_offset(raw: &str, clean: &str, raw_at: usize) -> usize {
     while !clean.is_char_boundary(j) {
         j -= 1;
     }
-    j
+    (j, None)
 }
 
 /// Rebuild a raw-coordinate byte page from a sanitized window with the same
@@ -471,7 +478,7 @@ fn map_clean_window(
         return None;
     }
     let start = raw.pagination.offset;
-    let end = start + raw.pagination.length;
+    let mut end = start + raw.pagination.length;
     let mut text = String::with_capacity(raw.text.len());
     let mut position = from;
     for (raw_line, clean_line) in raw_lines.iter().zip(&clean_lines) {
@@ -484,13 +491,20 @@ fn map_clean_window(
         if raw_line == clean_line {
             text.push_str(&view[line_start.max(start)..line_end.min(end)]);
         } else {
-            // Map the page's raw range onto the sanitized line, so the page
-            // stays the window it states.
-            let from = clean_offset(raw_line, clean_line, start.saturating_sub(line_start));
+            // Map the page's raw range onto the sanitized line. An end inside
+            // a secret moves to the secret's end (within this line, the
+            // page's last), so the whole placeholder shows on this page.
+            let (from, _) = clean_offset(raw_line, clean_line, start.saturating_sub(line_start));
             let to = if end >= line_end {
                 clean_line.len()
             } else {
-                clean_offset(raw_line, clean_line, end - line_start)
+                match clean_offset(raw_line, clean_line, end - line_start) {
+                    (_, Some((raw_end, clean_end))) => {
+                        end = line_start + raw_end;
+                        clean_end
+                    }
+                    (to, None) => to,
+                }
             };
             text.push_str(&clean_line[from..to.max(from)]);
         }
@@ -552,16 +566,99 @@ mod long_redacted_line_tests {
     fn offsets_track_unchanged_text_and_snap_into_placeholders() {
         let raw = "aaaa SECRETSECRET bbbb SECRET2 cccc";
         let clean = "aaaa [REDACTED-X] bbbb [REDACTED-Y] cccc";
-        assert_eq!(clean_offset(raw, clean, 0), 0);
-        assert_eq!(clean_offset(raw, clean, 4), 4);
-        // Inside the first secret: the placeholder start, never secret bytes.
-        assert_eq!(clean_offset(raw, clean, 8), 5);
+        assert_eq!(clean_offset(raw, clean, 0), (0, None));
+        assert_eq!(clean_offset(raw, clean, 4), (4, None));
+        // A secret's first byte is a boundary, not inside it.
+        assert_eq!(clean_offset(raw, clean, 5), (5, None));
+        // Inside the first secret: the placeholder start, never secret
+        // bytes, and where the secret and its placeholder end.
+        let secret_end = raw.find(" bbbb").expect("end");
+        let placeholder_end = clean.find(" bbbb").expect("end");
+        assert_eq!(
+            clean_offset(raw, clean, 8),
+            (5, Some((secret_end, placeholder_end)))
+        );
         // After it, raw and clean realign on " bbbb".
         let raw_b = raw.find("bbbb").expect("b");
-        assert_eq!(&clean[clean_offset(raw, clean, raw_b)..][..4], "bbbb");
+        assert_eq!(&clean[clean_offset(raw, clean, raw_b).0..][..4], "bbbb");
         let raw_c = raw.find("cccc").expect("c");
-        assert_eq!(&clean[clean_offset(raw, clean, raw_c)..], "cccc");
-        assert_eq!(clean_offset(raw, clean, raw.len()), clean.len());
+        assert_eq!(&clean[clean_offset(raw, clean, raw_c).0..], "cccc");
+        assert_eq!(clean_offset(raw, clean, raw.len()), (clean.len(), None));
+    }
+
+    /// Redacts every `SECRET…` run of word bytes to one placeholder.
+    struct Scan;
+    impl crate::security::scan::ContentScan for Scan {
+        fn sanitize(
+            &self,
+            text: &str,
+            _: &std::path::Path,
+        ) -> Result<(String, Vec<String>), (String, String)> {
+            let pattern = regex::Regex::new(r"SECRET\w*").expect("pattern");
+            Ok((
+                pattern.replace_all(text, "[REDACTED-X]").into_owned(),
+                vec![],
+            ))
+        }
+    }
+
+    /// Byte pages through a line whose secret spans several pages: the page
+    /// the secret starts on shows its whole placeholder and ends after the
+    /// secret, so no page is left empty and the walk reaches every byte
+    /// once; an offset inside the secret returns the placeholder.
+    #[test]
+    fn a_secret_across_byte_pages_shows_on_the_page_it_starts_on() {
+        use super::*;
+        let secret = format!("SECRET{}", "s".repeat(70));
+        let view = format!("{}{secret} {}\n", "a".repeat(25), "b".repeat(25));
+        let secret_at = view.find("SECRET").expect("secret");
+        let path = std::path::Path::new("v.txt");
+        let query = |offset: usize| -> LocalFetchQuery {
+            serde_json::from_value(serde_json::json!({
+                "path": "v.txt", "unit": "bytes", "offset": offset, "length": 20
+            }))
+            .expect("query")
+        };
+        let mut offset = 0;
+        let mut pages = Vec::new();
+        loop {
+            let raw = page_within(&view, &query(offset), LINE_PAGE_BYTES, None);
+            let (page, _) = sanitize_byte_page(&view, raw, path, &Scan)
+                .expect("scan")
+                .expect("page");
+            assert_eq!(page.pagination.offset, offset);
+            assert!(!page.text.is_empty(), "{offset}: an empty page");
+            assert!(!page.text.contains("SECRET"), "{offset}: {}", page.text);
+            pages.push((offset, page.text.clone()));
+            match page.pagination.next_offset {
+                Some(next) => offset = next,
+                None => break,
+            }
+        }
+        // The secret starts on the second page, which ends after it.
+        assert_eq!(pages[1].0, 20);
+        assert_eq!(
+            pages[1].1,
+            format!("{}[REDACTED-X]", "a".repeat(secret_at - 20))
+        );
+        assert_eq!(pages[2].0, secret_at + secret.len());
+        assert_eq!(
+            pages
+                .iter()
+                .map(|(_, text)| text.as_str())
+                .collect::<String>(),
+            Scan.sanitize(&view, path).expect("scan").0
+        );
+        // An offset inside the secret starts at its placeholder.
+        let raw = page_within(&view, &query(secret_at + 30), LINE_PAGE_BYTES, None);
+        let (inside, _) = sanitize_byte_page(&view, raw, path, &Scan)
+            .expect("scan")
+            .expect("page");
+        assert_eq!(inside.text, "[REDACTED-X]");
+        assert_eq!(
+            inside.pagination.next_offset,
+            Some(secret_at + secret.len())
+        );
     }
 }
 
@@ -718,5 +815,62 @@ mod line_page_scan_tests {
                 None => break,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod oversized_line_end_tests {
+    use super::oversized_line_end;
+
+    /// The whole-line scan: the line holding `offset` measured from its real
+    /// start to its real end, whatever the page's end.
+    fn reference(
+        content: &str,
+        line: usize,
+        offset: usize,
+        end: usize,
+        line_page_bytes: usize,
+    ) -> Option<(usize, usize)> {
+        let bytes = content.as_bytes();
+        let line_start = bytes[..offset]
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |at| at + 1);
+        let line_end = bytes[offset..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(bytes.len(), |at| offset + at + 1);
+        (line_end - line_start > line_page_bytes && end >= line_end && line_end < bytes.len())
+            .then_some((line_end, line))
+    }
+
+    /// Lines of every length around the line page, read at every offset by
+    /// pages of several sizes, give the answer of the whole-line scan.
+    #[test]
+    fn a_bounded_scan_answers_as_the_whole_line_scan() {
+        let page = 8;
+        let content: String = [0, 1, 7, 8, 9, 10, 20, 3, 8, 9, 0]
+            .iter()
+            .map(|len| format!("{}\n", "x".repeat(*len)))
+            .collect::<String>()
+            + "tail without newline";
+        let mut oversized = 0;
+        for offset in 0..=content.len() {
+            let line = 1 + content.as_bytes()[..offset]
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count();
+            for length in [1, 4, 8, 9, 16, 30, content.len()] {
+                let end = (offset + length).min(content.len());
+                let expected = reference(&content, line, offset, end, page);
+                oversized += usize::from(expected.is_some());
+                assert_eq!(
+                    oversized_line_end(&content, line, offset, end, page),
+                    expected,
+                    "offset {offset} end {end}"
+                );
+            }
+        }
+        assert!(oversized > 20, "the corpus reaches oversized lines");
     }
 }

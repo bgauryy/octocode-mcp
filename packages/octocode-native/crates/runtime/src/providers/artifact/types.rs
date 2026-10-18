@@ -274,6 +274,11 @@ pub struct ArtifactItem {
     /// declares none, absent when the registry read did not say.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<Vec<String>>,
+    /// Optional dependencies as declared, in the `dependencies` format (npm
+    /// `optionalDependencies`, PyPI extras, optional crate and Maven
+    /// dependencies); absent when the version declares none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional_dependencies: Option<Vec<String>>,
     /// npm peer dependencies (`name@range`) as declared; absent when the
     /// version declares none (its `dependencies` list shows the manifest
     /// was read) and for a registry with no such field.
@@ -335,6 +340,7 @@ impl ArtifactItem {
             deprecated: None,
             yanked: None,
             dependencies: None,
+            optional_dependencies: None,
             peer_dependencies: None,
             engines: None,
             requires_python: None,
@@ -435,6 +441,11 @@ pub struct ArtifactError {
     /// tool's repair lead reads them.
     #[serde(skip)]
     pub nearest: Vec<String>,
+    /// The package name is no exact coordinate of the registry but a search
+    /// term (a bare Maven artifact name): the tool's repair lead searches it
+    /// as keywords.
+    #[serde(skip)]
+    pub searchable_name: bool,
 }
 
 impl ArtifactError {
@@ -446,6 +457,7 @@ impl ArtifactError {
             hints: vec![],
             next: None,
             nearest: vec![],
+            searchable_name: false,
         }
     }
 

@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 /// list their files too); builders replace `sections` with
 /// [`Sections::set_on`].
 pub(super) fn base_public_query(q: &HistoryItemRequest, operation: ItemOperation) -> Value {
-    let mut v = serde_json::to_value(&q.query).unwrap_or_default();
+    let mut v = q.public.clone();
     remove_nulls(&mut v);
     if matches!(operation, ItemOperation::PullRequest | ItemOperation::Issue) {
         let sections = q.sections();
@@ -35,8 +35,6 @@ pub(super) fn base_public_query(q: &HistoryItemRequest, operation: ItemOperation
             }),
         );
         m.remove("extras");
-        // Text is always GitHub's verbatim text: `minify` changes no read.
-        m.remove("minify");
         // A continuation restates no default: page 1 and the contract's
         // page size are what an omitted field reads. Only an issue declares
         // a pageSize default; a pull request, commit or comparison sizes

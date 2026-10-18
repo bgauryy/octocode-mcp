@@ -41,8 +41,8 @@ pub(crate) struct DomainDispatcher {
     pub evaluator: crate::tools::judgment::Evaluator,
     /// Registry answers for artifactSearch; `None` under memory storage.
     pub artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
-    /// The call set `responseLength`: rows fill their share of it, since no
-    /// read share fits them into the automatic page.
+    /// The call set `responseLength`: localFetch rows read their share of it
+    /// rather than the automatic page ([`local_page_chars`]).
     pub explicit_window: bool,
 }
 
@@ -434,14 +434,16 @@ impl DomainDispatcher {
                 dispatch::execute_local(
                     tool,
                     query,
-                    &self.paths,
-                    &self.security,
                     &context,
-                    &self.regex,
-                    &self.local_views,
-                    &rewrite,
-                    &topology,
-                    Some(&selection),
+                    &dispatch::LocalEnv {
+                        paths: &self.paths,
+                        security: &self.security,
+                        regex: &self.regex,
+                        views: &self.local_views,
+                        rewrite: &rewrite,
+                        topology: &topology,
+                        selection: Some(&selection),
+                    },
                 )
             },
         )?;
@@ -471,9 +473,9 @@ impl DomainDispatcher {
 /// walk shares (an explicit `responseLength` is per call, so it never moves
 /// a page cut). localFetch continues by offset: under an explicit window
 /// (`explicit`, the row's context) its windows fill the row's share of that
-/// page ([`ExecutionContext::row_page_chars`]) and page by its own
-/// continuation, never re-cut by the response pager. Under the automatic
-/// page the read share fits its rows instead.
+/// page ([`ExecutionContext::row_page_chars`]), else the automatic page.
+/// Either way the read share then fits its numbered rows into the response
+/// page, and each continues by its own `next.continueWindow`.
 fn local_page_chars(
     tool: ToolId,
     explicit: Option<&ExecutionContext>,

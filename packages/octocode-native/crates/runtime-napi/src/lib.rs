@@ -1,4 +1,7 @@
 //! Node host adapter for the shared Octocode runtime.
+// Test-compiled code may assert with unwrap/expect/panic. A crate attribute,
+// not clippy.toml's `allow-*-in-tests`: clippy does not treat modules mounted
+// under `cfg(all(test, unix))` as test code.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
 
 use napi::{Env, bindgen_prelude::PromiseRaw};
@@ -91,13 +94,13 @@ impl NativeRuntime {
         })
     }
 
-    #[napi(getter)]
-    pub fn abi_version(&self) -> u32 {
-        octocode_native::NATIVE_ABI_VERSION
+    #[napi(getter, catch_unwind)]
+    pub fn abi_version(&self) -> napi::Result<u32> {
+        boundary(|| Ok(octocode_native::NATIVE_ABI_VERSION))
     }
-    #[napi(getter)]
-    pub fn closed(&self) -> bool {
-        self.runtime.requests.is_closed()
+    #[napi(getter, catch_unwind)]
+    pub fn closed(&self) -> napi::Result<bool> {
+        boundary(|| Ok(self.runtime.requests.is_closed()))
     }
     #[napi(catch_unwind)]
     pub fn catalog(&self) -> napi::Result<Value> {
@@ -200,6 +203,118 @@ mod tests {
             panic!("an unrepresentable timeout must be rejected");
         };
         assert!(error.reason.contains("timeoutSecs"), "{}", error.reason);
+    }
+
+    /// A host over its own home, so no test reads or writes the user's.
+    fn host(name: &str) -> NativeRuntime {
+        let home =
+            std::env::temp_dir().join(format!("octocode-napi-{name}-{}", std::process::id()));
+        NativeRuntime::new(Some(json!({"env": {"OCTOCODE_HOME": home}}))).expect("native host")
+    }
+
+    #[test]
+    fn invalid_host_options_are_an_invalid_argument_that_echoes_nothing() {
+        for options in [
+            json!({"unknownOption": true}),
+            json!({"timeoutSecs": "ten"}),
+            json!({"env": {"OCTOCODE_HOME": 7}}),
+            json!("not an object"),
+        ] {
+            let Err(error) = NativeRuntime::new(Some(options.clone())) else {
+                panic!("{options} must be rejected");
+            };
+            assert_eq!(error.status, napi::Status::InvalidArg, "{options}");
+            assert_eq!(error.reason, "Invalid native host options", "{options}");
+        }
+    }
+
+    #[test]
+    fn a_host_reports_its_abi_and_an_open_catalog() {
+        let native = host("catalog");
+        assert_eq!(
+            native.abi_version().expect("abi"),
+            octocode_native::NATIVE_ABI_VERSION
+        );
+        assert!(!native.closed().expect("closed"));
+        let catalog = native.catalog().expect("catalog");
+        for key in [
+            "fingerprint",
+            "tools",
+            "lspServers",
+            "presentation",
+            "grammarCapabilities",
+        ] {
+            assert!(catalog.get(key).is_some(), "catalog lacks {key}");
+        }
+        assert!(
+            catalog["fingerprint"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty())
+        );
+        let tools = catalog["tools"].as_array().expect("tools");
+        assert!(!tools.is_empty());
+        assert!(
+            tools
+                .iter()
+                .all(|tool| tool["name"].is_string() && tool["available"].is_boolean()),
+            "{catalog}"
+        );
+    }
+
+    #[test]
+    fn cancel_reaches_only_a_request_that_is_in_flight() {
+        let native = host("cancel");
+        assert!(!native.cancel("never-admitted".into()).expect("cancel"));
+        let admission = native.runtime.admit("r1".into()).expect("admit");
+        assert!(
+            !native.cancel("r2".into()).expect("cancel"),
+            "another id is untouched"
+        );
+        assert!(native.cancel("r1".into()).expect("cancel"));
+        drop(admission);
+        assert!(
+            !native.cancel("r1".into()).expect("cancel"),
+            "a finished request is no longer cancellable"
+        );
+    }
+
+    #[test]
+    fn dropping_the_handle_closes_the_runtime_and_cancels_what_is_running() {
+        let native = host("drop");
+        let runtime = Arc::clone(&native.runtime);
+        let admission = runtime.admit("running".into()).expect("admit");
+        assert!(!runtime.requests.is_closed());
+        drop(native);
+        assert!(
+            runtime.requests.is_closed(),
+            "the host handle's drop begins close"
+        );
+        assert!(
+            runtime.admit("late".into()).is_err(),
+            "a closing runtime admits nothing new"
+        );
+        drop(admission);
+    }
+
+    #[test]
+    fn the_error_envelope_is_one_json_document_with_a_null_payload_by_default() {
+        let error = envelope(
+            napi::Status::GenericFailure,
+            "closed",
+            "shutting down",
+            None,
+        );
+        let envelope: Value = serde_json::from_str(&error.reason).expect("JSON envelope");
+        assert_eq!(
+            envelope,
+            json!({
+                "kind": "octocode.nativeError",
+                "code": "closed",
+                "message": "shutting down",
+                "payload": null
+            })
+        );
+        assert_eq!(error.status, napi::Status::GenericFailure);
     }
 }
 

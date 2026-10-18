@@ -27,6 +27,10 @@ export function textResult<T = undefined>(text: string, details?: T): TextResult
   return { content: [{ type: 'text', text }], details: details as T };
 }
 
+/** `12 of 40 lines (3.0KB of 90KB)`: the counts both output notes state (`ELISION_MARKER` finds them). */
+export const trimmedCounts = (shownLines: number, totalLines: number, shownBytes: number, totalBytes: number): string =>
+  `${shownLines} of ${totalLines} lines (${formatSize(shownBytes)} of ${formatSize(totalBytes)})`;
+
 /** Keep tool output inside Pi's per-result budget and say when it was cut. */
 export function capOutput(text: string, maxBytes = DEFAULT_MAX_BYTES, maxLines = DEFAULT_MAX_LINES): string {
   const cut = truncateHead(text, { maxBytes, maxLines });
@@ -36,7 +40,7 @@ export function capOutput(text: string, maxBytes = DEFAULT_MAX_BYTES, maxLines =
     const head = cutText(text, maxBytes);
     return `${head}\n\n[Output trimmed: the first line alone is ${formatSize(Buffer.byteLength(firstLine(text)))}; kept its first ${formatSize(Buffer.byteLength(head))} (${formatSize(cut.totalBytes)} in all).]`;
   }
-  return `${cut.content}\n\n[Output trimmed: ${cut.outputLines} of ${cut.totalLines} lines (${formatSize(cut.outputBytes)} of ${formatSize(cut.totalBytes)}).]`;
+  return `${cut.content}\n\n[Output trimmed: ${trimmedCounts(cut.outputLines, cut.totalLines, cut.outputBytes, cut.totalBytes)}.]`;
 }
 
 /**
@@ -79,6 +83,9 @@ export function clipText(text: string, max: number): string {
   return text.length > max ? `${cutText(text, max - 1, { chars: true })}…` : text;
 }
 
+/** Whole seconds in `ms`, rounded: the unit of a job's runtime and of a timeout in messages. */
+export const wholeSeconds = (ms: number): number => Math.round(ms / 1000);
+
 /**
  * Waits for `work` to settle, `ms` to pass (no limit when undefined), or `signal` to abort, whichever comes first; never rejects. The timer and
  * the abort listener are removed afterwards, so repeated waits on a long-lived signal leave nothing behind.
@@ -118,7 +125,7 @@ export async function untilAborted<T>(promise: Promise<T>, signal: AbortSignal |
 export async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${wholeSeconds(ms)}s`)), ms);
   });
   try {
     return await Promise.race([work, timeout]);

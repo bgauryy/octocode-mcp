@@ -143,14 +143,14 @@ fn minimal_rows_drop_what_asserts_nothing_and_keep_what_continues() {
         json!({"path":"/r","matchString":"x"}),
         json!({"files":[{"path":"a.rs"}],"matchCount":1,"filesScanned":9,
             "pagination":{"currentPage":1,"totalPages":1,"hasMore":false},
-            "snapshot":"s","searchEngine":"native",
+            "snapshot":"s",
             "diagnostics":[{"severity":"info","message":"routine"},{"severity":"warning","message":"keep"}]}),
     );
     assert!(row.get("cache").is_none(), "{row}");
     let data = &row["data"];
     // The occurrence total stays on every view; scan accounting goes.
     assert_eq!(data["matchCount"], 1, "{row}");
-    for gone in ["filesScanned", "pagination", "snapshot", "searchEngine"] {
+    for gone in ["filesScanned", "pagination", "snapshot"] {
         assert!(data.get(gone).is_none(), "{gone}: {row}");
     }
     assert_eq!(
@@ -1377,7 +1377,8 @@ fn a_row_with_a_next_page_is_never_complete() {
         Some(&json!(true)),
         "{flagless}"
     );
-    // Only a file's own match pagination says more: the row says so too.
+    // A file's own match pagination says more beside the `next` page that
+    // answers it (SH-4: nested blocks count): the row need not restate it.
     let nested = result_row(
         ToolId::AstSearch,
         0,
@@ -1386,8 +1387,9 @@ fn a_row_with_a_next_page_is_never_complete() {
             "next":{"nextMatchPage":page}}),
         None,
     );
+    assert!(nested.pointer("/data/isPartial").is_none(), "{nested}");
     assert_eq!(
-        nested.pointer("/data/isPartial"),
+        nested.pointer("/data/files/0/pagination/hasMore"),
         Some(&json!(true)),
         "{nested}"
     );
@@ -1446,7 +1448,8 @@ fn is_partial_is_dropped_only_where_pagination_and_next_already_say_it() {
         let row = paged(extra);
         assert_eq!(row["data"]["isPartial"], true, "{name}: {row}");
     }
-    // Only a file's own match pagination says more: the row still must.
+    // A file's own match pagination with its `next` page says more too
+    // (SH-4: nested blocks count as the row's own).
     let nested = result_row(
         ToolId::LocalSearch,
         0,
@@ -1455,7 +1458,7 @@ fn is_partial_is_dropped_only_where_pagination_and_next_already_say_it() {
             "next":{"nextMatchPage":page}}),
         None,
     );
-    assert_eq!(nested["data"]["isPartial"], true, "{nested}");
+    assert!(nested["data"].get("isPartial").is_none(), "{nested}");
     // A partial row with no page to read keeps the flag.
     let stopped = result_row(
         ToolId::LocalSearch,
@@ -1812,7 +1815,8 @@ fn empty_fallbacks_name_the_tools_own_filters() {
             json!({"keywords":["x","y"]}),
             "keywords",
         ),
-        (ToolId::GhSearchRepo, json!({"topics":["a"]}), "topics"),
+        // A repository search's filters drop through its `broadenSearch`
+        // lead, so its fallback text only names keywords.
         (ToolId::GhSearchRepo, json!({"keywords":["x"]}), "keywords"),
         (ToolId::GhStructure, json!({"include":["*.rs"]}), "include"),
         (ToolId::GhStructure, json!({"path":"src"}), "path"),
@@ -2146,4 +2150,34 @@ fn an_item_section_past_its_end_settles_the_row() {
             .is_none(),
         "{row}"
     );
+}
+
+/// A resource item's section blocks (a pull request's `contentPagination`)
+/// carry no cursor, as the row's own do: `next` holds every page. The row's
+/// `isPartial` does not restate the `hasMore` that its `next` page answers.
+#[test]
+fn nested_page_blocks_drop_cursors_and_the_restated_partial_flag() {
+    let query = json!({"operation":"pullRequest","owner":"o","repo":"r","number":4,
+        "sections":["files"],"extras":["stats"]});
+    let next = crate::tools::result::Continuation::new(
+        ToolId::GhGetHistoryItem,
+        json!({"operation":"pullRequest","owner":"o","repo":"r","number":4,
+            "sections":["files"],"page":2}),
+    )
+    .build();
+    let data = json!({"pullRequests":[{"number":4,"files":["M +1 -1 a.rs"],
+        "contentPagination":{"files":{"currentPage":1,"totalPages":2,"pageSize":1,
+            "totalItems":2,"hasMore":true,"nextPage":2,"snapshot":"s"}}}],
+        "isPartial":true,"next":{"nextFilePage":next}});
+    let mut row = result_row(ToolId::GhGetHistoryItem, 0, &query, data, None);
+    minimize_row(&mut row, ToolId::GhGetHistoryItem, &query);
+    let block = &row["data"]["pullRequests"][0]["contentPagination"]["files"];
+    assert_eq!(block["hasMore"], true, "{row}");
+    assert!(
+        block.get("nextPage").is_none() && block.get("snapshot").is_none(),
+        "{row}"
+    );
+    assert!(row["data"].get("isPartial").is_none(), "{row}");
+    assert!(row.get("status").is_none(), "{row}");
+    assert_eq!(row["data"]["next"]["nextFilePage"], next, "{row}");
 }

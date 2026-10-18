@@ -1,10 +1,7 @@
 use crate::error::{Error, Result};
 use crate::graph::SourceStamp;
 use crate::lsp::spawn_limits;
-use crate::lsp::transport::{
-    ClientRequestContext, JsonRpcConnection, ProgressTracker, Readiness,
-    configuration_section_for_command,
-};
+use crate::lsp::transport::{ClientRequestContext, JsonRpcConnection, ProgressTracker, Readiness};
 use crate::lsp::types::{JsCodeSnippet, JsExactPosition, JsLanguageServerConfig, JsRange};
 use crate::lsp::uri::{path_to_uri, uri_to_path};
 use crate::text::LineIndex;
@@ -770,7 +767,10 @@ impl NativeLspClient {
                     .initialization_options
                     .clone()
                     .unwrap_or_else(|| json!({})),
-                section_root: configuration_section_for_command(&self.inner.config.command),
+                section_root: super::config::configuration_section(
+                    self.inner.config.language_id.as_deref(),
+                )
+                .map(str::to_owned),
                 workspace_folders: json!([{ "uri": root_uri, "name": "workspace" }]),
             },
             Arc::clone(&self.inner.progress),

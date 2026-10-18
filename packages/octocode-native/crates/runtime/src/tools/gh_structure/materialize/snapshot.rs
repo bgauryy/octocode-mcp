@@ -4,7 +4,6 @@ use crate::private_file::{BeneathDir, open_beneath, read_limited};
 use octocode_github::{ProviderError, ProviderErrorKind, RequestContext};
 use octocode_io::lock::{LockError, LockedFile, lock_within};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -27,7 +26,7 @@ impl FileIdentity {
     pub(super) fn of(bytes: &[u8]) -> Self {
         Self {
             bytes: bytes.len() as u64,
-            sha256: hex::encode(Sha256::digest(bytes)),
+            sha256: crate::digest::sha256(bytes),
         }
     }
 }

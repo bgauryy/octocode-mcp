@@ -577,7 +577,7 @@ fn match_string_patch_view_keeps_only_matching_hunks() {
     assert_eq!(
         clipped,
         format!(
-            "@@ -0,0 +1,1 @@\n+[… 850 chars …]{}PointerEvent{}[… 850 chars …]\r\n",
+            "@@ -1,0 +1,1 @@\n+[… 850 chars …]{}PointerEvent{}[… 850 chars …]\r\n",
             "a".repeat(150),
             "b".repeat(150)
         )
@@ -586,6 +586,38 @@ fn match_string_patch_view_keeps_only_matching_hunks() {
     let page = shape_patch_page(vec![file("src/a.rs", &patch)], &query);
     assert_eq!(page.rows[0]["patch"], number_patch(&view));
     assert_eq!(page.rows[0]["fullPatchChars"], patch.chars().count());
+}
+
+/// A run with no line on one side starts that side at its own line before
+/// the run, as a unified diff does: an addition after old line 10, a
+/// deletion after new line 11, a whole-file delete at new line 0, never
+/// the other side's number.
+#[test]
+fn a_one_sided_run_starts_from_its_own_side() {
+    let patch = "@@ -8,6 +8,7 @@ fn f\n a\n b\n c\n+x\n+needle add\n d\n-needle gone\n e\n";
+    let header = |needle: &str| {
+        matching_hunks(patch, needle, 0, None)
+            .expect("hit")
+            .text
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_owned()
+    };
+    // Old lines 8-10 (a, b, c) precede the additions at new 11-12.
+    assert_eq!(header("needle add"), "@@ -10,0 +12,1 @@ fn f");
+    // New line 13 (d) precedes the deletion of old line 12.
+    assert_eq!(header("needle gone"), "@@ -12,1 +13,0 @@ fn f");
+    // A deletion with no new line in its hunk: the header's own start.
+    let deleted = "@@ -1,3 +0,0 @@\n-one\n-needle\n-three\n";
+    let whole = matching_hunks(deleted, "needle", 0, None)
+        .expect("hit")
+        .text;
+    assert!(whole.starts_with("@@ -2,1 +0,0 @@"), "{whole}");
+    // A whole-file addition: old side 0.
+    let added = "@@ -0,0 +1,2 @@\n+one\n+needle\n";
+    let new_file = matching_hunks(added, "needle", 0, None).expect("hit").text;
+    assert!(new_file.starts_with("@@ -0,0 +2,1 @@"), "{new_file}");
 }
 
 /// Every patch view numbers its new side: kept and added lines carry

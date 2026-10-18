@@ -48,6 +48,13 @@ const nextCommand = (type) => new Promise((resolve) => {
   onCommand = (command) => command.type === type && resolve(command);
 });
 
+/** What Pi does for `--session-dir <dir> --session-id <id>`: the conversation is a file `<timestamp>_<id>.jsonl` there. */
+function saveSession() {
+  const flag = (name) => process.argv[process.argv.indexOf(name) + 1];
+  fs.mkdirSync(flag('--session-dir'), { recursive: true });
+  fs.writeFileSync(`${flag('--session-dir')}/2026-01-01T00-00-00-000Z_${flag('--session-id')}.jsonl`, '{}\n');
+}
+
 async function run() {
   if (!task.startsWith('rejected') && !task.startsWith('handled')) {
     emit({ type: 'response', command: 'prompt', success: true, data: { disposition: 'started' } });
@@ -73,6 +80,57 @@ if (task.split('\n\n## You')[0].includes('linger')) {
   emit({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'thinking', thinking: '**Locating the bug**\nThe token refresh runs twice. Check the lock' }, { type: 'text', text: 'Let me read\nsrc/auth.ts' }], usage, stopReason: 'toolUse' } });
   emit({ type: 'tool_execution_start', toolName: 'read', args: { path: 'src/auth.ts' } });
   emit(say('THE ANSWER'));
+} else if (task.startsWith('archives')) {
+  // A child whose extension archived a compaction: `<home>/agent/pi/sessions/<its session id>/archive/LIBRARY.md`, where its own `sessionOutputDir` puts it.
+  saveSession();
+  const archive = `${process.env.OCTOCODE_HOME}/agent/pi/sessions/${process.argv[process.argv.indexOf('--session-id') + 1]}/archive`;
+  fs.mkdirSync(archive, { recursive: true });
+  fs.writeFileSync(`${archive}/LIBRARY.md`, '# Archive library\n');
+  emit(say('ARCHIVED'));
+} else if (task.startsWith('compacts')) {
+  // Pi's own compaction events: one that finishes (the summary's own model usage rides in `result`), one that fails, one that is cancelled; a nested one is ignored.
+  saveSession();
+  const compaction = { type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false };
+  emit({ type: 'compaction_start', reason: 'threshold' });
+  emit({ ...compaction, result: { summary: 's', firstKeptEntryId: 'e1', tokensBefore: 150000, estimatedTokensAfter: 32000, usage: { ...usage, input: 50, output: 10, totalTokens: 60, cost: { ...usage.cost, total: 0.005 } }, details: {} } });
+  emit({ type: 'compaction_start', reason: 'overflow' });
+  emit({ ...compaction, reason: 'overflow', errorMessage: 'Context overflow recovery failed: provider down' });
+  emit({ type: 'compaction_start', reason: 'threshold' });
+  emit({ ...compaction, aborted: true });
+  emit({ type: 'compaction_end', parentToolCallId: 'call-1', reason: 'manual', aborted: false, result: { tokensBefore: 1, estimatedTokensAfter: 1 } });
+  emit(say('COMPACTED'));
+} else if (task.startsWith('thrash')) {
+  // The compaction extension warns, then stops the run itself: the parent sees no abort of its own.
+  saveSession();
+  const notify = (notifyType, message) => emit({ type: 'extension_ui_request', id: `n-${message.length}`, method: 'notify', message, notifyType });
+  notify('info', 'compacting on the standalone request');
+  notify('warning', 'Compaction summary fell back to the standalone request: cache read failed.');
+  notify('error', 'Automatic compaction stopped: the context refilled to the limit within 2 turns of the previous compaction, 3 times in a row.');
+  emit({ type: 'compaction_start', reason: 'threshold' });
+  emit({ type: 'compaction_end', reason: 'threshold', aborted: true, willRetry: false });
+  emit({ type: 'agent_settled', aborted: true });
+  end = 'hold';
+} else if (task.startsWith('stale error')) {
+  // An error notice, then more model turns, then the child stops itself with no notice of its own: the old error is not the reason.
+  emit({ type: 'extension_ui_request', id: 'old', method: 'notify', message: 'an earlier, unrelated error', notifyType: 'error' });
+  emit({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'working on it' }], usage, stopReason: 'toolUse' } });
+  emit({ type: 'agent_settled', aborted: true });
+  end = 'hold';
+} else if (task.startsWith('wordy notices')) {
+  // One long error, a warning repeated many times, and more distinct warnings than a report shows inline.
+  emit({ type: 'extension_ui_request', id: 'long', method: 'notify', message: `long failure ${'detail '.repeat(300)}end`, notifyType: 'error' });
+  for (let n = 0; n < 9; n++) emit({ type: 'extension_ui_request', id: `r${n}`, method: 'notify', message: 'retrying the cache', notifyType: 'warning' });
+  for (let n = 1; n <= 8; n++) emit({ type: 'extension_ui_request', id: `d${n}`, method: 'notify', message: `distinct warning ${n}`, notifyType: 'warning' });
+  emit(say('WORDY'));
+} else if (task.startsWith('noisy stderr')) {
+  // 300 numbered lines on stderr (well over the tail a failure shows), then a crash.
+  for (let n = 1; n <= 300; n++) process.stderr.write(`diagnostic line ${n} of the noisy child\n`);
+  process.exit(3);
+} else if (task.startsWith('chatty')) {
+  // More warnings than a run keeps, an info note and an audit entry that is not for the report.
+  for (let n = 1; n <= 7; n++) emit({ type: 'extension_ui_request', id: `w${n}`, method: 'notify', message: `warning ${n}`, notifyType: 'warning' });
+  emit({ type: 'extension_ui_request', id: 'a1', method: 'notify', message: 'octocode-audit/1 {}', notifyType: 'warning' });
+  emit(say('CHATTY'));
 } else if (task.startsWith('dialogs')) {
   // A child with a UI protocol: four dialogs (each blocks until answered) and fire-and-forget requests around them.
   const answers = [];
@@ -152,6 +210,10 @@ if (task.split('\n\n## You')[0].includes('linger')) {
   emit(say('Let me look at src/a.ts', { stopReason: 'toolUse' }));
   process.stderr.write('segfault\n');
   process.exit(3);
+} else if (task.startsWith('medium narrate then crash')) {
+  emit(say(`${'progress detail '.repeat(60)}the end`, { stopReason: 'toolUse' }));
+  process.stderr.write('segfault\n');
+  process.exit(3);
 } else if (task.startsWith('long narrate then crash')) {
   emit(say(`${'progress detail '.repeat(1000)}the end`, { stopReason: 'toolUse' }));
   process.stderr.write('segfault\n');
@@ -196,6 +258,11 @@ if (task.split('\n\n## You')[0].includes('linger')) {
     emit({ type: 'agent_settled', aborted: true });
   });
   setTimeout(() => undefined, 60_000);
+} else if (task.startsWith('gated')) {
+  // Runs until the test creates the file OCTOCODE_FAKE_GATE names, then answers: the test acts as the child's team meanwhile.
+  emit({ type: 'tool_execution_start', toolName: 'bash', args: { command: 'wait for the gate' } });
+  while (!fs.existsSync(process.env.OCTOCODE_FAKE_GATE)) await new Promise((resolve) => setTimeout(resolve, 20));
+  emit(say('finished after asking'));
 } else if (task.startsWith('slow')) {
   emit({ type: 'tool_execution_start', toolName: 'bash', args: { command: 'sleep 60' } });
   end = 'hold';

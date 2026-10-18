@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use crate::support::{self, Run as _};
 
 use serde_json::json;

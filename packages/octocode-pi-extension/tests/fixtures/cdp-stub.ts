@@ -41,7 +41,7 @@ export interface AutoAttachSpec {
 export interface CdpStubOptions {
   handle?: CdpHandler;
   /** Targets `/json/list` reports; default one page `page-1`. */
-  targets?: Array<{ id: string; type: string; ws?: boolean; url?: string }>;
+  targets?: Array<{ id: string; type: string; ws?: boolean; url?: string; title?: string }>;
   /** HTTP status for `PUT /json/new` (default 200). */
   newTabStatus?: number;
 }
@@ -134,7 +134,7 @@ export async function startCdpStub(options: CdpStubOptions = {}): Promise<CdpStu
       res.end(JSON.stringify(body));
     };
     if (url === '/json/version') return json(200, { Browser: 'Stub/1.0', webSocketDebuggerUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}${browserPath}` });
-    if (url === '/json/list') return json(200, targets.map((target) => ({ id: target.id, type: target.type, ...(target.url ? { url: target.url } : {}), ...(target.ws === false ? {} : { webSocketDebuggerUrl: wsUrl(target.id) }) })));
+    if (url === '/json/list') return json(200, targets.map((target) => ({ id: target.id, type: target.type, ...(target.url ? { url: target.url } : {}), ...(target.title ? { title: target.title } : {}), ...(target.ws === false ? {} : { webSocketDebuggerUrl: wsUrl(target.id) }) })));
     if (url.startsWith('/json/new')) {
       if (req.method !== 'PUT') return json(405, {});
       if ((options.newTabStatus ?? 200) !== 200) return json(options.newTabStatus!, {});

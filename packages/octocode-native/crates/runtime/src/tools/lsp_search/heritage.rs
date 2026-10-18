@@ -2,14 +2,18 @@
 //!
 //! The shared walker follows source heritage clauses resolved by the server.
 //! Implementation locations are candidate subtypes: their resolved immediate
-//! heritage establishes whether they are direct children of the queried type.
-//! When implementation requests fail, the separate source scan remains an
-//! explicitly unverified, partial syntax answer.
+//! heritage establishes whether they are direct children of the queried type
+//! (a Rust trait impl is the candidate itself, see [`impl_node`]). When
+//! implementation requests fail, the separate source scan remains an
+//! explicitly unverified, partial syntax answer; beside a server answer to
+//! `implementation`, its declarations the server left out are listed the
+//! same way.
 
 use super::failure::LspFailure;
 use super::source::read_bounded_source;
 use octocode_engine::graph::GraphFactsDocument;
 use octocode_engine::lsp::types::{JsCodeSnippet, JsExactPosition, JsRange};
+use octocode_engine::signatures::TYPE_DECLARATION_KINDS;
 use octocode_engine::signatures::graph_facts::GraphFactNoteKind;
 use std::collections::BTreeSet;
 use std::future::Future;
@@ -46,12 +50,10 @@ pub(super) fn type_node(
         .declarations
         .iter()
         .find(|declaration| {
-            matches!(
-                declaration.kind.as_str(),
-                "class" | "interface" | "struct" | "trait" | "enum"
-            ) && ((declaration.selection_range.start <= point
-                && point < declaration.selection_range.end)
-                || declaration.range.start == point)
+            TYPE_DECLARATION_KINDS.contains(&declaration.kind.as_str())
+                && ((declaration.selection_range.start <= point
+                    && point < declaration.selection_range.end)
+                    || declaration.range.start == point)
         })
         .ok_or_else(|| {
             format!(
@@ -62,6 +64,38 @@ pub(super) fn type_node(
         })?;
     Ok(serde_json::json!({
         "uri": octocode_engine::lsp::uri::path_to_uri(path).map_err(|error| error.to_string())?,
+        "name": declaration.name, "kind": declaration.kind,
+        "range": declaration.range, "selectionRange": declaration.selection_range
+    }))
+}
+
+/// The trait implementation (`impl Trait for Type`) whose header holds
+/// `line:character`, where a server locates it (rust-analyzer: at the self
+/// type), as a hierarchy node named by its self type. `None` for any other
+/// declaration: an inherent `impl Type` implements nothing.
+pub(super) fn impl_node(
+    document: &GraphFactsDocument,
+    path: &str,
+    line: u32,
+    character: u32,
+) -> Option<serde_json::Value> {
+    let point = octocode_engine::graph::GraphPosition { line, character };
+    let declaration = document
+        .declarations
+        .iter()
+        .filter(|declaration| {
+            declaration.kind == "impl"
+                && declaration.range.start <= point
+                && point < declaration.selection_range.end
+                && document
+                    .edges
+                    .iter()
+                    .any(|edge| edge.from == declaration.id && edge.relation == "implements")
+        })
+        // The innermost: an impl nested in a function body of another.
+        .max_by(|left, right| left.range.start.cmp(&right.range.start))?;
+    Some(serde_json::json!({
+        "uri": octocode_engine::lsp::uri::path_to_uri(path).ok()?,
         "name": declaration.name, "kind": declaration.kind,
         "range": declaration.range, "selectionRange": declaration.selection_range
     }))
@@ -99,15 +133,37 @@ pub(super) fn direct_bases(
             let text = lines
                 .get(usize::try_from(line).map_err(|error| error.to_string())?)
                 .ok_or_else(|| "Heritage line unavailable".to_owned())?;
-            let start = if line == declaration.selection_range.end.line {
-                declaration.selection_range.end.character
+            // A trait implementation names its trait before its self type,
+            // the declaration's name (`impl<T: Bound> Trait for Type`): the
+            // clause is the last spelling before the name. Elsewhere the
+            // clause follows the name and spells the base once.
+            let clause_first = declaration.kind == "impl";
+            let (start, end) = if clause_first {
+                (
+                    if line == declaration.range.start.line {
+                        declaration.range.start.character
+                    } else {
+                        0
+                    },
+                    if line == declaration.selection_range.start.line {
+                        declaration.selection_range.start.character
+                    } else {
+                        u32::MAX
+                    },
+                )
             } else {
-                0
-            };
-            let end = if line == declaration.range.end.line {
-                declaration.range.end.character
-            } else {
-                u32::MAX
+                (
+                    if line == declaration.selection_range.end.line {
+                        declaration.selection_range.end.character
+                    } else {
+                        0
+                    },
+                    if line == declaration.range.end.line {
+                        declaration.range.end.character
+                    } else {
+                        u32::MAX
+                    },
+                )
             };
             let leaf = edge
                 .to
@@ -137,7 +193,12 @@ pub(super) fn direct_bases(
                 }
                 from = suffix;
             }
-            let [character] = positions.as_slice() else {
+            let anchor = match positions.as_slice() {
+                [.., last] if clause_first => Some(last),
+                [only] => Some(only),
+                _ => None,
+            };
+            let Some(character) = anchor else {
                 return Err(format!(
                     "Cannot establish an exact heritage anchor for {} in {path}:{}",
                     edge.to,
@@ -194,10 +255,7 @@ pub(super) fn anchors_type_declaration(content: &str, file: &str, line: u32, nam
     document.declarations.iter().any(|declaration| {
         declaration.name == name
             && declaration.selection_range.start.line == line
-            && matches!(
-                declaration.kind.as_str(),
-                "class" | "interface" | "struct" | "trait" | "enum"
-            )
+            && TYPE_DECLARATION_KINDS.contains(&declaration.kind.as_str())
     })
 }
 
@@ -229,19 +287,22 @@ pub(super) const SERVER_GRACE_AFTER_SCAN: std::time::Duration = std::time::Durat
 
 /// Run `primary` (the server's request) and `hedge` (its syntax-scan
 /// substitute) at the same time. A primary answer wins and drops the hedge,
-/// which stops its blocking work; a failure that `has_fallback` takes the
-/// hedge as it stands, finished or not, so the scan's time overlaps the
-/// primary's instead of following it. When the hedge finishes first and
-/// `grace` names a wait for it, the primary has that long to answer before
-/// `overdue` (given the wait) turns into its failure and the hedge is taken.
-/// The primary's own timeout still bounds everything else.
+/// which stops its blocking work, unless `keep` asks for the hedge beside
+/// the answer: then it is awaited (or taken, finished) and rides with it. A
+/// failure that `has_fallback` takes the hedge as it stands, finished or
+/// not, so the scan's time overlaps the primary's instead of following it.
+/// When the hedge finishes first and `grace` names a wait for it, the
+/// primary has that long to answer before `overdue` (given the wait) turns
+/// into its failure and the hedge is taken. The primary's own timeout still
+/// bounds everything else.
 pub(super) async fn hedged<T, E, H>(
     primary: impl Future<Output = Result<T, E>>,
     hedge: impl Future<Output = H>,
     has_fallback: impl Fn(&E) -> bool,
     grace: impl Fn(&H) -> Option<std::time::Duration>,
     overdue: impl FnOnce(std::time::Duration) -> E,
-) -> Result<T, (E, Option<H>)> {
+    keep: bool,
+) -> Result<(T, Option<H>), (E, Option<H>)> {
     let mut primary = std::pin::pin!(primary);
     let mut hedge = std::pin::pin!(hedge);
     let mut hedged = None;
@@ -251,7 +312,14 @@ pub(super) async fn hedged<T, E, H>(
         tokio::select! {
             biased;
             answer = &mut primary => match answer {
-                Ok(answer) => return Ok(answer),
+                Ok(answer) if !keep => return Ok((answer, None)),
+                Ok(answer) => {
+                    let hedged = match hedged {
+                        Some(done) => done,
+                        None => hedge.await,
+                    };
+                    return Ok((answer, Some(hedged)));
+                }
                 Err(failure) => break failure,
             },
             done = &mut hedge, if hedged.is_none() => {
@@ -437,10 +505,7 @@ mod tests {
             .filter(|declaration| {
                 declaration.range.start.line <= line
                     && line <= declaration.range.end.line
-                    && matches!(
-                        declaration.kind.as_str(),
-                        "class" | "interface" | "struct" | "trait" | "enum"
-                    )
+                    && TYPE_DECLARATION_KINDS.contains(&declaration.kind.as_str())
             })
             .min_by_key(|declaration| declaration.range.end.line - declaration.range.start.line)
             .expect("type declaration");
@@ -502,6 +567,29 @@ mod tests {
             "{broken}"
         );
         assert!(!broken.contains("syntax-only"), "{broken}");
+    }
+
+    /// rust-analyzer locates a trait implementation at its self type: that
+    /// impl is the subtype node, and its base is the trait it names before
+    /// the self type, past a bound that spells the same trait.
+    #[test]
+    fn a_rust_trait_impl_is_a_node_whose_base_is_its_trait() {
+        let source = "trait Scan {}\nstruct Foo<T>(T);\nimpl<T: Scan> Scan for Foo<T> {}\nimpl<T> Foo<T> {}\n";
+        let file = &absolute("lib.rs");
+        let document = type_document(source, file).expect("graph facts");
+        let node = impl_node(&document, file, 2, 23).expect("trait impl");
+        assert_eq!(
+            (node["name"].as_str(), node["kind"].as_str()),
+            (Some("Foo"), Some("impl"))
+        );
+        let found = direct_bases(&document, source, file, &node)
+            .expect("trait clause")
+            .into_iter()
+            .map(|b| (b.name, b.relation, b.line, b.character))
+            .collect::<Vec<_>>();
+        assert_eq!(found, vec![("Scan".into(), "implements".into(), 2, 14)]);
+        assert!(impl_node(&document, file, 3, 8).is_none(), "inherent impl");
+        assert!(impl_node(&document, file, 1, 7).is_none(), "struct");
     }
 
     #[test]
@@ -683,6 +771,7 @@ mod tests {
             |_| true,
             |_| None,
             |_| "overdue",
+            false,
         )
         .await;
         assert_eq!(outcome, Err(("timeout", Some("scan"))));
@@ -702,6 +791,7 @@ mod tests {
             |_| true,
             |_| None,
             |_| "overdue",
+            false,
         )
         .await;
         assert_eq!(outcome, Err(("crash", Some("scan"))));
@@ -717,6 +807,7 @@ mod tests {
             |failure| *failure != "cancelled",
             |_| None,
             |_| "overdue",
+            false,
         )
         .await;
         assert_eq!(outcome, Err(("cancelled", None)));
@@ -744,10 +835,26 @@ mod tests {
             |_| true,
             |_| None,
             |_| "overdue",
+            false,
         )
         .await;
-        assert_eq!(outcome, Ok(7));
+        assert_eq!(outcome, Ok((7, None)));
         assert!(dropped.load(Ordering::SeqCst), "the answer drops the scan");
+
+        // `keep` waits for the hedge and returns it beside the answer.
+        let outcome = hedged(
+            async { Ok::<u8, &str>(5) },
+            async {
+                sleep(50).await;
+                "scan"
+            },
+            |_| true,
+            |_| None,
+            |_| "overdue",
+            true,
+        )
+        .await;
+        assert_eq!(outcome, Ok((5, Some("scan"))));
     }
 
     /// Once the scan has finished the server has a bounded grace: a primary
@@ -772,6 +879,7 @@ mod tests {
             |_| true,
             grace,
             |_| "overdue",
+            false,
         )
         .await;
         assert_eq!(outcome, Err(("overdue", Some("scan"))));
@@ -794,9 +902,10 @@ mod tests {
             |_| true,
             grace,
             |_| "overdue",
+            false,
         )
         .await;
-        assert_eq!(outcome, Ok(9));
+        assert_eq!(outcome, Ok((9, None)));
 
         // A scan with nothing to offer grants no deadline.
         let outcome = hedged(
@@ -811,8 +920,9 @@ mod tests {
             |_| true,
             |_| None,
             |_| "overdue",
+            false,
         )
         .await;
-        assert_eq!(outcome, Ok(3));
+        assert_eq!(outcome, Ok((3, None)));
     }
 }

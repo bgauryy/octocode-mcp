@@ -2,11 +2,13 @@ use super::Walking;
 use crate::contracts::tool_types::DefaultExcludes;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::Walk;
+use crate::tools::id::ToolId;
+use crate::tools::num::{u32_of, u32_of_usize, usize_of};
+use crate::tools::paging::clamp_page_size;
 use crate::tools::result::ToolError;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };
-use octocode_engine::portable::Visit;
 use octocode_engine::types::{FileSystemEntry, FileSystemQueryOptions};
 use serde_json::{Value, json};
 
@@ -17,7 +19,7 @@ impl StructureSearchQueryFiles {
     /// Levels below `path` (1 = its children), as `tree` and the engine
     /// count them.
     fn depth(value: Option<std::num::NonZeroU64>) -> Option<u32> {
-        value.map(|depth| u32::try_from(depth.get()).unwrap_or(u32::MAX))
+        value.map(|depth| u32_of(depth.get()))
     }
     pub(crate) fn max_depth(&self) -> Option<u32> {
         Self::depth(self.max_depth)
@@ -62,16 +64,15 @@ impl StructureSearchQueryFiles {
         self.sort.to_string()
     }
     pub(crate) fn max_entries(&self) -> Option<u32> {
-        self.max_entries
-            .map(|limit| u32::try_from(limit.get()).unwrap_or(u32::MAX))
+        self.max_entries.map(|limit| u32_of(limit.get()))
     }
     pub(crate) fn page(&self) -> u32 {
-        u32::try_from(self.page.get()).unwrap_or(u32::MAX)
+        u32_of(self.page.get())
     }
     /// The caller's page size; `None` pages by the response budget.
     pub(crate) fn page_size(&self) -> Option<usize> {
         self.page_size
-            .map(|size| usize::try_from(size.get()).unwrap_or(usize::MAX))
+            .map(|size| clamp_page_size(ToolId::StructureSearch, None, usize_of(size.get())))
     }
     pub(crate) fn snapshot(&self) -> Option<&str> {
         self.snapshot.as_deref().map(String::as_str)
@@ -91,14 +92,11 @@ impl StructureSearchQueryFiles {
     }
     /// Walk entries (walk order) an earlier, time-cut walk inspected.
     pub(crate) fn walk_offset(&self) -> u32 {
-        self.walk_offset
-            .map_or(0, |offset| u32::try_from(offset.get()).unwrap_or(u32::MAX))
+        self.walk_offset.map_or(0, |offset| u32_of(offset.get()))
     }
     /// Listing rows (in walk or sort order) earlier windows listed.
     pub(crate) fn scan_offset(&self) -> usize {
-        self.scan_offset.map_or(0, |offset| {
-            usize::try_from(offset.get()).unwrap_or(usize::MAX)
-        })
+        self.scan_offset.map_or(0, |offset| usize_of(offset.get()))
     }
 }
 
@@ -214,9 +212,7 @@ pub fn execute_files(
     if let Some(restart) = super::restart_if_stale(q, page, q.snapshot(), &snapshot) {
         return Ok(restart);
     }
-    let page_size = q
-        .page_size()
-        .map(|size| size.clamp(1, super::structure_max("pageSize") as usize));
+    let page_size = q.page_size();
     let prefix = super::listing_prefix(paths, &validated.canonical);
     let deferred_detail = q.detail() == "full" && q.sort() != "lines";
     let pages = super::page_ranges(
@@ -266,6 +262,17 @@ pub fn execute_files(
             )
         },
     )?;
+    super::broaden_empty(&mut out, q, &validated.canonical, |relaxed, walking| {
+        walk_files(
+            relaxed,
+            &validated.canonical,
+            paths,
+            security,
+            cancel,
+            super::PROBE_HITS,
+            walking,
+        )
+    })?;
     Ok(out)
 }
 
@@ -353,14 +360,19 @@ fn walk_files(
     let bound = walking.probe();
     // Leave out what the tree and localSearch leave out: ignored entries,
     // pruned during the walk (and counted by it) unless `includeIgnored`.
-    let probe = super::FilterProbe::new(
-        root,
-        &q.include().unwrap_or_default(),
-        &q.extensions,
-        q.name_regex.as_deref(),
-    )?;
     let left = super::WalkLeft::new(root, q.default_excludes.defaults());
-    let show_hidden = q.include_hidden == Some(true);
+    let policy = super::WalkPolicy {
+        bound,
+        discovery: paths.discovery_walk(),
+        probe: super::FilterProbe::new(
+            root,
+            &q.include().unwrap_or_default(),
+            &q.extensions,
+            q.name_regex.as_deref(),
+        )?,
+        show_hidden: q.include_hidden == Some(true),
+        filtered: q.filtered(),
+    };
     let detail = q.detail();
     let sort = q.sort();
     let walk_limit = if early_exit(q) || bound.is_some() {
@@ -368,46 +380,12 @@ fn walk_files(
     } else {
         super::max_walk()
     };
-    let discovery = paths.discovery_walk();
-    let filtered = q.filtered();
     let mut native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             time_budget: walking.budget(),
             ..query_options(q, root, walk_limit)
         },
-        &|path, file_type, visit| {
-            // The root itself stays admitted: a probe out of time lists
-            // nothing under it, never fails.
-            if path != root && bound.is_some_and(|bound| !bound.admits(path, file_type)) {
-                return false;
-            }
-            // Dot entries out of view (no `includeHidden`) are neither listed
-            // nor counted as withheld; the ones `includeHidden:true` would
-            // walk are counted as hidden, and the walk's dot rule skips them.
-            let dot = crate::tools::display_name(path).starts_with('.');
-            let allowed = discovery.permits_entry(path, file_type);
-            // Only an entry these filters could list makes absence unproven;
-            // a replayed entry was counted by the window this one resumes.
-            let fresh = visit == Visit::Fresh;
-            let unseen = if allowed {
-                super::WalkLeft::unfollowed(path, file_type, filtered)
-            } else {
-                probe.could_list(path)
-            };
-            if fresh && unseen && (show_hidden || !dot) && super::reports_withheld(path) {
-                left.record_withheld(path);
-            }
-            if !allowed {
-                return false;
-            }
-            if dot && !show_hidden {
-                if fresh && !left.excludes(path, file_type) {
-                    left.count_hidden();
-                }
-                return true;
-            }
-            !left.prunes(path, file_type, visit)
-        },
+        &|path, file_type, visit| left.admit(&policy, path, file_type, visit),
         &|| cancel.check().is_err(),
     )
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
@@ -567,7 +545,7 @@ fn files_page(
         crate::response::pages::PageFacts::sized(page, cut.total_pages, total, cut.has_more())
             .out_of_range(cut.out_of_range());
     if let Some(size) = q.page_size() {
-        facts = facts.with_page_size(size.clamp(1, super::structure_max("pageSize") as usize));
+        facts = facts.with_page_size(size);
     }
     let mut out = json!({"path":super::display_name(root),"snapshot":snapshot,"files":files,"pagination":facts.to_value()});
     // A walk cut by time proved nothing about what it did not scan, and a
@@ -688,10 +666,13 @@ fn make_row(
     };
     let dir = dir.to_owned();
     let modified = e.modified_ms.unwrap_or(0.0);
+    // A directory's own length is its entry table, not content: it is
+    // neither shown nor ranked (`sort:size` puts directories last).
+    let size = e.size.filter(|_| kind != "directory");
     let entry = entry_text(
         name,
         kind,
-        e.size.filter(|_| kind != "directory"),
+        size,
         // The line sort's own key, counted for every file it ranks, shows
         // whatever the detail.
         lines,
@@ -707,7 +688,7 @@ fn make_row(
         kind,
         path,
         name: e.name.clone(),
-        size: e.size.unwrap_or(0),
+        size: size.unwrap_or(0),
         modified,
         lines,
         source: std::path::PathBuf::from(&e.path),
@@ -898,7 +879,7 @@ fn cut_walk_before(native: &mut octocode_engine::types::FileSystemQueryResult, a
     native.entries.truncate(at);
     // The window ends before the walk's own end, so not at its ceiling.
     native.was_capped = false;
-    native.total_discovered = u32::try_from(at).unwrap_or(u32::MAX);
+    native.total_discovered = u32_of_usize(at);
 }
 
 pub(super) fn line_count(

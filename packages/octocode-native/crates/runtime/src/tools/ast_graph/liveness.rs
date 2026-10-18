@@ -42,7 +42,7 @@ pub(super) fn reachability(
         .collect::<Vec<_>>();
     let chunk = q
         .page_size()
-        .unwrap_or(super::topology_max("pageSize") as usize)
+        .unwrap_or(crate::tools::id::query_limits::ast_topology::PAGE_SIZE_MAXIMUM)
         .max(1);
     items.extend(
         reachable_files

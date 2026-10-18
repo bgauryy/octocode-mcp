@@ -255,7 +255,7 @@ pub struct FileSystemQueryOptions {
     pub extensions: Option<Vec<String>>,
     /// Rust regex against basename.
     pub regex: Option<String>,
-    /// POSIX find-style entry type: f=file, d=directory, l=symlink.
+    /// Entry type: `f` lists files, `d` directories; any other value fails.
     pub entry_type: Option<String>,
     /// Match only empty files or directories.
     pub empty: Option<bool>,

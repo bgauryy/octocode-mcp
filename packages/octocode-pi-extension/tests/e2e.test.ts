@@ -143,7 +143,9 @@ describe('with Octocode MCP (default)', () => {
     // The separate prompt-size test guards only extension-owned prose/schemas, not this complete fixture prefix.
     const fixedChars = turn.systemPrompt.length + JSON.stringify(turn.toolContracts).length;
     console.log(`default Pi + Octocode prefix: ${fixedChars} chars (prompt ${turn.systemPrompt.length}, ${turn.tools.length} tools)`);
-    expect(fixedChars, 'default runtime prompt and declarations grew beyond their 5% headroom').toBeLessThan(43_500);
+    // 45_500 (measured 44,632): was 43,500. +950 for the user-requested `archive` tool (schema, snippet, guideline), and
+    // the Octocode core's longer MCP input-schema descriptions (staged tool contract) left no headroom (43,682).
+    expect(fixedChars, 'default runtime prompt and declarations grew beyond their headroom').toBeLessThan(45_500);
     expect(turn.tools).toContain('file');
     expect(turn.tools).toContain('read');
     expect(turn.tools).toContain('mcp__octocode__localFetch');
@@ -325,16 +327,23 @@ describe('with another MCP server and Octocode disabled', () => {
     expect(rewrite!.lastResults[0]!.text).toMatch(/OK write twice\.txt/);
   });
 
-  it('keeps every tool result verbatim: no context edits after a turn, even with a cold cache', async () => {
+  it('clears old results at request time once the cache is cold inside a run, to saved files and without any context edit', async () => {
     fs.writeFileSync(path.join(s.cwd, 'big.txt'), 'line of text\n'.repeat(1_000));
     const reads = Array.from({ length: 22 }, () => fauxToolCall('read', { path: 'big.txt' }));
     const realNow = Date.now.bind(Date);
+    // The tools ran longer than the prompt-cache lifetime: the next request would rewrite the cache anyway.
     const later = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 60 * 60_000 + 1);
     const cold = () => fauxAssistantMessage(reads, { stopReason: 'toolUse', timestamp: realNow() });
     const results = await s.run('read a lot', [cold, say('done')]).finally(() => later.mockRestore()).then((turns) => turns.at(-1)!.lastResults);
     expect(results).toHaveLength(22);
-    expect(results.every((result) => result.text.length > 10_000)).toBe(true);
-    expect(s.session.sessionManager.getEntries().filter((entry) => entry.type === 'context_edit')).toHaveLength(0);
+    const cleared = results.filter((result) => result.text.startsWith('[Old tool result cleared'));
+    // The newest five stay whole; every older one is a placeholder that names the file holding its whole text.
+    expect(cleared).toHaveLength(17);
+    expect(results.slice(-5).every((result) => result.text.length > 10_000)).toBe(true);
+    for (const result of cleared) expect(result.text).toMatch(/Full output: \S+ \(sha256/);
+    const entries = s.session.sessionManager.getEntries();
+    expect(entries.filter((entry) => entry.type === 'context_edit')).toHaveLength(0);
+    expect(entries.filter((entry) => entry.type === 'custom' && entry.customType === 'octocode-cleared-results')).toHaveLength(1);
   });
 
   it('reports unavailable askUser without inventing an answer or approval', async () => {

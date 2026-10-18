@@ -34,10 +34,13 @@ interface SessionStats {
   head?: string;
 }
 
-/** One line of text as shown: terminal controls stripped, whitespace collapsed, at most `max` characters. */
+/** Text on one line, whole: terminal controls stripped, whitespace collapsed. The form text for the model takes. */
+export const flatLine = (text: string): string => sanitizeTerminalText(text).replace(/\s+/g, ' ').trim();
+
+/** `flatLine` of at most `max` characters, for a terminal row. */
 export function shownLine(text: string, max: number): string {
   // By code point, so a cut never splits a surrogate pair (an emoji).
-  const line = [...sanitizeTerminalText(text).replace(/\s+/g, ' ').trim()];
+  const line = [...flatLine(text)];
   return line.length > max ? `${line.slice(0, max - 1).join('')}…` : line.join('');
 }
 

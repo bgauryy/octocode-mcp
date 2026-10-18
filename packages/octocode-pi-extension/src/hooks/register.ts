@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 import { Box, Text } from '@earendil-works/pi-tui';
 import { formatDuration } from '../shared/format.js';
+import { STATUS } from '../shared/status.js';
 import { resultBlock } from '../shared/render.js';
 import { notify, say, type Subcommands } from '../shared/commands.js';
 import { HOOKS_ENV, envFlag } from '../shared/env.js';
@@ -24,7 +25,6 @@ import { capContext, failureOf, interpret, runHook, type HookVerdict } from './r
 const CONTEXT_TYPE = 'octocode-hook-context';
 /** Longest the first prompt waits for SessionStart hooks still running. */
 const START_HOOKS_WAIT_MS = 15_000;
-const STATUS_KEY = 'octocode-hooks';
 const STOP_TYPE = 'octocode-hook-stop';
 const STOP_PREFIX = 'Stop hook feedback:\n';
 /** Claude Code's cap on consecutive Stop-hook continuations; a tool call resets the count. */
@@ -41,7 +41,7 @@ async function withStatus<T>(ctx: ExtensionContext, label: string, work: () => P
   const started = Date.now();
   const show = () => {
     const ms = Date.now() - started;
-    ctx.ui.setStatus(STATUS_KEY, `${label}${ms >= 1_000 ? ` · ${formatDuration(ms)}` : ''}`);
+    ctx.ui.setStatus(STATUS.hooks, `${label}${ms >= 1_000 ? ` · ${formatDuration(ms)}` : ''}`);
   };
   show();
   // RPC clients get the label once; only the TUI repaints the time.
@@ -52,7 +52,7 @@ async function withStatus<T>(ctx: ExtensionContext, label: string, work: () => P
   } finally {
     if (timer) clearInterval(timer);
     try {
-      ctx.ui.setStatus(STATUS_KEY, undefined);
+      ctx.ui.setStatus(STATUS.hooks, undefined);
     } catch {
       // The session was replaced.
     }
@@ -291,11 +291,11 @@ function registerSessionStartHooks(pi: ExtensionAPI, session: HookSession, { dis
     // The first prompt waits a bounded time for their context; a slower hook's context comes with the next prompt.
     if (starting) {
       // Shown only while the prompt actually waits: `starting` clears itself once the hooks finish.
-      if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, 'Waiting for SessionStart hooks…');
+      if (ctx.hasUI) ctx.ui.setStatus(STATUS.hooks, 'Waiting for SessionStart hooks…');
       try {
         await Promise.race([starting, new Promise((resolve) => setTimeout(resolve, START_HOOKS_WAIT_MS).unref())]);
       } finally {
-        if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, undefined);
+        if (ctx.hasUI) ctx.ui.setStatus(STATUS.hooks, undefined);
       }
     }
     if (pending.length === 0) return undefined;

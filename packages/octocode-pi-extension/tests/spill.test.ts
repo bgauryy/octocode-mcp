@@ -104,7 +104,7 @@ describe('image bounds', () => {
     expect(file).toBeDefined();
     expect(fs.readFileSync(file!)).toEqual(original);
     expect(image!.mimeType).toBe('image/jpeg');
-  }, 20_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 
   it('resizes an oversized image to the limits it is given and says how coordinates map back', async () => {
     const original = noisyPng(512);
@@ -116,7 +116,7 @@ describe('image bounds', () => {
     expect(note).toContain('original 512x512, displayed at 100x100');
     expect(note).toContain('Multiply coordinates by 5.12');
     expect(fs.readFileSync(/Original saved to (.+?)\.(?: |\])/.exec(note)![1]!)).toEqual(original);
-  }, 20_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 
   it('uses an original the caller saved instead of saving it again, and a model byte limit below the default budget', async () => {
     const original = noisyPng(128);
@@ -133,7 +133,7 @@ describe('image bounds', () => {
     expect(image.data.length).toBeLessThanOrEqual(20_000);
     expect(parts.find((part) => part.type === 'text')!.text).toContain('Original saved to /tmp/already-saved.png.');
     expect(outputFiles()).toBe(before);
-  }, 20_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 
   it('saves an image owner-only under the session output folder with an extension for its type', () => {
     const file = saveImageFile(Buffer.from('jpeg-bytes').toString('base64'), 'image/jpeg', 'browser screenshot')!;

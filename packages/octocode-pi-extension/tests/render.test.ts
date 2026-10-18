@@ -1,8 +1,9 @@
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatDuration } from '../src/shared/format.js';
-import { appKey, clip, expandKey, livePaint, plural, queryTarget, resultBlock, statusColor, stopRowTimers, timed, timedTool, timingOf, toolHeader, type ToolRow } from '../src/shared/render.js';
+import { formatAgo, formatDuration, formatSpan } from '../src/shared/format.js';
+import { wholeSeconds } from '../src/shared/util.js';
+import { appKey, clip, clipColumns, expandKey, livePaint, plural, queryTarget, resultBlock, statusColor, stopRowTimers, timed, timedTool, timingOf, toolHeader, type ToolRow } from '../src/shared/render.js';
 import { recordCheck } from '../src/shared/locks.js';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { rendered, theme } from './fake-pi.js';
@@ -24,6 +25,35 @@ describe('format helpers', () => {
     [7_200_000, '2h'],
     [-5, '0ms'],
   ])('formatDuration(%d, true) = %s', (ms, text) => expect(formatDuration(ms, true)).toBe(text));
+
+  it.each([
+    [0, '0s ago'],
+    [45_000, '45s ago'],
+    [125_000, '2m ago'],
+    [3_600_000, '1h ago'],
+    [19_200_000, '5h20m ago'],
+    [90_000_000, '1d1h ago'],
+    [86_400_000 * 3, '3d ago'],
+    [-5, '0s ago'],
+  ])('formatAgo(%d) = %s: the one relative-time format, coarser than formatDuration', (ms, text) => expect(formatAgo(ms)).toBe(text));
+
+  it('formatSpan is formatAgo without the suffix; wholeSeconds rounds', () => {
+    expect(formatSpan(125_000)).toBe('2m');
+    expect(wholeSeconds(1_499)).toBe(1);
+    expect(wholeSeconds(1_500)).toBe(2);
+  });
+
+  it('clipColumns cuts by terminal columns, never inside a character, and leaves ASCII as clip does', () => {
+    expect(clipColumns('abcdef', 4)).toBe(clip('abcdef', 4));
+    expect(clipColumns('abc', 4)).toBe('abc');
+    const wide = clipColumns('漢字漢字漢字', 7);
+    expect(wide).toBe('漢字漢…');
+    expect(visibleWidth(wide)).toBeLessThanOrEqual(7);
+    const emoji = clipColumns('👨‍👩‍👧👨‍👩‍👧👨‍👩‍👧', 5);
+    expect(visibleWidth(emoji)).toBeLessThanOrEqual(5);
+    expect(emoji.endsWith('…')).toBe(true);
+    expect(clipColumns('x', 0)).toBe('');
+  });
 
   it('pluralizes, clips and falls back to ctrl+o for the expand key', () => {
     expect(plural(1, 'line')).toBe('1 line');

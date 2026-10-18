@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 pub(super) struct Paths(pub PathBuf);
 impl PathAccess for Paths {
-    fn validate_read(&self, p: &Path) -> Result<ValidatedRead, PathFailure> {
+    fn validate_read(&self, p: &Path) -> Result<ValidatedRead, Box<PathFailure>> {
         let p = if p.is_absolute() {
             p.into()
         } else {
@@ -30,15 +30,18 @@ impl PathAccess for Paths {
                 target: None,
                 display: p.to_string_lossy().into_owned(),
             })
-            .map_err(|error| PathFailure {
-                code: "fileAccessFailed".into(),
-                message: error.to_string(),
-                safe_path: None,
-                resource_missing: false,
-                sparse_checkout: false,
-                not_a_file: None,
-                search_root: None,
-                nearest_dir: None,
+            .map_err(|error| {
+                Box::new(PathFailure {
+                    code: "fileAccessFailed".into(),
+                    message: error.to_string(),
+                    safe_path: None,
+                    resource_missing: false,
+                    sparse_checkout: false,
+                    not_a_file: None,
+                    search_root: None,
+                    view_tree: None,
+                    corrected: None,
+                })
             })
     }
 }

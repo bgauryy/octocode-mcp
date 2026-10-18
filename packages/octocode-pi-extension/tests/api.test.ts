@@ -219,7 +219,7 @@ describe('external API', () => {
     const first = (await client.call('messages.list', { limit: 2 })) as { messages: Array<{ index: number; text: string }>; total: number; earlier?: { before: number } };
     expect(first.messages.map((m) => [m.index, m.text])).toEqual([[5, expect.stringContaining('more characters cut; the whole text is in ')], [6, 'q3']]);
     expect(first).toMatchObject({ total: 7, earlier: { before: 5 } });
-    const file = /the whole text is in (\S+)\]/.exec(first.messages[0]!.text)![1]!;
+    const file = /the whole text is in (\S+) \(sha256 [0-9a-f]+, \d+ bytes\)\]/.exec(first.messages[0]!.text)![1]!;
     expect(fs.readFileSync(file, 'utf8')).toBe(long);
     const second = (await client.call('messages.list', { limit: 2, before: 5 })) as { messages: Array<{ index: number; text: string }>; earlier?: { before: number } };
     expect(second.messages.map((m) => [m.index, m.text])).toEqual([[3, 'a1'], [4, 'q2']]);

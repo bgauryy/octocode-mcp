@@ -1,6 +1,6 @@
 use super::*;
+use crate::test_support::TmpDir;
 use std::fs;
-use std::path::PathBuf;
 
 #[test]
 fn public_structural_errors_retain_native_codes() {
@@ -25,13 +25,12 @@ fn public_structural_errors_retain_native_codes() {
         .expect("unsupported language");
     assert!(unsupported.starts_with("[structural.language.unsupported] "));
 
-    let root = temp_root("typed_compile_error");
+    let root = TmpDir::new();
     fs::write(root.join("fixture.rs"), "fn main() {}").unwrap();
     let result = search_files_detailed(review_file_options(&root, "kind: not_a_real_kind", 10))
         .expect("typed failure");
     assert_eq!(result.status, "parserFailed");
     assert!(diagnostic_codes(&result).contains(&"structural.query.compileFailed"));
-    fs::remove_dir_all(root).unwrap();
 }
 
 /// A rule that does not parse as a rule (malformed YAML, an unknown key, no
@@ -40,7 +39,7 @@ fn public_structural_errors_retain_native_codes() {
 /// in a single-content search and in a file scan alike.
 #[test]
 fn rule_parse_errors_have_their_own_code() {
-    let root = temp_root("rule_parse_error_code");
+    let root = TmpDir::new();
     fs::write(root.join("fixture.rs"), "fn main() {}").unwrap();
     for (rule, expected) in [
         ("kind: [", "structural.rule.invalid"),
@@ -59,12 +58,11 @@ fn rule_parse_errors_have_their_own_code() {
         assert_eq!(scan.status, "parserFailed", "{rule}");
         assert!(diagnostic_codes(&scan).contains(&expected), "{rule}");
     }
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn directory_patterns_and_composed_rules_share_fragment_context() {
-    let root = temp_root("shared_fragment_context");
+    let root = TmpDir::new();
     for (ext, source, pattern) in [
         (
             "java",
@@ -90,12 +88,11 @@ fn directory_patterns_and_composed_rules_share_fragment_context() {
             assert_eq!(result.total_matches, 1, "{ext}: rule={use_rule}");
         }
     }
-    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
 fn ast_audit_unanchored_directory_reports_unsupported_files() {
-    let root = temp_root("audit_unsupported_unanchored");
+    let root = TmpDir::new();
     fs::write(root.join("unsupported.sh"), "echo hello\n").expect("shell fixture");
     let mut options = review_file_options(&root, "kind: call_expression", 10);
     options.pattern = Some("$$$".to_owned());
@@ -109,7 +106,6 @@ fn ast_audit_unanchored_directory_reports_unsupported_files() {
     assert_eq!(query.kind, "pattern");
     assert_eq!(query.pre_filter, "disabled");
     assert!(diagnostic_codes(&result).contains(&"structural.language.unsupported"));
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
@@ -122,7 +118,7 @@ fn structural_review_deep_document_keeps_recall() {
 
 #[test]
 fn structural_review_rule_prefilter_preserves_directory_recall() {
-    let root = temp_root("review_prefilter");
+    let root = TmpDir::new();
     let source = "function present() { return 1; }";
     fs::write(root.join("fixture.ts"), source).expect("fixture");
     for rule in [
@@ -149,7 +145,6 @@ fn structural_review_rule_prefilter_preserves_directory_recall() {
         assert!(!direct.is_empty(), "fixture must match {rule}");
         assert_eq!(directory.total_matches as usize, direct.len(), "{rule}");
     }
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 /// Diagnostic codes of a directory search, its own and each file's.
@@ -170,17 +165,6 @@ fn matched_paths(result: &StructuralSearchFilesDetailedResult) -> Vec<&str> {
         .filter(|file| !file.matches.is_empty())
         .map(|file| file.path.as_str())
         .collect()
-}
-
-fn temp_root(name: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "octocode_structural_{}_{}",
-        name,
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&root);
-    fs::create_dir_all(&root).expect("create temp root");
-    root
 }
 
 fn run_pattern(src: &str, ext: &str, pattern: &str) -> Vec<StructuralMatch> {
@@ -357,7 +341,7 @@ fn supported_extensions_are_rust_owned() {
 
 #[test]
 fn search_files_finds_matches_and_prefilters_non_matching_files() {
-    let root = temp_root("files");
+    let root = TmpDir::new();
     fs::write(root.join("a.ts"), "target(value);\n").expect("write a");
     fs::write(root.join("b.ts"), "other(value);\n").expect("write b");
     fs::write(root.join("note.txt"), "target(value);\n").expect("write txt");
@@ -381,13 +365,11 @@ fn search_files_finds_matches_and_prefilters_non_matching_files() {
     assert_eq!(matched_paths(&result).len(), 1);
     assert!(matched_paths(&result)[0].ends_with("a.ts"));
     assert_eq!(result.skipped_by_pre_filter, 1);
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn search_files_errors_on_nonexistent_root_for_every_prefilter_branch() {
-    let root = temp_root("gone");
-    fs::remove_dir_all(&root).ok();
+    let root = TmpDir::new();
     let missing = root.join("nope");
 
     // Literal-anchored pattern (`target(` anchor → text prefilter branch),
@@ -427,7 +409,7 @@ fn search_files_errors_on_nonexistent_root_for_every_prefilter_branch() {
 
 #[test]
 fn search_files_respects_excluded_directories_and_large_file_limit() {
-    let root = temp_root("filters");
+    let root = TmpDir::new();
     fs::create_dir_all(root.join("src")).expect("src");
     fs::create_dir_all(root.join("node_modules/pkg")).expect("node_modules");
     fs::write(root.join("src/a.ts"), "target(v);\n").expect("write a");
@@ -453,13 +435,11 @@ fn search_files_respects_excluded_directories_and_large_file_limit() {
     assert_eq!(result.skipped_large, 1);
     assert_eq!(matched_paths(&result).len(), 1);
     assert!(matched_paths(&result)[0].ends_with("src/a.ts"));
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn search_files_reports_non_utf8_and_oversized_sources_per_file() {
-    let root = temp_root("source-gates");
-    fs::create_dir_all(&root).expect("root");
+    let root = TmpDir::new();
     fs::write(root.join("binary.ts"), b"\xfftarget(x);").expect("write binary");
     fs::write(root.join("large.ts"), "target(value);\n").expect("write large");
 
@@ -477,7 +457,6 @@ fn search_files_reports_non_utf8_and_oversized_sources_per_file() {
         max_file_bytes: Some(14),
     })
     .expect("search files");
-    fs::remove_dir_all(&root).expect("cleanup");
 
     assert_eq!((result.skipped_unreadable, result.skipped_large), (1, 1));
     assert_eq!(result.status, "truncated");
@@ -518,7 +497,7 @@ fn search_files_reports_non_utf8_and_oversized_sources_per_file() {
 
 #[test]
 fn search_files_accepts_single_file_root() {
-    let root = temp_root("single");
+    let root = TmpDir::new();
     let file = root.join("a.ts");
     fs::write(&file, "target(value);\n").expect("write file");
 
@@ -539,7 +518,6 @@ fn search_files_accepts_single_file_root() {
 
     assert_eq!(result.total_matches, 1);
     assert_eq!(matched_paths(&result).len(), 1);
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
@@ -604,7 +582,7 @@ fn detailed_search_matches_carry_the_node_kind() {
 
 #[test]
 fn detailed_file_search_explains_prefilter_and_unsupported_files() {
-    let root = temp_root("detailed_files");
+    let root = TmpDir::new();
     fs::write(root.join("a.ts"), "target(value);\n").expect("write a");
     fs::write(root.join("b.ts"), "other(value);\n").expect("write b");
     fs::write(root.join("note.txt"), "target(value);\n").expect("write txt");
@@ -636,7 +614,6 @@ fn detailed_file_search_explains_prefilter_and_unsupported_files() {
             .any(|file| file.status == "skippedByPreFilter")
     );
     assert!(result.files.iter().any(|file| file.status == "unsupported"));
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 // ── single-content size cap (defense-in-depth on the public entry points) ──
@@ -844,7 +821,7 @@ fn retained_alias_extensions_are_supported() {
 
 #[test]
 fn search_files_supports_recursive_glob_includes() {
-    let root = temp_root("globs");
+    let root = TmpDir::new();
     fs::create_dir_all(root.join("src/nested")).expect("nested dir");
     fs::write(root.join("src/a.ts"), "target(v);\n").expect("a");
     fs::write(root.join("src/nested/b.ts"), "target(v);\n").expect("b");
@@ -875,12 +852,11 @@ fn search_files_supports_recursive_glob_includes() {
             .iter()
             .all(|path| path.ends_with(".ts"))
     );
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn search_files_honors_dot_ignore_files() {
-    let root = temp_root("ignore");
+    let root = TmpDir::new();
     fs::create_dir_all(root.join("skip")).expect("skip dir");
     fs::write(root.join(".ignore"), "skip/\n").expect("ignore file");
     fs::write(root.join("keep.ts"), "target(v);\n").expect("keep");
@@ -903,12 +879,11 @@ fn search_files_honors_dot_ignore_files() {
 
     assert_eq!(matched_paths(&result).len(), 1, ".ignore skips skip/");
     assert!(matched_paths(&result)[0].ends_with("keep.ts"));
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn search_files_prefilters_rule_by_inner_pattern() {
-    let root = temp_root("ruleanchor");
+    let root = TmpDir::new();
     fs::write(
         root.join("has.ts"),
         "async function f() {\n  await g();\n}\n",
@@ -935,12 +910,11 @@ fn search_files_prefilters_rule_by_inner_pattern() {
     assert_eq!(result.skipped_by_pre_filter, 1);
     assert_eq!(matched_paths(&result).len(), 1);
     assert!(matched_paths(&result)[0].ends_with("has.ts"));
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn search_files_operator_only_pattern_parses_every_candidate() {
-    let root = temp_root("operatoranchor");
+    let root = TmpDir::new();
     fs::write(root.join("match.js"), "foo && foo();\n").expect("match");
     fs::write(root.join("nomatch.js"), "foo || foo();\n").expect("nomatch");
 
@@ -962,12 +936,11 @@ fn search_files_operator_only_pattern_parses_every_candidate() {
     assert_eq!(result.skipped_by_pre_filter, 0);
     assert_eq!(matched_paths(&result).len(), 1);
     assert!(matched_paths(&result)[0].ends_with("match.js"));
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn operator_spacing_does_not_split_directory_and_file_results() {
-    let root = temp_root("operatorspacing");
+    let root = TmpDir::new();
     let source = "if (a && !b) { run(); }\nx = y - 1;\n";
     fs::write(root.join("spaced.js"), source).expect("spaced");
     for pattern in ["$A&&!$B", "$A && !$B", "$A=$B-1"] {
@@ -996,7 +969,6 @@ fn operator_spacing_does_not_split_directory_and_file_results() {
             .len(),
         1
     );
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 // ── prefilter vs unsupported conflation (evidence: proof vs unevaluated) ─
@@ -1073,7 +1045,7 @@ fn structural_files_honor_scope_options() {
         ),
     ];
     for (case, scope, present, absent) in cases {
-        let root = temp_root("scope_options");
+        let root = TmpDir::new();
         write_scope_fixture(&root);
         let mut options = StructuralSearchFilesOptions {
             path: root.to_string_lossy().to_string(),
@@ -1102,13 +1074,12 @@ fn structural_files_honor_scope_options() {
                 "{case}: {name} absent: got {paths:?}"
             );
         }
-        fs::remove_dir_all(root).expect("cleanup");
     }
 }
 
 #[test]
 fn structural_anchor_prefilter_prunes_beyond_max_depth_before_search() {
-    let root = temp_root("prefilter_maxdepth");
+    let root = TmpDir::new();
     fs::create_dir_all(root.join("nested")).expect("nested");
     fs::write(root.join("match.ts"), "target(value);\n").expect("match");
     fs::write(root.join("nested/noanchor.ts"), "other(value);\n").expect("deep");
@@ -1134,7 +1105,6 @@ fn structural_anchor_prefilter_prunes_beyond_max_depth_before_search() {
         result.skipped_by_pre_filter, 0,
         "the anchor prefilter must not scan the nested file before depth filtering"
     );
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 /// The anchor prefilter reads a candidate once: a hit's bytes feed the
@@ -1142,7 +1112,7 @@ fn structural_anchor_prefilter_prunes_beyond_max_depth_before_search() {
 /// keeps the reason and text the separate prefilter and parse reads gave.
 #[test]
 fn search_files_prefilter_read_feeds_the_parse_and_keeps_skip_reasons() {
-    let root = temp_root("prefilter_once");
+    let root = TmpDir::new();
     fs::write(root.join("a.ts"), "target(value);\n").expect("hit");
     // Over the cap: the anchor sits past aho-corasick's stream buffer.
     let filler = "// filler line for the stream search\n".repeat(8_000);
@@ -1205,12 +1175,11 @@ fn search_files_prefilter_read_feeds_the_parse_and_keeps_skip_reasons() {
     assert_eq!(result.total_matches, 2);
     assert_eq!(result.skipped_large, 0);
     assert_eq!(result.skipped_by_pre_filter, 1);
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn search_files_separates_unsupported_from_prefilter_skips() {
-    let root = temp_root("conflation");
+    let root = TmpDir::new();
     // `match.ts` carries the anchor and matches the pattern.
     fs::write(root.join("match.ts"), "target(value);\n").expect("match");
     // `hasanchor.txt` textually contains the anchor but .txt has no
@@ -1263,7 +1232,6 @@ fn search_files_separates_unsupported_from_prefilter_skips() {
         "unsupported files need their own warning line, not lumped into prefilter: {:?}",
         result.warnings
     );
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
@@ -1315,7 +1283,7 @@ fn review_file_options(
 
 #[test]
 fn structural_review_scan_cap_and_depth_have_explicit_completion() {
-    let root = temp_root("review_cap_depth");
+    let root = TmpDir::new();
     fs::create_dir_all(root.join("aaa_nested")).expect("nested");
     fs::write(root.join("aaa_nested/hidden.ts"), "probe();").expect("deep");
     fs::write(root.join("one.ts"), "probe();").expect("first");
@@ -1340,12 +1308,11 @@ fn structural_review_scan_cap_and_depth_have_explicit_completion() {
         assert!(detailed.scan_truncated);
         fs::remove_file(root.join("two.ts")).expect("reset fixture");
     }
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
 fn structural_review_file_limits_retain_completed_files() {
-    let root = temp_root("review_file_limits");
+    let root = TmpDir::new();
     fs::write(root.join("ok.ts"), "probe(1);").expect("complete file");
     fs::write(
         root.join("wide.ts"),
@@ -1376,7 +1343,6 @@ fn structural_review_file_limits_retain_completed_files() {
     assert_eq!(detailed.total_matches, 1);
     assert!(detailed.files.iter().any(|file| file.status == "truncated"));
     assert_eq!(detailed.diagnostics.len(), 1);
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 #[test]
@@ -1409,7 +1375,7 @@ fn structural_review_compile_interruption_stays_typed_in_detailed_search() {
 
 #[test]
 fn structural_review_compile_interruption_keeps_mixed_language_evidence() {
-    let root = temp_root("review_compile_interruption");
+    let root = TmpDir::new();
     fs::write(root.join("one.js"), "probe();").expect("js fixture");
     fs::write(root.join("two.ts"), "probe();").expect("ts fixture");
     let options = || review_file_options(&root, "pattern: probe()", 10);
@@ -1429,7 +1395,6 @@ fn structural_review_compile_interruption_keeps_mixed_language_evidence() {
     assert_eq!(detailed.status, "truncated");
     assert_eq!(detailed.total_matches, 1);
     assert_eq!(detailed.diagnostics[0].code, "structural.parse.interrupted");
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 /// astSearch and astRewrite must agree on what a pattern matches: the same
@@ -1511,20 +1476,19 @@ fn write_hit_files(root: &std::path::Path, count: usize) {
 /// default is scanned whole in one call.
 #[test]
 fn an_unset_file_cap_scans_the_whole_scope() {
-    let root = temp_root("scan_whole");
+    let root = TmpDir::new();
     write_hit_files(&root, 2_100);
     let result = search_files_detailed(scan_options(&root, 0)).expect("scan");
     assert!(!result.scan_truncated);
     assert_eq!(result.scan_resume, None);
     assert_eq!(result.files.len(), 2_100);
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 /// A scan that runs out of its time budget stops at a chunk boundary and
 /// names where to resume; walking the resumes reaches every file exactly once.
 #[test]
 fn a_scan_past_its_time_budget_resumes_exactly_once() {
-    let root = temp_root("scan_budget");
+    let root = TmpDir::new();
     write_hit_files(&root, 1_300);
     let mut seen = std::collections::BTreeSet::new();
     let mut skip = 0;
@@ -1557,7 +1521,6 @@ fn a_scan_past_its_time_budget_resumes_exactly_once() {
     }
     assert_eq!(seen.len(), 1_300);
     assert!(calls > 1, "a zero budget must cut the scan");
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 /// A pattern whose root the grammar names by a `name` field is a
@@ -1586,7 +1549,7 @@ fn a_named_root_pattern_is_a_declaration() {
 /// until the file changes.
 #[test]
 fn every_demand_counts_the_same_matches_and_a_priced_file_rebuilds_them() {
-    let root = temp_root("demands");
+    let root = TmpDir::new();
     fs::write(
         root.join("a.rs"),
         "fn a() { let x = f(g(1), h(2)); }\nfn b() { t(u(v(3))); }\n",
@@ -1678,7 +1641,6 @@ fn every_demand_counts_the_same_matches_and_a_priced_file_rebuilds_them() {
         ),
         "a changed file rebuilds nothing"
     );
-    fs::remove_dir_all(root).expect("cleanup");
 }
 
 /// Rebuilding a file whose bytes still hash to the scan's gives the scan's

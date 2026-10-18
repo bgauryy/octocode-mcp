@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getAgentDir, hasTrustRequiringProjectResources, parseFrontmatter, ProjectTrustStore, type ExtensionCommandContext, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { atomicWriteFileSync, sha256 } from './atomic.js';
-import { say, wordCompletions, type Subcommands } from './commands.js';
+import { notify, say, wordCompletions, type Subcommands } from './commands.js';
 import { sanitizeTerminalText } from './sanitize.js';
 import { globalPaths, projectAgentDirs, projectHookFiles, projectSkillDirs, workspacePaths } from './home.js';
 import { isRecord, parseJson } from './util.js';
@@ -246,7 +246,7 @@ export async function projectTrust(ctx: ProjectContext, home?: string): Promise<
   const key = `${storeKey(ctx.cwd)}\0${sha}`;
   if (!noticed.has(key)) {
     noticed.add(key);
-    ctx.ui?.notify?.(`Project config not loaded (${files.length} files). Run /octocode trust to review.`, 'warning');
+    if (ctx.ui) notify(ctx.ui, `Project config not loaded (${files.length} files). Run /octocode trust to review.`, 'warning');
   }
   return false;
 }

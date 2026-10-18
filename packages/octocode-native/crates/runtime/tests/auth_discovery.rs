@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
 #![cfg(unix)]
 use crate::support;
 use base64::{Engine as _, engine::general_purpose::STANDARD};

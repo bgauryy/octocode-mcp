@@ -24,18 +24,44 @@ pub enum LockError {
     Io(std::io::Error),
 }
 
+/// One non-blocking attempt's outcome.
+#[derive(Debug)]
+pub enum TryLock {
+    /// The lock is held until the guard drops.
+    Locked(LockedFile),
+    /// Another holder has it; the file is handed back for a later attempt.
+    Busy(File),
+}
+
+/// Try once to take an exclusive lock on `file`. `Err` when the filesystem
+/// refuses the lock operation itself, as on one without lock support.
+pub fn try_lock(file: File) -> std::io::Result<TryLock> {
+    match file.try_lock() {
+        Ok(()) => Ok(TryLock::Locked(LockedFile(file))),
+        Err(TryLockError::WouldBlock) => Ok(TryLock::Busy(file)),
+        Err(TryLockError::Error(error)) => Err(error),
+    }
+}
+
 /// Take an exclusive lock on `file`, polling every `poll` for at most `wait`.
 /// A zero `wait` tries once.
-pub fn lock_within(file: File, wait: Duration, poll: Duration) -> Result<LockedFile, LockError> {
+pub fn lock_within(
+    mut file: File,
+    wait: Duration,
+    poll: Duration,
+) -> Result<LockedFile, LockError> {
     let deadline = Instant::now() + wait;
     loop {
-        match file.try_lock() {
-            Ok(()) => return Ok(LockedFile(file)),
-            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
-                std::thread::sleep(poll.min(deadline.saturating_duration_since(Instant::now())));
+        match try_lock(file).map_err(LockError::Io)? {
+            TryLock::Locked(lock) => return Ok(lock),
+            TryLock::Busy(busy) => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Err(LockError::Busy);
+                }
+                file = busy;
+                std::thread::sleep(poll.min(remaining));
             }
-            Err(TryLockError::WouldBlock) => return Err(LockError::Busy),
-            Err(TryLockError::Error(error)) => return Err(LockError::Io(error)),
         }
     }
 }
@@ -111,6 +137,20 @@ mod tests {
             Duration::from_millis(10),
         );
         assert!(matches!(result, Err(LockError::Busy)));
+    }
+
+    #[test]
+    fn try_lock_hands_the_file_back_when_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.lock");
+        let TryLock::Locked(held) = try_lock(open(&path)).unwrap() else {
+            panic!("an uncontended try_lock takes the lock");
+        };
+        let TryLock::Busy(file) = try_lock(open(&path)).unwrap() else {
+            panic!("a held lock is busy");
+        };
+        drop(held);
+        assert!(matches!(try_lock(file).unwrap(), TryLock::Locked(_)));
     }
 
     #[test]

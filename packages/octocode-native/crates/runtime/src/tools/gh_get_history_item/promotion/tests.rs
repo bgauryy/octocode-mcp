@@ -15,7 +15,7 @@ fn commit_continue_patch_copies_the_page_stream_cursor() {
             "patchPagination":{"unit":"chars","offset":0,"length":7,"total":20,"hasMore":true,"nextOffset":7}}],
         "contentPagination":{"files":{"currentPage":1,"hasMore":false}}
     });
-    let cursors = DiffCursors::of_file_page(&out["contentPagination"]["files"], Some(10), true);
+    let cursors = DiffCursors::of_file_page(&mut out["contentPagination"]["files"], Some(10), true);
     attach_diff_continuations(
         &mut out,
         &query,
@@ -70,7 +70,7 @@ fn history_b_patch_walk_hops_carry_no_response_page_knobs() {
     .expect("commit query");
     commit.auto_page_chars = Some(20_000);
     let mut out = json!({"contentPagination":{"files":{"currentPage":1,"hasMore":false}}});
-    let cursors = DiffCursors::of_file_page(&out["contentPagination"]["files"], Some(10), true);
+    let cursors = DiffCursors::of_file_page(&mut out["contentPagination"]["files"], Some(10), true);
     attach_diff_continuations(
         &mut out,
         &commit,
@@ -664,7 +664,7 @@ fn compare_pages_are_offered_once_with_their_own_cursor_only() {
     });
     let cursors = DiffCursors {
         commit_page: Some(2),
-        ..DiffCursors::of_file_page(&first["contentPagination"]["files"], Some(5000), true)
+        ..DiffCursors::of_file_page(&mut first["contentPagination"]["files"], Some(5000), true)
     };
     attach_diff_continuations(
         &mut first,
@@ -688,7 +688,7 @@ fn compare_pages_are_offered_once_with_their_own_cursor_only() {
         "files":[{"path":"b.rs","patch":"y"}],
         "contentPagination":{"files":{"currentPage":1,"hasMore":true,"nextPage":2}}
     });
-    let cursors = DiffCursors::of_file_page(&last["contentPagination"]["files"], None, true);
+    let cursors = DiffCursors::of_file_page(&mut last["contentPagination"]["files"], None, true);
     attach_diff_continuations(
         &mut last,
         &compare(json!({"offset":5000})),
@@ -815,7 +815,7 @@ fn budget_sized_file_pages_pin_their_grid_on_the_continuation() {
         );
         let mut out = json!({"files":["M +1 -1 a.rs"],
             "contentPagination":{"files":{"currentPage":page,"hasMore":true,"nextPage":page + 1}}});
-        let cursors = DiffCursors::of_file_page(&out["contentPagination"]["files"], None, true);
+        let cursors = DiffCursors::of_file_page(&mut out["contentPagination"]["files"], None, true);
         attach_diff_continuations(&mut out, &query, ItemOperation::Compare, None, cursors);
         out
     };
@@ -833,4 +833,62 @@ fn budget_sized_file_pages_pin_their_grid_on_the_continuation() {
     let first = compare(1, 10_000);
     let patches = &first["next"]["readPatches"]["query"]["queries"][0];
     assert!(patches.get("page").is_none(), "{first}");
+}
+
+/// A page block's cursor rides the `next` continuation it was read into,
+/// never the block, and `hasMore` beside that continuation already says the
+/// rest is unread: `isPartial` is set only for an axis no continuation
+/// reaches.
+#[test]
+fn cursors_ride_next_and_is_partial_marks_only_unreached_axes() {
+    let pr = HistoryItemRequest::from_row(json!({
+        "operation":"pullRequest","owner":"a","repo":"b","number":1,
+        "sections":["body","files"]
+    }))
+    .expect("query");
+    let mut out = json!({"pullRequests":[{"contentPagination":{
+        "body":{"offset":0,"length":10,"total":30,"hasMore":true,"nextOffset":10},
+        "files":{"currentPage":1,"hasMore":true,"nextPage":2}
+    }}]});
+    promote_pr_continuations(&mut out, &pr, &Rest::default());
+    assert!(out.get("isPartial").is_none(), "{out}");
+    assert_eq!(
+        out["next"]["nextFilePage"]["query"]["queries"][0]["page"],
+        2
+    );
+    assert_eq!(
+        out["next"]["continueBody"]["query"]["queries"][0]["offset"],
+        10
+    );
+    let pages = &out["pullRequests"][0]["contentPagination"];
+    assert!(pages["body"].get("nextOffset").is_none(), "{out}");
+    assert!(pages["files"].get("nextPage").is_none(), "{out}");
+    assert_eq!(pages["files"]["hasMore"], true, "{out}");
+    // More to read and no cursor: nothing reaches it.
+    let mut out = json!({"pullRequests":[{"contentPagination":{
+        "files":{"currentPage":1,"hasMore":true}
+    }}]});
+    promote_pr_continuations(&mut out, &pr, &Rest::default());
+    assert_eq!(out["isPartial"], true, "{out}");
+    assert!(out.get("next").is_none(), "{out}");
+
+    let issue = HistoryItemRequest::from_row(json!({
+        "operation":"issue","owner":"a","repo":"b","number":1,"sections":["comments"]
+    }))
+    .expect("query");
+    let mut out = json!({"issues":[{"contentPagination":{
+        "comments":{"currentPage":1,"hasMore":true,"nextPage":2}
+    }}]});
+    promote_issue_continuations(&mut out, &issue, &Rest::default());
+    assert!(out.get("isPartial").is_none(), "{out}");
+    assert_eq!(
+        out["next"]["nextCommentPage"]["query"]["queries"][0]["page"],
+        2
+    );
+    assert!(
+        out["issues"][0]["contentPagination"]["comments"]
+            .get("nextPage")
+            .is_none(),
+        "{out}"
+    );
 }

@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use crate::support::Workspace;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Stdio};

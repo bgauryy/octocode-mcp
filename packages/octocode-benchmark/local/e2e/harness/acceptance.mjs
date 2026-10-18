@@ -288,6 +288,9 @@ export function surfaceBudget(measured, { profile = 'default', baseline } = {}) 
       if (quota !== undefined && added > quota) reasons.push(`${name} adds ${added} B > quota ${quota} B`);
     }
   }
-  if (measured.perTool.clasify > MCP_SURFACE_BUDGETS.clasify) reasons.push(`clasify ${measured.perTool.clasify} B > quota ${MCP_SURFACE_BUDGETS.clasify} B`);
+  // Core caps the evaluate/models entry at `clasify` and section research
+  // separately at `sectionsAddition`; the published entry carries both.
+  const clasifyQuota = MCP_SURFACE_BUDGETS.clasify + MCP_SURFACE_BUDGETS.sectionsAddition;
+  if (measured.perTool.clasify > clasifyQuota) reasons.push(`clasify ${measured.perTool.clasify} B > quota ${clasifyQuota} B`);
   return { ...measured, profile, budget, reasons };
 }

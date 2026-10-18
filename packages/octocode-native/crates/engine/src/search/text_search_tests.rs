@@ -1388,9 +1388,9 @@ fn file_digest(path: &Path) -> [u8; 32] {
     Sha256::digest(fs::read(path).expect("fixture bytes")).into()
 }
 
-/// A digest-asking search hashes each kept file in the read it searches
-/// with, and the digest equals a separate hash of the file; without the
-/// option nothing is hashed, and a file past the cap carries no digest.
+/// A digest-asking search hashes each kept file after its search, and the
+/// digest equals a separate hash of the file; without the option nothing is
+/// hashed, and a file past the cap carries no digest.
 #[test]
 fn kept_files_carry_the_digest_of_the_bytes_searched() {
     let t = TmpDir::new();
@@ -1431,6 +1431,50 @@ fn kept_files_carry_the_digest_of_the_bytes_searched() {
             file.path
         );
     }
+}
+
+/// A symlink the walk admits but does not follow (to a file or a directory)
+/// is reported to the path filter, never dropped unseen.
+#[cfg(unix)]
+#[test]
+fn an_unfollowed_symlink_is_reported_to_the_filter() {
+    struct Recording(std::sync::Mutex<Vec<String>>);
+    impl TextSearchPathFilter for Recording {
+        fn allows(&self, _: &Path, _: bool) -> bool {
+            true
+        }
+        fn skipped_symlink(&self, path: &Path) {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            self.0.lock().expect("lock").push(name.into_owned());
+        }
+    }
+    let t = TmpDir::new();
+    t.write("real.txt", "needle\n");
+    t.write("dir/inner.txt", "needle\n");
+    std::os::unix::fs::symlink(t.0.join("real.txt"), t.0.join("file-link")).expect("link");
+    std::os::unix::fs::symlink(t.0.join("dir"), t.0.join("dir-link")).expect("link");
+    let filter = Arc::new(Recording(std::sync::Mutex::new(Vec::new())));
+    let result =
+        search_cancellable(opts(t.path(), "needle"), filter.clone(), &|| false).expect("search");
+    assert_eq!(result.files.len(), 2);
+    let mut seen = filter.0.lock().expect("lock").clone();
+    seen.sort();
+    assert_eq!(seen, ["dir-link", "file-link"]);
+}
+
+/// A kept file's digest proves the opened file whole: a file whose length
+/// moved after it was opened carries no digest.
+#[test]
+fn a_file_that_moved_after_opening_has_no_digest() {
+    let t = TmpDir::new();
+    let path = t.write("grow.txt", "needle\n");
+    let file = std::fs::File::open(&path).expect("open");
+    let meta = file.metadata().expect("meta");
+    let source = hashed_source(&file, &meta).expect("unchanged file");
+    assert_eq!(source.digest, file_digest(&path));
+    assert_eq!(source.size, meta.len());
+    fs::write(&path, "needle\nmore\n").expect("grow");
+    assert_eq!(hashed_source(&file, &meta), None);
 }
 
 /// A file quit at its first NUL is searched again up to it; its digest

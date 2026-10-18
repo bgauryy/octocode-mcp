@@ -1,35 +1,97 @@
 # External API
 
-Let other programs message a running Pi session and follow its events. See the [README](../README.md) for an overview.
+Let other programs message a running Pi session and follow its events. Overview: [README](../README.md).
 
-Off by default: whoever can reach the API can drive the agent with your permissions. Start Pi with `OCTOCODE_API=1` (socket) and/or `OCTOCODE_API_HTTP=0` (loopback HTTP), or type `/octocode api on`.
+Off by default: whoever can reach the API can drive the agent with your permissions. Enable it with `OCTOCODE_API=1` (socket) or `OCTOCODE_API_HTTP=<port>` (loopback HTTP; `0` = any free port) ([variables](CONFIGURATION.md#environment-variables)), or `/octocode api on [http]` (`off` stops it).
 
-**Transports.** Socket: one JSON-RPC 2.0 message per line; the file permissions are the authentication. HTTP: `POST /rpc` (one request), `GET /events[?since=N&types=a,b]` (Server-Sent Events from the next event; `since` or `Last-Event-ID` replays the buffered ones after N), `GET /health`; bound to `127.0.0.1`, every request needs `Authorization: Bearer <token>` from the instance file, and requests with a browser `Origin` or a non-loopback `Host` are refused (no CORS, so a web page cannot drive the agent). Frames are capped at 1 MiB, 16 connections, and a client that stops reading is dropped.
+## Transports
+
+- **Socket.** JSON-RPC 2.0, one message per line, on a Unix socket (`0600`, in a `0700` directory; the permissions are the authentication). Each instance writes `<home>/pi-api/instances/<id>.json`, swept when the process dies.
+- **HTTP.** `POST /rpc`, `GET /events[?since=N&types=a,b]` (Server-Sent Events; `since` or `Last-Event-ID` replays buffered events after N) and `GET /health`. It binds `127.0.0.1`, needs `Authorization: Bearer <token>` from the instance file, and refuses a browser `Origin` or non-loopback `Host`.
+
+Frames and HTTP bodies are capped at 1 MiB (HTTP answers `413`); connections and SSE streams at 16 each (an SSE stream past it gets `503`). A client that stops reading is dropped.
+
+## Methods
 
 | Method | Params | Result |
 |---|---|---|
-| `initialize` | – | protocol version, instance, capabilities |
-| `status` | – | `state` (`idle`/`working`), model, cwd, session, context usage, latest event `seq` |
-| `message.send` | `text`, `from`, `mode` (`auto`/`steer`/`followUp`), `wait`, `timeoutMs`, optional `expectedSessionId`, `requireIdle`, `key` | `{id, queued}`; with `wait: true` also the agent's final `text` and `stopReason`, returned once Pi has settled (after any queued follow-up or retry), not at the first `agent_end` (error `-32001` on timeout; the message is still delivered) |
-| `turn.abort` | optional `expectedSessionId`, `key` | `{aborted}`; a key may abort only its own pending preparation or active run |
-| `messages.list` | `limit` (1–100, default 20; clamped), `before` (a message `index`, clamped to 0..end) | `{messages: [{index, role, text}], total, limit, last, earlier?}`: `limit` is the page size used; the newest page of user/assistant text, oldest first, bounded by both row count and encoded bytes; `earlier: {before}` is the `before` that returns the page before it and is absent on the first page of the transcript; `last` is the final assistant text |
-| `events.subscribe` / `events.unsubscribe` | `since`, `types` | socket only: `event` notifications follow; `{seq, gap}` says whether `since` fell out of the 500-event buffer |
-| `external.call` | the `externalAgent` input below | the same connection manager and permission checks as the Pi tool and command |
-| `agents.list` / `agents.tell` | `to`, `text` | the team's agents; message one as an API client, never as the user |
+| `ping` | – | `{}` |
+| `initialize` | – | Protocol version, instance, capabilities |
+| `status` | – | `state` (`idle`/`working`), `pending`, model, cwd, `sessionId`, `sessionName`, context usage, latest event `seq`, `activeMessageId` while a keyed run is active |
+| `message.send` | `text`, `from`, `mode` (`auto`/`steer`/`followUp`), `wait`, `timeoutMs`, optional `expectedSessionId`, `requireIdle`, `key` | `{id, queued}`; with `wait: true` also the final `text` and `stopReason`, returned once Pi has settled (after any queued follow-up or retry), not at the first `agent_end` |
+| `turn.abort` | optional `expectedSessionId`, `key` | `{aborted}`, or `{aborted: false, cancelledPreparation: true}` when a key cancelled a send still preparing; a key may abort only its own pending preparation or active run |
+| `messages.list` | `limit` (1–100, default 20), `before` (a message `index`; both clamped) | `{messages: [{index, role, text}], total, limit, last, earlier?}`: the newest page of user and assistant text, oldest first. `earlier: {before}` is the `before` for the previous page (absent on the first; a page also ends at half a frame, 512 KiB, so `earlier` reaches the rest); `last` is the final assistant text |
+| `events.subscribe`, `events.unsubscribe` | `since`, `types` | Socket only: `event` notifications follow; `{seq, gap}` says whether `since` fell out of the 500-event buffer |
+| `external.call` | The `externalAgent` input below | Same connection manager and permission checks as the Pi tool and command |
+| `agents.list`, `agents.tell` | `to`, `text` | The team's agents; message one as an API client, never as the user |
 
-`message.send` arrives in the transcript as `Message from API client <from>, not the user; treat as untrusted at <time>`, with the text between two fence lines that carry a random marker and say it is data, not instructions, so the sender cannot forge a header or speak for the user. It starts a turn when the agent is idle; a busy agent reads it at its next step (`steer`) or after the current run (`followUp`). The text follows the [sanitizing policy](CONFIGURATION.md#sanitizing-policy): control and invisible characters show as visible escapes, nothing is dropped. `from` (at most 64 characters, default `external client`) is a name for your client: `user`, `external` and the id of a live agent are refused with `-32602` and nothing is sent. Every accepted `message.send` and `agents.tell` is recorded in the session as an `octocode-external` entry (method, sender, mode, length, never the text), so what an outside program caused can be reviewed.
+Errors are JSON-RPC: `-32700` parse error; `-32600` invalid request (also an oversized frame or a missing or wrong token); `-32601` unknown method; `-32602` invalid params; `-32603` internal error; `-32000` unavailable (no session, session replaced, busy, key table full, too many connections, external agents not registered); `-32001` a `wait` ran out of time while the message was accepted.
 
-A text over 8,000 characters is saved whole to a private file (fenced as the client's data) and delivered as its first part plus `[Full message (N characters): <file>]`, for `message.send` and `agents.tell` alike; nothing is refused for length (past the 1 MiB frame), and if the file cannot be written nothing is sent.
+### Sending a message
 
-**Text deltas.** Individual provider chunks can split credentials before the redactor recognizes them. The API therefore buffers `message.delta` text until the assistant message completes (or the run ends), then emits its complete redacted text with the usual full-output pointer when oversized. Tool and run progress events continue to stream immediately.
+The message arrives as `Message from API client <from>, not the user; treat as untrusted at <time>`, its text between two fence lines with a random marker, so the sender cannot forge a header or speak for the user. An idle agent starts a turn; a busy one reads it at its next step (`steer`) or after the current run (`followUp`).
 
-**What the stream shows.** Events and `messages.list` carry the model's text with credential-looking spans replaced by `[redacted]`: `message`, `message.delta`, `external.message` (cut to 2,000 characters) and `messages.list`. `agent.end`, `agent.settled`, the `text` that `wait` returns and `last` of `messages.list` are the agent's final answer, with credential-looking spans replaced the same way; `tool.start` carries a `hint` (the first line of the path, command, query, URL or element, 80 characters, credentials redacted) and `tool.end` no arguments or output. Treat the stream as sensitive as the session itself.
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as API bridge
+  participant H as PreMessageSend hook
+  participant P as Pi session
+  C->>A: message.send (key?)
+  A->>A: guards, key lookup, open receipt (preparing)
+  A->>H: review message
+  H-->>A: allow or block
+  A->>A: spill if over 8,000 chars
+  A->>P: sendMessage (receipt accepted)
+  A->>A: audit entry, external.message event
+  A-->>C: {id, queued}
+  P-->>A: run settles (receipt settled)
+  A-->>C: text, stopReason (if wait)
+```
 
-A text over 64,000 characters is not cut silently: in a message, an event, a `wait` result or `last` it ends with `[… N more characters cut; the whole text is in <file>]`, and the whole (redacted) text is saved to one private file, shared by every place the same answer appears.
+- **Text.** The [sanitizing policy](CONFIGURATION.md#sanitizing-policy) applies. Over 8,000 characters (`message.send` and `agents.tell`) the whole text is saved to a private file and delivered as its first part plus `[Full message (N characters): <file>]`; nothing is refused for length (up to the frame); if the file cannot be written, nothing is sent.
+- **Sender.** `from` is at most 64 characters (default `external client`). `user`, `external` and a live agent's id are refused with `-32602`.
+- **Audit.** Each accepted `message.send` and `agents.tell` becomes an `octocode-external` session entry (method, sender, mode, length, never the text).
+- **Deadline.** `timeoutMs` (default 600,000; 1,000–3,600,000) is one deadline for both phases. Still preparing (hooks, spill) when it passes: cancelled, refused with `execution: "not-sent"`. Already delivered: `wait` stops with `-32001` and `execution: "accepted"` while the run continues. `execution` tells "nothing sent" from "sent, still running"; a third value, `uncertain`, follows a failure after dispatch.
+- **Guards.** `expectedSessionId` rejects a replacement session; `requireIdle: true` rejects current work or queued messages. Idle, session, key and capacity refusals report `execution: "not-sent"`.
+- **Retry key.** Scoped to the API instance and its Pi session: the same input reuses its receipt, changed input is rejected, and the same key never executes twice. A key is at most 128 characters; a full table (128 receipts) refuses new keys rather than drop uncertain ones. Restarting the API clears the receipts: inspect prior execution before resubmitting.
 
-Events (`seq` strictly increasing per instance; with no `types`, every type below except `message.delta`): `agent.start`, `agent.end` (`text`, `stopReason`), `agent.settled` (the final `text` and `stopReason` once Pi will not continue; `aborted` when Pi reports cancellation), `message` (`role`, `text`), `tool.start` (`id`, `name`, `hint`), `tool.end` (`id`, `name`, `isError`, Pi's native `durationMs`; no arguments or output), `external.message`, `compaction`, plus opt-in `message.delta` (text buffered until the assistant message completes, then redacted as one value; request it in `types`).
+```mermaid
+stateDiagram-v2
+  [*] --> preparing: send opened
+  preparing --> accepted: dispatched to Pi
+  preparing --> cancelled: timeout, abort or session ran
+  preparing --> [*]: failed before dispatch, key freed
+  accepted --> settled: Pi settles
+  accepted --> uncertain: dispatch itself failed
+  uncertain --> [*]: key kept
+  settled --> [*]
+  cancelled --> [*]
+```
 
-Both tool events carry `depth`: 0 for the agent's own calls. Calls a tool makes itself (for example from a codemode script) also carry `parentId`, the calling tool's id; Pi names them `<parentId>/<n>`, and provider ids contain no `/`, so `depth` is the number of `/`-separated segments in `parentId` (`toolu_1/1` has depth 1, `toolu_1/1/2` depth 2). `durationMs` is Pi's recorded execution time, available even when the API started mid-call; it is omitted only when Pi supplies no duration. `octocode-pi-api watch --top-level` (or `ApiClient.watch({ topLevel: true })`) drops tool events that have `parentId`.
+## Events
+
+`seq` strictly increases per instance. With no `types`, all arrive except `message.delta`:
+
+| Event | Fields |
+|---|---|
+| `agent.start` | – |
+| `agent.end` | `text`, `stopReason` |
+| `agent.settled` | Final `text` and `stopReason` once Pi will not continue; `stopReason` is `"aborted"` on cancellation |
+| `message` | `role`, `text` |
+| `tool.start` | `id`, `name`, `hint` (first line of the first of `path`, `command`, `query`, `url`, `ref`; 80 characters; credentials and URL user info removed) |
+| `tool.end` | `id`, `name`, `isError`, `durationMs` (Pi's recorded time, omitted if Pi gives none); no arguments or output |
+| `external.message` | The accepted `message.send`, text cut to 2,000 characters |
+| `compaction` | – |
+| `message.delta` | Opt-in via `types`. Assistant text buffered until the message completes, then redacted as one value |
+
+Tool events carry `depth` (0 for the agent's own calls). Calls a tool makes itself (a codemode script) also carry `parentId`, the caller's id; Pi names them `<parentId>/<n>`, so `depth` counts `/`-separated segments (`toolu_1/1` is 1). `watch --top-level` (or `ApiClient.watch({ topLevel: true })`) drops events with `parentId`.
+
+**Redaction.** Credential-looking spans become `[redacted]` in message and agent events, `external.message`, the `text` `wait` returns, and `messages.list` including `last`. A chunk can split a credential, so `message.delta` waits for the whole message. Treat the stream as sensitive as the session.
+
+**Size.** Text over 64,000 characters ends with `[… N more characters cut; the whole text is in <file>]`; the whole redacted text is saved once to a private file.
+
+## Command line
 
 ```bash
 OCTOCODE_API=1 pi                                # in one terminal
@@ -38,23 +100,19 @@ octocode-pi-api send --wait "run the tests and report failures"
 octocode-pi-api watch --types agent.end,tool.start --top-level
 ```
 
-From code, `ApiClient` in `src/api/client.ts` is the reference client (`call`, `watch`).
+Subcommands: `list`, `status`, `send`, `watch`, `abort`, `external`. `--to <id>` defaults to the only running instance, or the one in the current directory. `watch` (and `ApiClient.watch`) needs the socket; over HTTP use `GET /events`. `ApiClient` in `src/api/client.ts` is the reference client (`call`, `watch`).
 
 ## Connect to external agents
 
-The main Pi session exposes `externalAgent`, `/octocode external <JSON>` and `octocode-pi-api external [--to <local Pi id>] '<JSON>'`. All three use the same contract. The API method is `external.call`. Subagents expose neither the tool nor the API.
+The main session exposes `externalAgent`, `/octocode external <JSON>` and `octocode-pi-api external [--to <local Pi id>] '<JSON>'`: one contract, API method `external.call`. Subagents expose neither the tool nor the API.
 
 | Action | Fields |
 |---|---|
-| `list` | No extra fields; returns connections and discovered local Pi instances, without endpoint tokens |
-| `connect` with `transport: "pi"` | Exact discovered `instanceId`, optional `id`, `cwd`; validates the endpoint, protocol, real workspace and live session |
-| `connect` with `transport: "acp"` | Executable `command`, optional `args` array, real host `vendor`, optional `id`, `cwd`, `sessionId`, `timeoutMs`; launches without a shell |
-| `prompt` | Connection `id`, `text`, optional `timeoutMs` (1,000–600,000 ms; default 120,000) |
-| `cancel` / `disconnect` | Connection `id` |
-
-`cwd` defaults to the current Pi workspace and resolves to its real directory. ACP initialization defaults to 60 seconds. A new ACP connection creates a separate session; an explicit `sessionId` requires advertised session loading and never falls back to a new session. Use a verified ACP adapter for the intended host, with its executable version pinned in your own configuration. A vendor label identifies the host; it selects no adapter or credentials.
-
-For example, connect to another Pi instance from the discovered list:
+| `list` | Connections and discovered local Pi instances, without endpoint tokens |
+| `connect`, `transport: "pi"` | Exact discovered `instanceId`, optional `id`, `cwd`; validates endpoint, protocol, real workspace and live session |
+| `connect`, `transport: "acp"` | Executable `command`, optional `args` array, real host `vendor` (at most 64 characters), optional `id`, `cwd`, `sessionId`, `timeoutMs` (startup, default 60,000); launched without a shell |
+| `prompt` | Connection `id`, `text`, optional `timeoutMs` (1,000–600,000; default 120,000) |
+| `cancel`, `disconnect` | Connection `id` |
 
 ```sh
 octocode-pi-api external --to <controlling-Pi-id> '{"action":"list"}'
@@ -63,49 +121,73 @@ octocode-pi-api external --to <controlling-Pi-id> '{"action":"prompt","id":"revi
 octocode-pi-api external --to <controlling-Pi-id> '{"action":"disconnect","id":"reviewer"}'
 ```
 
-Connecting and prompting use the `agent.spawn` permission rule. The connected host retains its own credentials, tools and policy. ACP requests for approval show the full tool call in Pi and allow only a single-use choice; a headless session cancels them. Filesystem and terminal delegation are not advertised. Native Pi prompts require an idle session, carry the expected session identity and a unique message key, and refuse competing work. Cancellation never takes ownership of an unrelated Pi turn.
+A prompt runs these steps in order (`src/external/manager.ts`); a connection takes one at a time, and `connect` runs `authorize` first too:
 
-One prompt may run per connection. A native Pi connection refuses new prompts until its pending cancellation finishes; overlapping cancellations share the same operation. Session replacement, shutdown or permission revocation closes owned connections. ACP prompt failure or active cancellation closes its process; reconnect explicitly. An error can carry `execution`, `partial` and `stderr`; retain that evidence and inspect the remote session before issuing new work. No prompt is automatically replayed. Large tool/command results retain their complete redacted evidence in the usual private output file. An API result too large for its frame returns `fullOutput: {path, bytes, format: "json"}` and a notice; the file on the Pi host contains the entire redacted result, including updates or error evidence. Oversized error data also keeps `execution`.
+```mermaid
+sequenceDiagram
+  participant C as Caller
+  participant M as Connection manager
+  participant B as Backend (pi or acp)
+  C->>M: prompt
+  M->>M: started? idle? mark busy
+  M->>M: PreMessageSend hook
+  M->>M: authorize (agent.spawn)
+  M->>B: prompt (timeout)
+  B-->>M: reply
+  M->>M: PostMessageReceive hook
+  M-->>C: reply, or error with execution, partial, stderr
+```
 
-The native `message.send` key is scoped to the running API instance and its bound Pi session: identical input reuses its receipt; changed input is rejected. A failure after dispatch retains an uncertain keyed receipt instead of allowing the same key to execute again; known idle/session/key/capacity refusals and preparation rejections report `execution: "not-sent"`. A bounded receipt table refuses new keys when full instead of discarding uncertain receipts. Stopping/restarting the API creates a new instance and clears those in-memory receipts; inspect prior execution before reconnecting or submitting work again. Durable coordination remains the communication package's responsibility. Waiting can time out after acceptance while execution continues. `expectedSessionId` rejects a replacement session, and `requireIdle: true` rejects current work or queued messages before sending. The reference `ApiClient.call` accepts `{timeoutMs, signal}` and validates response identity; a client disconnect does not prove accepted work stopped.
+```mermaid
+stateDiagram-v2
+  [*] --> starting: connect (busy)
+  starting --> idle: backend ready
+  starting --> [*]: authorize or startup failed
+  idle --> prompting: prompt (busy)
+  prompting --> idle: reply or error
+  prompting --> [*]: ACP failure or cancel closes it
+  idle --> [*]: disconnect, reset, session change
+```
 
-## Message hooks
+- **Workspace and session.** `cwd` defaults to the Pi workspace, resolved to its real directory. A new ACP connection creates a separate session; an explicit `sessionId` needs advertised session loading and never falls back to a new session.
+- **Adapters.** Use a verified ACP adapter with its version pinned in your configuration; `vendor` only labels the host.
+- **Permissions.** Connect and prompt use the `agent.spawn` rule. The host keeps its own credentials, tools and policy. ACP approval requests show the full tool call in Pi and allow a single-use choice; a headless session cancels them. Filesystem and terminal delegation are not advertised.
+- **Native Pi prompts.** They need an idle session, carry the expected session identity and a unique key, and refuse competing work; cancellation never takes an unrelated turn. Pending cancellations share one operation, and new prompts wait for it.
+- **Closing.** Session replacement, shutdown or permission revocation closes owned connections. An ACP prompt failure or cancellation closes its process; reconnect explicitly. No prompt is replayed.
+- **Evidence.** An error can carry `execution`, `partial` and `stderr`; keep them and inspect the remote session before new work. A result too large for its frame returns `fullOutput: {path, bytes, format: "json"}` and a notice; the file holds the whole redacted result. Oversized error data keeps `execution`.
+- **Keys.** `externalAgent` manages its own keys; the [retry key](#sending-a-message) is for direct `message.send` clients.
 
-With `OCTOCODE_HOOKS=1`, `PreMessageSend` runs before team enqueue/resume, incoming API delivery, and external-agent prompts. A deliberate block prevents delivery and body spill. `PostMessageReceive` observes actual team/API context delivery and external replies once; it cannot change the body or trigger a reply. Configuration and matcher details live in [Hooks](CONFIGURATION.md#hooks).
+### Concurrency and recovery
 
-External connections control execution. Durable requests, outcomes, shared evidence and path leases belong to `@octocodeai/octocode-agents-communication` and its skill. That package shares a local database; an ACP connection does not provide a remote database or cloud transport.
-
-## Concurrency and recovery
-
-Separate external connections can run concurrently. One connection accepts one prompt at a time; another prompt on that connection fails before delivery. For native Pi, separate connections to the same target still share its idle guard: competing work is refused. Queuing durable requests belongs to the [communication service](../../octocode-agents-communication/scripts/docs/OPERATIONS.md), which separates submission from acknowledgement.
+Separate connections run concurrently; one connection accepts one prompt at a time (another fails before delivery). Native Pi connections to the same target share its idle guard, so competing work is refused.
 
 | Boundary | What remains known | Recovery |
 |---|---|---|
-| Caller times out or disconnects | The target may still be executing; a transport error is not a cancellation receipt | Inspect the exact target's `status`, events and history before deciding what to do |
-| Native Pi caller restarts; target API and session survive | The native API retains accepted keyed receipts within its bounded receipt table | A direct `message.send` client may retry unchanged input with the same key and expected session; it receives the retained result without executing twice |
-| Native Pi target/API restarts or session changes | Old endpoint/session identity and in-memory receipt scope no longer apply | Discover the new exact instance, inspect prior work, then explicitly connect; do not infer that an old key protects a new instance |
-| ACP adapter fails during a prompt | The error can retain partial updates, execution state and adapter stderr | Save that evidence, inspect the host if needed, then explicitly reconnect; failure never triggers prompt replay |
-| Cancellation is pending | That connection's cancellation owns one shared operation | Wait for cancellation to finish before sending new native Pi work |
+| Caller times out or disconnects | The target may still be executing; a transport error is no cancellation receipt | Inspect the target's `status`, events and history |
+| Native Pi caller restarts; target API and session survive | The target keeps keyed receipts in its bounded table | Retry `message.send` with the same input, key and expected session: the retained result returns, nothing re-executes |
+| Target or API restarts, or the session changes | Old endpoint, session identity and receipt scope no longer apply | Discover the new instance, inspect prior work, connect again; an old key does not protect a new instance |
+| ACP adapter fails during a prompt | The error can hold partial updates, execution state and stderr | Save that evidence, inspect the host, reconnect. A fresh session starts unless you pass a supported `sessionId`; no transcript is restored |
+| Cancellation pending | That connection's cancellation owns one shared operation | Wait for it before sending new native Pi work |
 
-Retry keys in the table describe the native `message.send` wire API. `externalAgent` manages its own keys and does not expose a caller-supplied retry key. After an uncertain native external prompt, inspect it and cancel or disconnect explicitly before starting different work. ACP reconnect creates a fresh session unless an explicit supported `sessionId` is supplied; it does not restore a transcript automatically.
+After an uncertain native prompt, inspect it and cancel or disconnect before starting different work.
 
-For internal subagent coordination use `agent`, `coordinate` and `sendMessage`. A child report and a correlated reply are separate deliveries. A child exiting before handling mail leaves recoverable delivery evidence; do not answer an informational update just to keep the conversation alive. Message hooks enforce and observe their own boundaries; they do not turn transport submission into completed work.
+## Message hooks
+
+With `OCTOCODE_HOOKS=1`, `PreMessageSend` runs before team enqueue or resume, incoming API delivery and external-agent prompts; a deliberate block prevents delivery and body spill. `PostMessageReceive` observes team and API context delivery and external replies once; it cannot change the body or trigger a reply. Configuration and matchers: [Hooks](CONFIGURATION.md#hooks). Hooks do not turn submission into completed work.
+
+## Durable coordination
+
+External connections control execution. Durable requests, outcomes, shared evidence and path leases belong to `@octocodeai/octocode-agents-communication` (a local database; its [operations guide](../../octocode-agents-communication/scripts/docs/OPERATIONS.md)); ACP provides no remote database or cloud transport. For subagents use `agent`, `coordinate` and `sendMessage`: a child report and a correlated reply are separate deliveries, and a child that exits before handling mail leaves recoverable evidence.
 
 ## Verify messaging from a checkout
 
-Deterministic regressions run with the package tests and use private fixtures. They do not need vendor accounts:
+`yarn workspace @octocodeai/pi-extension verify` needs no vendor accounts.
 
-```sh
-yarn workspace @octocodeai/pi-extension verify
-```
-
-Account-backed checks are explicit developer runs. They create scratch sessions, can consume model usage, and must use available models and verified adapter executables. The [communication operations guide](../../octocode-agents-communication/scripts/docs/OPERATIONS.md#verify-concurrent-native-workers) describes the persistent native-worker check. Results distinguish model simulation from actual cloud inference and retain failed attempts, uncertain execution and cleanup evidence.
-
-The maintained ACP lifecycle runner checks the built extension through its registered tool, API and CLI. With no arguments it prints help and starts no model calls. Its local mode uses official SDK fixtures; its live mode uses the pinned Claude/Codex adapters and existing host authentication:
+`scripts/live-acp-reliability.mjs` drives the built extension through its tool, API and CLI (no arguments or `--help`: help, no model calls). `--fixture` uses local official-SDK agents; `--live` uses the pinned Claude and Codex adapters with your host authentication, creates scratch sessions and can consume model usage, up to `--max-prompts` (default 20). The adapter-kill case needs POSIX; the script refuses on Windows.
 
 ```sh
 node packages/octocode-pi-extension/scripts/live-acp-reliability.mjs --fixture --out /absolute/fixture-results
 node packages/octocode-pi-extension/scripts/live-acp-reliability.mjs --live --max-prompts 20 --out /absolute/live-results
 ```
 
-The live case set covers persistent conversation state, two overlapping connections per vendor, same-connection refusal, a pending-RPC adapter kill and explicit saved-session loading. Interrupted live RPCs may have no text yet; local streamed fixtures separately check that partial evidence survives failure. Advertised session loading resumes a saved session through the adapter; it does not attach to an arbitrary existing process or human conversation. The crash runner currently requires POSIX.
+Cases: conversation state, two overlapping connections per vendor, same-connection refusal, a pending-RPC adapter kill, saved-session loading. For the persistent native-worker check see the [operations guide](../../octocode-agents-communication/scripts/docs/OPERATIONS.md#verify-concurrent-native-workers).

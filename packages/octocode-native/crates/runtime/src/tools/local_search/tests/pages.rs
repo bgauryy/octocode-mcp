@@ -208,9 +208,50 @@ fn match_page_ceiling_preserves_evidence_and_discloses_terminal_suffix() {
     assert!(
         body["warnings"]
             .to_string()
-            .contains("matchPage 1000 is the last match page a continuation names"),
+            .contains("terminalLimit: matchPage:1000 is the last a continuation may request"),
         "{body}"
     );
+    assert_eq!(
+        body["partialReasons"],
+        serde_json::json!(["cursorMaximum"]),
+        "{body}"
+    );
+}
+
+/// Rows left in the only file page are stated by the row's pagination
+/// (`hasMore` beside `nextMatchPage`), so the shared rule does not restate
+/// them with `isPartial`.
+#[test]
+fn leftover_matches_on_the_last_file_page_state_has_more() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::write(root.path().join("a.txt"), "HIT\n".repeat(3)).expect("matches");
+    let policy = crate::tools::test_support::workspace_policy(root.path());
+    let request = ls_query(
+        serde_json::json!({"path":root.path(),"matchString":"HIT","regex":"literal","pageSize":5,"matchPageSize":1}),
+        None,
+    );
+    let result = execute_local_search(
+        &request,
+        &policy,
+        &ContentSecurity::new(),
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("search");
+    let pagination = result.pagination.as_ref().expect("row pagination");
+    assert_eq!((pagination.total_pages, pagination.has_more), (1, true));
+    let body = serde_json::to_value(&result).expect("output");
+    assert!(body["next"]["nextMatchPage"].is_object(), "{body}");
+    let published = crate::tools::test_support::published(
+        crate::tools::id::ToolId::LocalSearch,
+        &serde_json::to_value(&request).expect("query"),
+        &body,
+    );
+    let data = &published["results"][0]["data"];
+    assert!(data.get("isPartial").is_none(), "{published}");
+    assert_eq!(data["pagination"]["hasMore"], true, "{published}");
 }
 
 #[test]
@@ -236,16 +277,19 @@ fn file_page_ceiling_keeps_later_files_partial_and_terminal() {
     let body = serde_json::to_value(result).expect("output");
     assert_eq!(body["pagination"]["hasMore"], true, "{body}");
     assert!(body["next"].get("nextPage").is_none(), "{body}");
+    // The ceiling is the shared terminal-limit disclosure (`paging::next_cursor`):
+    // it names the cursor and its maximum; the page count stays a page fact.
     assert!(
         body["warnings"]
             .as_array()
             .expect("ceiling disclosure")
             .iter()
-            .any(|warning| warning
-                .as_str()
-                .is_some_and(|text| text.contains("1 later file pages"))),
+            .any(|warning| warning.as_str().is_some_and(
+                |text| text.contains("page:1000 is the last a continuation may request")
+            )),
         "{body}"
     );
+    assert_eq!(body["pagination"]["totalPages"], 1001, "{body}");
 }
 
 #[test]
@@ -567,6 +611,41 @@ fn excludes_sensitive_and_symlink_descendants_before_projection() {
         root.canonicalize().expect("canonical root")
     );
     fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// A symlink inside the root that the walk does not follow is counted in
+/// the withheld notice, not dropped unseen.
+#[cfg(unix)]
+#[test]
+fn an_in_root_symlink_to_a_file_is_counted() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::write(root.path().join("real.txt"), "needle\n").expect("fixture");
+    std::os::unix::fs::symlink(root.path().join("real.txt"), root.path().join("link.txt"))
+        .expect("symlink");
+    let policy = crate::tools::test_support::workspace_policy(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path(), "matchString": "needle", "regex": "literal"}),
+        None,
+    );
+    let result = execute_local_search(
+        &request,
+        &policy,
+        &ContentSecurity::new(),
+        &NeverCancel,
+        None,
+        None,
+        None,
+    )
+    .expect("search");
+    assert_eq!(result.files.len(), 1);
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| w.contains("1 symlink not followed")),
+        "{:?}",
+        result.warnings
+    );
 }
 
 #[test]

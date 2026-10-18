@@ -42,7 +42,7 @@ and VS Code extension are thin adapters with no tool logic.
 
 | Path | npm name | What it is |
 |---|---|---|
-| `packages/octocode-native` | `@octocodeai/octocode-native` | The Rust engine: every tool, the native `octocode` binary, and the N-API addon the MCP server loads. Six platform packages under `npm/<platform>` carry the binaries |
+| `packages/octocode-native` | `@octocodeai/octocode-native` | The Rust engine: every tool, the native `octocode` binary, and the N-API addon the MCP server loads. One platform package per target under `npm/<platform>` carries the binaries |
 | `packages/octocode-mcp` | `octocode-mcp` | Thin stdio MCP server: loads the addon, checks the contract fingerprint, registers the available tools |
 | `packages/octocode` | `octocode` | Node CLI launcher (`npx octocode`): forwards unchanged arguments and stdio to the native binary; native owns all commands |
 | `packages/octocode-config` | `@octocodeai/config` (private) | The only tool-contract generator, plus configuration loading (home, `.env`, `.octocoderc`). Bundled into the MCP server and CLI |
@@ -69,7 +69,7 @@ Package versions are independent; the release line is listed under Release.
 
 ## Setup, run, develop
 
-Prerequisites: Node `^24.15.0`, Yarn 4.9.1 (`corepack enable`), and Rust 1.99.0 (pinned by
+Prerequisites: Node `^24.15.0`, Yarn 4.9.1 (`corepack enable`), and Rust 1.99.1 (pinned by
 `packages/octocode-native/rust-toolchain.toml`). Contract changes also need the sibling checkout
 `../octocode-mcp-host` and `cargo install cargo-typify --version 0.8.0 --locked`.
 
@@ -127,7 +127,7 @@ around it silently.
 ## Release
 
 Publishing is owner-triggered and never runs from CI or an agent session. One release line ships
-at one version: the six native platform packages, `@octocodeai/octocode-native`, `octocode-mcp`
+at one version: the native platform packages, `@octocodeai/octocode-native`, `octocode-mcp`
 and `octocode`. Core publishes first at its own version; the Claude and Codex plugins, Homebrew
 formula and VS Code extension follow. The Pi extension, agents-communication and Chrome DevTools
 packages have their own cadence. Details: [release guide](skills-dev/octocode-dev/docs/RELEASE.md).

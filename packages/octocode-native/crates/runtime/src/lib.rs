@@ -1,9 +1,8 @@
 //! Native execution shared by the CLI and the MCP addon. Every tool runs
 //! here; the interfaces have no execution fallback.
-
-// Production code is held to the `expect_used`/`unwrap_used`/`panic` denials in
-// Cargo.toml `[lints]`. Test code is exempt: tests legitimately assert with
-// `.unwrap()`/`.expect()`/`panic!`.
+// Test-compiled code may assert with unwrap/expect/panic. A crate attribute,
+// not clippy.toml's `allow-*-in-tests`: clippy does not treat modules mounted
+// under `cfg(all(test, unix))` as test code.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
 
 pub mod cache;

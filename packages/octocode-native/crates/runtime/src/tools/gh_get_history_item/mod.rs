@@ -84,6 +84,9 @@ pub struct HistoryItemRequest {
     /// File text at the pull request's head that widens `matchString` hunks
     /// past GitHub's diff context (read once per file and call).
     head_sources: Option<std::sync::Arc<patch::hunks::HeadSources>>,
+    /// `query` as a wire row, serialized once: every continuation starts
+    /// from it ([`pr_menu::base_public_query`]).
+    public: Value,
 }
 
 impl HistoryItemRequest {
@@ -92,6 +95,7 @@ impl HistoryItemRequest {
         let query: GhGetHistoryItemQuery = serde_json::from_value(row)?;
         Ok(Self {
             sections: Sections::resolve(&query),
+            public: serde_json::to_value(&query)?,
             query,
             auto_page_chars: None,
             head_sources: None,
@@ -215,6 +219,10 @@ impl HistoryItemRequest {
                 .map_err(|error| validation(&format!("compare base: {error}")))?;
             *pinned_head = GhGetHistoryItemQueryHead::try_from(head)
                 .map_err(|error| validation(&format!("compare head: {error}")))?;
+            // The cached wire row follows the pinned refs, or every
+            // continuation would restate the caller's moving refs.
+            pinned.public = serde_json::to_value(&pinned.query)
+                .map_err(|error| validation(&format!("compare query: {error}")))?;
         }
         Ok(pinned)
     }

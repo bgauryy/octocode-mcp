@@ -369,6 +369,46 @@ describe('memory tool', () => {
   });
 });
 
+describe('memory lines the model reads', () => {
+  const setup = () => {
+    const fake = fakePi();
+    registerMemory(fake.pi, { commands: new Subcommands(), isSubagent: false, permission: fakePermission() });
+    return fake.tools.get('memory');
+  };
+  const run = (tool: any, params: Record<string, unknown>, ctx = ctxFor().ctx) => tool.execute('call', params, undefined, undefined, ctx);
+  const text = (result: any) => result.content[0].text as string;
+  const long = `${'sentence about gadgets. '.repeat(30)}the end`;
+  const pointer = 'memory get M1';
+
+  it('writes the whole body unless a caller asks for a clip, which the terminal views do', () => {
+    const memory = add(new MemoryStore(freshDb(), 'repo-a'), { title: 'Gadgets', body: long });
+    expect(memoryLine(memory)).toBe(`M${memory.id} (project, fact) Gadgets — ${long}`);
+    expect(memoryLine(memory, 20)).toBe(`M${memory.id} (project, fact) Gadgets — ${long.slice(0, 19)}…`);
+  });
+
+  it('ends a search or list line whose body is cut with the call that reads it whole, and leaves a short body bare', async () => {
+    const tool = setup();
+    await run(tool, { op: 'set', title: 'Gadgets', body: long });
+    await run(tool, { op: 'set', title: 'Widgets', body: 'short gadget note' });
+    for (const params of [{ op: 'search', query: 'gadgets' }, { op: 'list' }]) {
+      const lines = text(await run(tool, params)).split('\n');
+      const gadgets = lines.find((line) => line.includes('Gadgets'))!;
+      expect(gadgets).toMatch(/… \(memory get M1\)$/);
+      expect(lines.find((line) => line.includes('Widgets'))).toMatch(/short gadget note$/);
+    }
+    // The call the line names returns the body exactly.
+    expect(text(await run(tool, { op: 'get', id: 'M1' })).endsWith(`\n\n${long}`)).toBe(true);
+  });
+
+  it('ends a saved line whose body is cut with the same call, and shows a deleted memory whole: it can no longer be read', async () => {
+    const tool = setup();
+    expect(text(await run(tool, { op: 'set', title: 'Gadgets', body: long }))).toMatch(new RegExp(`… \\(${pointer}\\)$`));
+    expect(text(await run(tool, { op: 'set', id: 'M1', title: 'Gadgets', body: 'now short' }))).toMatch(/^Updated M1 .* — now short$/);
+    await run(tool, { op: 'set', id: 'M1', title: 'Gadgets', body: long });
+    expect(text(await run(tool, { op: 'delete', id: 'M1' }, ctxFor({ selects: ['Allow once'] }).ctx))).toBe(`Deleted M1 (project, fact) Gadgets — ${long}`);
+  });
+});
+
 describe('memory auto-injection', () => {
   const setup = (isSubagent = false) => {
     const fake = fakePi();

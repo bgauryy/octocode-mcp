@@ -4,6 +4,10 @@
 /// set never drifts between modules.
 pub const JS_TS_EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
 
+/// The JavaScript (non-TypeScript) members of [`JS_TS_EXTENSIONS`]: the
+/// extensions the JavaScript grammar parses.
+pub const JS_EXTENSIONS: &[&str] = &["js", "jsx", "mjs", "cjs"];
+
 /// The extension of the path's basename (after the last `/` or `\\`), the
 /// one extension helper for the crate. A dotfile names its own extension
 /// (`.bashrc` → `bashrc`); a dot in a directory name is never read; a name
@@ -56,7 +60,7 @@ fn has_flow_pragma(head: &str) -> bool {
 /// garbage (keywords recovered as declarations). Flow's annotation syntax is
 /// close to TypeScript's, so callers parse it with a TSX grammar instead.
 pub fn is_flow_source(content: &str, ext: &str) -> bool {
-    if !matches!(ext, "js" | "jsx" | "mjs" | "cjs") {
+    if !JS_EXTENSIONS.contains(&ext) {
         return false;
     }
     let mut head_end = content.len().min(FLOW_PRAGMA_WINDOW);

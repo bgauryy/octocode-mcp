@@ -1,7 +1,6 @@
 //! A host-supplied per-request GitHub token (`admit_with({githubToken})`, the
 //! napi `execute*` 4th argument): the request's only credential, isolated
 //! per token, never echoed, never replaced by an ambient credential.
-#![allow(clippy::unwrap_used)]
 use crate::support::{Workspace, envelope, row_data, row_status};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use octocode_native::runtime::{Channel, RuntimeError, ToolOutcome, ToolRuntime};

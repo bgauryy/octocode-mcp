@@ -1,7 +1,8 @@
 import type { Context, SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { describe, expect, it } from 'vitest';
+import { COMPACTION_NOTE_TYPE } from '../src/compaction/record.js';
 import { SHARED_SUMMARY_PROMPT, sharedSummary } from '../src/compaction/shared-summary.js';
-import { writeSummary } from '../src/compaction/summary.js';
+import { SUMMARY_METHOD_DETAILS, writeSummary } from '../src/compaction/summary.js';
 import { CLEARED_RESULTS_TYPE } from '../src/files/reads.js';
 import { CHARS_PER_TOKEN } from '../src/shared/tokens.js';
 
@@ -33,7 +34,13 @@ interface Setup {
 function setup(options: Setup = {}) {
   const calls: Array<{ model: unknown; context: Context; options: SimpleStreamOptions }> = [];
   const notices: string[] = [];
-  const pi = { getThinkingLevel: () => options.thinking ?? 'high', getActiveTools: () => [], getSettings: () => options.settings ?? { thinkingBudgets: { high: 4_000 }, transport: 'sse' } } as never;
+  const notes: Array<{ customType: string; data: unknown }> = [];
+  const pi = {
+    getThinkingLevel: () => options.thinking ?? 'high',
+    getActiveTools: () => [],
+    getSettings: () => options.settings ?? { thinkingBudgets: { high: 4_000 }, transport: 'sse' },
+    appendEntry: (customType: string, data: unknown) => notes.push({ customType, data }),
+  } as never;
   const ctx = {
     model,
     modelRegistry: {
@@ -67,7 +74,7 @@ function setup(options: Setup = {}) {
     customInstructions: options.customInstructions,
     signal: options.signal ?? { aborted: false },
   } as never;
-  return { calls, notices, pi, ctx, event, fileOps };
+  return { calls, notices, notes, pi, ctx, event, fileOps };
 }
 
 const finalPrompt = (call: { context: Context }): string => {
@@ -109,6 +116,21 @@ describe('cache-sharing compaction summary', () => {
     await sharedSummary(pi, event, ctx, model as never, 'x');
     const sent = calls[0]!.context.messages.find((message) => message.role === 'toolResult');
     expect(sent?.content[0]).toMatchObject({ text: expect.stringMatching(/^\[Old tool result cleared .*\/tmp\/saved\.txt/) });
+  });
+
+  it('leaves out, as the real requests do, thinking older than a summary before it for a model that binds thinking to its prefix', async () => {
+    const earlier = { role: 'compactionSummary', summary: '## Goal\nolder work', tokensBefore: 9_000, timestamp: at + 50 };
+    const stale = { role: 'assistant', content: [{ type: 'thinking', thinking: '', thinkingSignature: 'sig' }, { type: 'text', text: 'kept turn' }], timestamp: at };
+    const projected = [entry('e0', earlier), entry('e1', stale), entry('e2', ask)];
+    const projection = () => ({ entries: projected, messages: projected.flatMap((item) => item.messages) });
+    const binding = { ...model, compat: { supportsMidConvoEffort: true } };
+    const strips = setup({ firstKeptEntryId: 'e2', projection });
+    await sharedSummary(strips.pi, strips.event, strips.ctx, binding as never, 'x');
+    const sent = (call: { context: Context }) => call.context.messages.find((message) => message.role === 'assistant')?.content;
+    expect(sent(strips.calls[0]!)).toEqual([{ type: 'text', text: 'kept turn' }]);
+    const keeps = setup({ firstKeptEntryId: 'e2', projection });
+    await sharedSummary(keeps.pi, keeps.event, keeps.ctx, model as never, 'x');
+    expect(sent(keeps.calls[0]!)).toHaveLength(2);
   });
 
   it('returns Pi-shaped compaction: summary with file lists, details, usage, cut point and size before', async () => {
@@ -206,13 +228,14 @@ describe('cache-sharing compaction summary', () => {
     expect(reasons).toEqual([reason]);
   });
 
-  it('says nothing when images are blocked (the user\'s own setting) or the compaction was cancelled', async () => {
-    const reasons: string[] = [];
+  it('reports blocked images as the user\'s own choice, and says nothing when the compaction was cancelled', async () => {
+    const reasons: Array<[string, boolean | undefined]> = [];
     const blocked = setup({ settings: { images: { blockImages: true } } });
-    await sharedSummary(blocked.pi, blocked.event, blocked.ctx, model as never, 'x', (why) => reasons.push(why));
+    await sharedSummary(blocked.pi, blocked.event, blocked.ctx, model as never, 'x', (why, userChoice) => reasons.push([why, userChoice]));
+    expect(reasons).toEqual([['images are blocked in settings', true]]);
     const cancelled = setup({ reply: () => { throw new Error('aborted'); }, signal: { aborted: true } });
-    await sharedSummary(cancelled.pi, cancelled.event, cancelled.ctx, model as never, 'x', (why) => reasons.push(why));
-    expect(reasons).toEqual([]);
+    await sharedSummary(cancelled.pi, cancelled.event, cancelled.ctx, model as never, 'x', (why, userChoice) => reasons.push([why, userChoice]));
+    expect(reasons).toHaveLength(1);
   });
 
   it('gives up when the call or the projection throws, or images are blocked', async () => {
@@ -239,7 +262,7 @@ describe('writeSummary with the shared path', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.context.messages[0]).toBe(system);
     expect(out?.compaction?.summary).toMatch(/^## Goal\nfix the parser\n\n<read-files>/);
-    expect(out?.compaction?.details).toEqual({ readFiles: ['src/a.ts'], modifiedFiles: ['src/b.ts', 'src/new.ts'] });
+    expect(out?.compaction?.details).toEqual({ readFiles: ['src/a.ts'], modifiedFiles: ['src/b.ts', 'src/new.ts'], [SUMMARY_METHOD_DETAILS]: { method: 'cache-shared' } });
     expect(out?.compaction?.usage).toEqual(usage);
     expect(out?.compaction?.summary).toContain('## User Messages (verbatim, oldest first)');
     expect(out?.compaction?.summary).toContain('fix the parser in src/a.ts');
@@ -253,6 +276,15 @@ describe('writeSummary with the shared path', () => {
     expect(out?.compaction?.summary).toContain('fallback');
     // The extra cost is not silent: the user is told why the cache was not used.
     expect(notices).toEqual([expect.stringMatching(/could not write the compaction summary from the prompt cache \(the reply stopped with toolUse\).*pays for the whole input/)]);
+    // The session keeps it too: the method and the reason are in the compaction's own details.
+    expect(out?.compaction?.details).toMatchObject({ [SUMMARY_METHOD_DETAILS]: { method: 'standalone', reason: 'the reply stopped with toolUse' } });
+  });
+
+  it('names blocked images as the reason for the standalone request, without a warning', async () => {
+    const { pi, ctx, event, notices } = setup({ settings: { images: { blockImages: true } } });
+    const out = await writeSummary(pi, event, ctx);
+    expect(out?.compaction?.details).toMatchObject({ [SUMMARY_METHOD_DETAILS]: { method: 'standalone', reason: 'images are blocked in settings' } });
+    expect(notices).toEqual([]);
   });
 
   it('summarizes a downshift on the previous model with the standalone request only', async () => {
@@ -261,11 +293,14 @@ describe('writeSummary with the shared path', () => {
     expect(calls).toHaveLength(1);
     expect(finalPrompt(calls[0]!)).toContain('<conversation>');
     expect(out?.compaction?.summary).toContain('## Goal');
+    expect(out?.compaction?.details).toMatchObject({ [SUMMARY_METHOD_DETAILS]: { method: 'standalone', reason: expect.stringContaining('the model before a downshift') } });
   });
 
   it('warns about the fallback and then about the failure when both paths fail', async () => {
-    const { notices, pi, ctx, event } = setup({ reply: () => { throw new Error('down'); } });
+    const { notices, notes, pi, ctx, event } = setup({ reply: () => { throw new Error('down'); } });
     expect(await writeSummary(pi, event, ctx)).toBeUndefined();
     expect(notices).toEqual([expect.stringContaining('prompt cache (down)'), expect.stringContaining('compaction summary failed (down)')]);
+    // Pi writes its default summary: the session records that and why (one entry, not sent to the model).
+    expect(notes).toEqual([{ customType: COMPACTION_NOTE_TYPE, data: { kind: 'default-summary', reason: "Octocode's compaction summary failed (down)" } }]);
   });
 });

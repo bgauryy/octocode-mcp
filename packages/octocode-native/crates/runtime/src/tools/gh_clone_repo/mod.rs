@@ -2,6 +2,7 @@
 pub(crate) mod cache;
 mod git;
 mod process;
+mod recovery;
 
 use crate::policy::{PolicyError, PolicyErrorCode, path::PathPolicy};
 use crate::tools::cancel::CancellationCheck;
@@ -54,9 +55,10 @@ impl Sparse {
     }
 }
 
-/// Commits of history to fetch; 1 is a shallow checkout.
+/// Commits of history to fetch; the contract's default of 1 is a shallow
+/// checkout.
 fn history_depth(query: &GhCloneRepoQuery) -> u64 {
-    query.history_depth.map_or(1, std::num::NonZeroU64::get)
+    query.history_depth.get()
 }
 
 #[derive(Clone, Debug)]
@@ -116,7 +118,10 @@ pub struct CloneContext<'a> {
     pub git: &'a dyn GitRunner,
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `skip_serializing_if` calls with a reference"
+)]
 fn is_true(value: &bool) -> bool {
     *value
 }
@@ -136,6 +141,10 @@ pub struct CloneLocation {
     /// Sparse checkouts name every requested path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requested_paths: Option<Vec<String>>,
+    /// Repository symlinks in the checkout, each a plain file holding its
+    /// link target; absent when there are none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symlinks: Option<Vec<String>>,
     /// History depth when more than the shallow single commit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub history_depth: Option<u64>,
@@ -268,25 +277,27 @@ async fn pin<C: ConditionalCache>(
     request: &RequestContext,
 ) -> Result<Pin, CloneFailure> {
     let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
-    let refused = |reference: &str, api: ProviderError| {
-        api_refusal(query, reference, api).unwrap_or_else(CloneFailure::Provider)
-    };
     let label = match query.ref_.as_deref() {
         Some(reference) => reference.to_owned(),
         None => {
-            provider
+            match provider
                 .transport
                 .repository_metadata(owner, repo, request)
                 .await
-                .map_err(|api| refused("HEAD", api))?
-                .default_branch
+            {
+                Ok(metadata) => metadata.default_branch,
+                Err(api) => return Err(refused(provider, query, "HEAD", api, request).await),
+            }
         }
     };
-    let commit = provider
+    let commit = match provider
         .transport
         .commit_sha(owner, repo, &label, request)
         .await
-        .map_err(|api| refused(&label, api))?;
+    {
+        Ok(commit) => commit,
+        Err(api) => return Err(refused(provider, query, &label, api, request).await),
+    };
     let canonical = crate::tools::gh_shared::canonical_repo(
         provider,
         owner,
@@ -305,6 +316,38 @@ async fn pin<C: ConditionalCache>(
         label,
         renamed,
     })
+}
+
+/// The failure of a clone whose commit lookup `api` refused ([`api_refusal`]);
+/// a missing ref also names the repository's default branch and offers the
+/// same clone at it.
+async fn refused<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhCloneRepoQuery,
+    reference: &str,
+    api: ProviderError,
+    request: &RequestContext,
+) -> CloneFailure {
+    let missing_ref = api.reason == Some(ProviderErrorReason::RefNotFound);
+    let mut failure = api_refusal(query, reference, api).unwrap_or_else(CloneFailure::Provider);
+    if missing_ref
+        && let CloneFailure::Clone(error) = &mut failure
+        && let Some(retry) = crate::tools::gh_shared::default_branch_retry(
+            provider,
+            crate::tools::id::ToolId::GhCloneRepo,
+            crate::tools::result::query_row(query, &[]),
+            &["ref"],
+            request,
+        )
+        .await
+    {
+        error.message = retry.message(&error.message);
+        let (name, lead) = retry.lead();
+        error
+            .next
+            .get_or_insert_with(|| Box::new(serde_json::json!({})))[name] = lead;
+    }
+    failure
 }
 
 /// What a failed `commits/{reference}` answer says about the request: a
@@ -423,6 +466,7 @@ impl Plan<'_> {
                 verified: hit.verified,
                 resolved_ref: commit.to_owned(),
                 requested_paths: paths.map(<[String]>::to_vec),
+                symlinks: (!hit.symlinks.is_empty()).then_some(hit.symlinks),
                 history_depth: (self.depth > 1).then_some(self.depth),
                 cloned_at,
                 expires_at,
@@ -517,6 +561,8 @@ struct CacheHit {
     age: Option<cache::CacheAge>,
     /// Checked-out bytes recorded at publication (older entries walk).
     size: Option<u64>,
+    /// Repository symlinks the checkout holds as plain files.
+    symlinks: Vec<String>,
 }
 
 fn cache_hit(
@@ -545,11 +591,17 @@ fn cache_hit(
         .path_policy
         .validate(clone_dir)
         .map_err(policy_denied)?;
+    // An entry written before symlinks were recorded lists them now.
+    let symlinks = match meta.symlinks.clone() {
+        Some(symlinks) => symlinks,
+        None => git::symlinks(context, clone_dir)?,
+    };
     Ok(Some(CacheHit {
         commit_sha,
         verified: meta.verified,
         age: cache::CacheAge::of(&meta, context.config.cache_ttl),
         size: meta.checkout_bytes,
+        symlinks,
     }))
 }
 
@@ -582,6 +634,7 @@ fn fresh_clone(
             verified: true,
             age: cache::CacheAge::of(&meta, context.config.cache_ttl),
             size: meta.checkout_bytes,
+            symlinks: meta.symlinks.clone().unwrap_or_default(),
         },
     );
     result.location.cached = false;
@@ -629,7 +682,7 @@ fn checkout_stage(plan: &Plan<'_>, reference: &str, stage: &Path) -> Result<Stri
             .map(String::as_str)
             .collect::<Vec<_>>();
         if !missing.is_empty() {
-            return Err(sparse_not_found(plan.query, reference, &missing));
+            return Err(sparse_not_found(plan, reference, &missing, stage));
         }
     }
     let commit_sha = git::read_head(context, stage)?;
@@ -642,8 +695,8 @@ fn checkout_stage(plan: &Plan<'_>, reference: &str, stage: &Path) -> Result<Stri
     Ok(commit_sha)
 }
 
-/// Record the checkout's identity, commit and size in its stage. Repository
-/// evidence is never overwritten by this bookkeeping.
+/// Record the checkout's identity, commit, size and symlinks in its stage.
+/// Repository evidence is never overwritten by this bookkeeping.
 fn write_stage_meta(
     plan: &Plan<'_>,
     resolved: &str,
@@ -674,6 +727,7 @@ fn write_stage_meta(
     let checkout = cache::checked_out_size(stage);
     meta.checkout_bytes = Some(checkout);
     meta.size_bytes = Some(checkout.saturating_add(cache::git_dir_size(stage)));
+    meta.symlinks = Some(git::symlinks(plan.context, stage)?);
     cache::write_meta(stage, &meta)?;
     Ok(meta)
 }
@@ -701,15 +755,30 @@ fn discard_stage(context: &CloneContext<'_>, stage: &Path) {
 }
 
 /// Requested sparse paths absent at the checked-out revision: a not-found
-/// input, named per path, with the recovery as its one hint.
-fn sparse_not_found(query: &GhCloneRepoQuery, reference: &str, missing: &[&str]) -> CloneError {
+/// input, named per path. The checkout holds the commit's trees, so the
+/// recovery is a runnable lead ([`recovery::sparse_next`]); only when the
+/// tree cannot be read is it a hint.
+fn sparse_not_found(
+    plan: &Plan<'_>,
+    reference: &str,
+    missing: &[&str],
+    stage: &Path,
+) -> CloneError {
+    let query = plan.query;
+    let next = recovery::sparse_next(plan.context, stage, query, missing);
+    let hints = if next.is_some() {
+        Vec::new()
+    } else {
+        vec!["Verify the path with ghStructure, or omit path for a full clone.".into()]
+    };
     let paths = missing
         .iter()
         .map(|path| format!("\"{path}\""))
         .collect::<Vec<_>>()
         .join(", ");
     CloneError {
-        hints: vec!["Verify the path with ghStructure, or omit path for a full clone.".into()],
+        hints,
+        next: next.map(Box::new),
         ..CloneError::new(
             "pathNotFound",
             format!(

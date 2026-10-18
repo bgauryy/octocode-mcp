@@ -12,12 +12,13 @@ mod selection_tests;
 
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::{
-    CODE_ROW_ID, GhFailure, SearchCompleteness, SearchWindow, add_next, apply_partial, field_names,
-    pick_rows, push_warning_front, search_failure, with_ref_recovery, with_search_repair,
+    GhFailure, Rescope, SearchCompleteness, SearchWindow, add_next, apply_partial, field_names,
+    pick_rows, push_warning_front, rescope_on_rename, search_failure, search_may_be_renamed,
+    with_ref_recovery, with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
-use crate::tools::paging::{mark_partial, push_warnings};
+use crate::tools::paging::{clamp_page_size, mark_partial, push_warnings};
 use crate::tools::result::{Continuation, ToolData, query_row};
 use octocode_github::{
     CodeSearchRequest, ConditionalCache, GitHubProvider, ProviderError, ProviderErrorKind,
@@ -34,7 +35,7 @@ pub async fn run<C: ConditionalCache>(
     request: Result<&RequestContext, ProviderError>,
     security: &(impl ContentScan + Sync),
 ) -> Result<ToolData, GhFailure> {
-    if let Some(failure) = ref_without_repo(query) {
+    if let Some(failure) = ref_without_repo(query).or_else(|| filename_glob(query)) {
         return Err(failure);
     }
     let context = request.as_ref().ok().copied();
@@ -135,6 +136,48 @@ fn ref_without_repo(query: &GhSearchCodeQuery) -> Option<GhFailure> {
     })
 }
 
+/// Glob metacharacters (the shared `include` reading's set).
+const GLOB_META: [char; 4] = ['*', '?', '[', '{'];
+
+/// GitHub's `filename:` matches file names containing its text, never a
+/// glob, so a glob there silently matches nothing. Refused before any
+/// request: one whose only glob characters are leading or trailing `*`
+/// (`*.test.js`) repairs to the text between them; any other names the
+/// rule.
+fn filename_glob(query: &GhSearchCodeQuery) -> Option<GhFailure> {
+    let filename = query.filename.as_deref()?.as_str();
+    if !filename.contains(GLOB_META) {
+        return None;
+    }
+    let text = filename.trim_matches('*');
+    let repair = (!text.is_empty() && !text.contains(GLOB_META)).then(|| {
+        let mut row = query_row(query, &[]);
+        row["filename"] = json!(text);
+        Continuation::new(ToolId::GhSearchCode, row)
+            .confidence("high")
+            .build()
+    });
+    let rule = format!(
+        "filename \"{filename}\" is a glob; filename matches file names containing its text"
+    );
+    let (message, hint) = match &repair {
+        Some(_) => (format!("{rule}: use \"{text}\"."), None),
+        None => (
+            format!("{rule}, without wildcards."),
+            Some("Name text the file name contains, or set extensions for its extension."),
+        ),
+    };
+    let error = ProviderError::new(ProviderErrorKind::Validation, message.clone());
+    let failure = GhFailure {
+        next: repair.map(|repair| Box::new(json!({ "repair": repair }))),
+        ..GhFailure::new(error, message)
+    };
+    Some(match hint {
+        Some(hint) => failure.hint(hint),
+        None => failure,
+    })
+}
+
 /// Files each merged search lists per page: GitHub ANDs repeated
 /// `extension:` qualifiers, so each of `k` extensions is its own search of
 /// `ceil(per / k)` files on the same page number.
@@ -142,13 +185,9 @@ fn per_search(query: &GhSearchCodeQuery, per: usize) -> usize {
     per.div_ceil(query.extensions.len().max(1)).max(1)
 }
 
-/// Files per page: the query's, within the contract maximum.
+/// Files per page.
 fn page_size(query: &GhSearchCodeQuery) -> usize {
-    usize_of(query.page_size).min(crate::contracts::query_schema_max(
-        ToolId::GhSearchCode,
-        None,
-        "pageSize",
-    ))
+    clamp_page_size(ToolId::GhSearchCode, None, usize_of(query.page_size))
 }
 
 pub(crate) async fn execute<C: ConditionalCache>(
@@ -167,18 +206,25 @@ pub(crate) async fn execute<C: ConditionalCache>(
         code_output::line_commit(provider, query, context),
     )
     .await;
-    let data = data?;
-    // GitHub code search does not follow renames: an empty scoped search
-    // reruns once against the canonical name, as ghSearchHistory does.
-    // A page past the last holds no files of a search that has results.
-    let past_end = data.fetched == 0 && data.total > 0 && current > data.pages;
-    if data.fetched == 0 && !past_end {
-        match renamed_scope(provider, query, context).await? {
-            Rescope::Renamed(renamed, warnings) => {
+    // GitHub code search does not follow renames: a scoped search a rename
+    // could explain reruns once against the canonical name.
+    if let Some(repo) = query.repo.as_deref()
+        && search_may_be_renamed(&data, |page| page.fetched == 0 && page.total == 0)
+    {
+        match rescope_on_rename(provider, &query.owner, repo, context).await? {
+            Rescope::Renamed {
+                owner,
+                repo,
+                warning,
+            } => {
+                let decode = |error: &dyn std::fmt::Display| {
+                    ProviderError::new(ProviderErrorKind::Decode, error.to_string())
+                };
+                let mut renamed = query.clone();
+                renamed.owner = owner.parse().map_err(|error| decode(&error))?;
+                renamed.repo = Some(repo.parse().map_err(|error| decode(&error))?);
                 let mut output = Box::pin(execute(provider, &renamed, context, security)).await?;
-                for warning in warnings.into_iter().rev() {
-                    push_warning_front(&mut output.data, warning);
-                }
+                push_warning_front(&mut output.data, warning);
                 return Ok(output);
             }
             // The repository check already failed: the empty page's own
@@ -187,6 +233,9 @@ pub(crate) async fn execute<C: ConditionalCache>(
             Rescope::Stands => {}
         }
     }
+    let data = data?;
+    // A page past the last holds no files of a search that has results.
+    let past_end = data.fetched == 0 && data.total > 0 && current > data.pages;
     let more = current < data.pages;
     let mut items = code_output::files(&data.items, query, security)?;
     let mut value = json!({});
@@ -582,53 +631,6 @@ impl SearchPage {
     }
 }
 
-/// What an empty scoped search learned of its repository's name.
-enum Rescope {
-    /// The query re-scoped to the canonical name, with the rename warning.
-    Renamed(Box<GhSearchCodeQuery>, Vec<String>),
-    /// The repository does not exist: the search's not-found failure.
-    Missing(ProviderError),
-    /// The name stands, cannot be checked, or the search is owner-wide.
-    Stands,
-}
-
-/// [`Rescope`] of an empty search's scope.
-async fn renamed_scope<C: ConditionalCache>(
-    provider: &GitHubProvider<C>,
-    query: &GhSearchCodeQuery,
-    context: &RequestContext,
-) -> Result<Rescope, ProviderError> {
-    use crate::tools::gh_shared::CanonicalScope;
-    let Some(scoped) = query.repo.as_deref() else {
-        return Ok(Rescope::Stands);
-    };
-    let (owner, repo) = match crate::tools::gh_shared::canonical_scope(
-        provider,
-        &query.owner,
-        scoped,
-        context,
-        crate::tools::gh_shared::RenameCheck::Metadata,
-    )
-    .await?
-    {
-        CanonicalScope::Renamed(canonical) => canonical,
-        CanonicalScope::Missing(error) => return Ok(Rescope::Missing(error)),
-        CanonicalScope::Stands => return Ok(Rescope::Stands),
-    };
-    let warning = crate::tools::gh_shared::renamed_warning(
-        query.owner.as_str(),
-        scoped,
-        &(owner.clone(), repo.clone()),
-    );
-    let decode = |error: &dyn std::fmt::Display| {
-        ProviderError::new(ProviderErrorKind::Decode, error.to_string())
-    };
-    let mut renamed = query.clone();
-    renamed.owner = owner.parse().map_err(|error| decode(&error))?;
-    renamed.repo = Some(repo.parse().map_err(|error| decode(&error))?);
-    Ok(Rescope::Renamed(Box::new(renamed), vec![warning]))
-}
-
 /// Why a search is empty, with the route that verifies it.
 async fn empty_page<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
@@ -636,11 +638,13 @@ async fn empty_page<C: ConditionalCache>(
     context: &RequestContext,
     output: &mut ToolData,
 ) -> Result<(), ProviderError> {
+    let broader = leads::broaden_search(query, provider.transport.code_search_room(context));
     let value = &mut output.data;
     code_output::empty_scope(
         value,
         &mut output.diagnostics,
         query,
+        broader.is_some(),
         &provider.transport,
         context,
     )
@@ -663,12 +667,87 @@ async fn empty_page<C: ConditionalCache>(
             value["next"]["read"] = read;
         }
     }
-    if let Some(broader) =
-        leads::broaden_search(query, provider.transport.code_search_room(context))
-    {
+    if let Some(broader) = broader {
         value["next"]["broadenSearch"] = broader;
     }
     Ok(())
+}
+
+/// What a `fields` pick always keeps of a code row: its identity (path, and
+/// repository on owner-wide pages) and the facts that qualify its lines
+/// (where else the same evidence sits, how many hits exist, whether the
+/// lines were read at the ref, and the commit they were read at).
+const CODE_ROW_ID: &[&str] = &[
+    "owner",
+    "repo",
+    "path",
+    "alsoAt",
+    "matchCount",
+    "atRef",
+    "lineResolved",
+    "commitSha",
+];
+
+/// Finish a classified provider page after shared sanitization and selection.
+/// Read leads may only name selected evidence; `unfiltered` remains the explicit
+/// route to the original page. Output fields never change the judged evidence.
+fn finish_code_selection(value: &mut serde_json::Value, query: &serde_json::Value) {
+    use serde_json::Value;
+    let mut selected = std::collections::HashSet::new();
+    for file in value["files"].as_array().into_iter().flatten() {
+        let identity = |key: &str| {
+            file[key]
+                .as_str()
+                .or_else(|| value[key].as_str())
+                .or_else(|| query[key].as_str())
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let (owner, repo) = (identity("owner"), identity("repo"));
+        for path in file["path"].as_str().into_iter().chain(
+            file["alsoAt"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str),
+        ) {
+            selected.insert((owner.clone(), repo.clone(), path.to_owned()));
+        }
+    }
+    for group in ["next", "hints"] {
+        if let Some(leads) = value.get_mut(group).and_then(Value::as_object_mut) {
+            leads.retain(|_, lead| {
+                if lead["tool"] != ToolId::GhGetFileContent.as_str() {
+                    return true;
+                }
+                let Some(rows) = lead
+                    .pointer_mut("/query/queries")
+                    .and_then(Value::as_array_mut)
+                else {
+                    return false;
+                };
+                rows.retain(|read| {
+                    let (Some(owner), Some(repo), Some(path)) = (
+                        read["owner"].as_str(),
+                        read["repo"].as_str(),
+                        read["path"].as_str(),
+                    ) else {
+                        return false;
+                    };
+                    selected.contains(&(owner.to_owned(), repo.to_owned(), path.to_owned()))
+                });
+                !rows.is_empty()
+            });
+        }
+    }
+    let fields = query["fields"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    pick_rows(value, "files", CODE_ROW_ID, &fields);
 }
 
 /// This tool's output facts for the shared response stages.
@@ -679,7 +758,7 @@ impl crate::tools::output::ToolOutput for Output {
     }
 
     fn finish_selection(&self, data: &mut serde_json::Value, query: &serde_json::Value) {
-        crate::tools::gh_shared::finish_code_selection(data, query);
+        finish_code_selection(data, query);
     }
 
     fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {

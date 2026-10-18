@@ -82,8 +82,9 @@ npx octocode graph query impact --since main  # blast radius of your branch
 | `skill list\|info\|install\|remove\|check` | Manage the bundled Agent Skills. |
 | `help [command]` | Help for any command (also `--help`, `-h`). |
 
-Output is readable text on a terminal and one JSON line on a pipe or with
-`--json`. Exit `0` includes results with more pages: follow `next.*`.
+Output is readable text on a terminal and JSON on a pipe or with `--json`:
+indented on a terminal, one line on a pipe. Exit `0` includes results with more
+pages: follow `next.*`.
 
 ## Documentation
 

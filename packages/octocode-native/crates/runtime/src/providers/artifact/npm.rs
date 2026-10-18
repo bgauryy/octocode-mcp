@@ -1,16 +1,17 @@
 use super::http::{DnsPin, JSON, NPM_INSTALL_JSON, RegistryClient};
 use super::util::{
-    canonical_repository, commit_sha, date_from_millis, encode_component, endpoint, object_for,
-    required, safe_url, string, total,
+    canonical_repository, commit_sha, encode_component, endpoint, object_for, required, safe_url,
+    string, total,
 };
 use super::versions::{VersionSpec, nearest, npm_resolve};
 use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
     ArtifactType, ResolvedNpmRegistry, TerminalLimit,
 };
+use crate::policy::network::is_public;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
+use std::net::{SocketAddr, ToSocketAddrs};
 use url::{Host, Url};
 
 pub(crate) async fn npm(
@@ -83,8 +84,8 @@ fn registry_target_error() -> ArtifactError {
 /// mixed public/private answer, and is pinned through connect.
 fn validate_registry_target(base: &Url) -> Result<Option<DnsPin>, ArtifactError> {
     match base.host() {
-        Some(Host::Ipv4(ip)) if is_blocked_v4(&ip) => Err(registry_target_error()),
-        Some(Host::Ipv6(ip)) if is_blocked_v6(&ip) => Err(registry_target_error()),
+        Some(Host::Ipv4(ip)) if !is_public(ip.into()) => Err(registry_target_error()),
+        Some(Host::Ipv6(ip)) if !is_public(ip.into()) => Err(registry_target_error()),
         Some(Host::Ipv4(_) | Host::Ipv6(_)) => Ok(None),
         Some(Host::Domain(name)) => {
             let dns_host = name.to_ascii_lowercase();
@@ -127,41 +128,10 @@ fn validate_resolved_addresses(addresses: &[SocketAddr]) -> Result<(), ArtifactE
             "Custom npm registry hostname resolved without any usable address.",
         ));
     }
-    if addresses.iter().any(|address| is_blocked_ip(&address.ip())) {
+    if addresses.iter().any(|address| !is_public(address.ip())) {
         return Err(registry_target_error());
     }
     Ok(())
-}
-
-fn is_blocked_ip(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => is_blocked_v4(v4),
-        IpAddr::V6(v6) => is_blocked_v6(v6),
-    }
-}
-
-fn is_blocked_v4(ip: &Ipv4Addr) -> bool {
-    let octets = ip.octets();
-    ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_unspecified()
-        || ip.is_broadcast()
-        // CGNAT / shared address space 100.64.0.0/10
-        || (octets[0] == 100 && (octets[1] & 0xc0) == 64)
-}
-
-fn is_blocked_v6(ip: &Ipv6Addr) -> bool {
-    let segments = ip.segments();
-    ip.is_loopback()
-        || ip.is_unspecified()
-        // link-local fe80::/10
-        || (segments[0] & 0xffc0) == 0xfe80
-        // unique local (ULA) fc00::/7
-        || (segments[0] & 0xfe00) == 0xfc00
-        // IPv4-mapped/compatible addresses embedding a blocked v4
-        || matches!(ip.to_ipv4_mapped(), Some(v4) if is_blocked_v4(&v4))
-        || matches!(ip.to_ipv4(), Some(v4) if is_blocked_v4(&v4))
 }
 
 pub(crate) fn split_npm_coordinate(package_name: &str) -> (&str, Option<&str>) {
@@ -444,21 +414,25 @@ pub(crate) fn version_not_found(name: &str, requested: &str, versions: &[String]
 fn release_facts(artifact: &mut ArtifactItem, row: &serde_json::Map<String, Value>) {
     // A manifest without `dependencies` declares none. npm also lists each
     // `optionalDependencies` entry under `dependencies`: those are not
-    // required, so they are left out.
+    // required, so they are listed as optional instead.
     let optional = row.get("optionalDependencies").and_then(Value::as_object);
+    let entry = |(name, range): (&String, &Value)| match range.as_str() {
+        Some(range) => format!("{name}@{range}"),
+        None => name.clone(),
+    };
     let declared = |field: &str| -> Vec<String> {
         row.get(field)
             .and_then(Value::as_object)
             .into_iter()
             .flatten()
             .filter(|(name, _)| optional.is_none_or(|optional| !optional.contains_key(*name)))
-            .map(|(name, range)| match range.as_str() {
-                Some(range) => format!("{name}@{range}"),
-                None => name.clone(),
-            })
+            .map(entry)
             .collect()
     };
     artifact.dependencies = Some(declared("dependencies"));
+    artifact.optional_dependencies = optional
+        .map(|optional| optional.iter().map(entry).collect::<Vec<_>>())
+        .filter(|optional| !optional.is_empty());
     // Peers are rare: a version that declares none shows no list (its
     // `dependencies` list already says the manifest was read).
     let peers = declared("peerDependencies");
@@ -485,7 +459,7 @@ fn published_at(row: &serde_json::Map<String, Value>) -> Option<String> {
     tmp.rsplit('_')
         .find(|part| part.len() == 13 && part.bytes().all(|b| b.is_ascii_digit()))
         .and_then(|millis| millis.parse::<i64>().ok())
-        .map(date_from_millis)
+        .map(crate::civil_date::date_millis)
 }
 
 /// The source commit of an npm provenance attestation, accepted only when the
@@ -721,10 +695,10 @@ fn registry_url(base: &Url, path: &str) -> Result<Url, ArtifactError> {
 mod tests {
     use super::super::types::artifact_query;
     use super::{
-        ArtifactSearchQuery, ArtifactType, ResolvedNpmRegistry, is_blocked_v4, is_blocked_v6,
-        validate_registry, validate_resolved_addresses,
+        ArtifactSearchQuery, ArtifactType, ResolvedNpmRegistry, validate_registry,
+        validate_resolved_addresses,
     };
-    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+    use std::net::SocketAddr;
     use url::Url;
 
     fn npm_registry(url: &str) -> ResolvedNpmRegistry {
@@ -753,17 +727,32 @@ mod tests {
         assert_eq!(err.code, "invalidInput");
     }
 
+    /// A custom registry is held to the shared outbound-address policy
+    /// ([`crate::policy::network::is_public`]): an address that is internal,
+    /// reserved, or tunnels one is refused, as a literal host or a DNS answer.
     #[test]
-    fn blocks_private_and_loopback_addresses() {
-        assert!(is_blocked_v4(&Ipv4Addr::new(127, 0, 0, 1)));
-        assert!(is_blocked_v4(&Ipv4Addr::new(10, 0, 0, 5)));
-        assert!(is_blocked_v4(&Ipv4Addr::new(192, 168, 1, 1)));
-        assert!(is_blocked_v4(&Ipv4Addr::new(169, 254, 169, 254)));
-        assert!(is_blocked_v4(&Ipv4Addr::new(100, 64, 0, 1)));
-        assert!(!is_blocked_v4(&Ipv4Addr::new(104, 16, 0, 1)));
-        assert!(is_blocked_v6(&Ipv6Addr::LOCALHOST));
-        assert!(is_blocked_v6(&Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)));
-        assert!(is_blocked_v6(&Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1)));
+    fn a_registry_must_resolve_to_a_public_address() {
+        for internal in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "169.254.169.254",
+            "100.64.0.1",
+            "224.0.0.1",
+            "192.0.2.1",
+            "[::1]",
+            "[fc00::1]",
+            "[64:ff9b::a00:1]",
+            "[2002:c0a8:101::1]",
+        ] {
+            let url = format!("https://{internal}/");
+            let error = validate_registry(&npm_query(Some(&url)), &npm_registry(&url), false)
+                .expect_err(&url);
+            assert_eq!(error.code, "invalidInput", "{url}");
+            let ip = internal.trim_matches(['[', ']']).parse().expect("address");
+            assert!(validate_resolved_addresses(&[SocketAddr::new(ip, 443)]).is_err());
+        }
+        let public = "https://104.16.0.1/";
+        assert!(validate_registry(&npm_query(Some(public)), &npm_registry(public), false).is_ok());
     }
 
     #[test]
@@ -1069,9 +1058,11 @@ mod tests {
     }
 
     /// `dependencies` lists the required ones as `name@range`: npm repeats
-    /// each optional dependency under `dependencies`, and those are left out.
+    /// each optional dependency under `dependencies`, and those are listed
+    /// in `optionalDependencies` instead; a version without optional ones
+    /// shows no such list.
     #[tokio::test]
-    async fn npm_dependencies_are_the_required_ones_only() {
+    async fn npm_optional_dependencies_are_listed_apart_from_required_ones() {
         let mut row = manifest("3.22.0", false);
         row["dependencies"] = json!({"a": "^1.0.0", "@next/swc-darwin-arm64": "15.0.0"});
         row["optionalDependencies"] = json!({"@next/swc-darwin-arm64": "15.0.0"});
@@ -1083,6 +1074,17 @@ mod tests {
             page.artifacts[0].dependencies,
             Some(vec!["a@^1.0.0".to_owned()])
         );
+        assert_eq!(
+            page.artifacts[0].optional_dependencies,
+            Some(vec!["@next/swc-darwin-arm64@15.0.0".to_owned()])
+        );
+        let mut bare = manifest("3.22.0", false);
+        bare["dependencies"] = json!({"a": "^1.0.0"});
+        let http = routes(vec![]).json_for("/zod/3.22.0", JSON, bare);
+        let page = lookup(&http, json!({"packageName": "zod", "version": "3.22.0"}))
+            .await
+            .expect("exact");
+        assert_eq!(page.artifacts[0].optional_dependencies, None);
     }
 
     #[tokio::test]

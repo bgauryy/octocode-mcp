@@ -6,6 +6,7 @@ use super::layout::*;
 use super::types::*;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::Continuation;
 use crate::tools::result::ToolError;
 use octocode_engine::digest::canonicalize_dropping_nulls;
@@ -204,9 +205,7 @@ pub(super) fn fingerprint(
         .optional(Some(stats.match_count.unwrap_or(0)))
         .optional(Some(stats.matched_lines.unwrap_or(0)))
         .optional(Some(
-            stats
-                .files_matched
-                .unwrap_or(u32::try_from(files.len()).unwrap_or(u32::MAX)),
+            stats.files_matched.unwrap_or(u32_of_usize(files.len())),
         ))
         .optional(Some(stats.files_searched.unwrap_or(0)))
         .number(u64::from(stats.capped.unwrap_or(false)))

@@ -32,13 +32,21 @@ fn within_checked(
     execute_structure_within(&query, &paths, &security, cancel, None, budget).expect("listing")
 }
 
+/// The time `Slow` takes at one entry; the small budgets below are fractions
+/// of whole steps, so they cut a fixture walk after a few entries.
+const STEP: Duration = Duration::from_millis(3);
+
+/// A budget no fixture walk spends: its windows are cut by `maxEntries` alone.
+const UNSPENT: Duration = Duration::from_secs(3600);
+
 /// Takes its time at every entry the walk reaches, so a small budget cuts a
-/// fixture walk after a few entries.
+/// fixture walk after a few entries. A late sleep only cuts a window earlier,
+/// which every property under test holds for whatever the timing.
 struct Slow;
 
 impl CancellationCheck for Slow {
     fn check(&self) -> Result<(), String> {
-        std::thread::sleep(Duration::from_millis(15));
+        std::thread::sleep(STEP);
         Ok(())
     }
 }
@@ -134,7 +142,7 @@ fn a_time_cut_listing_resumes_exactly_where_it_stopped() {
         loop {
             windows += 1;
             assert!(windows <= 40, "{operation}: the walk never finishes");
-            let out = within_checked(&root.0, query.clone(), Duration::from_millis(45), &Slow);
+            let out = within_checked(&root.0, query.clone(), STEP * 3, &Slow);
             assert_row_contract(ToolId::StructureSearch, &query, &out);
             chained.extend(listed_entries(&out));
             let Some(next) = out["next"].get("continueWalk") else {
@@ -200,20 +208,33 @@ fn the_ignored_retry_of_a_resumed_window_lists_from_the_start() {
 /// Runs a listing through every window its continuations offer (`continueWalk`
 /// after a time cut, `expandScan` after a `maxEntries` cut), each under the
 /// next budget of `budgets` (the last repeats): timing that cuts one window
-/// early and another late. Returns the rows each window listed.
-fn follow_windows(root: &std::path::Path, start: Value, budgets: &[Duration]) -> Vec<Vec<String>> {
+/// early and another late. Returns the rows each window listed, and how many
+/// windows the time budget cut (`continueWalk`).
+fn follow_windows(
+    root: &std::path::Path,
+    start: Value,
+    budgets: &[Duration],
+) -> (Vec<Vec<String>>, usize) {
     let mut windows = Vec::new();
+    let mut time_cuts = 0;
     let mut query = start;
     loop {
         let budget = budgets[windows.len().min(budgets.len() - 1)];
         assert!(windows.len() < 60, "the walk never finishes: {query}");
-        let out = within_checked(root, query.clone(), budget, &Slow);
+        // Only a budget a window can spend needs the walk slowed down.
+        let cancel: &dyn CancellationCheck = if budget < UNSPENT {
+            &Slow
+        } else {
+            &NeverCancel
+        };
+        let out = within_checked(root, query.clone(), budget, cancel);
         assert_row_contract(ToolId::StructureSearch, &query, &out);
         windows.push(listed_entries(&out));
         assert!(
             out["next"].get("nextPage").is_none(),
             "a fixture window is one page: {out}"
         );
+        time_cuts += usize::from(out["next"].get("continueWalk").is_some());
         let next = out["next"]
             .get("continueWalk")
             .or_else(|| out["next"].get("expandScan"));
@@ -222,7 +243,7 @@ fn follow_windows(root: &std::path::Path, start: Value, budgets: &[Duration]) ->
                 out.get("terminalLimit").is_none(),
                 "the chain ended on a terminal limit: {out}"
             );
-            return windows;
+            return (windows, time_cuts);
         };
         query = next["query"]["queries"][0].clone();
     }
@@ -242,8 +263,8 @@ fn flat_listing(operation: &str, root: &Fixture, extra: Value) -> Value {
 
 #[test]
 fn windows_cut_by_maxentries_and_by_time_never_overlap_whatever_the_timing() {
-    let big = Duration::from_secs(3600);
-    let small = Duration::from_millis(40);
+    let big = UNSPENT;
+    let small = STEP * 8 / 3;
     let schedules: [&[Duration]; 4] = [
         &[big, small, big],
         &[small, big],
@@ -255,6 +276,7 @@ fn windows_cut_by_maxentries_and_by_time_never_overlap_whatever_the_timing() {
         ("files", json!({})),
         ("files", json!({"sort": "path"})),
     ] {
+        let mut time_cuts = 0;
         for max_entries in [2, 3, 5] {
             for budgets in schedules {
                 let root = Fixture::new();
@@ -266,7 +288,8 @@ fn windows_cut_by_maxentries_and_by_time_never_overlap_whatever_the_timing() {
                 };
                 assert_eq!(whole.len(), 9, "{operation}: {whole:?}");
                 start["maxEntries"] = json!(max_entries);
-                let windows = follow_windows(&root.0, start, budgets);
+                let (windows, cuts) = follow_windows(&root.0, start, budgets);
+                time_cuts += cuts;
                 let mut chained = windows.concat();
                 chained.sort();
                 assert_eq!(
@@ -275,6 +298,9 @@ fn windows_cut_by_maxentries_and_by_time_never_overlap_whatever_the_timing() {
                 );
             }
         }
+        // The properties above are about mixed cuts: the small budgets did
+        // cut walks (each entry takes `STEP`, and the budget is a few).
+        assert!(time_cuts > 0, "{operation}: no window was cut by time");
     }
 }
 
@@ -292,7 +318,7 @@ fn a_sorted_listing_cut_by_time_resumes_exactly() {
             all
         };
         start["maxEntries"] = json!(3);
-        let windows = follow_windows(&root.0, start, &[Duration::from_millis(60)]);
+        let (windows, _) = follow_windows(&root.0, start, &[STEP * 4]);
         assert!(windows.len() > 1, "{sort}: the budget never cut the walk");
         let mut chained = windows.concat();
         chained.sort();
@@ -318,7 +344,7 @@ fn a_walk_cut_before_the_rows_an_earlier_window_listed_skips_the_rest_after_it()
         assert_eq!(widen["scanOffset"], 4, "{operation}: {first}");
         // The widened walk is cut after two or three entries, before the four
         // rows the first window listed.
-        let second = within_checked(&root.0, widen, Duration::from_millis(25), &Slow);
+        let second = within_checked(&root.0, widen, STEP * 5 / 3, &Slow);
         let cut = second["next"]["continueWalk"]["query"]["queries"][0].clone();
         let at = cut["walkOffset"].as_u64().expect("resume position");
         assert!(at < 4, "{operation}: {second}");
@@ -339,7 +365,7 @@ fn a_sorted_listing_cut_before_the_rows_an_earlier_window_listed_lists_none_and_
     let mut query = flat_listing("files", &root, json!({"sort": "name"}));
     query["scanOffset"] = json!(4);
     query["maxEntries"] = json!(8);
-    let out = within_checked(&root.0, query.clone(), Duration::from_millis(25), &Slow);
+    let out = within_checked(&root.0, query.clone(), STEP * 5 / 3, &Slow);
     assert_row_contract(ToolId::StructureSearch, &query, &out);
     assert!(listed_entries(&out).is_empty(), "{out}");
     assert_eq!(out["terminalLimit"], true, "{out}");

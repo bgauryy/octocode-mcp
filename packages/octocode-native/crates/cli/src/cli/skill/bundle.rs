@@ -162,8 +162,7 @@ pub(super) fn metadata(text: &str) -> Result<(String, String), String> {
     if !closed {
         return Err("SKILL.md frontmatter is not closed".into());
     }
-    let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(&header.join("\n")).map_err(|error| error.to_string())?;
+    let value = octocode_engine::portable::yaml_to_json(&header.join("\n"))?;
     let name = value["name"]
         .as_str()
         .filter(|name| valid_name(name))
@@ -177,7 +176,6 @@ pub(super) fn metadata(text: &str) -> Result<(String, String), String> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)]
     use super::*;
 
     #[test]

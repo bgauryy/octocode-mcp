@@ -46,22 +46,7 @@ jobs:
           workspaces: packages/octocode-native
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny,cargo-machete
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-      # Same commands as `yarn test:rust`: runtime-napi links only with its test feature.
-      - name: Test
-        run: |
-          cargo test --locked -p octocode-native -p octocode-github -p octocode-io -p octocode-cli -p octocode-runtime-napi --features octocode-runtime-napi/napi-test,octocode-native/dev-unify
-          cargo test --locked -p octocode-engine --all-features
-      - name: Supply chain (deny)
-        run: cargo deny --locked check
-      - name: Unused dependencies
-        run: cargo machete
-      # Contract freshness: regenerate the whole generated Rust types file with
-      # the pinned cargo-typify and byte-compare it, then the config contract.
+          tool: cargo-deny,cargo-nextest,cargo-shear
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
@@ -69,6 +54,21 @@ jobs:
       - run: corepack enable
       - run: yarn install --immutable --mode=skip-build
         working-directory: .
+      # The native package scripts, unchanged: the same commands run locally.
+      - name: Format
+        run: yarn fmt:rust:check
+      - name: Clippy
+        run: yarn lint
+      - name: Test (nextest)
+        run: yarn test:rust
+        env:
+          NEXTEST_PROFILE: ci
+      - name: Supply chain (deny)
+        run: yarn deny
+      - name: Unused dependencies and test targets (shear)
+        run: yarn shear
+      # Contract freshness: regenerate the whole generated Rust types file with
+      # the pinned cargo-typify and byte-compare it, then the config contract.
       - uses: actions/cache@v4
         id: typify
         with:

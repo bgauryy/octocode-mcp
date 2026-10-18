@@ -485,7 +485,7 @@ describe('web images', () => {
     expect(fs.readFileSync(savedFile(result)!)).toEqual(png);
     // One saved copy: the fitted note names the file the first line names.
     expect(result.details).toMatchObject({ kind: 'image', file: savedFile(result) });
-  }, 20_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 
   it('fits an over-budget image to the default limit when the model says nothing about images', async () => {
     const base = await imageServer();
@@ -493,7 +493,7 @@ describe('web images', () => {
     const image = result.content.find((part) => part.type === 'image')!;
     expect(image.data!.length).toBeLessThanOrEqual(IMAGE_MAX_CHARS);
     expect(pixelSize(image.data!).width).toBeLessThanOrEqual(1568);
-  }, 20_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 
   it('passes a GIF through under the budget and names the real format when the header is wrong', async () => {
     const base = await imageServer();

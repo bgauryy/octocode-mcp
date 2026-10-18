@@ -1,5 +1,4 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { cutText } from '../shared/util.js';
 import { httpOrigin, openTab, pageTargets, type BrowserSession, type PageTarget } from './cdp.js';
 import { switchTo } from './session.js';
 
@@ -23,7 +22,7 @@ async function orderedTabs(session: BrowserSession): Promise<PageTarget[]> {
 /** One line per tab, the driven one marked `*`. */
 export async function describeTabs(session: BrowserSession): Promise<string> {
   const tabs = await orderedTabs(session);
-  const lines = tabs.map((tab, index) => `${tab.id === session.targetId ? '*' : ' '} [${index + 1}] ${cutText(tab.title || '(untitled)', 80, { chars: true })} — ${cutText(tab.url ?? '', 120, { chars: true })}`);
+  const lines = tabs.map((tab, index) => `${tab.id === session.targetId ? '*' : ' '} [${index + 1}] ${tab.title || '(untitled)'} — ${tab.url ?? ''}`);
   return `Tabs (${tabs.length}; * = driven):\n${lines.join('\n')}\ntab with index switches to one; tab with url opens a new one.`;
 }
 

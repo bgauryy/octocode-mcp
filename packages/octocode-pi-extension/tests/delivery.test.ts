@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { Delivery, QUEUED_STATUS } from '../src/ui/delivery.js';
+import { Delivery } from '../src/ui/delivery.js';
+import { STATUS } from '../src/shared/status.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 
 function setup(mode = 'tui') {
@@ -12,6 +13,20 @@ function setup(mode = 'tui') {
 const report = (id: string) => ({ customType: 'octocode-agent-report', content: `report ${id}`, display: true, details: { id } });
 
 describe('Delivery', () => {
+  it('paints the new session on start, so a status left on its UI is cleared and the replaced one is not touched', async () => {
+    const t = setup();
+    await t.emit('session_start', {}, t.ctx);
+    await t.emit('agent_start', {}, t.ctx);
+    t.pi.sendMessage(report('a'), { deliverAs: 'steer' });
+    expect(t.ctx.ui.statuses.get(STATUS.queued)).toContain('1 queued');
+    const next = fakeCtx({ cwd: '/x', mode: 'tui' });
+    next.ui.setStatus(STATUS.queued, 'stale');
+    await t.emit('session_start', {}, next);
+    expect(next.ui.statuses.get(STATUS.queued)).toBeUndefined();
+    expect(t.ctx.ui.statuses.get(STATUS.queued)).toContain('1 queued');
+    expect(t.delivery.pending).toBe(0);
+  });
+
   it('passes every message through and tracks only those a run queues', async () => {
     const t = setup();
     await t.emit('session_start', {}, t.ctx);
@@ -27,12 +42,12 @@ describe('Delivery', () => {
     t.pi.sendMessage({ customType: 'x', content: 'plain', display: true, details: undefined }, { deliverAs: 'steer' });
     expect(t.sent).toHaveLength(6);
     expect(t.delivery.pending).toBe(2);
-    expect(t.ctx.ui.statuses.get(QUEUED_STATUS)).toContain('2 queued');
+    expect(t.ctx.ui.statuses.get(STATUS.queued)).toContain('2 queued');
 
     // Pi starts the queued messages: the same details objects come back on message_start.
     for (const entry of t.sent.slice(1, 3)) await t.emit('message_start', { message: { role: 'custom', ...entry.message } }, t.ctx);
     expect(t.delivery.pending).toBe(0);
-    expect(t.ctx.ui.statuses.get(QUEUED_STATUS)).toBeUndefined();
+    expect(t.ctx.ui.statuses.get(STATUS.queued)).toBeUndefined();
     await t.emit('agent_settled', {}, t.ctx);
     expect(t.sent).toHaveLength(6);
     expect(t.ctx.ui.notes).toEqual([]);
@@ -95,7 +110,7 @@ describe('Delivery', () => {
     tui.pi.sendMessage(report('a'), { deliverAs: 'steer' });
     await tui.emit('session_shutdown', {}, tui.ctx);
     expect(tui.delivery.pending).toBe(0);
-    expect(tui.ctx.ui.statuses.get(QUEUED_STATUS)).toBeUndefined();
+    expect(tui.ctx.ui.statuses.get(STATUS.queued)).toBeUndefined();
   });
 
   it('counts the messages it could not re-add and says they were lost', async () => {

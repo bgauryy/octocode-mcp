@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Checkpoints } from '../src/files/checkpoint.js';
 import { inheritCheckpoints } from '../src/files/checkpoint-store.js';
-import { outputDir, privateDir } from '../src/shared/home.js';
+import { outputDir, privateDir, sessionOutputDir } from '../src/shared/home.js';
 import { saveFullOutput } from '../src/shared/spill.js';
 import { tmp } from './helpers.js';
 
@@ -31,6 +31,16 @@ describe.skipIf(process.platform === 'win32')('runtime state is owner-only', () 
     fs.chmodSync(loose, 0o755);
     expect(modeOf(outputDir('pi-loose'))).toBe(0o700);
     expect(modeOf(privateDir(path.join(tmp(), 'a', 'b')))).toBe(0o700);
+  });
+
+  it('makes the session output folder once, and makes it again when it was removed', () => {
+    const folder = sessionOutputDir('output');
+    expect(modeOf(folder)).toBe(0o700);
+    expect(sessionOutputDir('output')).toBe(folder);
+    fs.rmSync(path.dirname(folder), { recursive: true });
+    expect(sessionOutputDir('output')).toBe(folder);
+    expect(modeOf(folder)).toBe(0o700);
+    expect(modeOf(path.dirname(folder))).toBe(0o700);
   });
 
   it('writes spilled output 0600', () => {

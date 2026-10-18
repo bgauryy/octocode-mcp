@@ -416,7 +416,9 @@ fn clipped_secret_guard_fails_closed_when_the_match_line_is_gone() {
 
 /// Without `regex`, text is literal, so `.unwrap()`, an empty group `()`,
 /// `x[0]`, `.get(0)?` and `a|b` find only that text, and an explicit `regex`
-/// always wins. Only an empty literal search mentions the regex reading.
+/// always wins. An empty literal search mentions the regex reading; a page
+/// with hits does only for an alternation that matches more lines
+/// ([`a_literal_alternation_with_hits_names_a_wider_regex_reading`]).
 #[test]
 fn an_unset_regex_reads_every_text_literally() {
     let files = [("a.rs", "x.unwrap();\nunwrap_or(1);\nfoo_unwrap()\n")];
@@ -474,6 +476,56 @@ fn an_unset_regex_reads_every_text_literally() {
             !warned(quiet, "ran as literal text") && !warned(quiet, "ran as a regex"),
             "{quiet}"
         );
+    }
+}
+
+/// A literal page with hits whose text reads as an alternation (`a|b`)
+/// warns, with the regex reading as an executable lead, only when one count
+/// of that reading finds more matched lines; an explicit `regex:"literal"`
+/// and an alternation with an empty side are taken as written.
+#[test]
+fn a_literal_alternation_with_hits_names_a_wider_regex_reading() {
+    let warned = |body: &serde_json::Value| {
+        body["warnings"].as_array().into_iter().flatten().any(|w| {
+            w.as_str()
+                .is_some_and(|w| w.contains("it matches") && w.contains("with regex:"))
+        })
+    };
+    let wider = [("a.txt", "alpha\nbeta\nalpha|beta\n")];
+    let body = search_fixture(
+        &wider,
+        ls_query(serde_json::json!({"matchString": "alpha|beta"}), None),
+    );
+    assert_eq!(body["matchedLineCount"], 1, "{body}");
+    assert!(
+        body["warnings"].as_array().into_iter().flatten().any(|w| w
+            == "matchString ran as literal text (1 matched line); with regex:\"rust\" it matches 3."),
+        "{body}"
+    );
+    let lead = &body["next"]["findSimilar"];
+    assert_eq!(lead["query"]["queries"][0]["regex"], "rust", "{body}");
+    let retried = search_fixture(&wider, ls_query(lead["query"]["queries"][0].clone(), None));
+    assert_eq!(retried["matchedLineCount"], 3, "{retried}");
+    for (files, fields) in [
+        // The regex reading matches no more lines.
+        (
+            [("b.txt", "alpha|beta\nother\n")],
+            serde_json::json!({"matchString": "alpha|beta"}),
+        ),
+        // Literal on purpose.
+        (
+            [("c.txt", "alpha\nalpha|beta\n")],
+            serde_json::json!({"matchString": "alpha|beta", "regex": "literal"}),
+        ),
+        // An empty alternative is not an alternation of terms.
+        (
+            [("d.txt", "alpha|\nalpha\nother\n")],
+            serde_json::json!({"matchString": "alpha|"}),
+        ),
+    ] {
+        let body = search_fixture(&files, ls_query(fields, None));
+        assert!(!warned(&body), "{body}");
+        assert!(body["next"].get("findSimilar").is_none(), "{body}");
     }
 }
 

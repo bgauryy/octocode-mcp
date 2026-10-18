@@ -4,6 +4,7 @@ use super::linking::Linker;
 use super::packages::{PackageIndex, PackageLink};
 use super::types::*;
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::Continuation;
 use crate::tools::result::ToolError;
 use crate::{
@@ -234,7 +235,7 @@ fn discover_facts(
             .map(crate::tools::ast_rule::language_globs),
         ignore: octocode_engine::search::walk::IgnorePolicy::default(),
     };
-    let max_files = q.scan_files().clamp(1, super::topology_max("maxFiles"));
+    let max_files = q.scan_files().clamp(1, super::page::max_files_maximum());
     let discovery = paths.discovery_walk();
     let admit = |path: &Path, file_type| discovery.permits_entry(path, file_type);
     let stop = || cancel.check().is_err();
@@ -1627,8 +1628,8 @@ pub(super) fn scope_too_broad(
     entries: &[String],
     capped: bool,
 ) -> ToolError {
-    let maximum = super::topology_max("maxFiles");
-    let count = u32::try_from(entries.len()).unwrap_or(u32::MAX);
+    let maximum = super::page::max_files_maximum();
+    let count = u32_of_usize(entries.len());
     let over_maximum = capped || count > maximum;
     let last = entries.last().map(String::as_str).filter(|_| capped);
     let walked = |dir: &str| last.is_none_or(|last| walked_past(dir, last));
@@ -1673,7 +1674,7 @@ pub(super) fn scope_too_broad(
     };
     let mut error = ToolError::new("scopeTooBroad", message);
     let continuation = |path: String, max_files: Option<u32>| {
-        let mut query = serde_json::to_value(q).unwrap_or_default();
+        let mut query = crate::tools::result::query_value(q);
         if let Some(object) = query.as_object_mut() {
             object.retain(|_, value| !value.is_null());
             object.insert("path".into(), serde_json::json!(path));
@@ -1809,7 +1810,7 @@ fn anchored_root(q: &AstTopologyQuery, root: &Path, entries: &[String]) -> Optio
             .iter()
             .filter(|entry| entry.starts_with(&prefix))
             .count();
-        let count = u32::try_from(count).unwrap_or(u32::MAX);
+        let count = u32_of_usize(count);
         (count <= SCOPE_ADMISSION_FILES).then_some((dir, count))
     })
 }

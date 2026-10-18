@@ -12,7 +12,7 @@ Load before editing and before reporting done. Changes cross two repos and a gen
 | Change in | Steps |
 |---|---|
 | Core (schema, description, instructions) | edit `CORE` → core `yarn test && yarn lint` → `yarn contracts:regen` at the monorepo root (refreshes the `file:` core **copy**, then regenerates `packages/octocode-config/contract/`) → declare any new field in `field-effect-coverage.json` → native rebuild (build.rs embeds `contract/` in place) |
-| Native runtime / engine | edit → `cargo fmt` + clippy on touched crate → `yarn workspace @octocodeai/octocode-native test:rust` (or nextest) → `yarn workspace @octocodeai/octocode-native build:dev` |
+| Native runtime / engine | edit → `cargo fmt` + clippy on touched crate → `yarn workspace @octocodeai/octocode-native test:rust` (nextest; `bacon test` while editing) → `yarn workspace @octocodeai/octocode-native build:dev` |
 | Config contract | edit `config-contract.json` → `yarn workspace @octocodeai/config generate:config-contract` → native rebuild (build.rs regenerates the struct) |
 | CLI / MCP | `yarn workspace octocode build:dev` / `yarn workspace octocode-mcp build:dev`; MCP tests `test` |
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { COMPACTION_NOTE_TYPE } from '../src/compaction/record.js';
 import { addFileToolOps, registerCompaction } from '../src/compaction/register.js';
 
 const call = (id: string, name: string, queries: unknown[]) => ({ role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: { queries } }] });
@@ -52,7 +53,8 @@ describe('compaction', () => {
 describe('summaries', () => {
   it('leaves /tree summaries to Pi, adds file-tool paths, and lets Pi summarize when there is no model', async () => {
     const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
-    registerCompaction({ on: (name: string, handler: never) => void handlers.set(name, handler) } as never, { restore: () => undefined } as never);
+    const notes: unknown[] = [];
+    registerCompaction({ on: (name: string, handler: never) => void handlers.set(name, handler), appendEntry: (customType: string, data: unknown) => notes.push({ customType, data }) } as never, { restore: () => undefined } as never);
     expect(handlers.has('session_before_tree')).toBe(false);
     const preparation = {
       fileOps: { read: new Set<string>(), written: new Set<string>(), edited: new Set<string>() },
@@ -61,5 +63,6 @@ describe('summaries', () => {
     };
     expect(await handlers.get('session_before_compact')!({ type: 'session_before_compact', preparation, branchEntries: [], signal: new AbortController().signal }, { model: undefined })).toBeUndefined();
     expect([...preparation.fileOps.edited]).toEqual(['todo.txt']);
+    expect(notes).toEqual([{ customType: COMPACTION_NOTE_TYPE, data: { kind: 'default-summary', reason: 'no model is selected for the summary' } }]);
   });
 });

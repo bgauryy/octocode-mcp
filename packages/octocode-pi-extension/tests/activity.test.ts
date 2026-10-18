@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import { Activity, callTarget, registerActivity, shortToolName } from '../src/ui/activity.js';
 import { titledDialog } from '../src/shared/locks.js';
 import { Thought, thoughtGist } from '../src/shared/thought.js';
@@ -313,5 +314,27 @@ describe('registerActivity', () => {
     await fake.emit('ui_prompt_end', {}, ctx);
     await fake.emit('session_shutdown', {}, ctx);
     vi.useRealTimers();
+  });
+});
+
+describe('Activity: the working line stays within its columns', () => {
+  it.each([
+    ['ASCII', 'build the project with a very long command line that goes on and on past the limit'],
+    ['CJK', '漢字のとても長い説明文がここにあって端末の幅を超えてしまうほど長く続きます'.repeat(2)],
+    ['emoji', '🚀🔥✨'.repeat(30)],
+  ])('keeps %s detail inside 70 columns, with the elapsed time at the end', (_name, detail) => {
+    const activity = new Activity();
+    activity.start(0);
+    activity.toolStart('1', 'bash', { command: detail }, 0);
+    const line = activity.describe(125_000)!;
+    expect(visibleWidth(line)).toBeLessThanOrEqual(70);
+    expect(line.endsWith(' · 2m05s')).toBe(true);
+  });
+
+  it('leaves a short ASCII line exactly as written', () => {
+    const activity = new Activity();
+    activity.start(0);
+    activity.toolStart('1', 'bash', { command: 'make test' }, 0);
+    expect(activity.describe(0)).toBe('Running bash make test');
   });
 });

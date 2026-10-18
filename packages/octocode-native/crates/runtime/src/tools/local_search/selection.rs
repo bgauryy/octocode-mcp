@@ -12,6 +12,7 @@ use super::verify::{PageScope, Redacted, verify_candidate};
 use crate::contracts::tool_types::SelectionUnit;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::ToolError;
 use crate::tools::selection::{Candidate, Decision, Failure, Outcome, ProviderError, Runtime};
 use octocode_engine::types::{TextSearchFile, TextSearchResult};
@@ -33,7 +34,7 @@ pub(super) struct Selected {
     /// selection.
     files_before: usize,
     files_kept: usize,
-    /// Hit rows of the groups this candidate page judged, before and after
+    /// Hit rows considered by this candidate page, before and after
     /// selection.
     rows_before: usize,
     rows_kept: usize,
@@ -255,7 +256,7 @@ fn recount(
     if rows_removed == 0 {
         return;
     }
-    let saturate = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    let saturate = |n: usize| u32_of_usize(n);
     let rows_are_occurrences = query.result_view == LocalSearchQueryResultView::MatchOnly
         && query.unique == LocalSearchQueryUnique::Off;
     let one_per_line = stats.match_count.is_some() && stats.match_count == stats.matched_lines;
@@ -374,7 +375,7 @@ impl Selected {
         }
         if self.rows_kept < self.rows_before {
             notes.push(format!(
-                "clasifyContext kept {} of {} judged hit rows ({} of {} files).",
+                "clasifyContext kept {} of {} hit rows ({} of {} files).",
                 self.rows_kept, self.rows_before, self.files_kept, self.files_before,
             ));
         }
@@ -552,6 +553,33 @@ mod tests {
     }
 
     #[test]
+    fn oversized_unknown_group_does_not_claim_its_hits_were_judged() {
+        let root = tempfile::tempdir().expect("fixture");
+        std::fs::write(
+            root.path().join("large.txt"),
+            "needle keep\n".repeat(30_000),
+        )
+        .expect("source");
+        let result = search(root.path(), json!({"contextLines":1}), None).expect("search");
+        let receipt = result.selection.as_ref().expect("receipt");
+        assert_eq!(receipt.unknown_items, 1);
+        assert_eq!(receipt.selected_items, 0);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|note| note.contains("kept 0 of 30000 hit rows"))
+        );
+        assert!(
+            result
+                .warnings
+                .iter()
+                .all(|note| !note.contains("judged hit rows"))
+        );
+        assert!(result.next.as_ref().unwrap().get("unfiltered").is_some());
+    }
+
+    #[test]
     fn each_hit_is_judged_and_counts_describe_the_kept_hits() {
         let root = fixture();
         let result = search(root.path(), json!({}), None).expect("selected search");
@@ -579,7 +607,7 @@ mod tests {
             result
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("kept 2 of 5 judged hit rows (1 of 3 files)")),
+                .any(|warning| warning.contains("kept 2 of 5 hit rows (1 of 3 files)")),
             "{:?}",
             result.warnings
         );

@@ -1,6 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
-
 //! The security path policy withholds a file by its credential
 //! filename pattern or by secret content, never by the name of a directory
 //! above it. One table drives every local tool.

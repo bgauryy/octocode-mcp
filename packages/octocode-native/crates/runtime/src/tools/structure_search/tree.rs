@@ -1,6 +1,9 @@
 use crate::contracts::tool_types::DefaultExcludes;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::Walk;
+use crate::tools::id::ToolId;
+use crate::tools::num::{u32_of, u32_of_usize, usize_of};
+use crate::tools::paging::clamp_page_size;
 use crate::tools::result::ToolError;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
@@ -11,7 +14,6 @@ use serde_json::{Value, json};
 
 use super::Walking;
 use crate::contracts::tool_types::StructureSearchQueryTree;
-use octocode_engine::portable::Visit;
 
 /// Engine-unit views over the generated `tree` query.
 impl StructureSearchQueryTree {
@@ -22,42 +24,36 @@ impl StructureSearchQueryTree {
         self.max_depth.map_or_else(
             || {
                 if self.filtered() {
-                    super::structure_max("maxDepth")
+                    u32_of_usize(
+                        crate::tools::id::query_limits::structure_search::MAX_DEPTH_MAXIMUM,
+                    )
                 } else {
                     1
                 }
             },
-            |depth| u32::try_from(depth.get()).unwrap_or(u32::MAX),
+            |depth| u32_of(depth.get()),
         )
     }
     fn max_entries(&self) -> usize {
         self.max_entries
-            .map_or(super::max_walk() as usize, |limit| {
-                usize::try_from(limit.get()).unwrap_or(usize::MAX)
-            })
+            .map_or(super::max_walk() as usize, |limit| usize_of(limit.get()))
             .min(super::max_walk() as usize)
     }
     fn page(&self) -> usize {
-        usize::try_from(self.page.get()).unwrap_or(usize::MAX)
+        usize_of(self.page.get())
     }
     /// Outline rows (walk order) earlier windows listed.
     fn scan_offset(&self) -> usize {
-        self.scan_offset.map_or(0, |offset| {
-            usize::try_from(offset.get()).unwrap_or(usize::MAX)
-        })
+        self.scan_offset.map_or(0, |offset| usize_of(offset.get()))
     }
     /// Walk entries (walk order) an earlier, time-cut walk inspected.
     fn walk_offset(&self) -> u32 {
-        self.walk_offset
-            .map_or(0, |offset| u32::try_from(offset.get()).unwrap_or(u32::MAX))
+        self.walk_offset.map_or(0, |offset| u32_of(offset.get()))
     }
     /// The caller's page size; `None` pages by the response budget.
     fn page_size(&self) -> Option<usize> {
-        self.page_size.map(|size| {
-            usize::try_from(size.get())
-                .unwrap_or(usize::MAX)
-                .clamp(1, super::structure_max("pageSize") as usize)
-        })
+        self.page_size
+            .map(|size| clamp_page_size(ToolId::StructureSearch, None, usize_of(size.get())))
     }
     /// A name or type filter narrows the listing, so what it skipped may
     /// hold the entries asked for.
@@ -209,6 +205,26 @@ pub fn execute_tree(
             )
         },
     )?;
+    // Without its name filters an unbounded tree would list one level: the
+    // broadened listing keeps the depth this one walked.
+    let mut walked_depth = q.clone();
+    walked_depth.max_depth = std::num::NonZeroU64::new(u64::from(q.walk_depth()));
+    super::broaden_empty(
+        &mut out,
+        &walked_depth,
+        &validated.canonical,
+        |relaxed, walking| {
+            walk_tree(
+                relaxed,
+                &validated.canonical,
+                paths,
+                security,
+                cancel,
+                super::PROBE_HITS,
+                walking,
+            )
+        },
+    )?;
     Ok(out)
 }
 
@@ -233,10 +249,14 @@ fn walk_tree(
     // never silently dropped.
     let show_hidden = q.include_hidden.unwrap_or(false);
     let include = crate::policy::include::include_globs(&q.include);
-    let probe = super::FilterProbe::new(root, &include, &q.extensions, None)?;
     let left = super::WalkLeft::new(root, q.default_excludes.defaults());
-    let discovery = paths.discovery_walk();
-    let filtered = q.filtered();
+    let policy = super::WalkPolicy {
+        bound,
+        discovery: paths.discovery_walk(),
+        probe: super::FilterProbe::new(root, &include, &q.extensions, None)?,
+        show_hidden,
+        filtered: q.filtered(),
+    };
     let mut native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             path: root.to_string_lossy().into_owned(),
@@ -253,45 +273,10 @@ fn walk_tree(
             stop_at_limit: Some(true),
             time_budget: walking.budget(),
             skip_entries: Some(q.walk_offset()),
-            limit: Some(bound.map_or(super::max_walk(), |_| {
-                u32::try_from(requested).unwrap_or(u32::MAX)
-            })),
+            limit: Some(bound.map_or(super::max_walk(), |_| u32_of_usize(requested))),
             ..Default::default()
         },
-        &|path, file_type, visit| {
-            // The root itself stays admitted: a probe out of time lists
-            // nothing under it, never fails.
-            if path != root && bound.is_some_and(|bound| !bound.admits(path, file_type)) {
-                return false;
-            }
-            // Dot entries out of view (no `hidden`) are neither listed nor
-            // counted as withheld or ignored; the ones `includeHidden:true` would
-            // walk (permitted, not ignored, not a pruned directory) are
-            // counted as hidden, and the walk's own dot rule skips them.
-            let name = crate::tools::display_name(path);
-            let dot = name.starts_with('.');
-            let allowed = discovery.permits_entry(path, file_type);
-            // A replayed entry was counted by the window it resumes.
-            let fresh = visit == Visit::Fresh;
-            let unseen = if allowed {
-                super::WalkLeft::unfollowed(path, file_type, filtered)
-            } else {
-                probe.could_list(path)
-            };
-            if fresh && unseen && (show_hidden || !dot) && super::reports_withheld(path) {
-                left.record_withheld(path);
-            }
-            if !allowed {
-                return false;
-            }
-            if dot && !show_hidden {
-                if fresh && !left.excludes(path, file_type) {
-                    left.count_hidden();
-                }
-                return true;
-            }
-            !left.prunes(path, file_type, visit)
-        },
+        &|path, file_type, visit| left.admit(&policy, path, file_type, visit),
         &|| cancel.check().is_err(),
     )
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;

@@ -53,8 +53,10 @@ async function promptSize(options: { subagent: boolean; exclude?: string[] }): P
 // sleep-polled a background subagent for about 25 minutes.
 // +1,100 for the user-requested main-session externalAgent contract: one adapter surface
 // replaces vendor-specific tool descriptions; subagents still exclude it.
-const MAIN_CEILING = 19_000;
-const READ_ONLY_SUBAGENT_CEILING = 11_150;
+// +900 each for the user-requested `archive` tool (840 measured): one tool with a goal and a reason searches and reads
+// every history the session may read, replacing the rg/localSearch recipe; subagents keep it (a core tool).
+const MAIN_CEILING = 19_900;
+const READ_ONLY_SUBAGENT_CEILING = 12_050;
 
 describe('prompt size', () => {
   it('main session', async () => {

@@ -1,4 +1,5 @@
 import { num, type Row } from '../agentdb/rows.js';
+import type { Ask } from './asks.js';
 
 /** The team's records as the rest of the extension sees them, and how they are read from database rows. */
 
@@ -139,6 +140,15 @@ export function toTraffic(row: Row, deliveries: Row[]): Traffic {
           : 'delivered';
   const replyTo = row['reply_to'];
   return { id: num(row['id']), from: String(row['sender']), to: deliveries.map((d) => String(d['recipient'])), text: String(row['body']), at: num(row['created_at']), ...(typeof replyTo === 'number' ? { replyTo } : {}), state };
+}
+
+/** One question to a parent: a `messages` row, with the first reply of the recipient (`reply_id`, `reply_at`, `reply_by`) when there is one. */
+export function toAsk(row: Row): Ask {
+  const answered = typeof row['reply_id'] === 'number';
+  return {
+    id: num(row['id']), text: String(row['body']), askedAt: num(row['created_at']),
+    ...(answered ? { answer: { id: num(row['reply_id']), at: num(row['reply_at']), by: String(row['reply_by']) } } : {}),
+  };
 }
 
 export function toLease(row: Row): Lease {

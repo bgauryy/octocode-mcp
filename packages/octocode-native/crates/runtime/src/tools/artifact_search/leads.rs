@@ -136,10 +136,10 @@ fn copied(query: &ArtifactSearchQuery) -> Map<String, Value> {
 
 /// A failure's one repair lead, when a call fixes it: a discovery page past
 /// the paging range reads the last reachable page (`repair`); an unknown exact
-/// package searches its name as keywords (`broadenSearch`; PyPI has no
-/// search); a missing version reads the nearest published ones, else the
-/// latest (`repair`); a version the ecosystem cannot select reads the
-/// latest (`repair`).
+/// package, or a name that is no exact coordinate of the registry, searches
+/// its name as keywords (`broadenSearch`; PyPI has no search); a missing
+/// version reads the nearest published ones, else the latest (`repair`); a
+/// version the ecosystem cannot select reads the latest (`repair`).
 pub(super) fn with_repair(mut error: ArtifactError, query: &ArtifactSearchQuery) -> ArtifactError {
     // A discovery page past the paging range: the error names the bound and
     // its one repair reads the last page this page size reaches.
@@ -161,8 +161,9 @@ pub(super) fn with_repair(mut error: ArtifactError, query: &ArtifactSearchQuery)
     let mut exact = copied(query);
     exact.insert("packageName".into(), json!(name));
     exact.remove("version");
+    let searchable = error.code == "notFound" || error.searchable_name;
     let lead = match error.code.as_str() {
-        "notFound" if query.artifact_type() != ArtifactType::Pypi => {
+        _ if searchable && query.artifact_type() != ArtifactType::Pypi => {
             exact.remove("packageName");
             exact.insert("keywords".into(), json!([name]));
             Some((

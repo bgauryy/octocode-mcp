@@ -1,6 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used)]
-
 use crate::support;
 
 use std::process::Output;
@@ -1333,4 +1330,44 @@ fn argument_parse_errors_redact_secrets_in_json_and_text() {
         text.ends_with("For more information, try '--help'.\n"),
         "{text}"
     );
+}
+
+/// A JSON query given as an argument is the whole input: the CLI never reads
+/// or waits on stdin, so a caller that keeps stdin open (a pipe from a
+/// long-running producer, an agent harness) does not delay the call.
+#[test]
+fn inline_json_query_never_waits_on_an_open_stdin() {
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let workspace = Workspace::new();
+    workspace.write("note.txt", "alpha\nbeta\n");
+    let query = serde_json::json!({"queries": [{"path": "note.txt", "ranges": ["1-1"]}]});
+    let mut child = workspace
+        .cli()
+        .args(["localFetch", &query.to_string()])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn");
+    // Hold the write end open: a read of stdin would block until it closes.
+    let _held_open = child.stdin.take();
+    let started = Instant::now();
+    let deadline = started + Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("wait") {
+            break status;
+        }
+        let waited = Instant::now() > deadline;
+        if waited {
+            let _ = child.kill();
+        }
+        assert!(
+            !waited,
+            "the CLI waited on stdin although the query was an argument"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "{status}");
 }

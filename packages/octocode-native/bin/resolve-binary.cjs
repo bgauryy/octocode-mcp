@@ -11,7 +11,7 @@
 
 const { join } = require('path');
 const { existsSync } = require('fs');
-const { executableName, getPlatformSuffix } = require('./platform.cjs');
+const { PLATFORMS, executableName, getPlatformSuffix } = require('./platform.cjs');
 
 /**
  * Resolve the absolute path to a compiled native binary for the current
@@ -27,7 +27,7 @@ function resolveNativeBinaryPath(binary = 'octocode') {
     const key = `${process.platform}-${process.arch}`;
     throw new Error(
       `${binary}: unsupported platform '${key}'.\n` +
-        'Supported: darwin arm64/x64, Linux arm64 GNU, Linux x64 GNU/musl, Windows x64'
+        `Supported: ${Object.keys(PLATFORMS).join(', ')}`
     );
   }
 

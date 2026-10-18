@@ -25,6 +25,19 @@ const SCRATCH_MAX_AGE_MS = 7 * DAY_MS;
 /** `<workspace>/.octocode/tmp/agents`: one folder per subagent for the files it hands back. */
 export const scratchRoot = (cwd: string) => path.join(workspacePaths(cwd).tmp, 'agents');
 
+/**
+ * Names whose scratch folder exists. A name is a subagent's identity: its scratch folder holds its saved conversation
+ * (`session/`), which Pi reopens for the same session id. A new subagent must not take one of these names, or it would
+ * continue another agent's conversation; the folder is kept (it is that agent's evidence) until the sweep removes it.
+ */
+export function scratchNames(cwd: string): string[] {
+  try {
+    return fs.readdirSync(scratchRoot(cwd));
+  } catch {
+    return [];
+  }
+}
+
 /** File in a scratch folder naming the Pi process that started the subagent: its pid, then its start time (so a reused pid is not mistaken for it). */
 const OWNER_FILE = '.owner';
 

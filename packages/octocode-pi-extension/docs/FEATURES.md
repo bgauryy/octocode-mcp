@@ -1,200 +1,790 @@
 # Feature reference
 
-Detailed behavior of every Octocode for Pi feature. Start with the [README](../README.md) for an overview; configuration lives in [CONFIGURATION.md](CONFIGURATION.md) and the external API in [API.md](API.md).
+Behavior of every Octocode for Pi feature. The [README](../README.md) has the overview and commands. Other owners: [CONFIGURATION.md](CONFIGURATION.md) (variables, file locations, trust, hook and profile formats), [API.md](API.md), [COMPACTION.md](COMPACTION.md) and [CONTEXT-AND-COST.md](CONTEXT-AND-COST.md) (compaction, archive of compacted history, prompt cache, repeated reads, cost).
 
 ## File tool
 
-One `file` tool replaces Pi's `edit` / `write`: batched edit / write / delete queries, each with a reasoning line, running on Pi's own engines (exact-match edits, diffs). At session start `file` replaces `edit` / `write` once, unless `--tools` or the `defaultTools` setting names them. A `write` or `delete` of a file that moved on disk since the agent read it with `read` (or last changed it with `file`) is refused until it is read again, and so is any change to a file whose read left the context (a rewind, compaction or `/tree` move): size, mtime, ctime and inode are compared, and when the content the agent saw is known (a whole-file `read`, or the tool's own last write) its SHA-256 too. Reads through MCP tools are not tracked: the extension does not depend on any server's tool shapes. A change to an existing file the agent never read this session is refused too (new files are fine). An `edit` of a file that changed on disk since the read checks each `oldText` against the current bytes and applies when each matches exactly once; otherwise it names the lost or ambiguous anchor and asks for a fresh read. Those outside changes were never seen, so a later `write` or `delete` of that file needs a fresh read. A `delete` needs only a read of the current file that is not stale. A `write` needs every line seen, in one read or in several ranges of an unchanged file (an image read counts as whole). An `edit` keeps what the earlier reads showed: a partial read stays partial, and its ranges stay only when the edit left the file's line count unchanged (otherwise the reads start over), so a `write` after it still needs every line seen; the tool's own `write` counts as a whole read. A read of a file that changed on disk starts the coverage over: only that read's lines count. A refusal names the first unseen line and the `offset` to read from, so it never asks for a whole read a big file cannot give. A path outside the repository root (the realpath'd git root) is a `file.outside` [permission](#permissions) ask; a session started in `~`, a folder above it or `/` has no workspace, so every path is outside it (see [Permissions](#permissions)). Anything under the Octocode home (`~/.octocode`, including `pi-trust.json`) is always refused, in every mode (an [invariant](#permissions)). Writes are atomic (sibling temp file, fsync, rename, directory fsync), keep the file's mode, write through symlinks, and fail if the file no longer holds the bytes that were checked.
+One `file` tool takes batched `edit`, `write` and `delete` queries, each with a reasoning line. At session start it replaces Pi's `edit` and `write` once, unless `--tools` or the `defaultTools` setting names them.
+
+**Read before you change.** A change that could overwrite unseen content is refused, naming the first unseen line and the `offset` to read from. Reads through MCP tools are not tracked: use `read`.
+
+| Change | Needs |
+| --- | --- |
+| Existing file | A read this session (new files are fine) |
+| `write` | Every line seen, in one read or ranges of an unchanged file (an image read counts as whole) |
+| `delete` | A current read |
+| `edit` of a file changed since the read | Each `oldText` matches the current bytes exactly once, else the refusal names the lost or ambiguous anchor. A later `write` or `delete` needs a fresh read |
+| Read left the context (rewind, compaction, `/tree` move) | A fresh read |
+
+Staleness compares size, mtime, ctime, inode and, when known, SHA-256. An `edit` keeps earlier coverage (a partial read stays partial; ranges survive only if the line count is unchanged); the tool's own `write` counts as a whole read; a read of a file changed on disk restarts coverage.
+
+**Paths.** A path outside the repository root (realpath of the git root) is a `file.outside` [permission](#permissions) ask. Anything under the Octocode home (`~/.octocode`, including `pi-trust.json`) is refused in every mode.
+
+**Writes** are atomic (temp file, fsync, rename, directory fsync), keep the file mode, write through symlinks, and fail if the file no longer holds the checked bytes.
 
 ## Bash
 
-Replaces Pi's `bash` (honoring Pi's `shellPath` and `shellCommandPrefix` settings, foreground and background) with the same streaming output and live `Elapsed` timer, plus a deadline: a waited-for command is stopped after 15 minutes unless its `timeout` argument sets another, shorter or longer up to 3,600 s (the call line shows it; a longer `timeout` is clamped and the result says so, whether the command ends, times out or fails some other way, an abort included: use `background: true` for longer), so a server, watcher or prompt never hangs the turn. Esc and the deadline send SIGTERM to the command's process tree, then SIGKILL after 0.5 s. Processes a command leaves running in its group (`server &`) are not stopped: the result names them and how to stop them. `background: true` starts the command as a job in its own process group and returns at once with its id, pid and log file (`<Octocode home>/agent/pi/sessions/<session>/bash/`); the exit status, run time and the last 40 lines (with the count of earlier lines in the log, and, when the log rotated at its size cap, where the earlier part is and that anything older was dropped) arrive later as a message that wakes an idle session. Background jobs have no deadline unless the call gives a `timeout`; job output reaches its log through pipes and only Pi writes it, so a log past 16 MB moves to `<log>.1` (replacing the previous one) and a new log starts with a note naming it, losing or reordering nothing in between (the browser console log rotates the same way; a multibyte character split across two reads of a job's output that straddle a rotation is split across the two files); the status bar counts them; `/octocode jobs` lists them with their elapsed time, `/octocode jobs kill <id>` stops one, and all are stopped when the session ends, each reported first without waking the session (a resumed session's brief names any job that never reported, e.g. after a crash). Jobs a crashed Pi left running are stopped at the next start, with a notice naming their logs; jobs a `/reload` stopped are named after it. In print, JSON and subagent runs, which end with the agent's run, jobs with a timeout are waited for and jobs without one are stopped at the end of the run; either way their report arrives as one more turn instead of being lost. That wait has no time cap of its own (timed jobs end at their timeout, background subagents at their idle watchdog); an interrupt ends it. When output is truncated, Pi's full-output file is moved from the temp dir into the same folder; logs older than 30 days are swept (see [Retention](CONFIGURATION.md#retention)).
+Replaces Pi's `bash` (honors `shellPath` and `shellCommandPrefix`; same streaming output and `Elapsed` timer) and adds a deadline and background jobs.
 
-## Bash safety
+```mermaid
+flowchart TD
+  C[bash call] --> B{background?}
+  B -- no --> T["Deadline"]
+  T --> R[Run in own process group]
+  R --> X{Exit, Esc or deadline}
+  X -- exit --> S{"Group still alive?"}
+  S -- yes --> N["Result names strays + kill command"]
+  S -- no --> D[Result]
+  X -- "Esc or deadline" --> K["SIGTERM tree, SIGKILL after 0.5 s"]
+  K --> D
+  B -- yes --> J["Return id, pid, log"]
+```
 
-A flag for common accidents, not a security boundary: it reads the command's words, so quoting and variable tricks get past it. A `bash` or `powershell` call it flags is a `shell.destructive` [permission](#permissions) ask in `manual` and `workspace`; in `full` it runs, with a [git snapshot](#snapshots) and a ⚠ audit entry. It flags `rm -r` and other removals (`rmdir`, `unlink`, `shred`) of `/`, home, a system folder or `~/.ssh` (relative targets resolve against the working directory, which a `cd` earlier in the command moves; `~/.`, `$HOME/..` and `/usr/..` count as the root or home they reach, and `--no-preserve-root` counts), `chmod -R` and `chown -R` on those places, `find … -delete` and `-exec rm` from them, writes to a disk device (`dd of=/dev/…`, `> /dev/sda`, `tee`, `truncate`, `cp`/`mv` onto one), `mkfs`, `newfs`, `diskutil erase…`, `shutdown`, `reboot`, `halt`, `poweroff` and a fork bomb. It sees through `&&`, `;`, pipes and `$(…)`, wrappers (`sudo`, `env`, `timeout`, `nice`, `xargs`, `stdbuf`, …), `sh|bash|zsh -c` scripts, `eval`, and heredoc or herestring bodies fed to a shell. A command you type with `!` runs in Pi's bash shell (Git Bash on Windows, not PowerShell) and is classified by the bash rules. A `PreToolUse` hook that blocks it refuses it in every mode (audited, naming the hook); a hook's `ask` is a `hook.ask` ask.
+| Limit | Value |
+| --- | --- |
+| Foreground deadline | 15 min unless `timeout` is given; above 3,600 s it is clamped and the result says so |
+| Background deadline | None unless the call gives `timeout` |
+| Job log | `<Octocode home>/agent/pi/sessions/<session>/bash/`; past 16 MB it moves to `<log>.1` (replacing the previous) and the new log names it. The browser console log rotates the same way |
+| Job report | Exit status, run time, last 40 lines, as a message that wakes an idle session |
 
-On Windows, PowerShell is classified from its parse tree by the [Windows helper](#windows-helper) (aliases, `-Command` and `-EncodedCommand` unwrapping, `cmd /c`, `Remove-Item -Recurse` on a protected place, `Format-Volume`, `Stop-Computer`, …). cmd switches are read as a cluster in any case (`rd /s/q x`, `del /f/s/q x`, `cmd /d/c "rd /S /Q x"`), a command behind `if`, `for`, `@`, a parenthesis or `^` is still seen, an array argument (`Remove-Item -Recurse .\build, C:\Users\me`) is checked target by target, and `..` segments and the `\\?\` prefix are resolved before a target is compared with the protected places. A command whose name is computed (`& $tool`) is not judged. The flag stays advisory, not a security boundary. A script that does not parse, or a machine with no usable PowerShell, counts as `shell.destructive`: the flag errs toward asking.
+Pi's full-output file for truncated output moves into the same folder; logs are swept ([Retention](CONFIGURATION.md#retention)).
 
-The environment is passed through unchanged.
+```mermaid
+stateDiagram-v2
+  [*] --> Running: background true
+  Running --> Reported: exit or timeout, wakes idle session
+  Running --> Stopped: jobs kill, or session end or reload, reported without waking
+  Running --> Orphaned: Pi crashed
+  Orphaned --> Stopped: next start stops it, notice names the log
+  Reported --> [*]
+  Stopped --> [*]
+```
+
+- `/octocode jobs` lists jobs (the status bar counts them); `/octocode jobs kill <id>` stops one. A resumed session's brief names a job that never reported.
+- Print, JSON and subagent runs wait for jobs with a timeout and stop those without one at run end; the report arrives as one more turn. That wait has no time cap; an interrupt ends it.
+
+### Bash safety
+
+A flag for common accidents, not a security boundary: it reads the command's words, so quoting and variable tricks pass. A flagged `bash` or `powershell` call is a `shell.destructive` [permission](#permissions) ask in `manual` and `workspace`; in `full` it runs with a [git snapshot](#snapshots) and a ⚠ audit entry.
+
+Flagged:
+
+- `rm -r` of `/`, home or a folder holding it; any `rm`, `rmdir`, `unlink`, `shred` in `/usr`, `/etc`, `/bin`, `/sbin`, `/lib`, `/boot`, `/System` or `~/.ssh`. Relative targets resolve against the working directory (an earlier `cd` moves it); `~/.`, `$HOME/..` and `--no-preserve-root` count.
+- `chmod -R`, `chown -R`, `chgrp -R` on those places; `find … -delete` or `-exec rm` from them.
+- Writes to a disk device (`dd of=/dev/…`, `> /dev/sda`, `tee`, `truncate`, `wipefs`, `blkdiscard`, `cp`, `mv`), `mkfs`, `newfs`, `diskutil erase…`, `shutdown`, `reboot`, `halt`, `poweroff`, a fork bomb.
+
+It sees through `&&`, `;`, pipes, `$(…)`, wrappers (`sudo`, `env`, `timeout`, `nice`, `xargs`, `stdbuf`, …), `sh|bash|zsh -c`, `eval` and heredoc or herestring bodies fed to a shell. A command you type with `!` runs in Pi's bash shell (Git Bash on Windows) under the same rules. A `PreToolUse` hook that blocks refuses the call in every mode (audited, naming the hook); a hook's `ask` is a `hook.ask` ask.
+
+On Windows the [helper](#windows-helper) parses PowerShell:
+
+- Flagged: aliases, `-Command`, `-EncodedCommand`, `cmd /c`, `Remove-Item -Recurse` on a protected place, `Format-Volume`, `Stop-Computer`.
+- cmd switches read as a cluster (`rd /s/q x`); `..` and `\\?\` resolve before comparing with protected places; arrays are checked per target.
+- Not judged: a computed name (`& $tool`). A script that does not parse, or no usable PowerShell, counts as `shell.destructive`.
 
 ### Windows helper
 
-On Windows, one `pwsh` (else Windows PowerShell) per Pi process starts on first use and does two jobs: it owns a Job Object for each bash command, background job and subagent, so their whole tree ends when the owner stops or Pi dies (kill-on-close), and it parses PowerShell for the classifier above. It exits when its stdin closes. Windows looks in the current folder before PATH for a bare program name, so a repository file named `powershell.exe` would run before any permission ask; therefore the helper's shells and `taskkill` start by absolute path (`%SystemRoot%\System32\…`, else `%windir%`, else `C:\Windows`; `pwsh` only from an absolute PATH folder that is not the current folder). It fails closed: with no usable shell, a crash or a timeout, a request answers "no". Known gaps: a grandchild started before it joined the job is not in it, nor is a process made through `Win32_Process.Create`.
+One `pwsh` (else Windows PowerShell) per Pi process starts on first use. It owns a Job Object per bash command, background job and subagent, so the tree ends when the owner stops or Pi dies, and it parses PowerShell for the classifier. Shells and `taskkill` start by absolute path, so a repository file named `powershell.exe` cannot run before a permission ask. It fails closed: no usable shell, a crash or a timeout answers "no". Not in the job: a grandchild started before it joined, and a `Win32_Process.Create` process.
 
 ## Checkpoints
 
-A turn is one user prompt (typed or sent over RPC); runs woken by team messages or job reports are not turns of their own. Before `file` first changes a path in a turn, its bytes are saved under `<Octocode home>/agent/pi/sessions/<session>/checkpoints/` (content-addressed; files over 8 MiB are skipped with a note; at most 256 entries / 128 MiB per session, oldest turns dropped first; removed with the session's folder, see [Retention](CONFIGURATION.md#retention)). `/octocode rewind [turns]` (default 1) restores the last turns newest first, but only files still exactly as the agent left them; files changed since (by you, bash or a peer) are listed and left alone, with their checkpoints kept; a file whose restore stopped at an older change is reported as partly restored and its checkpoint stays, so rewinding again retries it. `/fork` offers the same restore for the turns after the fork point, and so does `/tree` when navigating away from turns that changed files. Shell writes are not checkpointed.
+A turn is one user prompt (typed or over RPC); runs woken by team messages or job reports are not turns.
+
+```mermaid
+flowchart TD
+  F["file changes a path"] --> C{"First change to it this turn?"}
+  C -- yes --> V["Save its bytes"]
+  C -- no --> A[Apply]
+  V --> A
+  A --> U["rewind N, fork, or /tree away"]
+  U --> M{"File as the agent left it?"}
+  M -- yes --> Rs[Restore]
+  M -- no --> Sk["Listed, left alone, checkpoint kept"]
+  Rs --> Pt{"Stopped at an older change?"}
+  Pt -- yes --> Pa["Partly restored; rewind again retries"]
+```
+
+| Limit | Value |
+| --- | --- |
+| Location | `<Octocode home>/agent/pi/sessions/<session>/checkpoints/` (content-addressed) |
+| Per file | 8 MiB; larger files are skipped with a note |
+| Per session | 256 entries (a file's first change per turn), 128 MiB; oldest turns dropped first. A turn past either cap saves no more files and says so |
+
+`/octocode rewind [turns]` (default 1) restores newest first. `/fork` offers the same restore for turns after the fork point, and `/tree` when you navigate away from turns that changed files. Shell writes are not checkpointed. Retention: [Retention](CONFIGURATION.md#retention).
 
 ## Permissions
 
-One permission mode decides which agent actions run and which ask you first. Every ask goes through one helper, in one dialog queue. **`full` is the default**: nothing asks, and every decision is recorded (see [Audit](#audit)). Use `manual` or `workspace` to be asked.
+One mode decides which agent actions run and which ask first, through one helper and one dialog queue. **`full` is the default**: nothing asks and every decision is recorded ([Audit](#audit)). Use `manual` or `workspace` to be asked.
+
+```mermaid
+flowchart TD
+  E[tool_call] --> G1["1 Invariants: peer reservations"]
+  G1 -- refused --> BL[Block + audit]
+  G1 --> G2["2 PreToolUse hooks"]
+  G2 -- "deny or exit 2" --> BL
+  G2 --> G3["3 Octocode home refusal, classify"]
+  G3 -- "home path" --> BL
+  G3 --> PV["Provenance and hook ask add reasons"]
+  PV --> MX{"Mode matrix + reasons"}
+  MX -- allow --> OK[Run + audit]
+  MX -- ask --> GR{"Session grant covers it?"}
+  GR -- yes --> OK
+  GR -- no --> UI{"UI available?"}
+  UI -- no --> BL
+  UI -- yes --> DLG["Dialog: once, session, kind, deny"]
+  DLG -- allow --> OK
+  DLG -- "deny or dismiss" --> BL
+```
+
+The first block wins. A hook's `ask` joins the permission step, so a call a hook would deny never asks you. Tools holding data only they have (`file` review, memory scope, a web URL's host, upload paths, subagent profile) run the same check inside `execute`, so nothing asks twice.
 
 | Action | `manual` | `workspace` | `full` |
 | --- | --- | --- | --- |
-| Reads in the repository, read-only MCP (Octocode research), `askUser`, `backlog`, `coordinate`, `sendMessage`, `memory` | run | run | run |
+| Reads in the repository, read-only MCP, `askUser`, `backlog`, `coordinate`, `sendMessage`, `memory`, `archive` | run | run | run |
 | Reads outside the repository (`read`, `grep`, `find`, `ls`) | ask | run | run |
 | File changes in the repository (`file`, Pi's `edit`/`write`) | ask (the review) | run | run |
-| File changes outside the repository, and repository files that run in later sessions (`.git/`, `.pi/`, `.claude/`, `.codex/`, `.agents/`, `.octocode/hooks.json`, `.octocode/agents/`, `.octocode/skills/` at the root; `.git/hooks`, `.husky`, `.github/workflows`, `.vscode/tasks.json` and `.envrc` at any depth) | ask | ask | run |
+| File changes outside the repository, and repository files that run in later sessions: `.git/`, `.pi/`, `.claude/`, `.codex/`, `.agents/`, `.octocode/hooks.json`, `.octocode/agents/`, `.octocode/skills/` at the root; `.git/hooks`, `.husky`, `.github/workflows`, `.vscode/tasks.json`, `.envrc` at any depth | ask | ask | run |
 | Shell (`bash`, `powershell`) | ask | run | run |
-| Shell commands the [guard](#bash-safety) flags as destructive (`shell.destructive`) | ask | ask | run |
-| `web` fetch and search; `browser` navigation (`navigate`, a `tab` that opens a URL) and page actions | ask | run | run |
+| Shell the [guard](#bash-safety) flags (`shell.destructive`) | ask | ask | run |
+| `web` fetch and search; `browser` navigation and page actions | ask | run | run |
 | `web` or `browser` to a private, loopback, link-local or metadata host (`net.private`) | ask | ask | run |
-| `browser` `evaluate`, `attach` and `upload` (`browser.control`); an `upload` of files from outside the workspace is also `upload.outside` | ask | ask | run |
-| MCP tools that are not read-only (`mcp.write`); those annotated `destructiveHint` (`mcp.destructive`) | ask | run / ask | run |
-| Starting a subagent (`agent`) or connecting/prompting an external agent (`externalAgent`) | ask | run | run |
-| A PreToolUse or PreMessageSend hook's `permissionDecision: "ask"` (reason `hook.ask`) | ask | ask | run |
-| A provenance hit (reason `provenance`) | ask | ask | run |
-| A profile that declares `permissions:` (reason `profile.permissions`) | ask | ask | run |
+| `browser` `evaluate`, `attach`, `upload` (`browser.control`); `upload` from outside the workspace is also `upload.outside` | ask | ask | run |
+| MCP tools not read-only (`mcp.write`); with `destructiveHint` (`mcp.destructive`) | ask | run / ask | run |
+| `agent`, `externalAgent` | ask | run | run |
+| Hook `permissionDecision: "ask"` (`hook.ask`), provenance hit (`provenance`), profile that declares `permissions:` (`profile.permissions`) | ask | ask | run |
 
-**No workspace.** A session started in `~`, a folder above it or `/` has no workspace. Every file path is then outside it: a change is a `file.outside` ask and a read is `read.outside` (the matrix says which modes ask), and a browser `upload` is `upload.outside`. `full` is unchanged.
+- **Start mode.** Every session start (new, resume, fork, reload) applies `OCTOCODE_PERMISSION=manual|workspace|full` (default `full`) and drops session grants; an invalid value starts in `manual` with a warning. Keep an untrusted repository in `manual`, or in a container.
+- **History reads.** History in scope (the session's own archive, its fork sources', its parent's, and its repository's other sessions) counts as in the workspace for `read`, `grep`, `find`, `ls` and read-only MCP tools; another repository's session folders ask as `read.outside` ([COMPACTION.md](COMPACTION.md#in-subagents)).
+- **No workspace** (`~`, a folder above it, `/`): every path is outside (`file.outside`, `read.outside`, `upload.outside`). `full` is unchanged.
+- **Without a UI** (print, JSON) every ask is denied, telling the agent not to retry and to ask the user or start Pi with the `OCTOCODE_PERMISSION` value that allows it. A UI-less `full` run prints a stderr banner at start and a summary at the end.
 
-**Start mode.** Every session starts in `full`, unless you exported `OCTOCODE_PERMISSION=manual|workspace|full`; an invalid value starts in `manual` with one warning. Every session start (new, resume, fork, reload) re-applies that configured start mode and drops the session grants. In `full`, nothing the matrix lists asks. Stricter modes are opt-in, so a repository you do not trust belongs in `manual`, or in a container.
+**Integrity invariants** protect correctness, coordination or your own trust decision: they hold in every mode, never ask, and refusals are audited.
 
-**Integrity invariants.** These protect correctness, coordination or your own trust decision, not policy, so they hold in every mode and never ask. A refusal says what to do and is audited.
+| Invariant | Enforced by |
+| --- | --- |
+| No `file`, `edit` or `write` into the Octocode home (shell is not parsed for it) | permission gate |
+| No change to unread files, to files a `write` has not fully seen, or changed on disk since (an `edit` applies if each `oldText` matches once); no copied elision or truncation notes | `file` tool |
+| Peer reservations (Pi's team and agents-communication) | reservation gate ([Team](#team)) |
+| `browser` `attach` only to a loopback DevTools endpoint on the requested port | CDP connection |
+| Page-initiated requests to private addresses | [Web and browser](#web-and-browser) |
+| An untrusted project cannot save, change or delete global or pinned memory | `memory` tool |
+| A hook's deny, and a `"failClosed": true` hook that fails | [Hooks](#hooks-opt-in) |
 
-| Invariant | Where | Why it is not a permission |
-| --- | --- | --- |
-| No `file`, `edit` or `write` into the Octocode home (`~/.octocode`, including `pi-trust.json`) | the permission gate | Protects the trust store, profiles and journals. Shell commands are not parsed for it; the profile-grant prompt covers that path |
-| A change to a file the agent did not read, whose lines a `write` has not all seen, or that changed on disk since (an `edit` still applies when each `oldText` matches once); elision and truncation notes copied into a change | the `file` tool | Prevents overwriting content nobody saw |
-| Peer reservations, in Pi's team and in agents-communication | the reservation gate ([Team](#team)) | Coordination between agents |
-| `browser` `attach` only to a loopback DevTools endpoint on the requested port | the CDP connection | Refuses a foreign endpoint |
-| Requests a page makes (images, scripts, frames, redirects, workers) to private addresses are blocked, with no prompt | [Web and browser](#web-and-browser) | The page chose them, not the agent |
-| An untrusted project cannot save, change or delete global or pinned memory | the `memory` tool | Follows your own trust decision for the repository |
-| A PreToolUse or PreMessageSend hook's deny, and a hook that fails when it has `"failClosed": true` | [Hooks](#hooks-opt-in) | It is your own rule |
+**Asking reasons.** A provenance hit, a hook `ask` and declared profile permissions tighten a call. In `manual` and `workspace` one dialog names the effect and each reason (`shell · provenance · workspace mode asks`) and one yes covers the call; in `full` the audit records each. A session grant never covers a tightened call; a hook's `allow` skips no ask; a destructive MCP hint beats a read-only one.
 
-**Asking reasons.** A provenance hit, a hook's `ask` and a profile's declared permissions tighten a call: in `manual` and `workspace` the one dialog names the effect and each reason that asks (`shell · provenance · workspace mode asks`), and one yes covers the call. In `full` no reason asks, and the audit entry records each. A session grant never covers a tightened call, and a call with no effect class still asks when a reason forces it (`Run read?`). A hook's `allow` skips no ask. A destructive MCP hint takes precedence over a contradictory read-only hint.
+**The dialog** shows the whole command, path, URL or arguments and an effect card computed from the call, not from the agent: effect, how to undo it, why it asks, risk (`unknown` if not ready in time). The agent's stated purpose comes last, marked `(unverified)`.
 
-**The dialog.** Each ask names the action, exactly what it would do (the whole command, path, URL or arguments: nothing runs that was not on screen) and a short effect card computed from the call, not taken from the agent: the effect, how to undo it, why it asks, and the risk (`unknown` when a line is not ready in time). What the agent says it is for comes last, marked `(unverified)`. The choices are Allow once; Allow *exactly this* for the session; Allow all *&lt;kind&gt;* for this session; Deny; or Deny and tell the agent why. A reason that forces the ask leaves Allow once, Deny, and Deny and tell the agent why. Your note reaches the agent with the refusal. A queued call rechecks newly granted permissions before opening another dialog. A reply that matches no offered choice decides nothing. Dismissing or interrupting a dialog, including its feedback input, cancels the action; it is not a rejection.
+| Choice | Notes |
+| --- | --- |
+| Allow once | Always |
+| Allow *exactly this* for the session; Allow all *&lt;kind&gt;* for this session | Not for a forced ask |
+| Deny | |
+| Deny and tell the agent why | The note reaches the agent with the refusal |
 
-An exact session grant identifies one simple shell command together with its shell tool and working directory, a folder (exactly that folder, not its subfolders), a host, one kind of browser page action, an MCP tool, or a subagent profile with its precise reach. Compound commands have no exact grant. `shell.destructive`, `browser.control` and `mcp.destructive` asks, and calls a reason tightens or that carry two classes, offer no session grant. Broad grants such as "Allow all shell commands for this session" are explicit choices. *Allow all file changes outside the workspace* also covers repository files that run in later sessions, since both share one kind. `/octocode permission grants` lists grants and `grants clear` drops them.
+A queued call rechecks newly granted permissions first. Dismissing or interrupting cancels the action; it is not a rejection.
 
-In `manual`, the `file` review lists each change and its reasoning, then offers Apply all, Allow all file changes in the repository for this session, Review one by one, or Reject all. You can attach feedback to the whole rejected batch or an individual rejected change. Rejected changes fail with "do not retry" and the feedback; accepted changes are applied after the review finishes. Dismissing an unfinished review cancels the entire batch before any changes are applied.
+**Session grants.** An exact grant names one simple shell command (with tool and working directory), a folder, a host, one kind of browser page action, an MCP tool, or a subagent profile with its reach; compound commands have none. `shell.destructive`, `browser.control`, `mcp.destructive`, tightened and two-class calls offer none. *Allow all file changes outside the workspace* also covers repository files that run in later sessions. `/octocode permission grants` lists; `grants clear` drops.
 
-**Switching.** Shift+Tab in the editor cycles `full` → `workspace` → `manual` → `full` (TUI only); Tab retains its usual completion and selector behavior. This overrides Pi's default thinking shortcut only while the main editor has focus; `/thinking <level>` still sets thinking, and `app.thinking.cycle` can be rebound in Pi's keybindings. `/octocode permission <mode>` switches anywhere, RPC included. `/octocode permission` shows the mode, what each class does, whether each ask reason asks, the session grants and the provenance index size. A change notifies you and reaches the model as one hidden message (the cached system prompt is unchanged). Changing modes, restarting the session, or clearing grants cancels pending approvals; a late answer cannot authorize a call under the new policy. Choosing a stricter mode clears session grants, and clearing grants or choosing a stricter mode also stops active subagents and pending launches; a saved child conversation can resume after fresh authorization. The footer chip shows the mode, the count of actions it ran without asking and the count of those that carry a warning: `⏸ permission: manual · Shift+Tab` (accent), `permission: workspace · Shift+Tab` (muted), `⏵⏵ permission: full · 12 actions · 2 ⚠ · Shift+Tab` (error colour). A narrow terminal shortens it to the mode and the counters (`⏵⏵ full · 12 actions · 2 ⚠`).
+**File review** (`manual`): lists each change with its reasoning; Apply all, Allow all file changes in the repository for this session, Review one by one, or Reject all. Feedback can attach to the batch or one change. Rejected changes fail with "do not retry" plus feedback; accepted ones apply when the review finishes. Dismissing cancels the batch.
+
+**Switching.**
+
+- Shift+Tab cycles `full` → `workspace` → `manual` (TUI, main editor focus only; it replaces Pi's thinking shortcut there: `/thinking <level>` still works, `app.thinking.cycle` can be rebound).
+- `/octocode permission <mode>` works anywhere, RPC included; bare, it shows mode, class rules, reasons, grants and the provenance index size.
+- A change notifies you and reaches the model as one hidden message (the cached system prompt is unchanged). A mode change, restart or grant clear cancels pending approvals, so a late answer cannot authorize under the new policy; a stricter mode or grant clear also stops active subagents and pending launches (a saved child conversation can resume after fresh authorization).
+- Footer chip: `⏸ permission: manual · Shift+Tab`, `⏵⏵ permission: full · 12 actions · 2 ⚠ · Shift+Tab` (unasked actions, ⚠ count).
 
 ### Audit
 
-Every permission decision is an audit entry in the session (`pi.appendEntry`; entries are never sent to the model): the action, what it touched, the mode, whether it was allowed and how (mode, grant, you, a hook, a refusal, a relayed answer), a note with credential-like text redacted, and the [snapshot](#snapshots) it took. `/octocode permission log` lists the last 50. A session records at most 5,000 calls; past that, a rollup entry counts the rest by action. The ⚠ mark goes to `shell.destructive`, `browser.control` and `net.private`: the footer counter, a warning-colour activity line (one line per window for a burst of ordinary calls, but every ⚠ call shows itself) and the exit summary. A run with no UI prints a banner on stderr at start (`permission mode full: every action runs without asking and is recorded in …`) and a summary at the end. A subagent's entries are sent to its parent and recorded there under the child's name.
+Every decision is a session entry (`pi.appendEntry`; never sent to the model): action, target, mode, allowed or not and how (mode, grant, you, hook, refusal, relayed answer), a redacted note, and the [snapshot](#snapshots).
+
+- `/octocode permission log` lists the last 50. At most 5,000 calls per session; a rollup entry counts the rest by action.
+- ⚠ marks `shell.destructive`, `browser.control` and `net.private`: footer counter, a warning-colour activity line (ordinary bursts share one line; every ⚠ shows) and the exit summary.
+- A subagent's entries go to its parent under the child's name.
 
 ### Snapshots
 
-Before a `shell.destructive` command runs, whether `full` lets it through or an ask comes first, Octocode takes a git snapshot of the tracked files in the working tree into `refs/octocode/snapshots/<ms>-<n>` (`git stash create`; the working tree and index are not touched). The audit entry and the dialog name the ref; `git checkout <ref> -- <path>` restores a path. Untracked and ignored files are not in it, a snapshot that takes over 5 s is abandoned, `git stash create` needs a committer identity (without one the effect card reads `nothing can be restored: no snapshot (snapshot failed)`), refs older than 7 days are deleted at the next session start, and a repository you delete takes its refs with it. The refs live in your repository, so `git push --mirror` pushes them. Not a backup.
+Before a `shell.destructive` command runs (in `full`, or after an ask), a git snapshot of tracked files is taken into `refs/octocode/snapshots/<ms>-<n>` (`git stash create`; working tree and index untouched). The audit entry and dialog name the ref; `git checkout <ref> -- <path>` restores a path.
+
+- Untracked and ignored files are not included. A snapshot over 5 s is abandoned.
+- `git stash create` needs a committer identity; without one the card reads `nothing can be restored: no snapshot (snapshot failed)`.
+- Old refs are deleted at the next session start ([Retention](CONFIGURATION.md#retention)). The refs live in your repository, so `git push --mirror` pushes them. Not a backup.
 
 ### Permissions in subagents
 
-**Without a UI** (print, JSON) every ask is denied with a message telling the agent not to retry and to ask the user, or to start Pi with the `OCTOCODE_PERMISSION` value that allows it. A provenance refusal names `OCTOCODE_PERMISSION=full`. A hook ask has no mode that runs it unasked, so its refusal names no mode.
+A subagent's mode is its parent's current mode, set explicitly; your `OCTOCODE_PERMISSION` never reaches it.
 
-**A subagent's mode** is its parent's current mode, set explicitly in the child (`OCTOCODE_PERMISSION` from the user's environment never reaches it). When the parent can ask a person (it has a UI), the child's dialogs are relayed to the parent (`OCTOCODE_PERMISSION_RELAY=1`, set by the parent in the child's environment): the parent shows each in its own dialog queue, titled `Subagent <name> · <role> · <goal> asks:` from the process the request came from, never from the request. Your answer, including a grant such as "Allow all shell commands for this session", applies to that child only; the parent's own grants are never touched. The first line of the child's title is a one-line header that names the action; when the parent's own mode already allows that call, it answers "Allow once" without a dialog and audits it. The parent accepts a header only with the child's nonce, a random secret it generates for each child and hands over in an owner-only file (`OCTOCODE_PERMISSION_NONCE_FILE` names it, internal): the child reads and deletes the file at start, so the secret is in no environment variable, argument or process listing and its shell commands do not inherit it, and the process keeps it across a `/reload`. The parent also requires that the header's `what` matches the target lines of the dialog below it. A title that looks like a header but is not accepted is shown to you whole, with the secret redacted (the relay redacts it in every dialog text), and `askUser` dialogs always reach you. A child has one dialog open at a time, and one that sends more than 10 in a minute has the rest of that minute denied without asking you, with one warning and a note it passes to its model. While a dialog waits for you, the child's `agent` row reads `waiting for your approval` and the wait does not count against its deadlines. Each decision the child makes is also sent to the parent, which records it in its own audit log under the child's name (`/octocode permission log`, the footer counter). An entry is accepted only with the nonce and is validated (known actions, modes, `via` values and reasons). Past 1,000 entries per child only routine ones (allowed, no ⚠ action, nobody asked) stop being recorded one by one: they are counted per action in a note in the parent's log under the child's name, while destructive, denied, refused, mode-change and rollup entries, and every entry a person answered, are always recorded. Entries refused for a missing secret or an invalid shape are counted and noted there too. With no parent UI, or for a dialog the parent cannot show (an editor, a child that was stopped, a parent that aborted), the answer is cancelled, which denies. The relay enforces the parent's policy; it is not a sandbox, because the child is the same OS user: a same-user process that reads the child's memory (a debugger) or the secret file between the spawn and the child's first read can recover the secret. A child that got no secret (its file could not be written; the parent notes that in its log) writes one stderr line saying its audit is not forwarded to the parent, and its own session log, when it has one, still records it.
+```mermaid
+sequenceDiagram
+  participant C as Child
+  participant P as Parent
+  participant U as You
+  C->>P: dialog request with header and nonce
+  alt parent mode already allows
+    P-->>C: Allow once, audited
+  else parent has UI
+    P->>U: Subagent name, role, goal asks
+    U-->>P: answer
+    P-->>C: answer, grant applies to child only
+  else no parent UI
+    P-->>C: cancelled, which denies
+  end
+  C-->>P: audit entry, recorded under child name
+```
 
-Every lingering-agent resume repeats the spawn authorization with the current parent mode and grants, preserving the conversation but replacing the old permission snapshot. An isolated subagent's worktree counts as trusted when its parent trusts the repository it came from (`OCTOCODE_TRUST_ROOT`). The parent's `agent` row, its `Done (…)` line and a background report count the calls the child could not run for lack of approval (`2 denied`). In `manual`, starting a subagent asks once and shows the profile, what its tools reach and the whole task; allowing it hands the child a grant (`OCTOCODE_PERMISSION_GRANTS`) for the workspace classes that profile reaches (file changes in the repository, shell). Every grantable kind you allowed for the session goes to the child too.
-
-**Profile grants.** A profile can declare `permissions:` in its front matter (see [Subagent profiles](CONFIGURATION.md#subagent-profiles)); only `browser.control`, `net.private` and `upload.outside` are allowed, and `webHeadless` and `webLive` declare `browser.control`. A profile that declares any forces the spawn ask in `manual` and `workspace`, listing each class, and an allow hands the child exactly those grants. Other names are ignored and reported when the profiles load. The approval and the spawn session grant are keyed by the profile's name and a hash of the whole profile file (the grant also by the profile's reach), so an edited profile asks again.
+- **Relay.** The child's dialogs join the parent's queue, titled `Subagent <name> · <role> · <goal> asks:`. The parent accepts a request only with the child's nonce (a random per-child secret in an owner-only file the child reads and deletes at start, never in environment, arguments or process listing) and only if the header's action matches the dialog's target lines. `askUser` dialogs always reach you.
+- **Limits.** One open dialog per child; over 10 in a minute the rest of that minute is denied without asking you, with one warning. While one waits, the row reads `waiting for your approval` and its deadlines pause.
+- **Audit.** Past 1,000 entries per child only routine ones (allowed, no ⚠, nobody asked) stop being recorded and are counted per action.
+- **Resume and isolation.** Each resume of a lingering agent repeats the spawn authorization with the current mode and grants. An isolated worktree is trusted when its parent trusts the source repository. The `agent` row, `Done (…)` line and report count calls the child could not run for lack of approval (`2 denied`).
+- **Spawn ask** (`manual`): once per spawn, showing profile, tool reach and the whole task. Allowing hands the child a grant for the workspace classes the profile reaches (repository file changes, shell) plus every grantable kind you allowed for the session.
+- **Profile grants.** A profile can declare `permissions:` ([format](CONFIGURATION.md#subagent-profiles)); it forces the spawn ask in `manual` and `workspace`, listing each class, and an allow grants exactly those; `full` asks nothing. Approval and spawn grant are keyed by profile name and a hash of the profile file, so an edit asks again.
 
 ### Provenance tripwire
 
-Tool output from open-world sources (`web`, `browser`, MCP tools not marked closed-world, network commands such as `curl`) and private reads (outside the repository, secret-looking text) is indexed in memory as hashes only. A consequential call whose arguments repeat a span of that untrusted text (a shell command, a file path, the content of a file that runs or configures later sessions, runs as code (`*.sh` and other scripts, `bin/`, `scripts/`, `Makefile`, `justfile`, `.envrc`, `.github/workflows/`) or lies outside the repository, an MCP write, a memory), or an outbound call (a URL, a network command) carrying private text, asks in manual and workspace, with no session grant, naming the effect and the source. Full runs that call and records the hit. Untrusted text written as data into an ordinary workspace file (a report quoting a page) is not an action, so it does not ask; a shell hit's message says to save quoted material with the `file` tool instead, and a headless refusal carries that reason ("Why it asks: …") so a subagent can act on it. Pi's MCP resource reader counts as open-world, and a `web` search query as outbound. Paraphrase, encoding or splitting defeat it: it is a tripwire, not a boundary.
+Output from open-world sources (`web`, `browser`, `externalAgent` replies, MCP tools not marked closed-world, network commands such as `curl`) and private reads (outside the repository, secret-looking text) is indexed in memory as hashes only.
 
-**Known limits.** Spans under about 33 characters are not matched; one result is indexed up to 256 KB and the index holds about 200k hashes, so a very large result can push out older entries, its own beginning included; network commands are a fixed list (`curl`, `wget`, `ssh`, `scp`, `nc`, …), not `git`, `npm`, `python` or `node`. An MCP tool without annotations counts as a plain MCP write (it runs in `workspace`); only `destructiveHint: true` asks each time. MCP's own default calls an unannotated tool destructive, but asking on every call of such a server, with no session grant, would make it unusable. Messages to other sessions (`sendMessage`) are not gated: a peer acts under its own mode.
+```mermaid
+flowchart TD
+  O["Untrusted output or private read"] --> I["Hash index: 32-char spans, URLs, hosts, e-mails"]
+  Q["Later call"] --> M{"Arguments repeat an indexed span?"}
+  I --> M
+  M -- no --> N[Normal gate]
+  M -- "consequential call + untrusted span" --> H["provenance reason"]
+  M -- "outbound call + private span" --> H
+  H --> A{Mode}
+  A -- "manual or workspace" --> Ask["Ask, no session grant"]
+  A -- full --> Rec["Run, record the hit"]
+```
 
-**Not a sandbox.** Modes, grants and the provenance tripwire decide what Octocode asks about. They do not limit what the OS user can do: a shell command allowed once can do anything that user can. For a real boundary run Pi in a container or VM (Pi's own `docs/security.md`).
+- **Consequential** (checked against untrusted spans): a shell command; a file path or content that runs or configures later sessions, runs as code (`*.sh` and other scripts, `bin/`, `scripts/`, `Makefile`, `justfile`, `.envrc`, `.github/workflows/`) or lies outside the repository; an MCP write; a memory; an `externalAgent` `connect` or `prompt`.
+- **Outbound** (checked against private spans): a `web` URL or search query, a browser `navigate` or `tab` URL, a network command, an `externalAgent` prompt.
+- Untrusted text written as data into an ordinary workspace file does not ask. Pi's MCP resource reader counts as open-world.
+- A tripwire, not a boundary: paraphrase, encoding or splitting defeat it.
+
+| Limit | Value |
+| --- | --- |
+| Minimum matched span | About 33 characters. A URL, host or e-mail first seen in untrusted output, or a secret token from a secret-looking line, matches alone |
+| Index | 256 KB per result, about 200k hashes (a huge result can push out older entries) |
+| Network commands | Fixed list (`curl`, `wget`, `ssh`, `scp`, `nc`, …); not `git`, `npm`, `python`, `node` |
+| Unannotated MCP tool | Plain MCP write (runs in `workspace`); only `destructiveHint: true` asks each time |
+| `sendMessage` | Not gated: a peer acts under its own mode |
+
+**Not a sandbox.** Modes, grants and the tripwire decide what Octocode asks about, not what the OS user can do: a shell command allowed once can do anything that user can. For a real boundary use a container or VM (Pi's `docs/security.md`).
 
 ## MCP
 
-Runs the bundled [Octocode MCP](https://github.com/bgauryy/octocode) server on the extension's own MCP client and registers every tool it lists as `mcp__octocode__<tool>`, declared from the first request with no `tool_search` step. The prompt tells the model to prefer these tools for searching and researching code and says this overrides Pi's generic "use bash for ls, rg, find" rule; Pi's `read` stays available, and bash stays for builds, tests, git and commands. Launch, results, lifecycle and overrides: [MCP](CONFIGURATION.md#mcp); result budgets: [Spilled outputs](CONTEXT-AND-COST.md#spilled-outputs).
+The bundled [Octocode MCP](https://github.com/bgauryy/octocode) server runs on the extension's own MCP client; each tool registers as `mcp__octocode__<tool>`, declared from the first request (no `tool_search` step). The prompt tells the model to prefer these for code research (overriding Pi's "use bash for ls, rg, find"); `read` stays, and bash stays for builds, tests, git and commands. Launch, results, lifecycle, overrides: [MCP](CONFIGURATION.md#mcp). Result budgets: [Spilled outputs](CONTEXT-AND-COST.md#spilled-outputs).
 
 ## Prompt
 
-An Octocode section (about 3 KB) in Pi's structured system prompt covers research routing, verification and delegation, followed by the Octocode MCP server's own instructions, whole, once the server has connected (the first prompt waits for it; see [MCP](CONFIGURATION.md#mcp)). Active tool descriptions own their usage instructions. Delegation mechanics (the subagent limit, report delivery, report files) stay in the `agent` tool description; the section keeps when to delegate, who owns review and integration, where durable results go, and the profile list. An agent without `file`, `write` or `edit` gets one "investigate and report; do not modify the repository" rule instead of the rules about changing files, naming only the writers it has: with bash, run only read-only commands and write only its scratch folder and the output path its task names; with MCP but no bash, call only read-only MCP tools; otherwise the content goes in the report. The main session also gets one communication rule: inside a Pi team use `coordinate`, `sendMessage` and (when active) `agent`; use the agents-communication tools only to reach agents outside Pi (Claude Code, Codex, other hosts); Pi honors their file locks (see [Team](#team)). Subagents get guidance for parent steering, teammate information, automatic reports and the report's outcome word. A result that should outlive the session goes in a doc under `.octocode/<topic>/` named in the subagent's task; its scratch folder is for throwaway hand-offs and is cleared after a week. The section is rebuilt when active tools, profiles or the subagent's collaborate mode change; identical inputs reuse the cached section. Nothing unique to one subagent (its id, its parent's id, its scratch folder) is in the section, so every subagent of one profile has the same system prompt prefix and siblings share the provider's prompt cache; those facts arrive at the end of its task instead.
+An `octocode` section in Pi's structured system prompt covers research routing, verification and delegation, then the MCP server's instructions once connected (the first prompt waits for it). Tool descriptions own usage.
+
+- **No `file`, `write` or `edit`:** one "investigate and report; do not modify the repository" rule. With bash: read-only commands, writes only to the scratch folder and the task's output path; MCP without bash: read-only MCP tools; else the content goes in the report.
+- **Communication.** `coordinate`, `sendMessage` and `agent` inside a Pi team; agents-communication tools only for agents outside Pi, whose file locks Pi honors ([Team](#team)).
+- **Durable results** go in a doc under `.octocode/<topic>/` named in the task; scratch is for throwaway hand-offs.
+- **Caching.** Nothing unique to one subagent is in the section, so subagents of one profile share a cached prefix ([Subagents](CONTEXT-AND-COST.md#subagents)).
 
 ## Skills
 
-Pi loads skills from `~/.agents/skills`, `~/.pi/agent/skills` and the project's `.agents/skills` / `.pi/skills`; Octocode also picks up `~/.claude/skills` (except claude.ai's synced skills in its `synced/` folder, which need connectors Pi does not have), `~/.codex/skills`, `~/.octocode/skills` (Octocode home) and, in trusted projects (see [Trust](CONFIGURATION.md#trust)), `.claude/skills` (from the working directory up to the repository root) and `<repo root>/.octocode/skills`, in the main session only: subagents skip these extra directories, and `OCTOCODE_EXTRA_SKILLS=0` turns them off everywhere. Pi loads these skills and reports any name conflict. Install Octocode skills with `npx octocode skill install <name>`.
+- Pi loads `~/.agents/skills`, `~/.pi/agent/skills`, and the project's `.agents/skills` and `.pi/skills`.
+- Octocode adds, in the main session only: `~/.claude/skills` (except claude.ai's `synced/`), `~/.codex/skills`, `~/.octocode/skills` and, in trusted projects ([Trust](CONFIGURATION.md#trust)), `.claude/skills` (working directory up to the repository root) and `<repo root>/.octocode/skills`.
+- Subagents skip the additions; `OCTOCODE_EXTRA_SKILLS=0` turns them off.
+- Install with `npx octocode skill install <name>`.
 
 ## Subagents
 
-`agent` runs a task in a fresh Pi process (`pi --mode rpc`, the task sent as a `prompt` command on stdin) and returns its answer. Every call carries a required `goal`: a label for what the subagent works on (`audit auth token refresh`), of any length, of which about 48 characters are shown; a missing or non-text goal is refused with an example before anything starts. The subagent gets a name from a closed list of `adjective-creature` pairs (`inky-kraken`; 1,009 pairs of at most 16 characters, avoiding every live agent and the last 128 subagents this session finished; once the list is used up a numeric suffix is added), and the name and goal show in the panel and the call and result rows (`● Agent(audit auth token refresh · isolated)`, a background report `● Agent(inky-kraken · audit auth token refresh)`), and with the profile as its role in `coordinate list`, `/agents`, message headers, the text of background reports and the subagent's own task (`## You`). The live row and the result read `Done (inky-kraken · 4 tool calls · ↑120k (80% cached) ↓3k · ≈$0.12 · 38s · provider/model)`; a child on a model without pricing shows `cost n/a` (or `+ n/a`), learned from the model named in its own replies. The name is the agent's id: the target of `sendMessage` and `coordinate stop`, the worktree ref and the handoff folder. A role still resolves a `sendMessage` target when only one agent has it. Several calls in one turn run in parallel, at most 3 at once (`OCTOCODE_MAX_SUBAGENTS`); calls over the limit wait for a free slot (the row reads `waiting for a slot (N running)`; Esc gives up the wait). `collaborate: true` starts a subagent in team mode: its task lists the collaborating siblings already running (later ones find it with `coordinate list`), and its prompt tells it to message teammates directly when its work affects theirs and to ask them instead of redoing their work. Its final report still goes to the parent. `isolate: true` runs the subagent in a private git worktree under `~/.octocode/pi-worktrees/`: when it finishes, its changes are committed to `refs/octocode/pi/<name>` (or `<name>-2`… when that ref is taken; the report names the actual ref, with a `diff --stat`) and the worktree is removed — if saving fails the worktree is kept and the report names its path; `/agents merge <id>` merges that ref with repository hooks disabled, aborting and listing the files on a conflict. It is refused outside a git repository and warns when the main tree has uncommitted changes (the worktree starts from `HEAD`); worktrees left by a crashed Pi process are committed to their ref and removed at the next start (one that cannot be saved is kept, with a warning naming its path). `/agents kill <id>` (a shortcut for `/octocode agents kill <id>`) stops a background or foreground subagent: the child is told to abort and its stdin closes; a child that does not follow gets SIGTERM to its process tree, then SIGKILL to whatever is left after 1 s for a user stop (Esc, `/agents kill`; the row shows `stopping…`) or 5 s otherwise, including processes that left its group (a Chrome it launched, its background bash jobs); the run settles only once the tree is gone. A child that exits on its own has the processes it left in its group stopped too (on Windows its Job Object ends the tree, see the [Windows helper](#windows-helper)). Session end stops background subagents before the session leaves the team. A watchdog stops a hung child: 10 minutes with no output while no tool runs and it is not settling after its answer kills its process tree and fails the run with `no output for …; last activity: …`. There is no wall-clock limit. A child that dies on a signal is reported as `killed by SIGTERM` (not `code null`). Results come back without polling: a background subagent's report arrives as a message when it finishes, and the prompts tell the parent not to poll and the subagent not to announce it is done. A report that finishes after its session ended (a reload) is kept owner-only under the session folder (`reports/pending/`) and delivered once (a process takes it by renaming it, so two Pi processes never deliver one report twice, and a claim whose owner died is released), marked `(Arrived after the session restarted)`, at the next start of the same Pi session; late reports are also picked up for about 20 s after a start and after each settled turn. A run stopped by a permission change or a `/reload` says so in its report (`stopped by the /reload`). A profile's prompt reaches the child as an owner-only file in the session's `output/` folder, so a prompt that happens to name a path is never read as that file. Each subagent gets a handoff folder, `<workspace>/.octocode/tmp/agents/<id>/` (the `tmp` folder carries its own `.gitignore` of `*`; the path is passed as `OCTOCODE_AGENT_SCRATCH`, with the name's role and goal as `OCTOCODE_AGENT_ROLE` and `OCTOCODE_AGENT_GOAL`; a folder the subagent left empty is removed when it ends, and folders untouched for 7 days are swept at session start). Each channel has one use: the final answer is the report (it reaches the parent by itself, so a subagent never messages that it is done); contact mid-task, such as a blocker, a needed decision or an urgent finding, is a `sendMessage`; long or reusable material goes to a Markdown doc in that folder, which the report names by path. A report starts with one outcome word, `done`, `partial`, `blocked` or `failed`, then the result, how it was verified and open questions (case and light markup such as `**Blocked**:` do not matter). The `agent` row and result then read `Blocked (inky-kraken · 4 tool calls · …)` instead of `Done (…)`, a background report's header reads `Background subagent inky-kraken (reviewer: audit auth token refresh) reported blocked (…)`, and the result's details carry it as `outcome`. A run that crashed counts as `failed` whatever it said; a report that starts with another word is `finished` in the header and `Done` in the row, never a failure. A stop someone asked for (`/agents kill`, `coordinate stop`) has no outcome. The parent keeps at most 8 KB / 200 lines of a report in context; a longer one is saved whole as `report.md` there and the kept part ends with its path, so read-only profiles lose nothing. Long reports spill incrementally during execution, so follow-up answers do not accumulate in parent-process memory; retries replace the current report section. A child JSON event over 16 MiB stops the run with an explicit error.  The task is never a command-line argument, so a task of any length reaches the child whole. Subagent output follows the [sanitizing policy](CONFIGURATION.md#sanitizing-policy). Profiles: `researcher` and `reviewer` (no `file`, `browser` or `askUser`), `implementer` (no `browser`), `webHeadless` and `webLive` (no `file` or `bash`, no MCP: `mcp: false`).
+`agent` runs a task in a fresh Pi process (`pi --mode rpc`, task sent on stdin, so any length arrives whole) with this extension, Pi's built-in MCP and tool search (omitted for `mcp: false`, which also starts no Octocode server). A subagent cannot ask you directly or start subagents.
 
-Subagent model routing: each profile's `model` names a purpose or a model. Coding work runs on `medium` (`implementer`, `reviewer`) and exploration, documentation checks and browsing on `small` (`researcher`, `webHeadless`, `webLive`); a purpose resolves among the user's own models by price and ability (Pi's entries completed from models.dev), so with Opus, Sonnet and Haiku configured they run Sonnet and Haiku, and with one model everything runs on it. `/octocode models` lists the models with price, window and abilities, and what each purpose and profile runs on. A model id is resolved against the parent's available models (a bare id prefers the parent's provider; `provider/id` and a `:thinking` suffix are kept) and passed as `--model provider/id`. If it is not available the subagent runs on the parent's current model (pinned with `--model`, as is a profile without `model`) instead of failing, and the `agent` row (`Done (… · anthropic/claude-opus-5-5 (claude-haiku-5-5 unavailable))`) and the result details record it. The `agent` call's `model` parameter overrides the profile and is strict: when it cannot be resolved the call is refused with the closest available ids. The running row and result show the resolved model. See [Subagent profiles](CONFIGURATION.md#subagent-profiles). Subagents start with `--no-extensions`, this extension, Pi's built-in MCP and tool search for the user's other servers (`-e builtin:mcp -e builtin:tool-search`, both left out for `mcp: false`, which also starts no Octocode server).
+```mermaid
+stateDiagram-v2
+  [*] --> Planned: profile, model and goal accepted
+  Planned --> Waiting: all slots busy, Esc gives up
+  Waiting --> Asking
+  Planned --> Asking: slot taken
+  Asking --> Claimed: spawn ask allowed
+  Asking --> [*]: denied, nothing starts
+  Claimed --> Running: name, scratch folder, worktree if isolate
+  Running --> Reported: outcome word and report
+  Running --> Stopped: kill, coordinate stop, permission change
+  Reported --> Lingering: background, not isolated, linger seconds set
+  Lingering --> Running: parent or user message resumes it
+  Lingering --> Swept: window ends or coordinate stop
+  Reported --> Swept: scratch removed by retention
+  Stopped --> Swept
+  Swept --> [*]
+```
 
-Bundled profiles describe their purpose and evidence requirements in the `agent` tool's profile list. Choose from the profiles actually available in the session:
+**Identity.**
 
-| Profile | Use for | Capability boundaries |
+- **Goal.** Every call needs one (about 48 characters shown, any length kept); without it the call is refused with an example.
+- **Name.** An `adjective-creature` pair (`inky-kraken`) avoiding live agents, the last 128 finished and existing scratch folders. It is the id for `sendMessage`, `coordinate stop`, the worktree ref and the handoff folder.
+- **Role.** The profile. Name, role and goal show in the panel, rows, `coordinate list`, `/agents`, message headers and reports; a role resolves a `sendMessage` target when only one agent has it.
+
+**Rows.** `Done (inky-kraken · 4 tool calls · ↑120k (80% cached) ↓3k · ≈$0.12 · 38s · provider/model)` ([formats](CONTEXT-AND-COST.md#how-it-is-shown)); also `waiting for a slot (N running)`, `waiting for your approval`, `compacting its context`, `stopping…`. Calls in one turn run in parallel, at most 3 (`OCTOCODE_MAX_SUBAGENTS`); the rest wait.
+
+| Option | Effect |
+| --- | --- |
+| `background: true` | Returns at once ([Background subagents](#background-subagents)) |
+| `collaborate: true` | The task lists running collaborating siblings; the child messages teammates when its work affects theirs. Its report still goes to the parent |
+| `isolate: true` | Private git worktree under `<Octocode home>/pi-worktrees/`, started from `HEAD` (warns on uncommitted changes; refused outside git). At the end changes commit to `refs/octocode/pi/<name>` (`<name>-2`… if taken; report names it with `diff --stat`) and the worktree is removed, or kept with its path if saving fails. `/agents merge <id>` merges with repository hooks disabled and, on conflict, aborts and lists files. A crashed Pi's worktrees are committed and removed at next start |
+| `model` | Overrides the profile's model; strict ([Model routing](#model-routing)) |
+
+**Stopping.** `/agents kill <id>` or `coordinate stop` tells the child to abort and closes its stdin; a child that does not follow gets SIGTERM to its process tree (including a Chrome it launched and its bash jobs), then SIGKILL after 1 s for a requested stop, else 5 s. Session end stops background subagents before leaving the team.
+
+| Run limit | Value |
+| --- | --- |
+| Watchdog | No output for 10 min while no tool runs fails the run |
+| Busy time | Each call's own deadline, else 15 min; no wall-clock limit |
+| Child JSON event | Over 16 MiB stops the run with an explicit error |
+
+**Files.** The child's conversation is saved in `<scratch>/session` (`details.session`; a failed run's report names it) and stays with the scratch folder ([Retention](CONFIGURATION.md#retention)). The handoff folder is `<workspace>/.octocode/tmp/agents/<id>/` (self-ignoring), passed as `OCTOCODE_AGENT_SCRATCH` with `OCTOCODE_AGENT_ROLE` and `OCTOCODE_AGENT_GOAL`; empty ones are removed at the end, the rest swept. A child whose parent has an archive of compacted history is told where it is ([COMPACTION.md](COMPACTION.md#subagents)).
+
+**Channels.** The final answer is the report and reaches the parent by itself (never message "done"). Mid-task contact (blocker, decision, urgent finding) is a `sendMessage`; long or reusable material goes to a Markdown doc in the handoff folder, named in the report.
+
+**Reports** start with one outcome word, `done`, `partial`, `blocked` or `failed` (case and light markup do not matter), then the result, how it was verified and open questions.
+
+- Row: `Blocked (inky-kraken · 4 tool calls · …)`; details carry `outcome`. Background header: `Background subagent inky-kraken (reviewer: audit auth token refresh) reported blocked (…)`.
+- A crash or failed model call is `failed` whatever it said (a foreground call then fails). Another first word is `finished` in the header and `Done` in the row, never a failure. A requested stop has no outcome.
+- The parent keeps at most 8 KB or 200 lines; a longer report is saved whole as `report.md` in the handoff folder and the kept part ends with the path.
+- A report finishing after its session ended (a reload) is kept owner-only under `reports/pending/`, marked `(Arrived after the session restarted)`, and delivered once at that session's next start.
+- A run stopped by a permission change or `/reload` says so. Output follows the [sanitizing policy](CONFIGURATION.md#sanitizing-policy). The row and report say how often the child compacted ([COMPACTION.md](COMPACTION.md#subagents)); the warnings and errors its extensions show are kept whole in the report: identical repeats are folded with a count, the first five distinct ones that fit 4,000 characters are inline, and when more came the last line names `notices.txt` in the handoff folder, which holds every one ([details](COMPACTION.md#subagents)). A crashed child's error shows its stderr whole up to 4,000 characters; a longer one shows the last 4,000 under a `[stderr: last 4000 of N characters; whole: <file>]` line, and the whole is in `stderr.txt` in the handoff folder. A failed model reply's error message and the last progress of a crashed child are never cut.
+
+**Asks.** A child asks its parent with `sendMessage` `replyRequired: true`; the parent answers with `replyTo` set to that message's number.
+
+```mermaid
+sequenceDiagram
+  participant C as Child
+  participant DB as Team DB
+  participant P as Parent
+  C->>DB: sendMessage to parent, replyRequired true
+  DB-->>P: wakes idle parent
+  P->>DB: sendMessage with replyTo N
+  DB-->>C: answer wakes child
+  C-->>P: final report with asks footer
+```
+
+Each ask (number, text, asked time, reply number, sender, time) is read from the message tables at run end into `details.asks`; pruned messages list none. An answer after one of the parent's own `askUser` calls that started after the question and ended before the answer is marked `afterAskUser`. The footer counts them (`Asks to its parent: 2 asks (1 answered in 40s, 1 unanswered).`); `/agents` shows the count per live subagent.
+
+### Profiles
+
+Listed in the `agent` tool's description; format and loading: [Subagent profiles](CONFIGURATION.md#subagent-profiles).
+
+| Profile | Use for | Boundaries |
 | --- | --- | --- |
-| `researcher` | Uncertain facts, root causes and source evidence | Read-only work, including shell and MCP calls; no file or browser tool |
-| `reviewer` | Actionable defects and verification gaps in a specified change | Read-only work, including shell and MCP calls; no file or browser tool |
-| `implementer` | A scoped code change with checks and an integration handoff | Guarded file changes, shell and configured MCP; no browser tool |
-| `webHeadless` | Rendered public pages and authorized browser interactions | Headless browser and static web; no file tool or MCP |
-| `webLive` | Visible browser flows and user-assisted authentication | Visible Octocode browser profile and static web; no file tool or MCP |
+| `researcher` | Uncertain facts, root causes, source evidence | Read-only incl. shell and MCP; no `file`, `browser` |
+| `reviewer` | Defects and verification gaps in a specified change | Read-only incl. shell and MCP; no `file`, `browser` |
+| `implementer` | A scoped code change with checks and handoff | Guarded file changes, shell, configured MCP; no `browser` |
+| `webHeadless` | Rendered public pages, authorized browser interactions | Headless browser, static web; no `file`, `bash`, MCP |
+| `webLive` | Visible browser flows, user-assisted login | Visible Octocode browser profile, static web; no `file`, `bash`, MCP |
 
-Every child starts without the parent's conversation. Its task must carry the goal, scope, relevant paths, evidence, accepted decisions and expected result. Children cannot ask the user directly or delegate again. Their memory schema exposes only reads; their backlog schema allows proposals and permitted updates. Profile instructions keep researcher and reviewer from editing the repository: their shell and MCP work stays read-only, and they write only their scratch folder and the output path their task names (through bash). `webHeadless` and `webLive` have neither `file` nor bash, so their output goes in the report. Those instructions are not an operating-system sandbox. The parent owns user communication, missing approvals, review and integration. Questions and replies through `sendMessage` wake idle agents; FYIs wait for their next turn. Completed handoffs arrive automatically, with a saved path for full reports that exceed the context preview.
+- Every child keeps `read`, `sendMessage` and `coordinate` so it can reach its parent: a profile with an absolute `tools` allowlist gains them at load; one that excludes one is refused ([Core tools](CONFIGURATION.md#subagent-profiles)).
+- A child starts without the parent's conversation: its task must carry goal, scope, paths, evidence, decisions and expected result.
+- A child's `memory` only reads; its `backlog` proposes items and updates state and notes of items its parent claimed.
+- `researcher` and `reviewer` write only scratch and the task's output path; `webHeadless` and `webLive` have no `file` or bash, so output goes in the report. This is instruction, not an OS sandbox. The parent owns user communication, missing approvals, review and integration.
 
-## Background subagents
+### Model routing
 
-`agent` with `background: true` returns at once, so the parent keeps working, talks to the subagent (`sendMessage`, `coordinate list`) and gets its answer later as a message. To redirect one without killing it, the parent sends `sendMessage` with `interrupt: true` (the user `/agents interrupt <id> <text>`): a busy subagent's current step stops (Pi cancels its running tool and model call, or its wait for background work at the end of the run) and the same run continues with that message, marked as an interrupt; an idle one simply wakes. Only the agent that started a subagent, or the user of that session, can interrupt it, and only one subagent at a time; a plain message waits until the running tool returns. `sendMessage` answers `Interrupt queued for X as message #N`; `/agents interrupt` says `Interrupt queued for X`. A UI agent busy only with a `/compact` has the compaction aborted and gets the held interrupt on the next tick. If the run cannot be stopped, the interrupt arrives as a plain waking message. The parent can end one it started with `coordinate stop <id>` (the user with `/agents kill <id>`): the subagent's process tree is killed and its report says who stopped it, arriving without waking the parent for another turn and drawn as a stop, not a failure. Every background report starts with the agent's name, role and goal. Those lines and the run statistics are the parent's own words; the subagent's text sits between two fence lines marked as untrusted data, so a report cannot pose as the user, a teammate or the system (the screen shows it without the fence lines). Reports that finish within 1.5 s of each other arrive together and cost one wake; a report whose `report.md` the parent already read with `read` arrives without one. When a notice (a finished bash job, a team message) wakes a subagent after it answered, its report keeps that answer and adds the later reply after a `---` line. With `OCTOCODE_SUBAGENT_LINGER_SECONDS` set, a finished background subagent stays reachable for that long (its report says so): a message from its parent, or `/agents tell` from you, resumes its saved conversation as a new background run under the same name and goal (taking a slot while it runs; refused when none is free), and its reply arrives as another report; `coordinate stop <name>` ends the window early. Nothing runs while it waits. The most recent 128 completed-subagent receipts are kept for this session: `sendMessage` to one (when it is not lingering) says it finished, names its handoff folder and tells the sender to start a new `agent` task with the context it needs. Older ids receive the usual unknown-agent response. In print/JSON runs the process stays open until background subagents finish; interactive sessions are never held.
+A profile's `model` is a model or a purpose, `small` or `medium` ([format](CONFIGURATION.md#subagent-profiles)); `implementer` and `reviewer` run `medium`, the rest `small`. A purpose resolves among your own models by price and ability, so no profile hard-codes a vendor (with Opus, Sonnet and Haiku: Sonnet and Haiku; with one model, or none cheaper, the parent's). `/octocode models` shows price, window, abilities and what each purpose and profile runs on.
 
-## Subagent screenshots
+```mermaid
+flowchart TD
+  R[Run needs a model] --> E{"agent model param?"}
+  E -- "small or medium" --> RS
+  E -- "model id" --> X{Resolves?}
+  X -- no --> RF["Refuse with closest ids"]
+  X -- yes --> U[Use it]
+  E -- none --> PM{"Profile model?"}
+  PM -- "small or medium" --> RS["Capable models, by price"]
+  PM -- "named model" --> AV{Available?}
+  AV -- yes --> U
+  AV -- no --> FB["Parent's model, recorded as fallback"]
+  RS --> FT{"One fits?"}
+  FT -- yes --> U
+  FT -- no --> FB
+  PM -- none --> FB
+```
 
-Screenshots a subagent takes (`browser`) are saved owner-only under `~/.octocode/pi-team/shots/` (newest 30 kept; files older than `OCTOCODE_CLEANUP_DAYS` are swept). The `agent` tool row draws the latest one live and shows its path; the report ends with `(Last screenshot: path)`. They never enter the parent's context unless it reads the file.
+- `small`: the cheapest capable model. `medium`: the dearest capable model at 15–80% of the parent's price, the next tier down (Sonnet under Opus, never Haiku under Sonnet); else the parent's.
+- Capable: calls tools, holds 100k tokens, takes images when the parent does, not deprecated, cheaper than the parent, its family's newest release. Models within 18 months of the parent come first, then its lab, then its provider.
+- List prices, three input tokens weighed against one output; a missing price is filled from models.dev only for a provider it lists (a local model priced 0 never borrows a cloud price). Subscription accounting is not modelled.
+- The row (`Done (… · anthropic/claude-opus-5-5 (claude-haiku-5-5 unavailable))`) and details (`fallback`) record a skipped preference.
 
-## Agents UI
+### Background subagents
 
-While this session has live subagents, a panel under the input lists them as a tree (a subagent's own subagents indented under it, working ones first among siblings) with aligned columns: status glyph (teal `●` working, dim `○` idle), name, goal, model, state, elapsed time, tokens in the [one token format](#ui) (`↑1.2M (94% cached) ↓35k`), tools, estimated cost (`≈$2.28`; `+ n/a` or `cost n/a` for usage from a model without pricing), flags (`✉ n waiting` for messages not yet answered, `n locks`), then the tool it is running now. A header sums them (`2 working · 1 idle · ≈$0.04`, with `+ n/a` when any agent's usage is unpriced); at most 6 rows, then `+n more`; recent messages between these agents follow. The role is not a column (`coordinate list` and `/agents` show it). On narrow terminals flags, tools and cost drop out first, then the goal is shortened; name, model, state, elapsed time and tokens always stay. When the panel cannot show, the footer counts running background subagents (`2 background agents`). Other sessions' agents never show, and an agent whose heartbeat stopped for 15 s (killed or hung) leaves the panel at once. The store treats silence and absence apart: a member silent for 60 s is stale (hidden, but it keeps its mail and its row), and one is retired, with its reservations and a dead letter for its unread mail, only once its process is gone (judged by pid and start time, so a reused pid is never mistaken for it); a process that was only stalled and found its row swept inserts it again. Static text only, so scrolling stays stable.
+`background: true` returns at once; the parent keeps working, can `sendMessage` or `coordinate list`, and gets the answer later as a message (it is told not to poll). Print and JSON runs stay open until they finish; interactive sessions are never held.
+
+- **Interrupt.** `sendMessage` with `interrupt: true`, or `/agents interrupt <id> <text>`, redirects without killing: a busy subagent's step stops and the same run continues with the message; an idle one wakes. Only the agent that started it, or the session's user, can interrupt, one subagent at a time. A plain message waits for the running tool; if the run cannot be stopped, the interrupt arrives as a plain waking message.
+- **Stop.** The report says who stopped it, does not wake the parent and is drawn as a stop.
+- **Report text.** A report starts with name, role and goal; those lines and the run statistics are the parent's own words. The subagent's text sits between two fence lines marked untrusted, so it cannot pose as the user, a teammate or the system.
+- **Delivery.** Reports finishing within 1.5 s arrive together for one wake; one whose `report.md` the parent already read arrives without a wake. If a notice wakes a subagent after it answered, its report keeps that answer and adds the later reply after a `---` line.
+- **Lingering.** With `OCTOCODE_SUBAGENT_LINGER_SECONDS` set, a finished background subagent stays reachable that long (the report says so). A message from its parent, or `/agents tell`, resumes its saved conversation as a new background run, same name and goal, taking a slot (refused when none is free); `coordinate stop <name>` ends the window. Isolated runs do not linger.
+- **Receipts.** The 128 latest completed-subagent receipts are kept. A `sendMessage` to a finished, non-lingering subagent says so, names its handoff folder and tells the sender to start a new `agent` task.
+
+### Subagent screenshots
+
+Saved owner-only under `<Octocode home>/pi-team/shots/` ([Retention](CONFIGURATION.md#retention)). The `agent` row draws the latest live with its path; the report ends with `(Last screenshot: path)`. They reach the parent's context only if it reads the file.
+
+### Agents panel
+
+With live subagents, a panel under the input lists them as a tree (nested indented, working first): status glyph (`●` working, `○` idle), name, goal, model, state, elapsed time, tokens in the [one token format](#ui), tool calls, estimated cost (`≈$2.28`; `cost n/a` if unpriced), flags (`✉ n waiting`, `n locks`), then the current tool. A header sums them (`2 working · 1 idle · ≈$0.04`). At most 6 rows, then `+n more`, then recent messages between agents. Narrow terminals drop flags, tool calls and cost first, then shorten the goal. When it cannot show, the footer counts background subagents (`2 background agents`). Other sessions' agents never show; an agent silent for 15 s leaves at once.
 
 ## Team
 
-Agents in the same repository (the main session, its subagents, other Pi sessions that `join`) share the team tables of the agent database (`OCTOCODE_AGENT_DB`, see [Sessions, backlog and memory](#sessions-backlog-and-memory-usage-and-privacy)), scoped by the git root (symlinks resolved, so one checkout reached through two paths is one team). Activity, tool counts and token usage are written on a 5 s heartbeat, so the panel and `coordinate list` can lag a few seconds behind a running agent; a status or goal change waits for the next 1 s tick. A main session is named from the same list when it joins (`coordinate join`, or its first `lock` or `sendMessage`), with the role `main` and, when `coordinate join` carries a `goal`, that label (of any length, like the `agent` goal) as its goal; no two live agents in the database share a name. A subagent stops when its parent process is gone (it checks every second, on its own timer, so also when it never joined the team: the parent's pid and start time, and, when the parent spawned it directly, that it was not reparented, so a reused pid does not keep it running; it then leaves the team and ends itself), so a crashed parent leaves no orphan spending tokens. Entities follow the octocode-agents-communication skill: **agents** (name, role, goal, status, current tool, tokens with their cached part, estimated cost and whether part of it is unpriced, heartbeat; the goal is kept in the `task` column), **messages** (immutable, may `replyRequired`, may answer another via `replyTo`), **deliveries** (delivered when the recipient's model is called with it, completed when answered) and **leases** (file/tree reservations). `coordinate` (`list` / `join` / `leave` / `lock` / `unlock` / `changes` / `stop`; `join`, `leave` and `stop` exist only in the main session, the agent that can start subagents: a subagent joins when it starts and leaves when its run ends) shows each agent as `name · role · status · model · parent`, with its goal, join and last-seen time, its work (`56 tool calls · ↑1.2M (94% cached) ↓35k · ≈$2.28`), unanswered messages and held paths, and reserves files all-or-nothing (a trailing `/` reserves a tree). Lock keys compare each path component by Unicode full case folding (NFD, fold, NFD), so `Straße.ts` and `STRASSE.ts`, or `ﬁle` and `FILE`, collide. One `lock` call whose paths overlap each other (a tree and a path inside it, two spellings of one path, a path twice) is refused with nothing locked: reserve the tree alone, or each path once. The folding table is generated (`src/team/casefold-table.ts`, regenerated with `yarn casefold:generate` from `scripts/generate-casefold.mjs`) from the octocode-agents-communication package's frozen Unicode table, and both packages run the same vectors (`test-utils/agent-coordination/contract.json`), so a path has one key in both. Leases last 90 s past the owner's heartbeat and are released on leave, so a crashed agent frees its files; a subagent's are released when its run ends, and an idle session stops renewing them after 30 minutes. A refusal names the holder, its reason and how long ago it locked; `file`, `edit` and `write` are refused on paths a peer holds (`file` checks again right before it writes or deletes), and also when the database cannot be read (fail closed, with SQLite's reason; a process that never joined and has no database is not blocked). Agents of other tools (Claude Code, Codex, other Pi sessions that use octocode-agents-communication) reserve paths in that package's database, `<Octocode home>/agents-communication/communication.sqlite`: `file`, `edit` and `write` are refused on a path one of them holds too, even in a session that never joined, and the refusal names the holder, its vendor and its reason. Pi opens that database read-only and never writes it. A package process started with `--database <file>` lists that file in a small registry the package writes (`<Octocode home>/agents-communication/active-databases/<pid>.json`: the database path, pid and process start time; the package owns the format), and Pi reads every database a live entry lists the same way: an entry is live while its process runs or it was written within the last 11 minutes (a one-shot CLI call exits at once, but its lease lives up to 10 minutes), and Pi lists the folder on every check, so a session that just started is seen at once. A file that does not exist or is not initialised holds no leases; one that cannot be opened or read, or whose schema version is not 6, is skipped with one warning per file (other agents' leases there are then not checked; it is tried again after 30 s). A lease of the package session bound to this Pi session never blocks its own edits. An agent whose own reservation lapsed is told once and must lock again before editing. Delivery is two-phase: each tick hands everything new (at most 32 messages, in order; the rest wait for the next tick) to Pi as one message, so a busy agent reads the whole batch at its next step instead of one queued message per turn, and the batch wakes an idle agent when any message in it would. An idle agent handed a waking message that Pi does not turn into a model call within 10 s (no model selected or no sign-in) gets one warning in its UI; the message stays queued and is dead-lettered if the session ends first. The handed mark resets when the team database is emptied or replaced under a live session. A message is marked delivered only when the recipient's model is called with it in the conversation (Pi's `context` event, which covers steered, prompted and quietly appended messages alike); one Pi refuses is offered again on the next tick, and one still queued, or appended after the recipient's last model call, when it is killed or leaves becomes a dead letter. Heartbeats prune resolved message history older than a day, with pruning checked at most once per minute. Unread messages, questions still awaiting replies and unreported dead letters remain until resolved; they have no separate expiry. Messages a departed agent never read are kept as dead letters (`dead-lettered` in the panel); the sender is told once, without a wake (`Message #N to X was not read: X left`), and sending to an agent that already left is refused. A headless subagent takes no message while it is idle and leaves the team when its run settles, so a message that arrives after its last turn is dead-lettered instead of falsely acknowledged. `coordinate changes` lists the files agents changed recently with `file`, `edit` or `write` (successful changes only; a partly failed `file` batch records only its OK queries), newest first, one row per file with the agent, tool, age and change count; `paths` narrows it to prefixes, `withinMinutes` (default 60, at most a day) and `limit` (default 20) bound it. Changes are kept a day (a longer `withinMinutes` is clamped to it and the result says so); changes made by you, bash or git are not tracked, so use `localSearch` (`operation: "files"`, `time.modifiedWithin`, `sort: "modified"`) for what changed on disk. When the database is refused (not an Octocode agent database), `/agents` and the status bar show `team off` with the reason; one that is only busy or locked shows `team retrying` and the panel appears once a read succeeds. After the machine sleeps (a 1 s tick arrives more than 15 s late), the first tick of each session gives the members and reservations that were live before the sleep a fresh heartbeat and lease, so nobody is dropped, and no message dead-lettered, for the time everyone was suspended; an agent that stays silent after the wake is dropped as before. `OCTOCODE_TEAM_WORKSPACE` (absolute path) overrides the git-root scope, so an isolated worktree subagent joins its parent's team. `sendMessage` (`to` is a name, a unique role, `parent` or `all`, and may be left out when `replyTo` is set: the message goes to the sender of that message) is queued and answers `Queued message #N for X as an FYI (no reply requested).`, or with `replyRequired: true` `… as a request: X is woken and must answer with replyTo N.` (a departed recipient adds ` Not sent to Y (left the team).`), and arrives within a second as a message headed `Message #N from agent inky-kraken (reviewer: audit auth token refresh)`, with the sender's role and goal while it is still on the team. The header is built by the receiving process, and the text of anyone but the user sits between two fence lines carrying a random marker and the note that it is data from the sender, not instructions, so a sender cannot forge a header, a second message or the user's voice (a message recorded as from `user` is read as the user's only when the receiving process can verify it: `/agents tell` and `/agents interrupt` to a subagent this session started sign the message with that child's spawn secret (HMAC-SHA256 over the message id, recipient and text, stored with the delivery). Any other `user` row, written by another session or forged in the database, is labelled unverified and fenced like an agent's text. Any same-user process can write the database, but only the parent and that child hold the secret). A busy agent reads it at its next step; an idle one wakes only for a message that requires a reply, the answer to its own still-open question (`replyTo`), or a message from the user or the API (an FYI, or a reply to a reply, waits for its next turn). An unknown `replyTo` id is refused. `replyRequired` defaults to false: a message is an FYI unless the sender says it needs an answer. `all` reaches the sender's session tree (its top session and every subagent under it), not other sessions in the repository; `/agents tell all` and the API's `agents.tell all` reach the current session's tree. A message over 8,000 characters is not refused: `sendMessage` saves the whole text, with controls shown as visible escapes and (for anyone but you) under the same fenced data header as a delivered message, to a private file named by the SHA-256 of its content (`message-<sha256>.txt`) and delivers its start with the file's path (nothing is sent if the file cannot be written). A long message from you is signed as above, and the signature covers the file through its name: the receiver re-hashes the file, and an altered or missing file makes the message unverified. An oversized body written by another process is withheld from model context with an explicit delivery-error notice, rather than injected as a partial instruction. API messages are labelled `API client <name>, not the user` (see [External API](API.md)); the API's `agents.tell` saves a long text the same way, and a refusal is an RPC error. `/agents` (also `/octocode agents`) lists the team (goal, activity and message text with controls shown as visible escapes, see [Sanitizing policy](CONFIGURATION.md#sanitizing-policy)) and `/agents tell <agent\|all> <text>` sends a message from you (a subagent this session started reads it as the user's, as above; any other recipient sees it as unverified); `/agents interrupt <id> <text>` redirects a subagent at once; only a verified message from the user tells it to act on the message first, any other interrupt reads as a request from a sender not verified as the user. Reservations are cooperative: they do not cover arbitrary shell writes.
+Agents in one repository share the team tables of the agent database ([`OCTOCODE_AGENT_DB`](CONFIGURATION.md#environment-variables)): the main session, its subagents and other Pi sessions that `join`. The scope is the git root with symlinks resolved (one checkout via two paths is one team); `OCTOCODE_TEAM_WORKSPACE` (absolute path) overrides it, which is how an isolated worktree subagent joins its parent's team.
+
+**Presence.** Activity, tool counts and token usage are written on a 5 s heartbeat, so the panel and `coordinate list` can lag a few seconds.
+
+| Signal | Effect |
+| --- | --- |
+| Silent 60 s | Stale: hidden, keeps mail and row |
+| Process gone (pid and start time, [Liveness](ARCHITECTURE.md#liveness-who-is-still-running)) | Retired, with reservations; unread mail becomes a dead letter |
+| Parent process gone | A subagent exits, so a crashed parent leaves no orphan spending tokens |
+| Machine slept | The first tick gives live members and reservations a fresh heartbeat and lease |
+| Database refused (not an Octocode agent database) | `team off` with the reason in `/agents` and the status bar; busy or locked: `team retrying` |
+
+A main session is named from the subagent name list when it joins (`coordinate join`, or its first `lock` or `sendMessage`) with role `main` and an optional `goal`; live agents never share a name.
+
+**`coordinate`** actions: `list`, `join`, `leave`, `lock`, `unlock`, `changes`, `stop`. `join`, `leave` and `stop` exist only in the main session; a subagent joins at start and leaves when its run ends. `list` shows `name · role · status · model · parent`, goal, join and last-seen time, work (`56 tool calls · ↑1.2M (94% cached) ↓35k · ≈$2.28`), unanswered messages and held paths.
+
+**Reservations.** `lock` reserves files all-or-nothing; a trailing `/` reserves a tree.
+
+```mermaid
+flowchart TD
+  L["coordinate lock paths"] --> O{"Paths overlap each other?"}
+  O -- yes --> RF["Refuse, nothing locked"]
+  O -- no --> H{"A peer holds any?"}
+  H -- yes --> RF2["Refuse, names holder"]
+  H -- no --> LS["Lease: 90 s past heartbeat"]
+  LS --> E["Peers' file, edit, write refused"]
+  LS --> X{"Owner leaves, dies, or idles 30 min"}
+  X --> FR["Released; owner told once, must lock again"]
+```
+
+- Paths compare by Unicode full case folding per component (`Straße.ts` and `STRASSE.ts` collide). Overlap within one call means a tree and a path in it, two spellings of one path, or a path twice. A subagent's leases release when its run ends.
+- `file`, `edit` and `write` are refused on a peer's paths, naming holder, reason and age; they fail closed when the database cannot be read (a process that never joined and has no database is not blocked). `file` rechecks right before it writes or deletes; the reservation gate covers Pi's own `edit` and `write`. Reservations are cooperative: shell writes are not covered.
+- Agents of other tools (Claude Code, Codex, other Pi sessions using octocode-agents-communication) reserve in `<Octocode home>/agents-communication/communication.sqlite`. Their paths are refused too, even in a session that never joined, naming holder, vendor and reason. Pi opens that database and every one a live `active-databases/<pid>.json` lists, read-only; a file with schema version other than 6, or unreadable, is skipped with one warning and retried after 30 s (its leases then go unchecked). The package owns the format ([Where files go](CONFIGURATION.md#where-files-go)).
+
+**Recent changes.** `coordinate changes` lists files agents changed with `file`, `edit` or `write`, newest first: agent, tool, age, change count. `paths` narrows by prefix; `withinMinutes` (default 60, max one day, clamped with a note) and `limit` (default 20) bound it. Your, bash and git changes are not tracked: use `localSearch` with `time.modifiedWithin`.
+
+**Messages.** `sendMessage` takes `to` as a name, a unique role, `parent` or `all` (the sender's session tree: top session and its subagents, not other sessions). `to` may be omitted when `replyTo` is set (goes to that message's sender); an unknown `replyTo` is refused. `replyRequired` defaults to false.
+
+```mermaid
+sequenceDiagram
+  participant S as Sender
+  participant DB as Team DB
+  participant T as Recipient tick, 1 s
+  participant PI as Pi and model
+  S->>DB: sendMessage
+  T->>DB: read up to 32 new messages in order
+  T->>PI: one batch, fenced and headed
+  alt model called with it
+    PI-->>DB: marked delivered
+  else Pi refuses
+    T->>PI: offered again next tick
+  else recipient left or killed first
+    DB-->>S: dead letter, told once, no wake
+  end
+```
+
+- **Headers and fencing.** A message arrives within a second headed `Message #N from agent inky-kraken (reviewer: audit auth token refresh)`. The receiver builds the header; text from anyone but the user sits between two fence lines with a random marker, marked as data, so a sender cannot forge a header, a second message or the user's voice.
+- **The user's voice.** A `user` message reads as yours only if verifiable: `/agents tell` and `/agents interrupt` to a subagent this session started are signed with that child's spawn secret (HMAC-SHA256). Any other `user` row is labelled unverified and fenced. API messages read `API client <name>, not the user` ([API.md](API.md)).
+- **Waking.** A busy agent reads a message at its next step. An idle one wakes only for a message requiring a reply, the answer to its own open question, or a message from the user or API; others wait for its next turn.
+- **Delivery.** Delivered means the recipient's model was called with it. A waking message Pi does not turn into a model call within 10 s (no model, no sign-in) gives one warning.
+- **Dead letters.** A message still queued, or appended after the recipient's last model call, when it leaves or is killed becomes a dead letter (`dead-lettered` in the panel). The sender is told once, without a wake (`Message #N to X was not read: X left`); sending to a departed agent is refused. A headless subagent takes no message while idle, so one after its last turn is dead-lettered, not falsely acknowledged. Resolved messages are pruned ([Retention](CONFIGURATION.md#retention)).
+- **Long messages.** Over 8,000 characters: saved whole to a private `message-<sha256>.txt` (controls shown as visible escapes; fenced unless from you); the delivery carries the start and path. Yours is signed over the file name, so an altered or missing file makes it unverified. An oversized body written by another process is withheld with a delivery-error notice.
+
+**`/agents`** (also `/octocode agents`) lists the team (controls shown as visible escapes).
+
+- `/agents tell <agent|all> <text>` sends from you.
+- `/agents interrupt <id> <text>` redirects a subagent ([Background subagents](#background-subagents)); `/agents kill <id>` stops one; `/agents merge <id>` merges an isolated one.
 
 ## Sessions
 
-`/sessions` (same as `/octocode sessions`) lists sessions from Pi's `SessionManager` (so sessions from before Octocode was installed too), with what Octocode keeps in the local agent database (`<Octocode home>/agent/pi/octocode.db`): branch, git HEAD, cost, tokens, files changed, and whether its process is running. Octocode does not name sessions. It lists this repository's sessions newest first (`all` for every repository, or words to match name, first prompt, repository, branch or id; each line ends with the tail of the session id, and a fork with no prompt of its own shows `↳` and its parent's first prompt) and offers Resume (Pi's `switchSession` on the session file), Details, Rename (the current session only: Pi owns session names) and Forget Octocode data (deletes the session's Octocode folder and extras row; Pi's session file stays; refused while another Pi process has the session open). Resuming a session (or restarting Pi on one that already has prompts) adds a short brief before the next prompt, read when that prompt is sent, only when there is something to say: the git branch or HEAD moved, this session has ongoing backlog items (each with its goal, cut at 160 characters, and up to 3 of its paths, then `+N more`), or you were away over an hour (the to-do count and uncommitted changes are then added as context, but never cause a brief alone). Its first line carries the away time and the most important change, so the collapsed transcript line shows both; lists that do not fit (ongoing items, unreported running work) end with `+N more`. Pi's own `/resume`, `/session` and transcripts are unchanged; `/sessions` is an extra picker. Subagents run with `--no-session` unless they linger (then their conversation is saved under their name), so they get no extras row, brief or command.
+`/sessions` (same as `/octocode sessions [all|<words>]`) lists sessions from Pi's `SessionManager` (including pre-Octocode ones) with what Octocode keeps: branch, git HEAD, cost, tokens, files changed, whether its process runs. Default: this repository, newest first; `all` lists every repository; words match name, first prompt, repository, branch or id. Lines end with the session id tail; a fork with no prompt shows `↳` and its parent's first prompt.
+
+Actions: Resume (switch to the session file), Details, Rename (current session only; Pi owns names), Forget Octocode data (deletes the session's Octocode folder and extras row, not Pi's session file; refused while another Pi process has it open).
+
+```mermaid
+flowchart TD
+  END["Session end: quit, /new, /resume, reload"] --> R["Running jobs and subagents reported first, no wake"]
+  R --> ST[Stopped]
+  CR["Pi crashed or killed"] --> NR["Never reported"]
+  RS["Resume or restart on a session with prompts"] --> CK{"Branch or HEAD moved, ongoing backlog, unreported work, or away over 1 h?"}
+  CK -- no --> NB["No brief"]
+  CK -- yes --> BR["Brief before next prompt"]
+  NR --> BR
+```
+
+**Resume brief.** Added before the next prompt only when the diagram's conditions hold.
+
+- Every ongoing backlog item shows its title, goal and paths whole.
+- After an hour away, the to-do count and uncommitted changes join as context but never cause a brief alone.
+- The first line carries the away time and the most important change; no list is cut or counted.
+- Unreported work reads ``Stopped when the session ended, without a report: bash-3 (`yarn test`, log …); general-ab12 (goal "…")``, each whole (a subagent without a goal shows `task "…"`); a log the retention sweep removed shows `log deleted`.
+
+Pi's `/resume`, `/session` and transcripts are unchanged. Subagents save their conversation in their scratch folder ([Subagents](#subagents)) but get no extras row, brief or command.
 
 ## Backlog
 
-A task board per repository (worktrees share their main repository's) in the agent database, with states `backlog` (triage inbox) → `todo` (accepted) → `ongoing` (claimed) → `done`, priorities `p0`–`p3`, tags and a log of notes and changes. Besides its title (one line: line breaks become spaces), an item has a `goal` (the done-when: a check someone else can run; the agent must give one when it adds an item, while `/backlog add <title>` from you needs none; an agent's `update` can replace an item's goal but not blank it, and you can still clear it from `/backlog`), `paths` (where: files, directories or components), `why`, `evidence` (observations: paths, measurements, links), `plan` (approach and steps) and `body` (anything else). `get` shows Goal, Where, Why, Evidence and Plan sections (empty ones left out), `list` shows one line per item, and `/octocode backlog export` writes the same fields. An item may name the item it came from (`from`: a split, follow-up or finding, shown as `(from B12)`); `get` on the origin lists every item that came from it with its state, `list` with `from` filters to them, links that would loop are refused, and removing the origin clears the link on each derived item with a note. Every update logs what it changed (state, assignee, priority, tags, origin, the previous title and goal, the old and new paths, and a replaced why, evidence, plan or body in full) as a change entry next to the notes, so a note carries the reason, not the change; setting one of those fields replaces its whole text, and the old text stays in the log. A query matches substrings of the title, goal, body, paths, why, evidence and plan, and whole tags (`#ui` or `ui` finds tag `ui`, not `build`). Item lists and notes have `limit`/`offset` pages with an executable `Next: backlog` continuation. The `backlog` tool lets the agent `list`, `get`, `add`, `update` and `remove` items (ids `B1`, `B2`, …; an update with `state: ongoing` claims the item; `done` needs a note saying what changed and how it was verified; `remove` deletes an item and its notes, is meant for duplicates or items you asked to drop, and is refused to subagents and for items another running session holds). Items you add land in `todo`; items the agent adds land in `backlog` for you to triage unless it gives another state; a subagent's additions always land there, and a subagent may change only the state and notes of items its parent has claimed. An item another running session holds can only get a note from the agent (you can still move or edit it on the board). `/backlog` (same as `/octocode backlog`) opens the board (rows show `←B12` for an item's origin; Enter → Came from… sets or clears it; Enter → Edit opens a field menu: Title, Goal, Body, Paths, Why, Evidence and Plan, the lists one entry per line); the status bar shows the open counts in words with the hint that opens the board (`backlog 2 ongoing · 4 todo · 1 to triage · /backlog`). `/octocode backlog export` writes a Markdown snapshot to `<repo>/.octocode/backlog.md` (nothing reads it back). `/octocode backlog html` (also the picker's "Open as HTML" entry, and `h` on the board) writes `<repo>/.octocode/backlog.html`, one self-contained page for reading the whole board, and opens it in your default browser when there is a UI (`open`, `xdg-open` or `cmd /c start`; without a UI, or when the opener fails, it only says where the file is). The page holds every item in every state with every note in full, and the `from` links; it has a board (done collapsed), an item view you can link to (`#B12`), a sortable table whose filters (state, priority, tag, assignee) and text search over every field and note live in the URL hash, the derivation tree, an Attention view (ongoing items whose assignee is not a running session, and open items not updated in 7 days) and header counts with the median time from claim to done. It is a snapshot (its header says when it was made, and `/backlog html` refreshes it), works offline from `file://` with a Content-Security-Policy that allows only its own inline script and style, and shows item text only as text, never as markup. The command refuses to write, naming the item and field, when any text in it looks like a credential (the same check as on write, repeated on what is stored). The page is for you: the `backlog` tool has no HTML operation.
+A task board per repository (worktrees share their main repository's) in the agent database, with priorities `p0`–`p3`, tags and a log of notes and changes.
+
+```mermaid
+stateDiagram-v2
+  [*] --> backlog: agent or subagent adds
+  [*] --> todo: you add
+  backlog --> todo: triage
+  todo --> ongoing: update ongoing claims it
+  ongoing --> done: update done needs a note
+  done --> [*]
+```
+
+You can move an item to any state from the board; a subagent can only set `ongoing` or `done`.
+
+**Fields.** A one-line title and:
+
+- `goal`: the done-when, a check someone else can run. An agent must give one when adding (`/backlog add <title>` from you needs none); its `update` can replace but not blank it.
+- `paths` (files, directories, components); `why`; `evidence` (paths, measurements, links); `plan`; `body`.
+- `from`: the item it came from, shown `(from B12)`. `get` on the origin lists derived items; `list` with `from` filters. Looping links are refused; removing the origin clears the link with a note.
+
+- Every update logs what changed (state, assignee, priority, tags, origin, previous title and goal, paths, a replaced why, evidence, plan or body in full). Setting such a field replaces its whole text; the old stays in the log.
+- A query matches substrings of every text field and whole tags.
+- Lists and notes page with `limit`/`offset` and an executable `Next: backlog` continuation.
+
+**The `backlog` tool** (`list`, `get`, `add`, `update`, `remove`; ids `B1`, `B2`, …):
+
+- `update` with `state: ongoing` claims the item; `done` needs a note saying what changed and how it was verified.
+- `remove` deletes an item and its notes; refused to subagents and for items another running session holds. An agent can only add a note to an item another running session holds; you can still move or edit it.
+- Your items land in `todo`. An agent's land in `backlog` for triage unless it gives another state; a subagent's always do. A subagent changes only state and notes of items its parent claimed.
+
+**Commands.** `/backlog [add <title> | do <id> | export | html | <id> [backlog|todo|ongoing|done|delete]]` (same as `/octocode backlog`; not in subagents) opens the board. Rows show `←B12` for an origin; Enter → Came from… sets or clears it, Enter → Edit opens a field menu. The status bar shows open counts (`backlog 2 ongoing · 4 todo · 1 to triage · /backlog`).
+
+- `export` writes a Markdown snapshot to `<repo>/.octocode/backlog.md`; nothing reads it back.
+- `html` (also "Open as HTML" and `h`) writes `<repo>/.octocode/backlog.html` and opens it when there is a UI, else says where. The tool has no HTML operation. The page is one offline snapshot, not live (`/backlog html` refreshes it), with every item and note:
+  - Views: board, sortable table, derivation tree, and Attention (ongoing items whose assignee is not a running session; open items not updated in 7 days). Items link by `#B12`.
+  - The header counts items by state and priority and shows the median claim-to-done time.
+  - Its Content-Security-Policy allows only its own inline script and style; item text shows only as text.
+- `export` and `html` refuse to write, naming item and field, when any text looks like a credential.
+- `do <id>` (or `d`, or Enter → Do it now) claims the item as ongoing for this session and hands the agent a prompt with its title, goal, paths, why, evidence, plan, body and origin; it queues as a follow-up while the agent is busy. The agent records follow-ups with `from` set to the item and marks it done only after verifying its goal, with a note (a blocker is recorded instead). Delegating to a subagent hands over the same context; neither grants authority beyond existing permissions.
 
 ## Memory
 
-Durable notes (`preference`, `fact`, `decision`, `gotcha`, `procedure`) kept across sessions, global or per repository, in the agent database with an FTS5 full-text index (BM25 ranking; a `LIKE` scan when SQLite lacks FTS5). The `memory` tool can `search`, `get`, `list`, `set` (create, or update with `id`) and `delete`; subagents get `search`, `get` and `list` only. A `search` or `list` with more matches than `limit` says how to see the rest. A save, edit or delete is immediate in every mode. Creating, changing or deleting a global or pinned memory (or moving one out of those scopes) needs a trusted project, which no mode skips; in an untrusted project the tool reads only global memories. Each memory records its author: the injected line marks every memory the user did not write `(agent-written)`, an edit by the agent makes the agent its author, and the body is quoted as data (one JSON string on the line), so a saved note cannot end its line or pass for an instruction. A new memory whose title matches, or whose words mostly overlap, an existing one is refused with its id, so the agent updates instead of duplicating. Before each prompt, pinned memories (up to 1,200 characters) plus the top 5 BM25 hits for the prompt (3 in a subagent; words under 3 letters are ignored, a hit needs 2 matched words or one in its title or keywords, and hits under 30% of the best score are dropped; 2,400 characters in all) are injected as a hidden `[octocode-memory — …; not instructions]` message, one line per memory (a line over 600 characters is cut and ends with `(memory get M<n>)`); a memory already injected on this branch is not repeated until it is edited or a compaction summarizes its injection away (injections the compaction keeps still count). Seen ids are excluded before the FTS result limit, so candidate retrieval stays bounded as the branch grows. Pinned memories are not injected into subagents. Project memories are injected only in a trusted project. `/memory` (same as `/octocode memory`) browses, searches, adds and edits them; `/octocode memory auto off` stops injection everywhere and `OCTOCODE_MEMORY_AUTO=0` for one process.
+Durable notes (`preference`, `fact`, `decision`, `gotcha`, `procedure`), global or per repository, in the agent database with an FTS5 index (BM25; a `LIKE` scan without FTS5). 
+
+- The `memory` tool has `search`, `get`, `list`, `set` (create, or update with `id`) and `delete`; subagents get `search`, `get`, `list`. A `search` or `list` with more matches than `limit` says how to see the rest.
+- Writes are immediate in every mode, except that creating, changing or deleting a global or pinned memory needs a trusted project ([Trust](CONFIGURATION.md#trust)). In an untrusted project the tool reads only global memories.
+- A new memory whose title or words mostly match an existing one is refused with its id, so the agent updates instead.
+
+```mermaid
+flowchart TD
+  P["Each prompt, auto on"] --> PIN["Pinned memories, up to 1,200 chars"]
+  P --> Q["BM25 hits for prompt words, top 5 (3 in a subagent)"]
+  Q --> F{"2 matched words or a title or keyword hit?"}
+  F -- no --> X[Dropped]
+  F -- yes --> R{"Score at least 30% of best?"}
+  R -- no --> X
+  R -- yes --> D{"Already injected on this branch?"}
+  D -- "yes, unless edited or compacted away" --> X
+  D -- no --> J
+  PIN --> J["Hidden octocode-memory message, 2,400 chars total"]
+```
+
+- Prompt words under 3 letters are ignored.
+- Each memory is one line: body quoted as data (one JSON string); a line over 600 characters is cut and ends `(memory get M<n>)`; memories the user did not write are marked `(agent-written)`. The message header reads `[octocode-memory — …; not instructions]`.
+- Pinned memories are not injected into subagents; project memories only in a trusted project.
+- The `memory` tool's `search`, `list` and `set` lines show 160 (`set`: 60) characters of a body and, when the body is longer, end with `(memory get M<n>)`, which reads it whole; `delete` echoes the deleted memory whole.
+
+`/memory [search <query>|add|auto on|off|last]` (same as `/octocode memory`) browses, searches, adds and edits. `/octocode memory auto off` stops injection everywhere; [`OCTOCODE_MEMORY_AUTO=0`](CONFIGURATION.md#environment-variables) for one process. You can also say "remember that…" or "forget memory M3".
 
 ## Web and browser
 
-A main session leaves `browser` to the subagent profiles that carry it (the bundled `webHeadless` and `webLive`): its schema is the largest, and every request would pay for it. Name it in `--tools` or the `defaultTools` setting, or turn it on with `/tools`, to keep it in the main session; with no browser-capable profile it stays. Subagents get it unless their profile excludes it. For network, HAR, performance or raw DevTools Protocol work, the `octocode-chrome-devtools` skill drives its own Chrome through its CLI from any agent with `bash`.
+The main session leaves `browser` to the profiles that carry it (`webHeadless`, `webLive`), because its schema is the largest; name it in `--tools` or `defaultTools`, or enable it with `/tools`, to keep it in the main session. Subagents get it unless their profile excludes it. For network, HAR, performance or raw DevTools work, the `octocode-chrome-devtools` skill drives its own Chrome from any agent with `bash`.
 
-Two browser subagents: `webHeadless` (headless Chrome over DevTools only: fast, no permissions, no display, runs anywhere) and `webLive` (visible Chrome over DevTools on a persistent profile, for watching a flow or tasks behind the user's login; it stops at a login, CAPTCHA or MFA and leaves the window open for the user). `web` fetches a URL as readable text (20,000 characters by default; `maxChars` up to 50,000). A URL that serves a PNG, JPEG, GIF or WebP returns the image instead: the original (at most 5 MB, checked by its signature, not its header) is saved under `output/`, and the model gets a line with the URL, type, size and saved path plus the image, resized to the model's image limit with the dimension mapping when it is over 600,000 base64 characters; a larger image, a body that is not the image its header claims, and other binary types are a notice, SVG is read as its XML source and never rendered, and images are not cached. The image limit is the active model's `inputLimits.images.resize` (`maxWidth`, `maxHeight`, `maxBytes`, `jpegQuality`) when its metadata has one, else 1568 px (the native long edge of most Claude models, under the 2000 px an image may have once a request holds more than 20; `src/shared/vision.ts`). An HTML page is reduced to its marked main content (`<main>`, `role="main"`, or a single `<article>`) when it has one; a longer page is saved whole under the session's `output/` folder (see [Where files go](CONFIGURATION.md#where-files-go)) and the inline part (fitted to Pi's 50 KB output budget, so a multi-byte page is shown shorter than `maxChars` and the note says how much is left out; no second file is saved for it) folds runs of 8+ link-only lines (sidebars, tables of contents) and names the file to read the rest from, so nothing is refetched. The note names the Octocode tools this session has for that file: `mcp__octocode__clasify` to locate a described target (public `clasify` needs a classification key and `OCTOCODE_BETA=1`), `localSearch` for literal text (headings: regex `^#{1,3} `), `localFetch` for line ranges (the file's absolute path is given when these tools exist); without them it says to search it or read it by line range. Fetched HTML is static (no JavaScript runs): hidden elements are dropped, page metadata (JSON-LD, Open Graph prices, locale and dates) comes first (metadata over 1,500 characters follows the page text, whole), and the result notes a JavaScript app or an empty shell, whose rendered values (prices, currency) may differ, so the model renders the page (`browser`, or a `webHeadless` subagent when `browser` is not active). The body is decoded in its charset (a byte-order mark, the `Content-Type` charset, else an HTML `<meta charset>`, else UTF-8). Transient failures (network errors, 408/425/429/5xx, a short `Retry-After`) are retried twice with backoff and a final failure names its cause (`ECONNRESET`, `ENOTFOUND`, …); pages are cached for 15 minutes (at most 64 pages and 32 MB, least recently used first), and parallel fetches of one page share one request; a redirect to another host is reported, not followed. `web` also searches the web (Tavily / Serper / Exa / Brave with an API key; without one DuckDuckGo, then Bing, then DuckDuckGo lite, with the skipped providers and why named in the result). A URL on a loopback, private, link-local (cloud metadata), CGNAT, multicast or reserved address is a `net.private` [permission](#permissions) ask (it runs in `full` and is audited with a ⚠); only that first request may reach it. A redirect to a private address is never followed, and every other hop is checked on its resolved host and connected only to the addresses it checked, so DNS rebinding cannot redirect the request. Only `http(s)` is ever fetched. `browser` is the in-process CDP tool for both. It opens only `http(s)` URLs. The targets the agent chooses (`navigate`, `open`, `tab` with a `url`, and `tab` by index, which opens that tab's address again) pass the same check as `web`: a private, loopback, link-local or cloud-metadata host, or a name that does not resolve here (Chrome's own DNS may still take it somewhere private), is a `net.private` ask. The host is classified once, there, and only a host for which `net.private` was granted is approved, with its port, to load its own files; a name whose DNS answer flips from public to private is never approved, so page requests to it are refused. How far an approval reaches follows what you allowed. "Allow once" (and a mode that allows the call, such as `full`, which gives a per-call verdict) covers the tab that opens the page and that host and port only, until the tab navigates to another host or closes; a popup an approved tab opens inherits the approval until it navigates elsewhere or closes, and a service or shared worker may reach only its own private origin while some tab holds that host and port. A session grant covers every tab until the browser session ends; it is keyed and labelled by `host:port` with the effective port (80 or 443 when the URL omits it), for example `Allow app.local:80 for this session`. Approvals end when the browser session closes, attaches elsewhere or loses its connection. What the page chooses is never a prompt. Every request the page makes is paused before it leaves (documents, frames, redirect hops, scripts' `fetch` and XHR, images, subframes), and one to a private or unresolvable target is refused in every mode; the result names it and the audit records it, per kind, host and port, resource type and reason: identical repeats are counted and summarized within 10 s and again when the browser session ends (`(N times this browser session) …`), and after 100 distinct refusals one overflow entry counts the rest (`N more distinct refusals or reports after the first 100…`), so nothing is dropped silently. The cache and service workers are off for driven pages, so no answer skips the check. The browser's related targets are covered as well: a popup, a frame in another process and a dedicated, shared or service worker are attached before they run, given the same check and only then released; a target whose setup fails is closed, not run unchecked, and a tab you opened yourself is left alone. Every tab the agent has driven stays covered after it switches to another tab, until that tab closes. In a Chrome the tool did not launch (`attach`, `OCTOCODE_CHROME_PORT`), only targets related to a driven tab are covered: a popup it opened, its workers, and service or shared workers of an origin it loaded; your own tabs and other sites' workers are released untouched. To tell which workers belong to a driven tab, the session tracks at most 1,000 origins (the oldest is dropped), except that the origin each driven tab shows now is never dropped, so the set can exceed 1,000 when all are pinned; a worker of a forgotten origin is left alone. The DNS verdicts it reuses for 30 s are capped at 500 hosts. The `webLive` persistent-profile Chrome is covered whole, like a launched one. A Chrome that `browser` launches also runs behind a local filtering proxy that connects only to the address it checked (DNS pinning), refuses a private target with `403` and carries WebSocket upgrades. The proxy cannot tell tabs apart, so while any tab holds an approval, connections from any tab to that host and port pass it (a WebSocket handshake cannot be paused); page requests are still checked per tab. WebRTC's UDP bypasses both the proxy and the request check, so every Chrome `browser` launches has `webrtc.ip_handling_policy=disable_non_proxied_udp` set in its profile's `Default/Preferences` before it starts (the launch is refused if that write fails; Chrome ignores the `--force-webrtc-ip-handling-policy` switch). Known residual: in a Chrome on the kept `webLive` profile, which has no proxy, a TURN-over-TCP connection to a private address is not seen by the request check. A Chrome the tool did not launch (`attach`, `OCTOCODE_CHROME_PORT`, the `webLive` profile) has no proxy, so the page checks are its protection: a response from a private address the check did not allow closes that tab (a worker has none) and is audited as a rebinding, and a WebSocket the page opens to a private host is only reported (a warning on the next result and an audit entry), because a handshake cannot be paused. `upload` of files outside the workspace, symlinks resolved, is an `upload.outside` ask. It never connects to a running Chrome on its own: `attach(port)` (a `browser.control` ask; the DevTools URL it finds must be a local `ws:` address on that port under `/devtools/`, or it is refused) drives an already open DevTools browser in place, and `OCTOCODE_CHROME_PORT` opts in to working in a tab of the Chrome on that port (a headless Chrome is launched when nothing listens). Deep checks can reuse the reported port with the `octocode-chrome-devtools` skill's scripts. Actions: navigate (after the load event it waits until content and requests are quiet for 500 ms, at most 6 s, and notes a page still changing; with `text` it also waits for that text), snapshot (with `text`, waits for it first; a `Locale:` line names the page language, browser language, time zone and the currency symbols on the page; footer links are listed compactly on one line) (capped at 8 KB: numbered elements first, with each field's value and state, then page text; a cut snapshot is saved whole to a file, with control characters shown as visible escapes; page text past 200,000 characters is not read, and the `## Text` heading then says how much the page held), click (a real mouse press at the element's centre, so mousedown/pointer handlers run; it reports an element covering the target), hover (a bare mouse move, for hover menus and tooltips), drag (`ref` onto `to`, or onto the smallest element showing `text`: an HTML5 drag is intercepted and finished with dragEnter/dragOver/drop, a pointer drag gets paced moves and a release), type (replaces a text field's or contenteditable's text, picks a `<select>` option by label, and is refused when focus does not land on a text field), fill (several fields in one call; checkboxes, radios and switches take `true`/`false` and are clicked only when they differ; failed fields are listed), press (a key or a combo such as `Control+A`, `Shift+Tab`; editing shortcuts are sent as Chrome commands so select-all works), wait (until `text` appears, or with `gone` disappears, up to `timeout` seconds, default 10, max 60; a timeout fails with the current page attached), tabs and tab (list tabs with stable numbers; switch by `index` or open `url` in a new one), evaluate (a `browser.control` ask: it runs script in the page; a value JSON cannot carry, such as `NaN`, `Infinity`, a BigInt or a function, is shown as Chrome describes it, never as `undefined`), screenshot (visible page, jpeg quality 70 unless `format: "png"`; the full-size file is saved under the session's `output/` folder and its path is in the result; an image over the byte budget (600,000 base64 characters, or the model's smaller `inputLimits.images.resize.maxBytes`) is retaken at 0.5× then 0.25× and, if still too large, only the path is returned; the note names the limit it used, so screenshots cannot exhaust the request size limit; the retake follows bytes only, not the model's pixel limit, because the visible page is the headless window and a pixel size needs the display scale), console (each message clipped to 2,000 characters, the last 200 kept in view; every line is also saved whole to `browser-console-*.log` in the session's `output/` folder, capped at 4 MiB with one rotated `.1`; the result says how many lines left the view and when the tab changed, names the log and what rotation dropped, and a clipped line says where its whole line is), `dialog` (answer an open alert/confirm/prompt; while one is open, snapshot reports it instead of blocking), `upload` (sets files on a file input, or on the chooser a click opens), `download` (optionally clicks, waits, and lists each saved file with its path in the session's private `output/downloads/` folder); aborting the tool call cancels its pending page calls, and a Chrome still starting for it is killed once it is up. Text the model gets from `browser` (page results, `evaluate`, console lines, the console log, and its errors, Chrome DevTools errors included) and from `web` (page previews and saved pages, the image line, search results, errors) follows the [sanitizing policy](CONFIGURATION.md#sanitizing-policy), so nothing disappears; a CRLF in a `fill` result stays a CRLF. Elements come from open shadow roots and same-origin frames too (cross-origin frames are counted, not shown), and include `draggable` elements and the outermost `cursor: pointer` elements holding no other control (framework click handlers leave no attribute). An element keeps its number while it stays in the page (new ones get new numbers; a new document starts at 1), so numbers from earlier results stay valid. Mouse actions move first and measure the element again, since a move can shift the layout (a hover menu closing). After an action the tool waits about 150 ms for a navigation, for its load if one started, then until the DOM is quiet for 150 ms (at most 3 s); a tab the action opened (`window.open`, a popup) becomes the driven tab. On the same page, actions return only the new or changed elements, the numbers no longer shown, and new text lines, instead of a full snapshot. A headless Chrome gets a 1366×900 window, so sites keep their desktop layout. A headless Chrome that `browser` launches gets a fresh profile under `<Octocode home>/pi-browser/`, removed when it closes (and swept at the next launch if the Pi process died). In `webLive` the Chrome is visible and uses the persistent profile `<Octocode home>/pi-browser-profile/`, so a login survives between runs; the window stays open when the subagent ends (`browser close` quits it), and the next `webLive` reuses it through the profile's `DevToolsActivePort` file, once the Chrome on that port proves to be the one that wrote it (its DevTools browser id matches; a stale file is removed). A Chrome open on that profile without DevTools is refused with a clear error.
+- `webHeadless`: headless Chrome over DevTools only; needs no display.
+- `webLive`: visible Chrome on a persistent profile, for watching a flow or tasks behind your login. It stops at a login, CAPTCHA or MFA and leaves the window for you.
+
+### `web`
+
+Fetches a URL as readable text (20,000 characters by default; `maxChars` up to 50,000) and searches the web.
+
+```mermaid
+flowchart TD
+  A["web call"] --> K{"url or query?"}
+  K -- query --> SP{"API key set?"}
+  SP -- yes --> KP["Tavily, Serper, Exa or Brave"]
+  SP -- no --> KL["DuckDuckGo, Bing, DDG lite"]
+  KP -- "fails or empty" --> KL
+  K -- url --> H{"Private host?"}
+  H -- yes --> NP["net.private ask"]
+  H -- no --> WB["web ask in manual"]
+  NP --> CH{"Cached 15 min?"}
+  WB --> CH
+  CH -- yes --> OUT
+  CH -- no --> F["Fetch: pinned DNS, retry twice"]
+  F --> RD{"Redirect to other host?"}
+  RD -- yes --> RP["Reported, not followed"]
+  RD -- no --> OUT["Text, saved file if long, or image"]
+```
+
+- **Pages.** HTML is reduced to its marked main content (`<main>`, `role="main"` or one `<article>`) when it has one. No JavaScript runs, hidden elements drop, metadata (JSON-LD, Open Graph prices, locale, dates) comes first; a JavaScript app or empty shell is noted, so render it with `browser`. Charset: BOM, `Content-Type`, `<meta charset>`, else UTF-8. Only `http(s)`.
+- **Long pages** are saved whole under the session's `output/` ([Where files go](CONFIGURATION.md#where-files-go)); the inline part fits Pi's 50 KB budget, folds runs of 8+ link-only lines and names the file for `localSearch` or `localFetch`. Nothing is refetched.
+- **Images.** PNG, JPEG, GIF or WebP (checked by signature, at most 5 MB) is saved under `output/`; the model gets a line with URL, type, size and path plus the image resized to its limit (`inputLimits.images.resize`, else 1568 px). Larger or mismatched bodies and other binaries are a notice; SVG is read as XML. Not cached.
+- **Fetching.** Retries twice with backoff on network errors, 408/425/429/5xx and a short `Retry-After`; a final failure names its cause. Cache: 15 min, 64 pages, 32 MB, least recently used first; parallel fetches of one page share a request.
+- **Search.** A failing provider passes to the next; skipped providers and why are named ([Environment variables](CONFIGURATION.md#environment-variables)).
+- **Private hosts.** Loopback, private, link-local (cloud metadata), CGNAT, multicast or reserved addresses are a `net.private` [permission](#permissions) ask (runs in `full`, audited ⚠). Only that first request can reach one; every other hop connects only to the addresses it checked, so DNS rebinding cannot redirect it.
+
+### `browser`
+
+In-process Chrome DevTools Protocol tool; opens only `http(s)` URLs.
+
+```mermaid
+flowchart TD
+  O["First browser call"] --> M{"Mode"}
+  M -- webHeadless --> HL["Launch headless Chrome, fresh profile in pi-browser/"]
+  M -- webLive --> LV{"Chrome already on the profile?"}
+  LV -- "yes, DevToolsActivePort verified" --> RU[Reuse]
+  LV -- "open without DevTools" --> ER[Refuse]
+  LV -- no --> VL["Launch visible Chrome on pi-browser-profile/"]
+  M -- "attach(port)" --> AT["Drive the first page of that Chrome"]
+  M -- "OCTOCODE_CHROME_PORT" --> AN["Open a new tab in that Chrome"]
+  HL --> PX["Filtering proxy + WebRTC policy"]
+  VL --> PX
+  PX --> ACT["Actions"]
+  RU --> ACT
+  AT --> ACT
+  AN --> ACT
+  ACT --> CL["close action: headless profile removed, webLive Chrome quits. Session end: webLive window stays"]
+```
+
+| Action | Behavior |
+| --- | --- |
+| `navigate` | Waits after load until content and requests are quiet for 500 ms (max 6 s); with `text`, waits for it |
+| `snapshot` | Numbered elements (value and state per field), then page text; 8 KB cap, a cut snapshot is saved whole; text past 200,000 characters is not read; a `Locale:` line names language, time zone, currency |
+| `click`, `hover`, `drag` | Real mouse events at the element's centre; `click` reports a covering element; `drag` goes to `to` or the smallest element showing `text` |
+| `type`, `fill`, `press` | `type` replaces a text field's text or picks a `<select>` option by label (refused when focus misses a text field); `fill` sets several fields, checkboxes take `true`/`false`, and lists failures; `press` sends a key or combo |
+| `wait` | Until `text` appears (or with `gone` disappears), `timeout` default 10 s, max 60; a timeout fails with the page attached |
+| `tabs`, `tab` | List with stable numbers; switch by `index` or open a `url` |
+| `evaluate` | Runs page script (`browser.control`); a value JSON cannot carry (`NaN`, BigInt, function) is shown as Chrome describes it |
+| `info`, `close` | `info` reports the Chrome kind, profile, DevTools port and current page without launching one; `close` ends the session |
+| `screenshot` | Visible page, JPEG quality 70 unless `format: "png"`; full-size file under `output/`; over the byte budget ([Spilled outputs](CONTEXT-AND-COST.md#spilled-outputs)) it is retaken at 0.5×, then 0.25×, else only the path returns |
+| `console` | Last 200 messages, each clipped to 2,000 characters; every line saved whole in `output/browser-console-*.log` (4 MiB, one rotated `.1`) |
+| `dialog`, `upload`, `download` | Answer an alert, confirm or prompt (`snapshot` reports an open one); set files on an input or chooser; click, wait and list files saved in the private `output/downloads/` |
+| `attach(port)` | Drives an open DevTools browser in place (`browser.control`; a local `ws:` address on that port under `/devtools/`). `OCTOCODE_CHROME_PORT` opts in to a tab of the Chrome on that port. Neither happens on its own |
+
+Aborting a call cancels its pending page calls; a Chrome still starting is killed once up.
+
+**Elements** come from open shadow roots and same-origin frames (cross-origin frames are counted, not shown). Numbers hold while the element stays; a new document restarts at 1. After an action the tool waits for a navigation, then for the DOM to settle (max 3 s); on the same page it returns only new or changed elements and new text lines. Headless Chrome gets a 1366×900 window.
+
+**Profiles.** A launched headless Chrome gets a fresh profile under `<Octocode home>/pi-browser/`, removed on close and swept at next launch if Pi died. `webLive` uses `<Octocode home>/pi-browser-profile/`, so a login survives; the window stays open when the subagent ends (`browser close` quits it) and the next run reuses it once the Chrome on that port proves it wrote the profile's `DevToolsActivePort`. Text from `browser` and `web` follows the [sanitizing policy](CONFIGURATION.md#sanitizing-policy).
+
+**Network policy.** The agent chooses targets; the page chooses requests.
+
+```mermaid
+flowchart TD
+  T["Agent target: navigate, open, tab url"] --> CK{"Private, loopback, link-local, metadata or unresolvable?"}
+  CK -- no --> OKT[Proceed]
+  CK -- yes --> NPA["net.private ask"]
+  NPA -- allowed --> AP["Approve host:port, per tab or per session"]
+  PG["Page request: document, frame, redirect, fetch, XHR, worker"] --> PS["Paused before it leaves"]
+  PS --> PC{"Private or unresolvable target?"}
+  PC -- yes --> BLK["Refused in every mode, audited, no prompt"]
+  PC -- "no, or host approved" --> GO[Goes]
+```
+
+- **Targets** pass the same check as `web`; only a host granted `net.private` is approved, with its port, to load its own files. A name whose DNS flips from public to private is never approved.
+- **Approval reach.** "Allow once", or a mode that allows the call, covers that tab for that host and port until it navigates to another host or closes (a popup inherits it). A session grant covers every tab until the browser session ends, keyed `host:port` with the effective port. Approvals end when the browser session closes, attaches elsewhere or loses its connection.
+- **Audit.** Identical refusals are one entry plus a repeat count; after 100 distinct ones a single entry counts the rest.
+- **Related targets.** Cache and service workers are off. Popups, out-of-process frames and workers are attached before they run and released only after the same check; a target whose setup fails is closed. Driven tabs stay covered until they close; in a Chrome the tool did not launch only targets related to a driven tab are covered.
+- **Proxy.** A launched Chrome runs behind a local filtering proxy that connects only to the address it checked (DNS pinning), refuses private targets with `403` and carries WebSocket upgrades. It cannot tell tabs apart: while any tab holds an approval, any tab's connections to that host and port pass. A Chrome without the proxy (`attach`, `OCTOCODE_CHROME_PORT`, the `webLive` profile) relies on the page-request check alone: a response from a private address the check did not allow closes that tab and is audited as a rebinding; a WebSocket to a private host is only reported.
+- **WebRTC.** Launched Chromes get `webrtc.ip_handling_policy=disable_non_proxied_udp` written to the profile first (launch is refused if that fails). The proxy-less `webLive` Chrome does not check a TURN-over-TCP connection to a private address.
+- **Uploads.** `upload` of files outside the workspace (symlinks resolved) is an `upload.outside` ask.
 
 ## askUser
 
-Ask for missing user decisions or facts (related questions batched in one call, with no fixed count). Choices, descriptions and short tab labels are optional; a question without choices opens a text editor directly. The inline dialog shows progress, retains typed drafts, and reviews answers before submitting a batch. Single-choice questions answer on Enter; multi-select questions toggle choices with Space or Enter and answer only from their **Submit selection** row (at least one choice or a written answer). RPC hosts use numbered choices and text inputs. Cancellation, interruption and an unavailable user are distinct; unanswered questions never supply approval. Continue independent work within existing authorization when a required decision is missing.
+The agent asks for missing decisions or facts; related questions batch in one call. Choices, descriptions and tab labels are optional; a question without choices opens a text editor.
+
+```mermaid
+flowchart TD
+  Q["askUser batch, empty questions dropped"] --> A{"aborted or no UI?"}
+  A -- yes --> X["cancelled: Interrupted or Unavailable"]
+  A -- no --> DQ["Shared dialog queue"]
+  DQ -- "not TUI (RPC)" --> RP["select or input per question"]
+  DQ -- TUI --> T{"Question type"}
+  T -- single --> EN["Enter answers"]
+  T -- multi --> SP["Space or Enter toggles, Submit selection answers"]
+  T -- "no choices" --> ED["Text editor"]
+  EN --> RV["Review, then submit"]
+  SP --> RV
+  ED --> RV
+```
+
+The dialog shows progress and keeps typed drafts; a multi-select needs a choice or a written answer. An unanswered question never supplies approval.
 
 ## Hooks (opt-in)
 
-With `OCTOCODE_HOOKS=1`, Claude Code / Codex command hooks run on Pi events: `PreToolUse` (exit 2 or a `block`/`deny` decision blocks the tool; `permissionDecision: "ask"` asks you in `manual` and `workspace` (the `hook.ask` reason, see [permissions](#permissions)), runs in `full`, and is denied without a UI in the modes that ask; `allow` skips no ask). A `PreToolUse` hook that gives no answer (it times out, crashes or prints invalid JSON) fails open: the call runs, a warning names the hook and the failure, and the audit log records it; a hook with `"failClosed": true` denies the call instead (see [Hooks](CONFIGURATION.md#hooks)), `PostToolUse` (feedback and `additionalContext` are appended to the result), `SessionStart` (runs in the background so startup is not held up; its output is added to the next prompt's context, which waits for it), `PreCompact`, `Stop` (when a run completes; exit 2 or `{"decision":"block","reason":…}` continues it with the reason as `Stop hook feedback`, with `stop_hook_active` and `last_assistant_message` as in Claude Code, and at most 8 continuations in a row until a tool runs; `continue: false` is not a block; while Stop hooks run the footer shows `Stop hook: <command> · Ns`) and `Notification` (in the background, never blocking, in the TUI and RPC, never print or JSON: `permission_prompt` for a confirm dialog and `elicitation_dialog` for other dialogs the agent opens during a run (not a picker you open), `idle_prompt` after an answer sat unread for a minute; the matcher is the type). All matching hooks run in parallel, and one listed in several files runs once. Pi checks every call of a batch before any runs, so a slow `PreToolUse` hook holds the whole batch: the working line shows `Checking bash …` while it runs, the row shows `checks 1.2s` afterwards, a hook over 5 s is reported once, and `/hooks` lists runs, average and slowest time per command. Read from `~/.claude/settings.json`, `~/.codex/hooks.json`, `~/.octocode/hooks.json` and, in trusted projects only (see [Trust](CONFIGURATION.md#trust)), `<repo root>/.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json` and `.octocode/hooks.json`. Matchers accept Pi or Claude tool names (`Bash`, `Edit\|Write`); the payload is Claude-shaped: `bash` is `Bash` (same `command` input), `read` is `Read` with `tool_input.file_path`, and each `file` query is its own `Edit`, `MultiEdit`, `Write` or `Delete` call with `tool_input.file_path`; other tools keep their Pi name, and `pi_tool_name` is always the Pi name; hook text over 16 KB added to the context is saved whole to a file and replaced by its head and tail with the path.
+With `OCTOCODE_HOOKS=1`, Claude Code and Codex command hooks run on the events below; other events and hook types are ignored. Subagents run none unless their profile sets `hooks: true`. Locations, JSON format, timeouts, `failClosed`: [Hooks](CONFIGURATION.md#hooks).
 
-## Context, cache and cost
+```mermaid
+flowchart LR
+  SS[SessionStart] --> PR[Prompt]
+  PR --> PT["PreToolUse: can block or ask"]
+  PT --> TL[Tool runs]
+  TL --> PO["PostToolUse: adds feedback"]
+  PO --> ST{"Run completes: Stop hook"}
+  ST -- "block, at most 8 in a row" --> TL
+  ST -- ok --> ED[Done]
+  PR -.-> PC[PreCompact]
+  PR -.-> NF["Notification, background"]
+```
 
-Tool results and call arguments stay verbatim while the prompt cache is warm. Octocode writes the compaction summary, clears old re-fetchable results after the cache goes cold, replaces repeated reads with a note, sets cache retention and shows list-price cost estimates. How each works, with its limits and measurements: [CONTEXT-AND-COST.md](CONTEXT-AND-COST.md).
+| Event | Behavior |
+| --- | --- |
+| `PreToolUse` | Exit 2 or `block`/`deny` blocks the tool. `permissionDecision: "ask"` asks you in `manual` and `workspace` (`hook.ask`, [Permissions](#permissions)), runs in `full`, and is denied without a UI in modes that ask; `allow` skips no ask. No answer (timeout, crash, invalid JSON) fails open with a warning and audit entry, unless `"failClosed": true` |
+| `PostToolUse` | Feedback and `additionalContext` are appended to the result |
+| `SessionStart` | Runs in the background; its output joins the next prompt's context, which waits for it up to 15 s |
+| `PreCompact` | Runs before a compaction |
+| `Stop` | Exit 2 or `{"decision":"block","reason":…}` continues the run with the reason as `Stop hook feedback` (`stop_hook_active`, `last_assistant_message` as in Claude Code), at most 8 in a row until a tool runs; `continue: false` is not a block. The footer shows `Stop hook: <command> · Ns` |
+| `Notification` | Background, TUI and RPC only; the matcher is the type: `permission_prompt` (a confirm dialog the agent opens during a run), `elicitation_dialog` (any other dialog it opens), `idle_prompt` (an answer unread for a minute) |
+| `PreMessageSend` | Messaging gate before sending: `block`/`deny`, exit 2, `ask` and `failClosed` apply ([API.md](API.md#message-hooks)) |
+| `PostMessageReceive` | Observer: verdict text, context additions and reply instructions are ignored; once per delivered identity, skips restored history |
+
+Matching hooks run in parallel; one listed in several files runs once. Pi checks every call of a batch before any runs, so a slow `PreToolUse` hook holds the batch: the working line shows `Checking bash …`, the row `checks 1.2s`, and a hook over 5 s is reported once. `/hooks` lists runs with average and slowest time per command.
+
+Matchers accept Pi or Claude tool names (`Bash`, `Edit|Write`). The payload is Claude-shaped: `bash` is `Bash`, `read` is `Read` with `tool_input.file_path`, each `file` query is its own `Edit`, `MultiEdit`, `Write` or `Delete`; other tools keep their Pi name, and `pi_tool_name` is always the Pi name. Long hook text added to the context is saved whole and replaced by head, tail and path ([Spilled outputs](CONTEXT-AND-COST.md#spilled-outputs)).
 
 ## UI
 
-In the TUI Octocode draws the header as the "OCTOCODE CODE" banner: a 6-row block font (2-row half-block font, then plain text on narrow terminals) painted along the theme's accent → link → operator gradient with box-drawing shadows, a tagline with the version, and key hints. It has a fixed height, writes nothing to the session (so `/new`, `/resume` and `/fork` keep it in place), and a light band sweeps across it once per process. The footer has two lines: model, the [permission mode](#permissions) chip (kept, in its short form, on narrow terminals), thinking level, a context bar coloured by fullness, running agents, background subagents, bash jobs, queued messages (`✉ n queued`), `tok/s` and cost; then cwd, branch (clipped to a third of the width), session name, tokens and other extensions' statuses (Pi's MCP, hooks, backlog), dropping the least important parts on narrow terminals. The context bar reads against where Pi compacts automatically, and the tokens and cost include every subagent the session started. Their one format everywhere (footer, agents panel, `coordinate list`, `/agents`, subagent rows and reports, `/sessions`), where the price comes from and the `n/a` marker for unpriced models: [How it is shown](CONTEXT-AND-COST.md#how-it-is-shown). The spinner cycles braille dots along the same gradient; hidden thinking shows `✻ Thinking… (ctrl+t)`: whether the main session's thinking blocks show is Pi's `hideThinkingBlock` setting, which Ctrl+T toggles. Pi asks a model to think only when `models.json` declares `"reasoning": true`; when a model leaves it out but a built-in model with its id declares it (a proxy provider's copy of a Claude model), the session warns once and names the fields to add. Statuses, spinner and thinking label follow a theme switch; the terminal title is `octocode · <session name> · <dir>`. Octocode also adds a generation-speed (`tok/s`) status and one `/octocode` command (see [Commands](../README.md#commands)). The working indicator names what the agent is doing now: `Waiting for model` (a wait for the first token that passes 2 s), `Thinking: <gist>` (the latest finished sentence or heading of the streaming thinking, so the line changes per thought, not per token, and shows even while thinking blocks are hidden), `Writing`, `Preparing tool calls`, `Running bash yarn test`, `Running localSearch useState in src +2` (a batched call names its first query's target and counts the rest), `Running agent <goal>`, `Running 5 tools: bash · web ×2 +2` (the top-level calls of a parallel batch: two tool names, then a count; calls a tool makes itself are part of it), `Checking bash …` while a call's `tool_call` checks (reservations, the shell guard, PreToolUse hooks, permission asks) run, or `Waiting for you: <title>` during a dialog (`(+N queued)` when more wait), with the elapsed time once a step passes 2 s; the line stays within 70 columns so it never wraps, and Pi's default comes back when the run ends. The same line, without the time, is the agent's activity in the agents panel. Messages Octocode queues while the agent works (subagent reports, background bash reports, teammate messages) show as `✉ n queued` until the agent reads them. Pi's Esc clears its whole queue but restores only your typed text; Octocode adds the queued messages it cleared to the conversation without starting a turn and says so (TUI only; RPC keeps Pi's queue for the next run). A tool row reads `waiting` until its checks, approval or lock end; the newest running row shows a live clock that matches its final run time, and older running rows show none (the working line has the elapsed time). A row whose call waited before it ran adds `checks 1.2s` (its `tool_call` checks) or `queued 2.0s` (other calls' checks or the tool's lock) once the wait passes 250 ms. Collapsed, a batched call lists its first 3 queries, then `+N more`.
+**Header and footer** (main session, TUI).
 
-**One dialog at a time.** Pi's TUI draws one dialog; a second one replaces the first, whose answer then never comes. Every interaction that asks (`askUser`, every permission ask including the file review, `/octocode` subcommands, leave and checkpoint prompts) holds one shared queue, so a batch with `askUser` and a reviewed `file` asks one after the other. A call aborted while it waits stops waiting at once.
+- Header: the "OCTOCODE CODE" banner (plain text on narrow terminals; nothing is written to the session). Terminal title: `octocode · <session name> · <dir>`.
+- Footer line 1: model, [permission mode](#permissions) chip, thinking level, context bar, running agents, background subagents, bash jobs, `✉ n queued`, a running hook, `tok/s`, cost. Line 2: cwd, branch, session name, tokens, backlog counts, other extensions' statuses. The least important parts drop first on narrow terminals.
+- The context bar reads against Pi's auto-compaction point. Tokens and cost include every subagent the session started, in one format ([How it is shown](CONTEXT-AND-COST.md#how-it-is-shown)).
+- Hidden thinking shows `✻ Thinking… (ctrl+t)`. Pi asks a model to think only when `models.json` declares `"reasoning": true`; if a built-in model with its id declares it, the session warns once and names the fields.
 
-**Answer-ready notifications.** When the agent finishes an answer or opens a dialog while the terminal is in the background, Octocode sends a desktop notification (OSC 9, OSC 777, Kitty's OSC 99, or the bell; see `OCTOCODE_NOTIFY` and `OCTOCODE_NOTIFY_METHOD` in [CONFIGURATION](CONFIGURATION.md)) and puts `●` in the terminal title until you are back. Focus comes from terminal focus reports, which Octocode turns on in the regular TUI; in fullscreen mode Pi keeps them to itself, so Octocode notifies only after runs of 30 s or more with no key pressed for 30 s. These terminal signals are the TUI's only: aborted runs, subagents and print, JSON and RPC modes never send them ([Notification hooks](#hooks-opt-in) also fire in RPC). A dialog signals only when the agent opens it during a run, not a picker you open.
+**Working line.** Names what the agent does now, with elapsed time past 2 s: `Waiting for model`, `Thinking: <gist>`, `Writing`, `Preparing tool calls`, `Running bash yarn test`, `Running localSearch useState in src +2` (a batch names its first query), `Running agent <goal>`, `Running 5 tools: bash · web ×2 +2`, `Checking bash …` (reservations, shell guard, hooks, asks), `Waiting for you: <title>` (`(+N queued)`). Within 70 columns; the same line, without time, is the panel's activity. It and the team database show a call's path, command, query, URL or element ref or an agent's goal (never typed text), credential-looking spans replaced by `[redacted]` and `user:pass@` removed.
 
-Tools batched in one assistant message run in parallel. `file`, `browser`, `memory` and `backlog` keep their own calls in order with a per-tool lock, and `askUser` waits in the one dialog queue every interaction shares, instead of Pi's `executionMode: 'sequential'`, which would make every other call in the batch (MCP searches, bash) wait too. Put dependent steps, such as an edit and the test that checks it, in separate messages. Every tool renders compactly like Pi's built-ins: a one-line call, a short result preview, full output on ctrl+o. `file` shows each change's reasoning under it, with +/- counts and inline diffs. An `agent` row reads `● Agent(profile · goal)` (the model and `isolated` follow when set) and a background report `● Agent(name · profile · goal)`; the prompt given to the subagent shows in full above its progress or report when the row is expanded. While it runs, the row lists its latest steps (the last 8, the last 3 collapsed): tool calls `→ read a.ts`, the gist of each thinking block `✻ …`, narration before tool calls `› …`, and a live `✻ …` line for what it is thinking now. These lines are drawn for you only; the parent model gets the report. A row the user interrupted (Esc, `/octocode jobs kill`, a stopped subagent) is drawn `◼` in the warning colour, not as a failure. The working line and the shared team database show a call's path, command, query, URL or element ref, the first query's target (`+N`) of a batched call, or an agent's goal (never typed text), with credential-looking spans replaced by `[redacted]` and `user:pass@` removed from URLs.
+**Queued messages.** Reports and teammate messages queued while the agent works show as `✉ n queued`. Pi's Esc clears its queue but restores only your typed text; Octocode adds the cleared messages to the conversation without starting a turn (TUI only).
+
+**Tool rows.** A one-line call, a short result preview, full output on ctrl+o. A row reads `waiting` until its checks, approval or lock end; one that waited adds `checks 1.2s` or `queued 2.0s` past 250 ms. A collapsed batch lists 3 queries, then `+N more`; `file` shows each change's reasoning, +/- counts and diffs. An interrupted row (Esc, `/octocode jobs kill`, stopped subagent) is `◼` in the warning colour. An `agent` row reads `● Agent(profile · goal)` and lists the latest steps (8, collapsed 3); those lines are for you, the parent gets the report.
+
+**Parallel tools.** Tools batched in one message run in parallel; `file`, `browser`, `memory` and `backlog` keep their own calls in order with a per-tool lock, so a slow `file` call does not hold up MCP searches or bash. Put dependent steps, such as an edit and its test, in separate messages.
+
+**One dialog at a time.** Pi's TUI draws one dialog; a second would replace the first, whose answer never comes. Every ask (`askUser`, permission asks including the file review, `/octocode` subcommands, leave and checkpoint prompts) holds one shared queue; a call aborted while waiting stops at once.
+
+**Notifications.** When the agent finishes an answer or opens a dialog while the terminal is in the background, Octocode sends a desktop notification (`OCTOCODE_NOTIFY`, `OCTOCODE_NOTIFY_METHOD`: [Configuration](CONFIGURATION.md#environment-variables)) and marks the title `●` until you return. In fullscreen mode only runs of 30 s or more with no key pressed for 30 s notify. TUI only; aborted runs, subagents and print, JSON and RPC modes never send them.
 
 ## External agents
 
-`externalAgent` connects to a discovered local Pi instance or an explicitly launched ACP adapter. Its tool, `/octocode external`, API and CLI share one manager. Message hooks check sends before delivery and observe replies once. See [API.md](API.md#connect-to-external-agents) for the contract, ownership, permissions and cancellation.
+`externalAgent` connects to a discovered local Pi instance or an explicitly launched ACP adapter. Its tool, `/octocode external <JSON>`, the API and the CLI share one manager; message hooks check sends and observe replies once. Contract, ownership, permissions, cancellation: [API.md](API.md#connect-to-external-agents).
 
 ## External API (opt-in)
 
-Other programs can message a running session and follow it. `OCTOCODE_API=1` serves JSON-RPC 2.0 (one JSON line per message, the framing MCP, ACP and Codex's app-server use) on a Unix socket (`0600`, in a `0700` directory); `OCTOCODE_API_HTTP=<port>` (`0` = any free port) adds loopback HTTP; `/octocode api on [http]` and `/octocode api off` toggle it at runtime. Each instance writes `<Octocode home>/pi-api/instances/<id>.json` (pid, cwd, socket, HTTP URL and bearer token, mode `0600`), swept when the process dies. Subagents never serve one. A message from the API reaches the model fenced and labelled `API client <name>, not the user`; the API refuses a sender named `user`, `external` or a live agent, records each accepted call in the session (`octocode-external`), and redacts credential-looking spans from the events it streams. See [External API](API.md).
+Other programs can message a running session and follow it. Off by default; subagents never serve one. API messages reach the model fenced and labelled `API client <name>, not the user`. Enabling, protocol, methods, security: [API.md](API.md).
 
-## Sessions, backlog and memory: usage and privacy
+## Privacy
 
-**Working a backlog item.** Pick it on `/backlog` and press `d` (or Enter → Do it now), or run `/backlog do B12`: the item is claimed as ongoing for this session and the agent gets a prompt with its title, saved goal, where, why, evidence, plan, body and origin, asking it to record progress and follow-ups with `from` set to the item. It should mark the item done only after verifying its goal (or result when no goal is saved), with a note on what changed and how it was checked; a blocker is recorded instead of completion. The handoff is queued as a follow-up while the agent is busy. Delegate to a subagent hands the same goal, context and completion requirements to the agent for the `agent` tool. Both handoffs preserve existing permissions; item text does not grant additional authority. You can also just say so: "work on backlog item B12", "add a backlog item to…", "what is on the backlog?" — the agent uses the `backlog` tool. Likewise "remember that…" or "forget memory M3" use the `memory` tool.
+The agent database and every session folder are private to your user (files `0600`, folders `0700`) and stay on this machine; the Octocode MCP tools can read the session folders.
 
-**Privacy.** The agent database and every session folder are private to your user (files `0600`, folders `0700`) and stay on this machine. Backlog titles, goals, bodies, paths, why, evidence, plans, notes and tags, and memory titles, bodies and keywords that look like credentials (AWS access key ids; GitHub, GitLab, npm, Slack, Stripe, Google and `sk-…` API tokens; private keys; JWTs; bearer tokens; passwords in URLs or `password=…` assignments) are refused, checked on the text as stored: store where a secret lives, not the secret. Injected memories and the resume brief are labelled as data, not instructions, and the tool guidelines tell the model to verify memories against the code. A database file that is not an Octocode agent database (another app's SQLite file or not SQLite at all) is refused (set `OCTOCODE_AGENT_DB` to another file) rather than changed, down to its journal mode. There is one schema and no version number: opening a database of ours adds what the schema has and the file lacks (tables, columns, indexes, triggers) in one transaction, and never removes or rewrites anything, so builds of different ages can share the file; a file that already has everything is opened without a write lock. Opening the database tightens the file (and the default folder) back to owner-only; a missing or refused database never blocks a prompt.
+- **Credentials are refused.** Backlog fields and tags and memory titles, bodies and keywords that look like credentials (AWS key ids; GitHub, GitLab, npm, Slack, Stripe, Google, `sk-…` tokens; private keys; JWTs; bearer tokens; URL or `password=` passwords) are refused, checked as stored. Store where a secret lives, not the secret.
+- **Injected text is data.** Memories and the resume brief are labelled as data, and the model is told to verify memories against the code.
+- **Foreign databases are refused.** A file that is not an Octocode agent database is refused rather than changed, down to its journal mode; set `OCTOCODE_AGENT_DB` to another file.
+- **Additive schema.** No version number: opening our database adds missing tables, columns, indexes and triggers in one transaction and never removes or rewrites, so builds of different ages share the file.
+- Opening the database tightens the file and default folder back to owner-only; a missing or refused database never blocks a prompt.

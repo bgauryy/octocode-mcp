@@ -1,19 +1,24 @@
-import type { ExtensionAPI, SessionBeforeCompactEvent } from '@earendil-works/pi-coding-agent';
-import { clearedResults, contextReads, seenFiles, type WorkedFile } from '../files/reads.js';
+import type { ExtensionAPI, ExtensionContext, SessionBeforeCompactEvent, SessionCompactEvent } from '@earendil-works/pi-coding-agent';
+import { contextReads, seenFiles, type WorkedFile } from '../files/reads.js';
 import type { FileGuard } from '../files/tool.js';
 import { chooseSessionCacheRetention } from '../shared/env.js';
 import { interactive } from '../shared/interactive.js';
 import { isRecord } from '../shared/util.js';
 import { reserveTokensFor } from '../shared/tokens.js';
 import { parts, type ContextEntry } from './images.js';
-import { applyClearedResults, clearColdResults } from './clearing.js';
+import { clearColdResults } from './clearing.js';
+import { requestMessages } from './thinking.js';
 import { PromptCacheLifetimes, promptCacheTtlMs, warmingDecision } from './cache.js';
+import { recordCompactionNote } from './record.js';
 import { TooLargeRecovery } from './recovery.js';
 import { RESTORE_SHARE, RESTORE_TOTAL_CHARS, deliverRestoredFiles, recentFiles, settleRestoredFiles, type PendingRestore } from './restore.js';
 import { THRASH_MESSAGE, ThrashBreaker, contextTokens, needsDownshiftCompaction, toolDefinitionChars } from './pacing.js';
 import type { Api, Model } from '@earendil-works/pi-ai';
-import { carryFileLists, windowBudget, writeSummary } from './summary.js';
+import { carryFileLists, splitSummary, summaryMethodOf, windowBudget, writeSummary } from './summary.js';
+import { ArchiveCapture, deliverArchivePointer, forkLineage, sessionRecordOf, summaryLabel } from './archive.js';
+import { sessionLineage, setSessionLineage, writeSessionRecord } from '../shared/archive.js';
 import { notify } from '../shared/commands.js';
+import { errorMessage } from '../shared/util.js';
 
 /**
  * Tool results and call arguments stay verbatim until Pi compacts (a long result is bounded and spilled to a file when
@@ -21,7 +26,8 @@ import { notify } from '../shared/commands.js';
  * tools are replaced by placeholders naming their saved files (`clearing.ts`), and a repeated read of an unchanged file
  * gets a short note (`files/dedupe.ts`). Octocode also supplies prompt-cache lifetimes and warming decisions, strips
  * images from a request rejected as too large (HTTP 413, else the session is stuck), and writes the compaction summary
- * (`summary.ts`).
+ * (`summary.ts`). Each compaction's summarized messages are also filed as a searchable Markdown segment once it
+ * succeeded (`archive.ts`).
  */
 
 /**
@@ -36,6 +42,7 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
   const tooLarge = new TooLargeRecovery();
   const lifetimes = new PromptCacheLifetimes();
   const thrash = new ThrashBreaker();
+  const archive = new ArchiveCapture();
   /** The model a pending downshift compaction summarizes on (the one the context still fits). */
   let downshiftFrom: Model<Api> | undefined;
   let session: string | undefined;
@@ -63,10 +70,12 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
   let pendingRestore: PendingRestore | undefined;
   pi.on('session_before_compact', async (event, ctx) => {
     if (event.reason !== 'manual' && thrash.tripped()) {
+      recordCompactionNote(pi, 'thrash-stop', THRASH_MESSAGE);
       if (ctx.hasUI) notify(ctx.ui, THRASH_MESSAGE, 'error');
       ctx.abort();
       return { cancel: true };
     }
+    archive.capture(event);
     restoreCandidates = recentFiles(event.preparation, ctx.cwd);
     // Sized for the window the context lands in (after a downshift, the smaller model's), with Pi's reserve for it.
     restoreBudget = windowBudget(ctx.model?.contextWindow, event.preparation.settings.reserveTokens, RESTORE_SHARE, RESTORE_TOTAL_CHARS);
@@ -88,12 +97,26 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
     downshiftFrom = undefined;
     restoreCandidates = [];
     pendingRestore = undefined;
+    archive.discard();
+    // A forked session's history before the fork is in its sources' archives: its own (`ownArchives`, the pointer).
+    setSessionLineage(forkLineage(ctx.sessionManager));
+    recordWarned = false;
   });
-  // Before a run (a user prompt, or a custom message that wakes the session): the cache lifetime in use is known now,
-  // and an idle gap longer than it means the next request rewrites the cache anyway, so old results are cleared first.
+  // The session's record (goal, ending, repository) is rewritten after each run, so other sessions of the repository
+  // can tell what it was for and how it ended (`archive` tool). A failure is warned about once and never thrown.
+  let recordWarned = false;
+  pi.on('agent_end', async (_event, ctx) => {
+    try {
+      const record = sessionRecordOf(ctx.sessionManager, sessionLineage());
+      if (record) writeSessionRecord(record);
+    } catch (error) {
+      if (!recordWarned && ctx.hasUI) notify(ctx.ui, `The session record could not be written (${errorMessage(error)}).`, 'warning');
+      recordWarned = true;
+    }
+  });
+  // The retention is chosen again before every run (above), so the lifetime the `context` handler reads is the one in use.
   pi.on('before_agent_start', async (_event, ctx) => {
     chooseSessionCacheRetention(interactive(ctx, isSubagent));
-    clearColdResults(pi, ctx, guard, promptCacheTtlMs(lifetimes.of(ctx.model)));
   });
   // File contents summarized away by compaction, or on another branch, are no longer in context: the guard keeps only
   // the reads the context still shows, then the files worked on most recently are read back (and count as read).
@@ -103,22 +126,30 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
     const reserve = reserveTokensFor(pi.getSettings(), event.model);
     if (!needsDownshiftCompaction(event.previousModel, event.model, contextTokens(ctx, toolDefinitionChars(pi)), reserve)) return;
     downshiftFrom = event.previousModel;
-    if (ctx.hasUI) notify(ctx.ui, `The context does not fit ${event.model.id}'s window; compacting first on ${event.previousModel!.id}.`, 'info');
+    const reason = `The context does not fit ${event.model.id}'s window; compacting first on ${event.previousModel!.id}.`;
+    recordCompactionNote(pi, 'downshift', reason);
+    if (ctx.hasUI) notify(ctx.ui, reason, 'info');
     ctx.compact({ onError: () => (downshiftFrom = undefined) });
   });
   pi.on('session_compact', async (event, ctx) => {
     thrash.compacted(event.reason === 'manual');
+    archiveCompaction(pi, archive, event, ctx);
     guard.restore(contextReads(ctx));
     const pending = restoreCandidates;
     restoreCandidates = [];
     pendingRestore = deliverRestoredFiles(pi, pending, ctx, restoreBudget);
   });
+  pi.on('session_compact_failed', async () => archive.discard());
   // The restored files count as read from the first model call that carries them (Pi may hold the message until the
   // running turn ends).
   pi.on('context', async (event, ctx) => {
+    // Before every request, in a run or at its start: when the cache was last used longer ago than its lifetime (an idle
+    // gap, or a long tool in the run), this request rewrites it anyway, so old results are cleared first.
+    clearColdResults(pi, ctx, guard, promptCacheTtlMs(lifetimes.of(ctx.model)));
     if (pendingRestore && settleRestoredFiles(event.messages, pendingRestore, guard)) pendingRestore = undefined;
-    // Every request shows the results cleared on this branch as their placeholders, the same way each time.
-    const messages = applyClearedResults(event.messages, clearedResults(ctx.sessionManager.getBranch()));
+    // Every request shows the results cleared on this branch as their placeholders, the same way each time, and no
+    // thinking a compaction made stale (`thinking.ts`).
+    const messages = requestMessages(event.messages, ctx.model, ctx.sessionManager.getBranch());
     return messages === event.messages ? undefined : { messages };
   });
   pi.on('session_tree', async (_event, ctx) => {
@@ -130,6 +161,24 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
 }
 
 type Preparation = SessionBeforeCompactEvent['preparation'];
+
+/**
+ * Files the messages captured for the compaction that just succeeded (`ArchiveCapture`), labelled with what its summary
+ * says. A summary Octocode did not write has no pointer to the archive in its Recovery section, so one follows as a
+ * message. A failure is reported and recorded, never thrown: the compaction itself is done.
+ */
+function archiveCompaction(pi: ExtensionAPI, archive: ArchiveCapture, event: SessionCompactEvent, ctx: ExtensionContext): void {
+  if (!archive.captured) return;
+  try {
+    const entry = event.compactionEntry;
+    const written = archive.write(entry, ctx.sessionManager.getSessionId(), summaryLabel(splitSummary(entry.summary).body), summaryMethodOf(entry.details) ?? (entry.fromHook ? 'extension' : 'pi-default'));
+    if (written && summaryMethodOf(entry.details) === undefined) deliverArchivePointer(pi, written.n);
+  } catch (error) {
+    const reason = `The compaction succeeded, but its messages could not be archived (${errorMessage(error)}).`;
+    recordCompactionNote(pi, 'archive-failed', reason);
+    if (ctx.hasUI) notify(ctx.ui, reason, 'warning');
+  }
+}
 
 /**
  * Adds every path the `file` tool changed in the summarized messages to Pi's modified-file list (in place). A call's

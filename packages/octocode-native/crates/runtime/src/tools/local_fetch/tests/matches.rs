@@ -1403,7 +1403,16 @@ fn minified_views_page_in_raw_source_lines() {
     let t = Fixture::new();
     let paths = Paths(t.0.clone());
     let p = t.0.join("a.js");
-    let groups = 3_000;
+    // A kept view over the response window is cut to a bounded first page.
+    // Every page re-minifies the whole file, so the view stays near the
+    // window (a quarter over, for the bytes minifying trims from each line).
+    let window = 2 * crate::tools::local_fetch::LINE_PAGE_BYTES;
+    let kept_line = |group: usize| format!("{}\texport const value{group} = {group};\n", group * 3);
+    let (mut groups, mut kept_bytes) = (0, 0);
+    while kept_bytes <= window + window / 4 {
+        groups += 1;
+        kept_bytes += kept_line(groups).len();
+    }
     let source: String = (1..=groups)
         .map(|n| format!("// note {n}\n\nexport const value{n} = {n};\n"))
         .collect();
@@ -1411,19 +1420,21 @@ fn minified_views_page_in_raw_source_lines() {
     let raw_total = groups * 3;
     let kept: Vec<usize> = (1..=groups).map(|n| n * 3).collect();
     for first in [
-        serde_json::json!({"minify":"standard","unit":"lines","length":30}),
+        // A line page that is no multiple of the three-line group cuts groups.
+        serde_json::json!({"minify":"standard","unit":"lines","length":100}),
         serde_json::json!({"minify":"standard","fullContent":true}),
     ] {
         let mut query = qj(&p, first.clone());
-        let (mut expected_offset, mut shown) = (0, Vec::new());
+        let (mut expected_offset, mut shown, mut pages) = (0, Vec::new(), 0);
         for _ in 0..1_000 {
+            pages += 1;
             let page = execute_local_fetch(
                 &query,
                 &paths,
                 &Safe,
                 &NeverCancel,
                 &LocalFetchRegex,
-                Some(50_000),
+                Some(window),
                 None,
             );
             assert_eq!(page.total_lines, Some(raw_total), "{first}");
@@ -1455,6 +1466,7 @@ fn minified_views_page_in_raw_source_lines() {
             "{first}: pages reach the last raw line"
         );
         assert_eq!(shown, kept, "{first}: every kept line exactly once");
+        assert!(pages > 1, "{first}: the view is one page");
     }
 }
 

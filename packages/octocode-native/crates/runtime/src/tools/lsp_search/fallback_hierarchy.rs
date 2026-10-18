@@ -9,7 +9,6 @@ use super::render::uri_to_path;
 use super::source::SourceCache;
 use super::walk::{Expansion, HierarchySource, HierarchyWalk, MAX_HIERARCHY_NODES, NodeKeys, Walk};
 use crate::tools::cancel::CancellationCheck;
-use octocode_engine::error::Error as EngineError;
 use octocode_engine::lsp::client::{LocationRequest, NativeLspClient, SnippetReadPolicy};
 use octocode_engine::lsp::types::JsCodeSnippet;
 use serde_json::{Value, json};
@@ -82,7 +81,7 @@ pub(super) struct Fallback<'a, 'p> {
     sources: Mutex<&'a mut SourceCache<'p>>,
     snippet_policy: &'a SnippetReadPolicy,
     cancel: &'a dyn CancellationCheck,
-    failures: Mutex<Vec<EngineError>>,
+    failures: Mutex<Vec<LspFailure>>,
     keys: Mutex<NodeKeys<'p>>,
     bases: Mutex<std::collections::HashMap<String, Vec<Value>>>,
     documents: Mutex<
@@ -123,8 +122,15 @@ impl<'a, 'p> Fallback<'a, 'p> {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// A relation the source and the server's answers did not establish.
     async fn fail(&self, message: String) {
-        self.failures.lock().await.push(EngineError::new(message));
+        self.fail_from(LspFailure::unestablished(message)).await;
+    }
+
+    /// A request or parse that failed, kept with its kind: a transient one
+    /// makes the row retryable.
+    async fn fail_from(&self, failure: LspFailure) {
+        self.failures.lock().await.push(failure);
     }
 
     async fn source(
@@ -166,6 +172,18 @@ impl<'a, 'p> Fallback<'a, 'p> {
     async fn node(&self, path: &str, line: u32, character: u32) -> Result<Value, LspFailure> {
         let document = self.document(path).await?;
         heritage::type_node(&document, path, line, character).map_err(LspFailure::invalid_query)
+    }
+
+    /// The trait implementation located at `line:character`, if any: the
+    /// subtype a Rust server's implementation answer names.
+    async fn impl_node(
+        &self,
+        path: &str,
+        line: u32,
+        character: u32,
+    ) -> Result<Option<Value>, LspFailure> {
+        let document = self.document(path).await?;
+        Ok(heritage::impl_node(&document, path, line, character))
     }
 
     async fn resolved_nodes(
@@ -254,7 +272,7 @@ impl<'a, 'p> Fallback<'a, 'p> {
             {
                 Ok(node) => nodes.push(node),
                 Err(failure) if failure.code == "cancelled" => return Err(failure),
-                Err(failure) => self.fail(failure.message).await,
+                Err(failure) => self.fail_from(failure).await,
             }
         }
         Ok(nodes)
@@ -275,7 +293,7 @@ impl<'a, 'p> Fallback<'a, 'p> {
             match self.definitions(&path, base.line, base.character).await {
                 Ok(nodes) => resolved.extend(nodes),
                 Err(failure) if failure.code == "cancelled" => return Err(failure),
-                Err(failure) => self.fail(failure.message).await,
+                Err(failure) => self.fail_from(failure).await,
             }
         }
         self.bases.lock().await.insert(key, resolved.clone());
@@ -283,6 +301,11 @@ impl<'a, 'p> Fallback<'a, 'p> {
     }
 
     async fn subtypes(&self, parent: &Value) -> Result<Vec<Value>, LspFailure> {
+        // Nothing implements an impl block; asking the server at its self
+        // type would list that type's own impls.
+        if parent.get("kind").and_then(Value::as_str) == Some("impl") {
+            return Ok(Vec::new());
+        }
         let path = node_path(parent)?;
         let (line, character) = node_position(parent)?;
         let parent_key = self.keys.lock().await.key(parent);
@@ -316,18 +339,19 @@ impl<'a, 'p> Fallback<'a, 'p> {
         for candidate in candidates.into_iter().take(MAX_HIERARCHY_NODES) {
             self.cancel.check().map_err(LspFailure::cancelled)?;
             let path = uri_to_path(&candidate.uri);
-            let resolved = match self
-                .resolved_nodes(
-                    &path,
-                    candidate.range.start.line,
-                    candidate.range.start.character,
-                )
-                .await
-            {
+            let (line, character) = (candidate.range.start.line, candidate.range.start.character);
+            // A trait implementation is the subtype itself, not the type its
+            // self-type position resolves to (which declares no heritage).
+            let resolved = match self.impl_node(&path, line, character).await {
+                Ok(Some(node)) => Ok(vec![node]),
+                Err(failure) if failure.code == "cancelled" => return Err(failure),
+                _ => self.resolved_nodes(&path, line, character).await,
+            };
+            let resolved = match resolved {
                 Ok(resolved) => resolved,
                 Err(failure) if failure.code == "cancelled" => return Err(failure),
                 Err(failure) => {
-                    self.fail(failure.message).await;
+                    self.fail_from(failure).await;
                     continue;
                 }
             };
@@ -342,8 +366,8 @@ impl<'a, 'p> Fallback<'a, 'p> {
             if distinct.len() > 1 {
                 self.fail(format!(
                     "Implementation candidate at {path}:{}:{} resolves to {} distinct type declarations; its immediate subtype identity is ambiguous",
-                    candidate.range.start.line + 1,
-                    candidate.range.start.character + 1,
+                    line + 1,
+                    character + 1,
                     distinct.len()
                 )).await;
                 continue;
@@ -365,7 +389,7 @@ impl<'a, 'p> Fallback<'a, 'p> {
                     }
                 }
                 Err(failure) if failure.code == "cancelled" => return Err(failure),
-                Err(failure) => self.fail(failure.message).await,
+                Err(failure) => self.fail_from(failure).await,
             }
         }
         Ok(direct)
@@ -399,7 +423,7 @@ impl<'a, 'p> Fallback<'a, 'p> {
 }
 
 impl HierarchySource for Fallback<'_, '_> {
-    async fn expand(&self, expansion: Expansion, item: Value) -> Result<Value, EngineError> {
+    async fn expand(&self, expansion: Expansion, item: Value) -> Result<Value, LspFailure> {
         let result = match expansion {
             Expansion::Supertypes => self.bases(&item).await,
             Expansion::Subtypes => self.subtypes(&item).await,
@@ -407,13 +431,7 @@ impl HierarchySource for Fallback<'_, '_> {
                 "The heritage source expands only type hierarchy edges",
             )),
         };
-        result.map(|nodes| json!(nodes)).map_err(|failure| {
-            if failure.code == "cancelled" {
-                EngineError::cancelled()
-            } else {
-                EngineError::new(failure.message)
-            }
-        })
+        result.map(|nodes| json!(nodes))
     }
 }
 

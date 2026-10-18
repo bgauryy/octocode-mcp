@@ -19,24 +19,34 @@ pub(super) fn declaration_kind(kind: &str) -> Option<&'static str> {
         | "singleton_method"
         | "function_clause" => Some("function"),
         "constructor_declaration" => Some("constructor"),
-        "class_definition" | "class_declaration" | "class_specifier" | "class" => Some("class"),
+        "class_definition"
+        | "class_declaration"
+        | "abstract_class_declaration"
+        | "class_specifier"
+        | "class" => Some("class"),
         "struct_item" | "struct_specifier" | "struct_declaration" => Some("struct"),
         "enum_item" | "enum_declaration" | "enum_specifier" => Some("enum"),
         "trait_item" => Some("trait"),
         "interface_declaration" | "interface_item" => Some("interface"),
         "impl_item" => Some("impl"),
         "mod_item" | "module_definition" => Some("module"),
-        // C#: namespaces, records, properties, delegates.
-        "namespace_declaration" | "file_scoped_namespace_declaration" => Some("namespace"),
+        // C#: namespaces, records, properties, delegates. TypeScript
+        // `namespace N {}` is an `internal_module`.
+        "namespace_declaration" | "file_scoped_namespace_declaration" | "internal_module" => {
+            Some("namespace")
+        }
         "record_declaration" | "record_struct_declaration" => Some("class"),
         "property_declaration" => Some("property"),
         "delegate_declaration" => Some("type"),
         "const_item" | "const_declaration" | "constant_declaration" | "static_item" => {
             Some("constant")
         }
-        "type_item" | "type_declaration" | "type_alias" | "type_definition" | "type_spec" => {
-            Some("type")
-        }
+        "type_item"
+        | "type_declaration"
+        | "type_alias"
+        | "type_alias_declaration"
+        | "type_definition"
+        | "type_spec" => Some("type"),
         "macro_definition" | "macro_rule" => Some("macro"),
         // Generic Assembly grammars model navigation anchors as labels rather
         // than high-level function declarations.
@@ -503,7 +513,7 @@ pub(super) fn is_exported_declaration(
         "go" => name.chars().next().is_some_and(char::is_uppercase),
         "py" | "pyi" => parent.is_none() && !name.starts_with('_'),
         "java" | "cs" => text.starts_with("public ") || text.starts_with("export "),
-        "c" | "h" | "cpp" | "hpp" | "cc" | "cxx" | "hh" | "hxx" | "cu" | "cuh" => {
+        ext if super::languages::is_c_family_extension(ext) => {
             parent.is_none() && !text.starts_with("static ")
         }
         // The generic grammar does not model `.global`/`.globl` visibility

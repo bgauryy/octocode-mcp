@@ -49,7 +49,7 @@ struct CompiledQuery {
     names: Option<Gitignore>,
     extensions: Vec<String>,
     regex: Option<Regex>,
-    entry_type: Option<String>,
+    entry_type: Option<EntryType>,
     empty: bool,
     modified_within_secs: Option<u64>,
     modified_before_secs: Option<u64>,
@@ -90,7 +90,8 @@ struct QueryState {
 
 /// Walk `options.path` in name order, listing the entries its filters
 /// match. `admit` decides each descendant before it is inspected or counted
-/// (a denied directory is not entered); ignore rules decide it before that.
+/// (a denied directory is not entered); ignore rules and caller exclusions
+/// decide it before that.
 /// `stop` cancels the walk ([`ErrorKind::Cancelled`]).
 pub(crate) fn query_file_system(
     options: FileSystemQueryOptions,
@@ -205,7 +206,11 @@ impl CompiledQuery {
             names,
             extensions,
             regex,
-            entry_type: options.entry_type,
+            entry_type: options
+                .entry_type
+                .as_deref()
+                .map(EntryType::parse)
+                .transpose()?,
             empty: options.empty.unwrap_or(false),
             modified_within_secs: parse_duration_option(
                 options.modified_within.as_deref(),
@@ -238,6 +243,33 @@ impl CompiledQuery {
     }
 }
 
+/// The `entry_type` filter: `f` lists files, `d` directories.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EntryType {
+    File,
+    Directory,
+}
+
+impl EntryType {
+    fn parse(raw: &str) -> Result<Self, Error> {
+        match raw {
+            "f" => Ok(Self::File),
+            "d" => Ok(Self::Directory),
+            _ => Err(Error::with_kind(
+                ErrorKind::InvalidInput,
+                format!("Invalid entryType for local filesystem query: {raw} (f or d)"),
+            )),
+        }
+    }
+
+    fn matches(self, kind: EntryKind) -> bool {
+        match self {
+            Self::File => kind.is_file,
+            Self::Directory => kind.is_dir,
+        }
+    }
+}
+
 impl CompiledQuery {
     /// Whether a caller `exclude` glob matches this entry.
     fn excludes(&self, path: &Path, is_dir: bool) -> bool {
@@ -247,9 +279,11 @@ impl CompiledQuery {
     }
 
     /// What the walk does with a directory entry before it is matched:
-    /// the ignore rules, the policy callback, dot entries, pruned names and
-    /// caller exclusions decide, in that order. One verdict for a live and
-    /// a replayed entry, so a resumed walk recurses where the first did.
+    /// the ignore rules, caller exclusions, the policy callback, dot entries
+    /// and pruned names decide, in that order. An entry the caller excluded
+    /// never reaches the callback, so nothing it counts (withheld, hidden or
+    /// pruned entries) includes one. One verdict for a live and a replayed
+    /// entry, so a resumed walk recurses where the first did.
     fn verdict(
         &self,
         path: &Path,
@@ -269,6 +303,10 @@ impl CompiledQuery {
                 counted: self.show_hidden || !name.starts_with('.'),
             };
         }
+        // A caller exclusion is a path match: it reads no metadata.
+        if self.excludes(path, is_dir) {
+            return Verdict::Left;
+        }
         // Authorize before metadata, matching (which can inspect empty
         // directories), discovery counters, or recursive traversal.
         if !admit(path, file_type, visit) {
@@ -279,9 +317,6 @@ impl CompiledQuery {
         }
         if is_dir && self.prune.names(file_name) {
             return Verdict::Pruned;
-        }
-        if self.excludes(path, is_dir) {
-            return Verdict::Left;
         }
         Verdict::Enters
     }
@@ -458,7 +493,6 @@ fn walk_children(
 struct EntryKind {
     is_dir: bool,
     is_file: bool,
-    is_symlink: bool,
 }
 
 impl EntryKind {
@@ -466,7 +500,6 @@ impl EntryKind {
         Self {
             is_dir: file_type.is_dir(),
             is_file: file_type.is_file(),
-            is_symlink: file_type.is_symlink(),
         }
     }
 }
@@ -550,23 +583,20 @@ fn matches_names(path: &Path, name: &str, kind: EntryKind, query: &CompiledQuery
     if !query.extensions.is_empty() && !matches_extension(name, kind, &query.extensions) {
         return false;
     }
-    if let Some(entry_type) = &query.entry_type {
-        let matches_type = match entry_type.as_str() {
-            "f" => kind.is_file,
-            "d" => kind.is_dir,
-            "l" => kind.is_symlink,
-            _ => true,
-        };
-        if !matches_type {
-            return false;
-        }
-    }
-    true
+    query
+        .entry_type
+        .is_none_or(|entry_type| entry_type.matches(kind))
 }
 
 /// The filters that need the entry's metadata.
 fn matches_metadata(path: &Path, metadata: &fs::Metadata, query: &CompiledQuery) -> bool {
     if query.empty && !is_empty(path, metadata) {
+        return false;
+    }
+    // A size filter is about content: a directory's own length (its entry
+    // table) is none, so a directory never matches one.
+    let sized = query.size_greater.is_some() || query.size_less.is_some();
+    if sized && metadata.is_dir() {
         return false;
     }
     if let Some(min_size) = query.size_greater
@@ -833,6 +863,7 @@ fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TmpDir;
     use std::fs::{self, File};
 
     fn query_file_system_inner(
@@ -841,20 +872,12 @@ mod tests {
         query_file_system(options, &|_, _, _| true, &|| false).map_err(|err| err.reason)
     }
 
-    fn temp_root(name: &str) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("octocode_fs_query_{}_{}", name, std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("create temp root");
-        root
-    }
-
     #[test]
     fn deep_recursion_terminates_and_finds_leaf() {
         // Recursion past several levels must complete (and stay bounded by the
         // depth ceiling) rather than risk a stack overflow.
-        let root = temp_root("deep");
-        let mut p = root.clone();
+        let root = TmpDir::new();
+        let mut p = root.0.clone();
         for i in 0..12 {
             p = p.join(format!("d{i}"));
         }
@@ -871,12 +894,11 @@ mod tests {
 
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].name, "leaf.ts");
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn a_spent_time_budget_stops_at_the_first_unread_entry_and_names_it() {
-        let root = temp_root("time_cut");
+        let root = TmpDir::new();
         for dir in ["a", "b"] {
             fs::create_dir_all(root.join(dir)).expect("dir");
             File::create(root.join(dir).join("f.ts")).expect("file");
@@ -896,12 +918,11 @@ mod tests {
         assert_eq!(whole.time_cut, None);
         assert_eq!(whole.entries.len(), 4);
         assert_eq!(run(None).time_cut, None);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn a_walk_resumed_at_any_position_lists_exactly_the_entries_after_it() {
-        let root = temp_root("resume");
+        let root = TmpDir::new();
         for dir in ["a", "a/inner", "b", "c/deep/er"] {
             fs::create_dir_all(root.join(dir)).expect("dir");
         }
@@ -967,12 +988,11 @@ mod tests {
             resumed_from_everywhere += 1;
         }
         assert_eq!(resumed_from_everywhere, visited + 1);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn a_listed_entry_names_its_walk_position_and_a_walk_resumed_there_starts_after_it() {
-        let root = temp_root("entry_position");
+        let root = TmpDir::new();
         for dir in ["a", "b/inner"] {
             fs::create_dir_all(root.join(dir)).expect("dir");
         }
@@ -1012,7 +1032,6 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(found, expected, "after {}", entry.relative_path);
         }
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     /// The policy callback sees every entry as a fresh one exactly once over
@@ -1020,7 +1039,7 @@ mod tests {
     /// directory (the only entry a replay needs a verdict on).
     #[test]
     fn a_resumed_walk_shows_its_policy_callback_each_entry_fresh_once() {
-        let root = temp_root("fresh_once");
+        let root = TmpDir::new();
         for dir in ["a", "a/inner", "b", "c/deep"] {
             fs::create_dir_all(root.join(dir)).expect("dir");
         }
@@ -1036,7 +1055,7 @@ mod tests {
                     ..Default::default()
                 },
                 &|path, file_type, visit| {
-                    if path != root {
+                    if path != &*root {
                         seen.lock().expect("lock").push((
                             path.strip_prefix(&root).expect("under root").to_owned(),
                             file_type.is_some_and(|kind| kind.is_dir()),
@@ -1076,7 +1095,6 @@ mod tests {
                 "skip {skip}: a replay judges directories only"
             );
         }
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     /// An unreadable directory is counted by the window that entered it; a
@@ -1085,7 +1103,7 @@ mod tests {
     #[test]
     fn a_resumed_walk_does_not_count_an_unreadable_directory_again() {
         use std::os::unix::fs::PermissionsExt;
-        let root = temp_root("unreadable");
+        let root = TmpDir::new();
         for dir in ["a", "b", "c"] {
             fs::create_dir_all(root.join(dir)).expect("dir");
             File::create(root.join(dir).join("f.ts")).expect("file");
@@ -1112,7 +1130,6 @@ mod tests {
             assert_eq!(rest.skipped, 0, "the window that entered `a` counted it");
             assert_eq!(rest.permission_denied, 0);
         }
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     /// 1-based position of `relative` in the name-sorted depth-first walk of
@@ -1140,7 +1157,7 @@ mod tests {
     fn walk_children_yields_deterministic_sorted_order() {
         // `fs::read_dir` yields entries in raw OS order; the walk must sort
         // them so output is deterministic across runs and sorted within a dir.
-        let root = temp_root("sorted_order");
+        let root = TmpDir::new();
         for name in ["z.txt", "a.txt", "m.txt", "b.txt"] {
             File::create(root.join(name)).expect("create root file");
         }
@@ -1174,7 +1191,6 @@ mod tests {
         let mut sorted = root_files.clone();
         sorted.sort_unstable();
         assert_eq!(root_files, sorted);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
@@ -1226,6 +1242,14 @@ mod tests {
         );
         assert_eq!(
             kind(FileSystemQueryOptions {
+                path: ".".to_owned(),
+                entry_type: Some("l".to_owned()),
+                ..Default::default()
+            }),
+            ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            kind(FileSystemQueryOptions {
                 path: "/definitely/missing/octocode-root".to_owned(),
                 ..Default::default()
             }),
@@ -1249,7 +1273,7 @@ mod tests {
 
     #[test]
     fn a_stopped_walk_is_cancelled() {
-        let root = temp_root("stopped");
+        let root = TmpDir::new();
         File::create(root.join("a.ts")).expect("a");
         let error = query_file_system(
             FileSystemQueryOptions {
@@ -1261,14 +1285,13 @@ mod tests {
         )
         .expect_err("stopped");
         assert_eq!(*error.kind(), ErrorKind::Cancelled);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     /// The walk leaves out what the ignore rules leave out, counts it, and
     /// walks it with `includeIgnored`.
     #[test]
     fn ignore_rules_are_honored_counted_and_lifted() {
-        let root = temp_root("ignore_rules");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join(".git")).expect("repository marker");
         fs::create_dir_all(root.join("gen")).expect("gen");
         fs::write(
@@ -1311,7 +1334,6 @@ mod tests {
         let (all, ignored) = files(IgnorePolicy::ALL);
         assert_eq!(all, [".cache", ".gitignore", "a.rs", "b.log", "gen/x.rs"]);
         assert_eq!(ignored, 0);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
@@ -1329,7 +1351,7 @@ mod tests {
 
     #[test]
     fn finds_files_by_name_glob() {
-        let root = temp_root("glob");
+        let root = TmpDir::new();
         File::create(root.join("a.ts")).expect("create a.ts");
         File::create(root.join("b.js")).expect("create b.js");
 
@@ -1342,12 +1364,11 @@ mod tests {
 
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].name, "a.ts");
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn filters_files_by_extension_without_returning_traversal_directories() {
-        let root = temp_root("extension");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join("src")).expect("create src");
         File::create(root.join("src/a.TS")).expect("create ts");
         File::create(root.join("src/b.rs")).expect("create rs");
@@ -1367,12 +1388,11 @@ mod tests {
             .collect::<Vec<_>>();
         names.sort_unstable();
         assert_eq!(names, vec!["a.TS"]);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn respects_depth_and_exclude_dir() {
-        let root = temp_root("depth");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join("src/nested")).expect("create src");
         fs::create_dir_all(root.join("node_modules/pkg")).expect("create node_modules");
         File::create(root.join("src/nested/a.ts")).expect("create nested");
@@ -1390,12 +1410,11 @@ mod tests {
         assert_eq!(result.entries.len(), 1);
         assert!(result.entries[0].path.ends_with("src/nested/a.ts"));
         assert_eq!(result.pruned_dirs, ["node_modules"]);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn exclude_globs_skip_matching_files_and_whole_directories() {
-        let root = temp_root("exclude_globs");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join("src/gen/deep")).expect("create gen");
         fs::create_dir_all(root.join("vendor/lib")).expect("create vendor");
         File::create(root.join("src/a.ts")).expect("a");
@@ -1423,14 +1442,13 @@ mod tests {
         assert_eq!(paths, ["src/a.ts"]);
         // Caller exclusions are the caller's own filter, not a default prune.
         assert!(result.pruned_dirs.is_empty());
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn omitted_exclusions_prune_no_directory() {
         // The engine carries no default prune list: the runtime prune policy
         // (`octocode_native::policy::prune`) hands every walk its names.
-        let root = temp_root("no_default_excludes");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join("src")).expect("create src");
         fs::create_dir_all(root.join("target/debug")).expect("create target");
         File::create(root.join("src/lib.rs")).expect("create source");
@@ -1451,12 +1469,11 @@ mod tests {
             .collect::<Vec<_>>();
         paths.sort();
         assert_eq!(paths, ["src/lib.rs", "target/debug/generated.rs"]);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn names_with_a_slash_match_the_root_relative_path_ored_with_basenames() {
-        let root = temp_root("path_names");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join("scrape/deep")).expect("dirs");
         fs::create_dir_all(root.join("other")).expect("dirs");
         for file in [
@@ -1483,12 +1500,11 @@ mod tests {
             paths,
             ["other/d_test.go", "scrape/a.go", "scrape/deep/b.go"]
         );
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn filters_by_size_and_empty() {
-        let root = temp_root("size");
+        let root = TmpDir::new();
         File::create(root.join("empty.txt")).expect("create empty");
         fs::write(root.join("full.txt"), "hello").expect("write full");
 
@@ -1511,12 +1527,11 @@ mod tests {
         .expect("query full");
         assert_eq!(full.entries.len(), 1);
         assert_eq!(full.entries[0].name, "full.txt");
-        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
     fn filters_by_entry_type() {
-        let root = temp_root("entry_type");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join("src")).expect("create src");
         File::create(root.join("src/file.rs")).expect("create file");
 
@@ -1530,12 +1545,82 @@ mod tests {
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].name, "src");
         assert_eq!(result.entries[0].entry_type, "directory");
-        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    /// A directory's own length is its entry table, not content: no size
+    /// filter lists a directory, however many entries it holds.
+    #[test]
+    fn size_filters_list_no_directory() {
+        let root = TmpDir::new();
+        fs::create_dir_all(root.join("crowded")).expect("create dir");
+        for index in 0..64 {
+            File::create(root.join(format!("crowded/entry-with-a-long-name-{index:03}")))
+                .expect("create entry");
+        }
+        fs::write(root.join("full.txt"), "hello").expect("write full");
+        assert!(fs::metadata(root.join("crowded")).expect("dir").len() > 5);
+
+        for (size_greater, size_less) in [(Some("1b"), None), (None, Some("1m"))] {
+            let result = query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                size_greater: size_greater.map(str::to_owned),
+                size_less: size_less.map(str::to_owned),
+                ..Default::default()
+            })
+            .expect("query");
+            assert!(
+                result
+                    .entries
+                    .iter()
+                    .all(|entry| entry.entry_type == "file"),
+                "{size_greater:?}/{size_less:?}: {:?}",
+                result
+                    .entries
+                    .iter()
+                    .map(|entry| &entry.relative_path)
+                    .collect::<Vec<_>>()
+            );
+            assert!(result.entries.iter().any(|entry| entry.name == "full.txt"));
+        }
+    }
+
+    /// A caller exclusion decides before the policy callback: the callback
+    /// never sees (or counts) an excluded entry or anything under it.
+    #[test]
+    fn excluded_entries_never_reach_the_policy_callback() {
+        let root = TmpDir::new();
+        fs::create_dir_all(root.join("vendor/lib")).expect("create vendor");
+        File::create(root.join("vendor/lib/c.ts")).expect("c");
+        File::create(root.join("secret.key")).expect("key");
+        File::create(root.join("a.ts")).expect("a");
+
+        let seen = std::sync::Mutex::new(Vec::new());
+        let result = query_file_system(
+            FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                exclude: Some(vec!["vendor".to_owned(), "*.key".to_owned()]),
+                ..Default::default()
+            },
+            &|path, _, _| {
+                if path != &*root {
+                    let relative = path.strip_prefix(&root).expect("under root");
+                    seen.lock()
+                        .expect("lock")
+                        .push(relative.to_string_lossy().replace('\\', "/"));
+                }
+                true
+            },
+            &|| false,
+        )
+        .expect("query");
+
+        assert_eq!(seen.into_inner().expect("calls"), ["a.ts"]);
+        assert_eq!(result.entries.len(), 1);
     }
 
     #[test]
     fn slash_names_match_paths_below_the_root_with_braces_and_never_cross_a_slash_with_star() {
-        let root = temp_root("path_names_brace");
+        let root = TmpDir::new();
         fs::create_dir_all(root.join("packages/react/src")).expect("react dir");
         fs::create_dir_all(root.join("packages/react-dom/src/deep")).expect("react-dom dir");
         fs::create_dir_all(root.join("packages/scheduler/src")).expect("scheduler dir");
@@ -1568,6 +1653,5 @@ mod tests {
         );
         assert_eq!(names("*.[jt]s").len(), 3);
         assert_eq!(names("[!R]*.js"), ["Scheduler.js"]);
-        fs::remove_dir_all(root).expect("cleanup");
     }
 }

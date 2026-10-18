@@ -66,14 +66,6 @@ pub(super) fn concise(value: &str) -> String {
     text
 }
 
-pub(super) fn has_executable_call(value: &Value) -> bool {
-    let Some(call) = value.as_object() else {
-        return false;
-    };
-    call.get("tool").and_then(Value::as_str).is_some()
-        && call.get("query").is_some_and(Value::is_object)
-}
-
 pub(crate) fn has_recovery(value: &Value) -> bool {
     if let Some(values) = value.as_array() {
         return values.iter().any(has_recovery);
@@ -109,7 +101,7 @@ pub(crate) fn has_recovery(value: &Value) -> bool {
     if ["next", "hints"].iter().any(|key| {
         node.get(*key)
             .and_then(Value::as_object)
-            .is_some_and(|calls| calls.values().any(has_executable_call))
+            .is_some_and(|calls| calls.values().any(crate::tools::result::is_call))
     }) {
         return true;
     }
@@ -401,29 +393,29 @@ pub fn result_row(
     Value::Object(row)
 }
 
-/// Whether any of the row's own pagination blocks states `hasMore`.
+/// Whether any page block of the row, its own or a nested item's, states
+/// `hasMore`.
 fn states_more(data: &Value) -> bool {
     data.as_object().is_some_and(|object| {
-        object
-            .iter()
-            .flat_map(|(key, value)| super::pages::page_blocks(key, value))
+        super::pages::page_blocks_deep(object)
+            .into_iter()
             .any(|block| block["hasMore"] == true)
     })
 }
 
-/// Whether the row's own pagination (`pagination`, a `contentPagination`
-/// section) reports `hasMore` and nothing beyond the pages makes
-/// it partial: `isPartial` would restate it. A `partialReasons` list or a
-/// `terminalLimit` is another cause, which the flag still sums up.
+/// Whether a page block of the row (`pagination`, a `contentPagination`
+/// section, its own or a nested item's) reports `hasMore` and nothing beyond
+/// the pages makes it partial: `isPartial` would restate it. A
+/// `partialReasons` list or a `terminalLimit` is another cause, which the
+/// flag still sums up.
 fn states_remaining_page(data: &Map<String, Value>) -> bool {
     data.get("terminalLimit") != Some(&Value::Bool(true))
         && data
             .get("partialReasons")
             .and_then(Value::as_array)
             .is_none_or(Vec::is_empty)
-        && data
-            .iter()
-            .flat_map(|(key, value)| super::pages::page_blocks(key, value))
+        && super::pages::page_blocks_deep(data)
+            .into_iter()
             .any(|block| block["hasMore"] == true)
 }
 
@@ -586,12 +578,11 @@ fn minimize_data(data: &mut Map<String, Value>, tool: ToolId, query: &Value, ech
             data.remove("diagnostics");
         }
     }
+    // Nested items' blocks carry no cursor either: `next` holds every page.
     let limited = data.contains_key("providerLimit");
-    for (key, value) in data.iter_mut() {
-        for block in super::pages::page_blocks_mut(key, value) {
-            if let Some(block) = block.as_object_mut() {
-                super::pages::slim_pagination(block, limited);
-            }
+    for block in super::pages::page_blocks_deep_mut(data) {
+        if let Some(block) = block.as_object_mut() {
+            super::pages::slim_pagination(block, limited);
         }
     }
     // A later page keeps its pagination: it names where the page starts
@@ -791,7 +782,7 @@ pub fn envelope_in(
         .filter(|root| Path::new(root).parent().is_some());
     if let Some(workspace) = workspace.as_deref() {
         for row in &mut rows {
-            relativize_continuation_paths(&mut row["data"], workspace, 0);
+            relativize_continuation_paths(&mut row["data"], workspace);
         }
     }
     // The checked-out commit is provenance: read only for rows that ask
@@ -874,66 +865,41 @@ fn attach_heads(value: &mut Value, heads: &[Option<String>]) {
 /// which relative paths resolve against: the same file, without repeating
 /// the root the response already names as `root`. Paths outside the
 /// workspace, `file://` uris and non-local fields stay as they are.
-fn relativize_continuation_paths(value: &mut Value, workspace: &str, depth: usize) {
-    if depth > 12 {
-        return;
-    }
-    match value {
-        Value::Object(map) => {
-            if map.get("tool").is_some_and(Value::is_string)
-                && let Some(Value::Array(rows)) = map
-                    .get_mut("query")
-                    .and_then(|query| query.get_mut("queries"))
+fn relativize_continuation_paths(value: &mut Value, workspace: &str) {
+    crate::tools::result::for_each_call_mut(value, &mut |call| {
+        for row in call
+            .pointer_mut("/query/queries")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(Value::String(path)) = row.get_mut("path")
+                && let Some(relative) = workspace_relative(path, workspace)
             {
-                for row in rows {
-                    if let Some(Value::String(path)) = row.get_mut("path")
-                        && let Some(relative) = workspace_relative(path, workspace)
-                    {
-                        *path = relative;
-                    }
-                }
-                return;
-            }
-            for child in map.values_mut() {
-                relativize_continuation_paths(child, workspace, depth + 1);
+                *path = relative;
             }
         }
-        Value::Array(items) => {
-            for item in items {
-                relativize_continuation_paths(item, workspace, depth + 1);
-            }
-        }
-        _ => {}
-    }
+    });
 }
 
 /// Whether a continuation (`{tool, query}` at any depth) names a relative
 /// local `path`: it resolves against the workspace root, which the response
 /// then names as `root` even when no row carries a path (an empty row).
-fn relative_continuation_path(value: &Value, depth: usize) -> bool {
-    if depth > 12 {
-        return false;
-    }
-    match value {
-        Value::Object(map) => {
-            if map.get("tool").is_some_and(Value::is_string)
-                && let Some(Value::Array(rows)) =
-                    map.get("query").and_then(|query| query.get("queries"))
-            {
-                return rows.iter().any(|row| {
-                    row.get("path")
-                        .and_then(Value::as_str)
-                        .is_some_and(|path| !Path::new(path).is_absolute() && !path.contains("://"))
-                });
-            }
-            map.values()
-                .any(|child| relative_continuation_path(child, depth + 1))
-        }
-        Value::Array(items) => items
-            .iter()
-            .any(|item| relative_continuation_path(item, depth + 1)),
-        _ => false,
-    }
+fn relative_continuation_path(value: &Value) -> bool {
+    let mut relative = false;
+    crate::tools::result::for_each_call(value, &mut |call| {
+        relative |= call
+            .pointer("/query/queries")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .any(|row| {
+                row.get("path")
+                    .and_then(Value::as_str)
+                    .is_some_and(|path| !Path::new(path).is_absolute() && !path.contains("://"))
+            });
+    });
+    relative
 }
 
 /// `path` relative to `workspace` (`.` for the root itself) when it is an
@@ -990,7 +956,7 @@ fn anchor_topology(value: &mut Value, roots: &[Option<PathBuf>], workspace: Opti
             row["data"]["path"] = json!(display);
         }
         if let Some(row_base) = row_base {
-            relativize_continuation_paths(&mut row["data"], row_base, 0);
+            relativize_continuation_paths(&mut row["data"], row_base);
             base = Some(row_base.to_owned());
         }
     }
@@ -1052,7 +1018,7 @@ fn compact(tool: ToolId, mut rows: Vec<Value>, base: Option<String>) -> Value {
             .any(|path| path == base || path.starts_with(&inside))
             || rows
                 .iter()
-                .any(|row| relative_continuation_path(&row["data"], 0))
+                .any(|row| relative_continuation_path(&row["data"]))
     });
     for row in &mut rows {
         rewrite_paths(&mut row["data"], 0, base.as_deref());

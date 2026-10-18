@@ -1,21 +1,15 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used)]
 //! Chained GitHub flows: each lead one call returns must run as written and
 //! keep the evidence the previous call found.
 
 use crate::support;
 
 use serde_json::{Value, json};
-use support::{Workspace, call, row_data, row_status};
+use support::{Workspace, call, github_api, row_data, row_status};
 use wiremock::matchers::{method, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const BASE_SHA: &str = "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const FORK_HEAD_SHA: &str = "4444444ddddddddddddddddddddddddddddddddd";
-
-fn api(server: &MockServer) -> [(&'static str, String); 1] {
-    [("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]
-}
 
 fn commit_row(sha: &str, message: &str) -> Value {
     json!({"sha":sha,"commit":{"message":message,"author":{"name":"a","date":"2024-01-01T00:00:00Z"}}})
@@ -69,7 +63,7 @@ async fn a_cross_fork_compare_pins_its_head_to_a_commit() {
     let server = MockServer::builder().start().await;
     mount_fork_compare(&server).await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let out = call(
         &runtime,
         "ghGetHistoryItem",
@@ -126,7 +120,7 @@ async fn a_commit_patch_read_keeps_its_pull_request_lead() {
             .await;
     }
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     for (sha, number) in [(squash, 8506), (trailer, 65801)] {
         let out = call(
             &runtime,
@@ -155,7 +149,7 @@ async fn a_capped_compare_states_the_file_cap() {
     let server = MockServer::builder().start().await;
     mount_fork_compare(&server).await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let out = call(
         &runtime,
         "ghGetHistoryItem",
@@ -206,7 +200,7 @@ async fn a_directory_at_the_contents_limit_leads_to_a_clone() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let out = call(
         &runtime,
         "ghStructure",
@@ -247,7 +241,7 @@ async fn an_unknown_owner_is_not_found_not_an_empty_search() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let out = call(
         &runtime,
         "ghSearchCode",
@@ -287,7 +281,7 @@ async fn a_compare_scope_that_matches_no_file_is_empty() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&api(&server));
+    let runtime = workspace.runtime(&github_api(&server));
     let out = call(
         &runtime,
         "ghGetHistoryItem",

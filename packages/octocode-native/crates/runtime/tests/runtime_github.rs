@@ -1,7 +1,5 @@
 //! The GitHub file, code, tree and repository tools through the runtime:
 //! reads, recoveries, rate limits and bulk dispatch against a mock GitHub.
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
 
 use crate::support::{self, Run as _};
 

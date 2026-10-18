@@ -20,6 +20,12 @@ mod js_oxc_shared;
 
 pub const GRAPH_FACTS_SCHEMA_VERSION: u32 = 1;
 
+/// The declaration kinds an `extends`/`implements` clause can name or
+/// declare: the nodes of a type hierarchy. One list for the graph's linking
+/// and the hierarchy walks.
+pub const TYPE_DECLARATION_KINDS: &[&str] =
+    &["class", "interface", "struct", "trait", "type", "enum"];
+
 /// An empty native syntax facts document for `file`, parsed as `language`.
 fn native_graph_facts(language: String, file: &str) -> crate::graph::GraphFactsDocument {
     crate::graph::GraphFactsDocument {

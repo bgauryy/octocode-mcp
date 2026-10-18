@@ -6,9 +6,9 @@ pub(super) fn max_listing_depth() -> usize {
     crate::contracts::query_schema_max(ToolId::GhStructure, None, "maxDepth")
 }
 
-/// One `include` glob: a case-insensitive glob over repo-relative paths. Without a
-/// `/` it matches entry names at any depth; a bare word (no glob
-/// metacharacters) matches names containing it.
+/// One `include` glob: a case-insensitive glob over paths relative to the
+/// listed `path`. Without a `/` it matches entry names at any depth; a bare
+/// word (no glob metacharacters) matches names containing it.
 pub(super) struct PathFilter {
     pub(super) matcher: globset::GlobMatcher,
     pub(super) by_name: bool,
@@ -53,15 +53,6 @@ pub(super) struct Listing<'a> {
     pub(super) branch: &'a str,
     pub(super) root: &'a str,
     pub(super) max_depth: usize,
-}
-
-/// `prefix:owner/repo`; owner and repository are case-insensitive cache keys.
-pub(super) fn repo_key(prefix: &str, owner: &str, repo: &str) -> String {
-    format!(
-        "{prefix}:{}/{}",
-        owner.to_ascii_lowercase(),
-        repo.to_ascii_lowercase()
-    )
 }
 
 /// A failure no fallback read can recover: credentials, access, or rate.
@@ -207,7 +198,7 @@ enum TreeRead {
     Whole(octocode_github::TreeResponse),
     /// Past GitHub's recursive-tree limit.
     Truncated,
-    /// A transient failure.
+    /// Any other failure than access: the Contents walk reads instead.
     Unavailable,
 }
 
@@ -281,8 +272,8 @@ async fn fetch_tree<C: octocode_github::ConditionalCache>(
 
 /// The Contents API walk, one directory read per folder up to
 /// [`MAX_DIRECTORY_FETCHES`], level by level with up to
-/// [`READ_CONCURRENCY`] reads in flight; a complete walk is reused for the
-/// cache TTL. After a truncated recursive tree (`split`), a folder with more
+/// [`READ_CONCURRENCY`] reads in flight; a complete walk is kept under its
+/// commit ([`WalkMemo`]). After a truncated recursive tree (`split`), a folder with more
 /// than one level left to list is read whole from its own recursive subtree,
 /// so a large repository costs one read per subtree instead of per folder.
 pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
@@ -293,7 +284,7 @@ pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
 ) -> Result<Traversal, ProviderError> {
     use futures_util::StreamExt as _;
     let at = *listing;
-    // Every tree page re-runs the walk; reuse a complete one for the cache TTL.
+    // Every tree page re-runs the walk; reuse a complete one of the commit.
     let memo = WalkMemo::of(provider, &at, context);
     if let Some(walk) = memo.get(provider).await {
         return Ok(walk);
@@ -357,7 +348,7 @@ pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
             }
             for entry in listing.entries {
                 let Some(kind) = entry_kind(&entry) else {
-                    note_unlisted(&mut traversal, &entry.name, unlisted_kind(&entry));
+                    note_unlisted(&mut traversal, &entry.path, unlisted_kind(&entry));
                     continue;
                 };
                 traversal.entries.push(TreeEntry {
@@ -396,9 +387,7 @@ pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
                 Some(tree) => {
                     let read = traversal_from_git_tree(tree, &at);
                     traversal.entries.extend(read.entries);
-                    for (name, count) in read.omitted {
-                        *traversal.omitted.entry(name).or_default() += count;
-                    }
+                    traversal.omitted.extend(read.omitted);
                 }
                 None => below.push((path, Some(sha))),
             }
@@ -413,7 +402,8 @@ pub(super) async fn walk_contents<C: octocode_github::ConditionalCache>(
 }
 
 /// Where a complete Contents walk of one listing is kept: by repository,
-/// commit, root and depth, under the cache partition of the request.
+/// commit, root and depth, under the cache partition of the request. The
+/// key's version names the walk's shape (omitted entries by path).
 struct WalkMemo {
     partition: Option<octocode_github::Partition>,
     key: String,
@@ -437,7 +427,7 @@ impl WalkMemo {
             partition: provider.transport.cache_partition(context, None).ok(),
             key: format!(
                 "{}:{branch}:{root}:{max_depth}",
-                repo_key("git-tree-walk", owner, repo),
+                repo_key("git-tree-walk-v2", owner, repo),
             ),
             commit: branch.to_owned(),
         }
@@ -555,7 +545,8 @@ async fn whole_directory<C: octocode_github::ConditionalCache>(
     ))
 }
 
-/// Keep a complete recursive tree for the cache TTL under its commit.
+/// Keep a complete git tree under its commit (or tree SHA): it never
+/// changes.
 pub(super) async fn cache_tree<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     context: &RequestContext,
@@ -667,18 +658,18 @@ pub(super) fn traversal_from_git_tree(
         if depth == 0 || depth > max_depth {
             continue;
         }
-        let kind = match git_kind(&entry) {
-            "blob" => EntryKind::File,
-            "tree" => EntryKind::Dir,
-            other => {
-                note_unlisted(&mut traversal, name_of(&relative), other);
-                continue;
-            }
-        };
         let path = if root.is_empty() {
             relative
         } else {
             format!("{root}/{relative}")
+        };
+        let kind = match git_kind(&entry) {
+            "blob" => EntryKind::File,
+            "tree" => EntryKind::Dir,
+            other => {
+                note_unlisted(&mut traversal, &path, other);
+                continue;
+            }
         };
         traversal.entries.push(TreeEntry {
             path,
@@ -700,23 +691,15 @@ fn git_kind(entry: &octocode_github::TreeEntry) -> &str {
     }
 }
 
-/// The last segment of a repository-relative path.
-fn name_of(path: &str) -> &str {
-    path.rsplit_once('/').map_or(path, |(_, name)| name)
-}
-
-/// A symlink or submodule has no listable content: name it beside the
-/// skipped directories instead of dropping it silently.
-fn note_unlisted(traversal: &mut Traversal, name: &str, kind: &str) {
+/// A symlink or submodule has no listable content: name it by its
+/// repository-relative `path` instead of dropping it silently.
+fn note_unlisted(traversal: &mut Traversal, path: &str, kind: &str) {
     let label = match kind {
         "symlink" => "symlink",
         "submodule" | "commit" => "submodule",
         _ => return,
     };
-    *traversal
-        .omitted
-        .entry(format!("{name} ({label})"))
-        .or_default() += 1;
+    traversal.omitted.insert(format!("{path} ({label})"), 1);
 }
 
 /// The entry kind [`note_unlisted`] names: the listing's own type, or a

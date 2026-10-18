@@ -6,7 +6,7 @@ use crate::tools::ast_rule::{
 use crate::tools::empty_walk::{FileProbe, Globs, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::ast_search::r#match as limits;
-use crate::tools::num::u32_of;
+use crate::tools::num::{u32_of, u32_of_usize};
 use crate::tools::result::ToolError;
 use crate::{
     policy::{path::PathPolicy, prune::PruneMode},
@@ -90,7 +90,7 @@ impl<'a> MatchQuery<'a> {
     }
     /// Levels below `path` (1 = its children), as the wire counts them.
     pub fn max_depth(self) -> Option<u32> {
-        either_form!(self, max_depth => max_depth.map(|depth| u32::try_from(depth.get()).unwrap_or(u32::MAX)))
+        either_form!(self, max_depth => max_depth.map(|depth| u32_of(depth.get())))
     }
     /// The caller's file scan cap; unset scans the whole scope within the
     /// scan time budget.
@@ -99,7 +99,7 @@ impl<'a> MatchQuery<'a> {
     }
     /// Leading candidates (walk order) an earlier window evaluated.
     pub fn scan_offset(self) -> u32 {
-        either_form!(self, scan_offset => scan_offset.map_or(0, |offset| u32::try_from(offset.get()).unwrap_or(u32::MAX)))
+        either_form!(self, scan_offset => scan_offset.map_or(0, |offset| u32_of(offset.get())))
     }
     /// The caller's matches per file page; unset fills the response window.
     pub fn match_page_size(self) -> Option<u32> {
@@ -309,7 +309,7 @@ fn row_chars(row: &MatchRow) -> usize {
 /// The row price of a match under `q`'s row shape.
 fn match_price(q: MatchQuery<'_>, m: &StructuralDetailedMatch) -> u32 {
     let row = match_value(m, q.capture_text().unwrap_or(false), content_length(q));
-    u32::try_from(row_chars(&row)).unwrap_or(u32::MAX)
+    u32_of_usize(row_chars(&row))
 }
 
 /// What a directory scan keeps of each match: a file view needs only the
@@ -563,12 +563,11 @@ pub fn execute_match(
         EmptyScope::default()
     } else if grouped.parsed_files == 0 && q.language().is_some() {
         EmptyScope::of(q, &scope, paths, cancel)
-    } else if grouped.parsed_files > 0 {
-        // The files it did parse hold no match; files of the grammar behind
-        // skipped paths are still a reason, beside the pattern's shape.
-        EmptyScope::beside_parsed(q, &scope, paths, cancel)
     } else {
-        EmptyScope::default()
+        // Files of the grammar behind skipped paths are still a reason,
+        // beside the pattern's shape: whether or not the scan parsed any, and
+        // whether one language or each file's own grammar selected them.
+        EmptyScope::beside_parsed(q, &scope, paths, cancel)
     };
     let exact_miss_scope = grouped.total_matches == 0
         && grouped.scanned_files > 0
@@ -1473,9 +1472,7 @@ fn rebuild_page(
             .iter()
             .map(|m| match_value(m, q.capture_text().unwrap_or(false), content_length))
             .collect::<Vec<_>>();
-        let repriced = rows
-            .iter()
-            .map(|row| u32::try_from(row_chars(row)).unwrap_or(u32::MAX));
+        let repriced = rows.iter().map(|row| u32_of_usize(row_chars(row)));
         if !repriced.eq(prices.iter().copied()) {
             return Err(SourceChanged);
         }
@@ -2240,13 +2237,7 @@ fn match_display_path(root: &std::path::Path, path: &str) -> String {
 fn continuation_with(q: MatchQuery<'_>, changes: Value, snapshot: &str) -> Value {
     let mut query = q.to_value();
     query["snapshot"] = json!(snapshot);
-    // A `null` change drops that field.
-    if let (Some(target), Some(changes)) = (query.as_object_mut(), changes.as_object()) {
-        target.extend(changes.clone());
-        for (field, _) in changes.iter().filter(|(_, value)| value.is_null()) {
-            target.remove(field);
-        }
-    }
+    let query = crate::tools::result::with_changes(query, &changes);
     crate::tools::result::Continuation::new(ToolId::AstSearch, query)
         .confidence("exact")
         .build()
@@ -2282,7 +2273,8 @@ impl EmptyScope {
         }
     }
 
-    /// An empty scan that parsed files: only the skipped walks, no repair.
+    /// An empty scan with no other language to offer (it parsed files, or
+    /// no `language` was set): only the skipped walks, no repair.
     fn beside_parsed(
         q: MatchQuery<'_>,
         scope: &Scope,

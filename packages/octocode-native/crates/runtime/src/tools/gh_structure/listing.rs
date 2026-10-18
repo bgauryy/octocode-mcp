@@ -28,51 +28,6 @@ pub(super) async fn resolve_listing_ref<C: octocode_github::ConditionalCache>(
     }
 }
 
-/// The default branch's name, memoized per repository for the cache's
-/// volatile lifetime (like the HEAD commit memo beside it).
-pub(super) async fn default_branch<C: octocode_github::ConditionalCache>(
-    provider: &GitHubProvider<C>,
-    owner: &str,
-    repo: &str,
-    context: &RequestContext,
-) -> Result<String, ProviderError> {
-    let key = repo_key("repo-default-branch", owner, repo);
-    let partition = provider.transport.cache_partition(context, None).ok();
-    if let Some(partition) = &partition
-        && let Some(cached) = provider.cache.get(partition, &key).await
-        && let Ok(branch) = std::str::from_utf8(&cached.bytes)
-    {
-        return Ok(branch.to_owned());
-    }
-    let metadata = provider
-        .transport
-        .repository_metadata(owner, repo, context)
-        .await?;
-    // The same read names the repository's canonical name: a renamed
-    // repository costs no further request.
-    if let Some(full_name) = metadata.full_name.as_deref() {
-        crate::tools::gh_shared::remember_canonical(provider, owner, repo, full_name, context)
-            .await;
-    }
-    let branch = metadata.default_branch;
-    if let Some(partition) = &partition {
-        provider
-            .cache
-            .put(
-                partition,
-                key,
-                octocode_github::CachedContent {
-                    etag: None,
-                    bytes: branch.as_bytes().to_vec().into(),
-                    resolved_ref: branch.clone(),
-                },
-                octocode_github::Retention::Revalidate,
-            )
-            .await;
-    }
-    Ok(branch)
-}
-
 /// One page of a sorted listing.
 pub(super) struct ListingPage<'a> {
     pub(super) current: usize,

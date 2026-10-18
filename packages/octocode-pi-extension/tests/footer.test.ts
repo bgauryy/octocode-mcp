@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { visibleWidth } from '@earendil-works/pi-tui';
-import { contextBar, footerLines, SUBAGENTS_STATUS, type FooterState } from '../src/ui/footer.js';
-import { QUEUED_STATUS } from '../src/ui/delivery.js';
+import { contextBar, footerLines, type FooterState } from '../src/ui/footer.js';
+import { STATUS } from '../src/shared/status.js';
 import { statusColor } from '../src/shared/render.js';
 import { chipText } from '../src/permission/mode.js';
 
@@ -107,7 +107,7 @@ describe('footer', () => {
 
 describe('footer line 1 work statuses', () => {
   it('keeps queued messages and background subagents on line 1 when other parts drop', () => {
-    const work = new Map([...statuses, [QUEUED_STATUS, '✉ 2 queued'], [SUBAGENTS_STATUS, '2 subagents']]);
+    const work = new Map([...statuses, [STATUS.queued, '✉ 2 queued'], [STATUS.subagents, '2 subagents']]);
     const [wide, bottom] = footerLines(state, 'main', work, theme, 200);
     expect(wide).toContain('2 subagents');
     expect(wide).toContain('✉ 2 queued');
@@ -117,11 +117,21 @@ describe('footer line 1 work statuses', () => {
     expect(narrow).not.toContain('tok/s');
   });
 
+  it('places the hooks status on line 1 and the backlog counts on line 2, neither as an "other" status', () => {
+    const own = new Map([[STATUS.hooks, 'hook 3s'], [STATUS.backlog, '2 ongoing · /backlog']]);
+    const [top, bottom] = footerLines(state, 'main', own, theme, 200);
+    expect(top).toContain('hook 3s');
+    expect(bottom).not.toContain('hook 3s');
+    expect(bottom).toContain('2 ongoing · /backlog');
+    expect(top).not.toContain('2 ongoing');
+    expect(bottom.match(/2 ongoing/g)).toHaveLength(1);
+  });
+
   it('repaints statusColor statuses with the theme of the frame', () => {
     const before = { fg: (color: string, text: string) => `[before ${color}]${text}` };
     const queued = statusColor({ mode: 'tui', ui: { theme: before } } as never, 'accent', '✉ 1 queued');
     const after = { fg: (color: string, text: string) => (color === 'accent' ? `[after]${text}` : text), bold: (text: string) => text } as never;
-    const [top] = footerLines(state, null, new Map([[QUEUED_STATUS, queued]]), after, 200);
+    const [top] = footerLines(state, null, new Map([[STATUS.queued, queued]]), after, 200);
     expect(top).toContain('[after]✉ 1 queued');
     expect(top).not.toContain('[before');
   });

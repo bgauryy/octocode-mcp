@@ -36,14 +36,11 @@
   },
   "scripts": {
     "build": "node tools/build.mjs",
-    "build:dev": "node tools/build.mjs",
-    "check:build": "node tools/build.mjs --check",
     "cli": "node bin/octocode-chrome-devtools.mjs /cli",
     "mcp": "node bin/octocode-chrome-devtools.mjs",
     "lint": "prettier --check \"src/**/*.{ts,mts}\" \"tools/**/*.mjs\" \"tests/**/*.mjs\" && node tools/check.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.boundaries.json",
     "test": "node tests/hermetic-suite.mjs",
-    "test:quiet": "node tests/hermetic-suite.mjs",
     "test:live": "node tests/live-suite.mjs",
     "test:protocol": "node tests/protocol-suite.mjs",
     "test:mcp": "node tests/protocol-suite.mjs --transport mcp",
@@ -51,7 +48,7 @@
     "test:webmcp": "node tests/webmcp-tools.check.mjs",
     "test:cdp-all": "node tests/cdp-all-suite.mjs",
     "verify": "yarn build && yarn lint && yarn typecheck && yarn test && yarn test:protocol && yarn test:mcp && yarn test:cli && yarn test:cdp-all && yarn test:package",
-    "prepack": "node tools/build.mjs",
+    "prepack": "yarn build",
     "test:package": "node tools/release-smoke.mjs",
     "format": "prettier --write \"src/**/*.{ts,mts}\" \"tools/**/*.mjs\" \"tests/**/*.mjs\""
   },

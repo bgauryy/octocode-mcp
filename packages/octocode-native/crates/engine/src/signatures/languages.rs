@@ -1,6 +1,8 @@
 use std::sync::LazyLock;
 use tree_sitter::Language;
 
+use crate::text::JS_EXTENSIONS;
+
 pub struct LanguageEntry {
     /// Human-readable grammar family name exposed to tools and agent context.
     pub name: &'static str,
@@ -134,7 +136,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         LanguageEntry {
             name: "JavaScript",
             selector_aliases: &[],
-            extensions: &["js", "jsx", "mjs", "cjs"],
+            extensions: JS_EXTENSIONS,
             also_parses: &[],
             language_id: Some("javascript"),
             language: tree_sitter_javascript::LANGUAGE.into(),
@@ -258,6 +260,12 @@ fn init_language_table() -> Vec<LanguageEntry> {
 
 pub fn find_entry(ext: &str) -> Option<&'static LanguageEntry> {
     LANGUAGE_TABLE.iter().find(|e| e.extensions.contains(&ext))
+}
+
+/// Whether `ext` is a C-family source (C, C++, CUDA): its grammar's language
+/// id is one the C-family server answers.
+pub fn is_c_family_extension(ext: &str) -> bool {
+    find_entry(ext).is_some_and(|entry| crate::lsp::family::is_c_family(entry.language_id))
 }
 
 /// Whether `entry` is the grammar `selector` names: its name, language id,

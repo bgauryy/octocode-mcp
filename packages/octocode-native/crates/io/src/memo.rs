@@ -292,6 +292,51 @@ mod tests {
     }
 
     #[test]
+    fn an_entry_that_exactly_fits_the_weight_budget_is_kept() {
+        let memo = Memo::<&str, u8>::new(limits(4, 10));
+        memo.insert("exact", 0, 10, None);
+        assert_eq!(memo.contents(), (vec!["exact"], 10), "alone at the cap");
+
+        let memo = Memo::<&str, u8>::new(limits(4, 10));
+        memo.insert("a", 0, 3, None);
+        memo.insert("b", 0, 7, None);
+        assert_eq!(
+            memo.contents(),
+            (vec!["a", "b"], 10),
+            "a total equal to the cap evicts nothing"
+        );
+        memo.insert("c", 0, 1, None);
+        assert_eq!(
+            memo.contents(),
+            (vec!["b", "c"], 8),
+            "one over evicts the oldest"
+        );
+    }
+
+    #[test]
+    fn clear_drops_every_entry_and_frees_the_whole_budget() {
+        let memo = Memo::<&str, u8>::new(limits(4, 10));
+        memo.insert("a", 0, 6, None);
+        memo.insert("b", 0, 4, None);
+        memo.clear();
+        assert_eq!(memo.len(), 0);
+        assert!(memo.get("a").is_none());
+        assert_eq!(memo.contents(), (Vec::<&str>::new(), 0));
+        memo.insert("c", 0, 10, None);
+        assert_eq!(memo.contents(), (vec!["c"], 10));
+    }
+
+    #[test]
+    fn is_empty_tracks_whether_any_entry_is_held() {
+        let memo = Memo::<&str, u8>::new(limits(4, 10));
+        assert!(memo.is_empty());
+        memo.insert("a", 0, 1, None);
+        assert!(!memo.is_empty());
+        memo.remove("a");
+        assert!(memo.is_empty());
+    }
+
+    #[test]
     fn entries_expire_by_their_own_lifetime_and_hits_share_the_value() {
         let memo = Memo::<String, String, u8>::new(limits(8, 100));
         let start = Instant::now();

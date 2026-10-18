@@ -1,6 +1,5 @@
 //! Source reads never elide inside a requested span, and a batch of reads
 //! shares the response window so every row returns content.
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use crate::support::{self, Run as _};
 

@@ -121,7 +121,7 @@ export class Permission {
   }
 
   /**
-   * A subagent has no session file (`--no-session`), so each entry also goes to its parent as a fire-and-forget notify that
+   * A subagent's session file sits in its own scratch folder, out of its parent's reach, so each entry also goes to its parent as a fire-and-forget notify that
    * the parent records under the child's name and never shows (`childAuditEntry`). With no nonce the parent would reject
    * it, so none is sent; the child then says so once on stderr (the parent keeps the tail), because a child without a
    * session file has no other record. Its entries still go to its own session when it has one.

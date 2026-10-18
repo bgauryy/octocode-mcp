@@ -1,7 +1,7 @@
 [workspace]
 members = ["crates/engine", "crates/github", "crates/io", "crates/runtime", "crates/cli", "crates/runtime-napi"]
 default-members = ["crates/cli"]
-resolver = "2"
+resolver = "3"
 
 # Shared metadata keeps internal crates on the native npm release version.
 [workspace.package]
@@ -11,6 +11,8 @@ edition = "2024"
 # need it, so no lower floor is claimed; CI builds and tests on this version.
 rust-version = "1.99"
 license = "MIT"
+# Every crate is internal: the npm packages ship the binaries.
+publish = false
 repository = "https://github.com/bgauryy/octocode.git"
 
 # ── Shared dependency versions ────────────────────────────────────────────────
@@ -29,7 +31,7 @@ napi-derive = { version = "3" }
 napi-build = { version = "2" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { version = "2", default-features = false, features = ["serialize", "deserialize"] }
 regex = "1"
 url = "2"
 sha2 = "0.11"
@@ -49,24 +51,22 @@ getrandom = "0.4"
 secrecy = "0.10"
 flate2 = "1"
 toml = { version = "1", features = ["preserve_order"] }
-regress = "0.12"
 ignore = "0.4"
 globset = "0.4"
 tempfile = "3"
 wiremock = "0.6"
 
 # ── Shared lint policy ────────────────────────────────────────────────────────
-# The common floor every crate enforces. `crates/runtime`, `crates/cli`,
-# `crates/github`, and `crates/runtime-napi` inherit it verbatim
-# (`[lints] workspace = true`). `crates/engine` mirrors it inline and adds its
-# stricter library policy: it denies stdout/stderr printing and enables extra
-# style lints that would be noise in the host crates.
+# The common floor every crate inherits (`[lints] workspace = true`). The
+# engine adds its library-only lints as attributes in `crates/engine/src/lib.rs`
+# (Cargo cannot merge a crate's own `[lints]` with the workspace table).
+# The rustc lints below are warn-by-default; `deny` also fails a local
+# `cargo build`, not only CI's `-D warnings`.
 [workspace.lints.rust]
 dead_code = "deny"
 unused_imports = "deny"
 unused_variables = "deny"
 unused_mut = "deny"
-let_underscore_drop = "allow"   # allow intentional best-effort `let _ = result;` patterns
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
@@ -77,6 +77,8 @@ panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 dbg_macro = "deny"
+# Every `unsafe` block states why it is sound in a `// SAFETY:` comment.
+undocumented_unsafe_blocks = "deny"
 
 [profile.release]
 # Thin LTO recovers nearly all of fat LTO's cross-crate optimization at a
@@ -120,8 +122,8 @@ lto = false
 
 # ── Faster inner-loop debug builds (ruff / uv / biome pattern) ────────────────
 # Emit only line tables: keeps file:line in panics/backtraces but drops the bulk
-# of DWARF, and `split-debuginfo = "unpacked"` skips macOS `dsymutil` on every
-# link. Cross-validated against ruff/uv/biome dev profiles — ~20-40% faster debug
+# of DWARF. `split-debuginfo = "unpacked"` is already Cargo's macOS default (no
+# `dsymutil` per link); setting it makes Linux split debuginfo the same way. Cross-validated against ruff/uv/biome dev profiles — ~20-40% faster debug
 # rebuilds; full DWARF is only needed when stepping in a debugger (use
 # `--profile profiling` for that). Dependencies below get no debuginfo at all.
 [profile.dev]
@@ -143,6 +145,22 @@ opt-level = 3
 [profile.dev.package."aho-corasick"]
 opt-level = 3
 [profile.dev.package."regex"]
+opt-level = 3
+
+# Contract validation, row shaping and every tool result move `serde_json::Value`
+# trees (clone, drop, hash-map lookups), and large-source reads hash megabytes
+# per page. Unoptimised, those loops set the tail of `cargo nextest` (the union
+# differential test, streamed large-source paging); opt-level 3 here took the
+# union differential test from ~110 to ~70 CPU-seconds.
+[profile.dev.package."serde_json"]
+opt-level = 3
+[profile.dev.package."indexmap"]
+opt-level = 3
+[profile.dev.package."hashbrown"]
+opt-level = 3
+[profile.dev.package."memchr"]
+opt-level = 3
+[profile.dev.package."sha2"]
 opt-level = 3
 
 # ── Heavy dep clusters: optimise for dev-loop runtime without slowing own-crate rebuilds ──

@@ -45,6 +45,42 @@ pub(super) fn read_head(
     Ok(sha)
 }
 
+/// The entry names (files, directories and submodules) directly under `dir`
+/// at the checkout's HEAD commit; `dir` is repo-relative, empty for the
+/// root. Empty when `dir` is no directory of the commit. `ls-tree` reads
+/// tree objects only, so a sparse checkout lists the whole commit without
+/// fetching a blob.
+pub(super) fn tree_names(
+    context: &CloneContext<'_>,
+    directory: &Path,
+    dir: &str,
+) -> Result<Vec<String>, CloneError> {
+    let mut args = vec![
+        OsString::from("-C"),
+        directory.as_os_str().to_owned(),
+        "ls-tree".into(),
+        "-z".into(),
+        "--name-only".into(),
+        "HEAD".into(),
+    ];
+    if !dir.is_empty() {
+        args.extend(["--".into(), format!("{dir}/").into()]);
+    }
+    let output = run(
+        context,
+        args,
+        head_timeout(context),
+        "list checkout tree",
+        None,
+    )?;
+    Ok(output
+        .stdout
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned())
+        .collect())
+}
+
 /// Whether a cached checkout's working tree still matches its HEAD commit.
 /// Edited, deleted, or added files mean the cache no longer holds the fetched
 /// revision, so it must not be served as `verified`.
@@ -100,16 +136,43 @@ pub(super) fn checkout_status(
     Ok(status)
 }
 
+/// Repo-relative paths of the repository symlinks (index mode `120000`) the
+/// working tree holds: [`HARDENING_ARGS`] checks each out as a plain file
+/// holding the link target, and a sparse checkout holds only its scope.
+pub(super) fn symlinks(
+    context: &CloneContext<'_>,
+    directory: &Path,
+) -> Result<Vec<String>, CloneError> {
+    let output = run(
+        context,
+        scoped(directory, &["ls-files", "--stage", "-z"]),
+        head_timeout(context),
+        "list checkout symlinks",
+        None,
+    )?;
+    Ok(output
+        .stdout
+        .split('\0')
+        .filter_map(|line| {
+            let (meta, path) = line.split_once('\t')?;
+            (meta.split_whitespace().next() == Some("120000")).then_some(path)
+        })
+        .filter(|path| std::fs::symlink_metadata(directory.join(path)).is_ok())
+        .map(str::to_owned)
+        .collect())
+}
+
 /// `sparse-checkout set` arguments for `sparse_paths` at the fetched commit. Cone mode
 /// always includes every file beside each cone directory, so when any path is
 /// a file every path becomes an exact anchored non-cone pattern (a directory
 /// as `/dir/`); directories alone (and paths that do not resolve, left for
-/// the caller's not-found check) keep cone mode.
+/// the caller's not-found check) keep cone mode. A failed `ls-tree` fails
+/// the checkout: guessing cone mode would widen a file scope to its folder.
 fn sparse_set_args(
     context: &CloneContext<'_>,
     target: &Path,
     sparse_paths: &[String],
-) -> Vec<OsString> {
+) -> Result<Vec<OsString>, CloneError> {
     let paths = sparse_paths
         .iter()
         .map(|path| path.trim_end_matches('/'))
@@ -124,39 +187,32 @@ fn sparse_set_args(
         sparse_timeout(context),
         "resolve sparse path type",
         None,
-    )
-    .map(|output| {
-        output
-            .stdout
-            .split('\0')
-            .filter_map(|line| {
-                let (meta, entry) = line.split_once('\t')?;
-                (meta.split_whitespace().nth(1) == Some("blob")).then(|| entry.to_owned())
-            })
-            .collect::<Vec<_>>()
+    )?
+    .stdout
+    .split('\0')
+    .filter_map(|line| {
+        let (meta, entry) = line.split_once('\t')?;
+        (meta.split_whitespace().nth(1) == Some("blob")).then(|| entry.to_owned())
     })
-    .unwrap_or_default();
-    if paths
-        .iter()
-        .any(|path| files.iter().any(|file| file == path))
-    {
-        let mut args = scoped(target, &["sparse-checkout", "set", "--no-cone", "--"]);
-        args.extend(paths.iter().map(|path| {
-            let mut pattern = file_pattern(path);
-            if !files.iter().any(|file| file == path) {
-                pattern.push('/');
-            }
-            OsString::from(pattern)
-        }));
-        args
-    } else {
+    .collect::<Vec<_>>();
+    let is_file = |path: &str| files.iter().any(|file| file == path);
+    if !paths.iter().any(|path| is_file(path)) {
         let mut args = scoped(
             target,
             &["sparse-checkout", "set", "--cone", "--skip-checks", "--"],
         );
         args.extend(sparse_paths.iter().map(OsString::from));
-        args
+        return Ok(args);
     }
+    let mut args = scoped(target, &["sparse-checkout", "set", "--no-cone", "--"]);
+    args.extend(paths.iter().map(|path| {
+        let mut pattern = file_pattern(path);
+        if !is_file(path) {
+            pattern.push('/');
+        }
+        OsString::from(pattern)
+    }));
+    Ok(args)
 }
 
 /// Anchored gitignore-style pattern matching exactly one repo-relative file.
@@ -234,7 +290,7 @@ pub(super) fn checkout(
     if let Some(paths) = sparse_paths {
         run(
             context,
-            sparse_set_args(context, target, paths),
+            sparse_set_args(context, target, paths)?,
             sparse_timeout(context),
             "set sparse commit paths",
             Some(repository_url),

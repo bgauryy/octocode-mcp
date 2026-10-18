@@ -5,6 +5,7 @@ use super::types::*;
 use super::{cursor::*, layout::*};
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::ToolError;
 use octocode_engine::signatures::MAX_PARSE_SIZE;
 use sha2::{Digest, Sha256};
@@ -256,7 +257,7 @@ fn redact_file(
             if matched.deferred.is_some() {
                 matched.deferred = None;
                 let price = super::layout::row_chars(matched, None, false);
-                matched.deferred = Some(u32::try_from(price).unwrap_or(u32::MAX));
+                matched.deferred = Some(u32_of_usize(price));
                 if !changed {
                     matched.value = String::new();
                 }

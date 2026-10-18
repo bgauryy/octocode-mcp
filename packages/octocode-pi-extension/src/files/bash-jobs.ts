@@ -11,7 +11,7 @@ import { formatDuration, shortPath } from '../shared/format.js';
 import { adoptTree, groupAlive, groupStartTimes, killTree, prepareTree, processAlive, processMatch, processStartTime, sameProcess, stopTree } from '../shared/process.js';
 import { RotatingLog } from '../shared/rotating-log.js';
 import { visibleControls, withoutColors } from '../shared/sanitize.js';
-import { cutText, errorMessage, firstLine, validPid } from '../shared/util.js';
+import { cutText, errorMessage, firstLine, validPid, wholeSeconds } from '../shared/util.js';
 
 /**
  * Background shell jobs for the `bash` tool (bash.ts): each runs in its own process group, with the user's Pi shell,
@@ -382,7 +382,7 @@ export class BashJobs {
         void Promise.race([drained, new Promise((settle) => setTimeout(settle, DRAIN_MS).unref())]).then(() => {
           for (const pipe of pipes) pipe.destroy();
           output.close();
-          const seconds = Math.round((Date.now() - startedAt) / 1000);
+          const seconds = wholeSeconds(Date.now() - startedAt);
           resolve({ code, signal, seconds, ...(output.failure ? { logStopped: output.failure } : {}), ...(output.rotations > 0 ? { logRotations: output.rotations } : {}) });
         });
       };

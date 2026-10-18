@@ -73,7 +73,7 @@ fn definition_alias_retry_is_limited_to_an_unresolved_first_same_file_hop() {
 }
 
 /// A count-cut page of `items`: the cut an explicit `pageSize` asks for.
-fn counted_page(items: &[Value], page: u32, size: u32) -> (Vec<Value>, Value) {
+fn counted_page(items: &[Value], page: u32, size: u32) -> (Vec<Value>, Value, Option<NextPage>) {
     paginate(
         items,
         page,
@@ -93,7 +93,8 @@ const TEST_BUDGET: usize = 16_000;
 #[test]
 fn pagination_omits_nullable_next_page_at_the_terminal_page() {
     let items = vec![serde_json::json!({"name": "one"})];
-    let (_, terminal) = counted_page(&items, 1, 20);
+    let (_, terminal, next) = counted_page(&items, 1, 20);
+    assert!(next.is_none());
     assert_eq!(terminal["hasMore"], false);
     assert!(terminal.get("nextPage").is_none());
 
@@ -101,8 +102,11 @@ fn pagination_omits_nullable_next_page_at_the_terminal_page() {
         serde_json::json!({"name": "one"}),
         serde_json::json!({"name": "two"}),
     ];
-    let (_, partial) = counted_page(&items, 1, 1);
-    assert_eq!(partial["nextPage"], 2);
+    let (_, partial, next) = counted_page(&items, 1, 1);
+    // The cursor rides the next page's lead, never the pagination block.
+    assert!(partial.get("nextPage").is_none() && partial.get("snapshot").is_none());
+    let next = next.expect("a page follows");
+    assert_eq!((next.page, next.snapshot.as_str()), (2, "lsp-v3:test"));
 }
 
 #[test]
@@ -130,19 +134,18 @@ fn semantic_pagination_continuations_cover_the_full_result_fixture() {
             let query: LspSearchQuery = serde_json::from_value(call["queries"][0].clone())
                 .expect("executable continuation query");
             assert_eq!(query.snapshot(), Some(snapshot.as_str()));
-            let (page, pagination) = counted_page(
+            let (page, pagination, next_page) = counted_page(
                 &expected,
                 query.page().unwrap_or(1),
                 query.page_size().expect("explicit pageSize"),
             );
-            let response = with_next(
-                &query,
-                serde_json::json!({
-                    "snapshot": snapshot,
-                    "matches": page,
-                    "pagination": pagination
-                }),
-            );
+            let mut response = serde_json::json!({"matches": page, "pagination": pagination});
+            // The fixture's pages are cut under its own digest.
+            let next_page = next_page.map(|next| NextPage {
+                snapshot: snapshot.clone(),
+                ..next
+            });
+            offer_next_page(&query, &mut response, next_page);
             if response["pagination"]["hasMore"] != true {
                 assert!(response.get("next").is_none());
             } else {
@@ -153,10 +156,7 @@ fn semantic_pagination_continuations_cover_the_full_result_fixture() {
                 .map(|item| item["symbolName"].as_str().expect("name").to_owned())
                 .collect();
             actual.extend(page);
-            // The top-level snapshot only feeds `with_next` here; a tool row
-            // carries it in `pagination`, which `with_next` moves to the call.
-            let mut row = response;
-            row.as_object_mut().expect("row").remove("snapshot");
+            let row = response;
             crate::tools::test_support::checks::Page {
                 output: crate::tools::test_support::published(
                     crate::tools::id::ToolId::LspSearch,
@@ -243,11 +243,13 @@ fn later_pages_check_a_pinned_snapshot_and_carry_it_forward() {
     }
 
     let continued_query = requery(&query, serde_json::json!({"snapshot": snapshot}));
-    let continued = with_next(
+    let mut continued = serde_json::json!({"pagination": {"hasMore": true}});
+    offer_next_page(
         &continued_query,
-        serde_json::json!({
-            "snapshot": snapshot,
-            "pagination": {"hasMore": true, "nextPage": 3}
+        &mut continued,
+        Some(NextPage {
+            page: 3,
+            snapshot: snapshot.clone(),
         }),
     );
     assert_eq!(
@@ -258,15 +260,19 @@ fn later_pages_check_a_pinned_snapshot_and_carry_it_forward() {
 
     // The last page a continuation may name (the contract `page` maximum)
     // keeps its rows and states the terminal limit instead of a lead past it.
-    let last = with_next(
+    let mut last = serde_json::json!({
+        "locations": [{"uri": "file:///repo/a.ts"}],
+        "pagination": {"currentPage": 1000, "hasMore": true}
+    });
+    offer_next_page(
         &requery(
             &query,
             serde_json::json!({"snapshot": snapshot, "page": 1000}),
         ),
-        serde_json::json!({
-            "snapshot": snapshot,
-            "locations": [{"uri": "file:///repo/a.ts"}],
-            "pagination": {"currentPage": 1000, "hasMore": true, "nextPage": 1001}
+        &mut last,
+        Some(NextPage {
+            page: 1001,
+            snapshot: snapshot.clone(),
         }),
     );
     assert!(last.pointer("/next/nextPage").is_none(), "{last}");
@@ -1147,7 +1153,7 @@ fn pages_past_the_end_are_empty_and_flagged_out_of_range() {
         serde_json::json!({"name": "one"}),
         serde_json::json!({"name": "two"}),
     ];
-    let (page, pagination) = counted_page(&items, 5, 1);
+    let (page, pagination, _) = counted_page(&items, 5, 1);
     assert!(page.is_empty(), "must not clamp to the last page");
     assert_eq!(pagination["currentPage"], 5);
     assert_eq!(pagination["totalPages"], 2);
@@ -1155,7 +1161,7 @@ fn pages_past_the_end_are_empty_and_flagged_out_of_range() {
     assert_eq!(pagination["outOfRange"], true);
     assert!(pagination.get("nextPage").is_none());
 
-    let (page, pagination) = counted_page(&items, 2, 1);
+    let (page, pagination, _) = counted_page(&items, 2, 1);
     assert_eq!(page.len(), 1);
     assert!(pagination.get("outOfRange").is_none());
 }
@@ -1561,38 +1567,23 @@ async fn references_default_to_compact_rows_grouped_by_file() {
 fn paged_rows_state_page_facts_once_in_next() {
     let q = query(serde_json::json!({
         "operation": "references", "mainGoal": "test", "reasoning": "test",
-        "path": "file:///repo/a.ts", "symbolName": "foo", "line": 1
+        "path": "file:///repo/a.ts", "symbolName": "foo", "line": 1, "pageSize": 3
     }));
-    let page = |mut row: serde_json::Value| {
-        row["pagination"] = serde_json::json!({"currentPage": 1, "hasMore": true, "nextPage": 2, "pageSize": 3, "snapshot": "lsp-v1:abc"});
-        row
-    };
-    let compact = with_next(
-        &q,
-        page(
-            serde_json::json!({"kind": "references", "files": [{"path": "/repo/a.ts", "matches": ["1:1 foo"]}]}),
-        ),
-    );
-    assert_eq!(
-        compact["next"]["nextPage"]["query"]["queries"][0]["snapshot"],
-        "lsp-v1:abc"
-    );
-    assert!(compact["pagination"].get("snapshot").is_none(), "{compact}");
-    let rows = with_next(
-        &q,
-        page(serde_json::json!({"kind": "references", "matches": [{"path": "/repo/a.ts"}]})),
-    );
+    let items = (0..7)
+        .map(|index| serde_json::json!({"name": format!("s{index}")}))
+        .collect::<Vec<_>>();
+    let row = items_payload(&q, "symbols", serde_json::json!(items), TEST_BUDGET);
     // The continuation carries the page and the snapshot; the row's
-    // pagination keeps the same page facts on every page, its size
-    // included.
-    for row in [&compact, &rows] {
-        assert_eq!(row["next"]["nextPage"]["query"]["queries"][0]["page"], 2);
-        assert_eq!(
-            row["pagination"],
-            serde_json::json!({"currentPage": 1, "hasMore": true, "pageSize": 3}),
-            "{row}"
-        );
-    }
+    // pagination keeps the page facts on every page, its size included, and
+    // no cursor.
+    let call = &row["next"]["nextPage"]["query"]["queries"][0];
+    assert_eq!(call["page"], 2, "{row}");
+    assert!(call["snapshot"].is_string(), "{row}");
+    assert_eq!(
+        row["pagination"],
+        serde_json::json!({"currentPage": 1, "totalPages": 3, "totalItems": 7, "hasMore": true, "pageSize": 3}),
+        "{row}"
+    );
 }
 
 #[test]

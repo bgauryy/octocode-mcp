@@ -160,7 +160,7 @@ pub(super) struct QueryArgs {
     since: Option<String>,
 }
 
-pub(super) fn graph(runtime: &ToolRuntime, command: GraphCommand, json_out: bool) -> u8 {
+pub(super) fn graph(runtime: &ToolRuntime, command: GraphCommand, mode: super::OutputMode) -> u8 {
     let output = match command {
         GraphCommand::Ingest(args) => {
             let IngestArgs {
@@ -227,11 +227,17 @@ pub(super) fn graph(runtime: &ToolRuntime, command: GraphCommand, json_out: bool
             runtime.graph_query(&options)
         }
     };
-    let written = if json_out {
-        super::write_json(&output.value, true)
-    } else if let Some(error) = output.value["error"].as_str() {
+    let error = output.value["error"].as_str().map(|error| {
         let code = output.value["errorCode"].as_str().unwrap_or_default();
-        eprintln!("{error} (errorCode: {code})");
+        format!("{error} (errorCode: {code})")
+    });
+    let written = if mode.json {
+        if let Some(error) = error.filter(|_| mode.tells_stderr()) {
+            eprintln!("{error}");
+        }
+        super::write_json(&output.value)
+    } else if let Some(error) = error {
+        eprintln!("{error}");
         0
     } else {
         super::write_text(&octocode_engine::portable::json_to_yaml_string(

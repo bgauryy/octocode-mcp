@@ -81,31 +81,28 @@ pub fn show(runtime: &ToolRuntime, json_out: bool) -> u8 {
     let config_file_exists = view.config_path.is_some();
     let project_config_exists = view.project_config_path.is_some();
     if json_out {
-        return write_json(
-            &json!({
-                "home": view.home,
-                "storage": view.storage_mode,
-                "configFile": {
-                    "path": config_file,
-                    "exists": config_file_exists,
-                    "keys": view.config_keys,
-                },
-                "projectConfigFile": {
-                    "path": view.project_config_file,
-                    "exists": project_config_exists,
-                    "keys": view.project_config_keys,
-                },
-                "envFiles": {
-                    "global": {"path": view.global_env_path, "exists": view.global_env_path.is_file()},
-                    "project": {"path": view.project_env_path, "exists": view.project_env_exists},
-                },
-                "envKeys": view.loaded_keys,
-                "skippedProtected": view.skipped_protected,
-                "skippedExisting": view.skipped_existing,
-                "diagnostics": view.diagnostics,
-            }),
-            true,
-        );
+        return write_json(&json!({
+            "home": view.home,
+            "storage": view.storage_mode,
+            "configFile": {
+                "path": config_file,
+                "exists": config_file_exists,
+                "keys": view.config_keys,
+            },
+            "projectConfigFile": {
+                "path": view.project_config_file,
+                "exists": project_config_exists,
+                "keys": view.project_config_keys,
+            },
+            "envFiles": {
+                "global": {"path": view.global_env_path, "exists": view.global_env_path.is_file()},
+                "project": {"path": view.project_env_path, "exists": view.project_env_exists},
+            },
+            "envKeys": view.loaded_keys,
+            "skippedProtected": view.skipped_protected,
+            "skippedExisting": view.skipped_existing,
+            "diagnostics": view.diagnostics,
+        }));
     }
     let found = |exists: bool| if exists { "" } else { " (not found)" };
     println!("home     {}", view.home.display());
@@ -165,7 +162,7 @@ pub fn show(runtime: &ToolRuntime, json_out: bool) -> u8 {
 pub fn home(runtime: &ToolRuntime, json_out: bool) -> u8 {
     let home = &runtime.config().home;
     if json_out {
-        return write_json(&json!({"home": home}), true);
+        return write_json(&json!({"home": home}));
     }
     println!("{}", home.display());
     0
@@ -202,7 +199,6 @@ pub fn get(runtime: &ToolRuntime, key: &str, json_out: bool) -> u8 {
     if json_out {
         let code = write_json(
             &json!({"key": key, "set": value.is_some(), "value": shown, "source": source, "path": path}),
-            true,
         );
         if code != 0 {
             return code;
@@ -238,7 +234,7 @@ pub async fn check(runtime: &ToolRuntime, key: &str, json_out: bool) -> u8 {
         if let Some(source) = &github_auth {
             value["githubTokenSource"] = json!(source);
         }
-        let code = write_json(&value, true);
+        let code = write_json(&value);
         if code != 0 {
             return code;
         }
@@ -300,10 +296,7 @@ fn edit(runtime: &ToolRuntime, key: &str, value: Option<&str>, json_out: bool) -
         Ok(changed) => {
             let action = if value.is_some() { "set" } else { "unset" };
             if json_out {
-                write_json(
-                    &json!({"action": action, "key": key, "path": path, "changed": changed}),
-                    true,
-                )
+                write_json(&json!({"action": action, "key": key, "path": path, "changed": changed}))
             } else {
                 println!(
                     "{action} {key}: {} ({})",

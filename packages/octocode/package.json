@@ -58,14 +58,12 @@
     "build": "yarn lint && node build.mjs && node ../../skills-dev/octocode-dev/scripts/package-build.mjs docs out",
     "build:dev": "node build.mjs",
     "clean": "rm -rf out/",
-    "lint": "node ../../node_modules/eslint/bin/eslint.js src tests",
-    "lint:fix": "node ../../node_modules/eslint/bin/eslint.js src tests --fix",
+    "format": "eslint src tests --fix",
+    "lint": "eslint src tests",
     "prepack": "node scripts/prepack.mjs",
     "start": "node ./out/octocode.js",
-    "test": "node ../../node_modules/vitest/vitest.mjs run --coverage",
-    "test:quiet": "node ../../node_modules/vitest/vitest.mjs run --reporter=dot --silent",
-    "test:watch": "node ../../node_modules/vitest/vitest.mjs --watch",
-    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit",
+    "test": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
     "verify": "yarn lint && yarn typecheck && yarn test"
   },
   "type": "module"

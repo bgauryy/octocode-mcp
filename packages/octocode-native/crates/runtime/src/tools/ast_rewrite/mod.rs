@@ -3,6 +3,7 @@ use crate::policy::prune::PruneMode;
 use crate::tools::ast_rule;
 use crate::tools::empty_walk::{Hits, SAMPLE_FILES, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use crate::tools::paging::push_warnings;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
@@ -1106,7 +1107,7 @@ fn prepare(
         // the file is not offered for a write.
         if file.after == file.before {
             coverage.unchanged_files += 1;
-            coverage.unchanged_matches += u32::try_from(file.matches.len()).unwrap_or(u32::MAX);
+            coverage.unchanged_matches += u32_of_usize(file.matches.len());
             continue;
         }
         total_patch_bytes = total_patch_bytes.saturating_add(file.patch.len());
@@ -1671,9 +1672,7 @@ fn snapshot(
 }
 
 fn transaction_id(root: &Path, files: &[PreparedFile]) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos());
+    let now = crate::civil_date::unix_nanos();
     json_sha256(&json!([
         root,
         std::process::id(),

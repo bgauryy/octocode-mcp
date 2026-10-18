@@ -341,17 +341,17 @@ try {
       await assertRecovery(tool, first, baseline);
       return { pages: selected.results.length, providerCalls: calls - before, evidenceRows: selected.rows.length, baselineRows: baseline.rows.length };
     });
-    await check(`${label}: provider failures expose no unjudged body and recover without the provider`, async () => {
+    await check(`${label}: refused provider calls expose no unjudged body; a provider that cannot answer now withholds nothing`, async () => {
       const baseline = await walk(cli, tool, ordinary(query));
       const attempts = [];
       // A selection past its constant deadline is covered by
       // runtime_clasify::a_selection_past_its_deadline_withholds_bodies_and_recovers.
-      for (const failureMode of ['401', '429', '500', 'malformed']) {
+      // Refused calls (credential, quota, malformed answer) fail the row and offer next.unfiltered.
+      for (const failureMode of ['401', 'malformed']) {
         mode = failureMode;
         const startedCalls = calls;
         const row = failure(await cli(tool, query), failureMode === 'malformed'
-          ? 'invalidClassificationResponse' : failureMode === '429'
-            ? 'classificationRateLimited' : 'classificationProviderError');
+          ? 'invalidClassificationResponse' : 'classificationProviderError');
         const value = receipt(row, 'chunks');
         attempts.push({ failure: failureMode, providerCalls: calls - startedCalls, status: value.status, reason: value.reason });
         assert.ok(calls > startedCalls, `${failureMode} attempted the provider`);
@@ -363,6 +363,32 @@ try {
         assert.equal(continuation(row)?.query.queries[0].selection, undefined, `${failureMode}: no plan-bound continuation of an empty view`);
         mode = 'score';
         await assertRecovery(tool, row, baseline);
+      }
+      // A provider that cannot answer now (rate limited, failing with 5xx) is transient
+      // (judgment/transport.rs is_transient): evidence the reader already has is never withheld, so every page is
+      // the ordinary view under an `unavailable` receipt and a warning naming the code. Later pages replay the saved
+      // plan without another provider call, and there is nothing to recover.
+      for (const [failureMode, code] of [['429', 'classificationRateLimited'], ['500', 'classificationProviderUnavailable']]) {
+        mode = failureMode;
+        const startedCalls = calls;
+        const transient = await walk(cli, tool, query);
+        mode = 'score';
+        attempts.push({ failure: failureMode, providerCalls: calls - startedCalls, pages: transient.results.length });
+        assert.ok(calls > startedCalls, `${failureMode} attempted the provider`);
+        assert.ok(transient.provider.slice(1).every(count => count === 0), `${failureMode}: later pages replay without provider calls`);
+        assert.deepEqual(transient.rows, baseline.rows, `${failureMode}: the complete ordinary evidence is shown, once and in order`);
+        for (const result of transient.results) {
+          const row = dataOf(result);
+          const value = receipt(row, 'chunks');
+          assert.equal(value.status, 'unavailable', failureMode);
+          assert.equal(value.reason, code, failureMode);
+          assert.equal(value.selectedItems, 0, failureMode);
+          assert.equal(value.excludedItems, 0, `${failureMode}: a failed judgment never excludes`);
+          assert.equal(value.unknownItems, value.totalItems, failureMode);
+          // The first page warns; later pages replay the plan and carry its receipt reason.
+          if (result === transient.results[0]) assert.ok((row.warnings ?? []).some(warning => warning.includes(code) && warning.includes('shown unfiltered')), `${failureMode} warns that the view is unfiltered: ${JSON.stringify(row.warnings)}`);
+          assert.equal(row.next?.unfiltered, undefined, `${failureMode}: the view is already complete, so there is no unfiltered recovery`);
+        }
       }
       return attempts;
     });
@@ -613,14 +639,16 @@ try {
     });
     assert.equal(legacy.code, 2);
     assert.equal(legacy.json.errorCode, 'invalidInput', JSON.stringify(legacy.json));
-    // A missing required state is reported first; beside a valid state the legacy field is named with its replacement.
+    // A missing required state is reported first. `resources` is a live field of operation:"sections", so beside a
+    // valid state it is rejected as a section-only field naming the operation that accepts it (validate/union.rs
+    // section_fields_without_operation_name_the_sections_literal), not as an unknown legacy field.
     const named = await cli('clasify', {
       state: { evidence: 'waiting request' },
       resources: [{ id: 'document', tool: 'localFetch', query: { path: docPath } }],
       questions: { answer: { type: 'noul', instructions: 'Is cancellation explained?' } },
     });
     assert.equal(named.json.errorCode, 'invalidInput', JSON.stringify(named.json));
-    assert.match(named.json.error, /unknown field 'resources'.*'source'/, JSON.stringify(named.json));
+    assert.match(named.json.error, /Remove 'resources' from queries\[0\]: it applies only with operation:"sections"/, JSON.stringify(named.json));
     for (const tool of ['localSearch', 'localFetch']) {
       const plain = ordinary(tool === 'localSearch' ? search : fetch);
       for (const field of [{ goals: classifiers }, { classifiers }, { ranking: 'legacy-plan' }]) {

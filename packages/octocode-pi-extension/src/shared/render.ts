@@ -53,6 +53,24 @@ export function clip(text: string, max: number): string {
   return clipText(firstLine(sanitizeTerminalText(text).replace(/\t/g, ' ')).trim(), max);
 }
 
+const graphemes = new Intl.Segmenter();
+
+/** One sanitized line of at most `max` terminal columns (a wide character counts 2), ending in `…` when cut: `clip` for lines that must not wrap. */
+export function clipColumns(text: string, max: number): string {
+  if (max <= 0) return '';
+  const line = clip(text, Number.MAX_SAFE_INTEGER);
+  if (visibleWidth(line) <= max) return line;
+  let kept = '';
+  let width = 0;
+  for (const { segment } of graphemes.segment(line)) {
+    const columns = visibleWidth(segment);
+    if (width + columns > max - 1) break;
+    kept += segment;
+    width += columns;
+  }
+  return `${kept}…`;
+}
+
 /** Renderer state kept per tool row (`context.state`). */
 export interface ToolRow {
   /** When a row without a call id first drew as running (see `runStart`). */

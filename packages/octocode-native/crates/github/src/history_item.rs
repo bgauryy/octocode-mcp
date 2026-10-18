@@ -5,7 +5,6 @@ use super::{
 use bytes::Bytes;
 use reqwest::header::{HeaderValue, IF_NONE_MATCH};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 #[derive(Clone, Debug)]
 pub struct HistoryItemResponse {
     pub value: Value,
@@ -28,18 +27,12 @@ fn pinned_history(segments: &[&str]) -> bool {
 /// One history read's cache key: the URL and media type, in the pinned or
 /// the revalidated namespace.
 fn history_key(spec: &RequestSpec, pinned: bool) -> String {
-    let mut digest = Sha256::new();
-    digest.update(spec.url.as_str().as_bytes());
-    digest.update([0]);
-    if let Some(accept) = spec.headers.get(reqwest::header::ACCEPT) {
-        digest.update(accept.as_bytes());
-    }
     let namespace = if pinned {
         "github-commit"
     } else {
         "github-history"
     };
-    format!("{namespace}:{}", hex::encode(digest.finalize()))
+    super::cache_key::request_key(namespace, spec)
 }
 
 /// In-flight history reads: a transient slot holds the first read's answer

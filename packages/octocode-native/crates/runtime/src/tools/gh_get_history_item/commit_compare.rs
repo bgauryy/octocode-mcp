@@ -269,7 +269,7 @@ fn shape_file_page(
     let listed = rows.as_array().is_some_and(|rows| !rows.is_empty());
     // Files it could not search may hold the literal: no empty answer then.
     let match_removed_all = patches && in_scope > 0 && unsearched.is_empty() && kept == 0;
-    let cursors = DiffCursors::of_file_page(&page, cursor, listed);
+    let cursors = DiffCursors::of_file_page(&mut page, cursor, listed);
     out["files"] = rows;
     super::window::lift_page_limits(out, &mut page);
     out["contentPagination"]["files"] = page;

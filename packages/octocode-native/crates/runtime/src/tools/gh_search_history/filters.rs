@@ -25,7 +25,7 @@ pub(super) struct Filters {
     pub state: Option<String>,
     pub archived: Option<bool>,
     pub draft: Option<bool>,
-    /// `is:unmerged` / `-is:merged`: closed without merging (pull requests).
+    /// `is:unmerged` / `-is:merged`: not merged, open or closed (pull requests).
     pub unmerged: Option<bool>,
     pub review_requested: Option<String>,
     pub reviewed_by: Option<String>,
@@ -202,7 +202,7 @@ fn setting(
 ) -> Result<(Field, Setting), ProviderError> {
     Ok(match (field, value) {
         (Field::State, "draft") if pull_request => (Field::Draft, Setting::Flag(!negated)),
-        // Closed without merging: GitHub's `is:unmerged`, also spelled `-is:merged`.
+        // Not merged (open or closed): GitHub's `is:unmerged`, also spelled `-is:merged`.
         (Field::State, "unmerged") if pull_request && !negated => {
             (Field::Unmerged, Setting::Flag(true))
         }
@@ -328,6 +328,8 @@ impl Filters {
         };
         let operation = query.operation();
         let pull_request = operation == HistoryOperation::PullRequest;
+        // The term that asked for unmerged pull requests, as written.
+        let mut unmerged = None;
         for term in crate::contracts::qualifier_terms(text) {
             let (negated, term) = match term.strip_prefix('-') {
                 Some(rest) => (true, rest),
@@ -356,9 +358,39 @@ impl Filters {
                 continue;
             }
             let (field, value) = setting(&key, field, value, negated, pull_request)?;
+            if field == Field::Unmerged {
+                unmerged = Some(format!("{}{term}", if negated { "-" } else { "" }));
+            }
             filters.set(&key, field, value)?;
         }
+        if let Some(unmerged) = unmerged {
+            filters.reject_merged_with(query, &unmerged)?;
+        }
         Ok(filters)
+    }
+
+    /// `state:"merged"` (or `is:merged`) beside `unmerged` (the term that
+    /// asked for unmerged pull requests) asks for none: GitHub answers it
+    /// with rows of neither, so it is refused, naming both.
+    fn reject_merged_with(
+        &self,
+        query: &GhSearchHistoryQuery,
+        unmerged: &str,
+    ) -> Result<(), ProviderError> {
+        let wire = match query {
+            GhSearchHistoryQuery::PullRequest { state, .. } => {
+                state.as_ref().map(ToString::to_string)
+            }
+            _ => None,
+        };
+        let merged = match (wire.as_deref(), self.state.as_deref()) {
+            (Some("merged"), _) => "state \"merged\"",
+            (None, Some("merged")) => "is:merged",
+            _ => return Ok(()),
+        };
+        Err(qualifier_error(format!(
+            "qualifiers: {unmerged} contradicts {merged}: a pull request is merged or not; keep one."
+        )))
     }
 }
 

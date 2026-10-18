@@ -266,4 +266,68 @@ mod tests {
             "α\r\n三\nlast"
         );
     }
+
+    fn spans(text: &str, ranges: Value) -> Vec<Range<usize>> {
+        selected_ranges(text, &json!({ "ranges": ranges })).expect("valid ranges")
+    }
+
+    #[test]
+    fn no_ranges_select_the_whole_text_and_empty_text_selects_nothing() {
+        for query in [json!({}), json!({"ranges": []})] {
+            assert_eq!(selected_ranges("a\nb", &query).unwrap(), vec![0..3]);
+            assert!(selected_ranges("", &query).unwrap().is_empty());
+        }
+        assert!(spans("", json!(["1-1"])).is_empty());
+    }
+
+    #[test]
+    fn adjacent_ranges_join_and_an_end_past_the_text_is_clamped() {
+        assert_eq!(spans("a\nb\nc", json!(["1-1", "2-2"])), vec![0..4]);
+        assert_eq!(spans("a\nb\nc", json!(["3-3", "1-1"])), vec![0..2, 4..5]);
+        assert_eq!(spans("a\nb\nc", json!(["2-99"])), vec![2..5]);
+    }
+
+    #[test]
+    fn ranges_that_select_no_text_are_an_error_not_an_empty_success() {
+        // A final newline ends line 2; it does not start a line 3.
+        for ranges in [json!(["3-3"]), json!(["9-12"])] {
+            let error = selected_ranges("a\nb\n", &json!({ "ranges": ranges })).unwrap_err();
+            assert_eq!(error.code, "classificationContextEmpty");
+        }
+        assert_eq!(spans("a\nb\n", json!(["2-3"])), vec![2..4]);
+    }
+
+    #[test]
+    fn a_malformed_range_is_an_invalid_source() {
+        for ranges in [json!(["two-three"]), json!([7])] {
+            let error = selected_ranges("a\nb", &json!({ "ranges": ranges })).unwrap_err();
+            assert_eq!(error.code, "invalidClassificationContext", "{ranges}");
+        }
+    }
+
+    #[test]
+    fn selection_metadata_records_the_source_and_a_read_of_the_same_snapshot() {
+        let snapshot = crate::digest::sha256(b"a.rs contents");
+        let captured = TextResource {
+            text: String::new(),
+            path: PathBuf::from("a.rs"),
+            metadata: json!({"status": "ready", "snapshot": snapshot}),
+            local_check: None,
+        };
+        let local = json!({"tool":"localFetch","query":{"path":"a.rs","fullContent":true}});
+        let metadata = selection_metadata(&captured, &local);
+        assert_eq!(metadata["status"], "ready");
+        assert_eq!(metadata["source"], local);
+        assert_eq!(metadata["read"]["tool"], "localFetch");
+        assert!(
+            metadata["read"].to_string().contains(&snapshot),
+            "the lead is pinned to the captured snapshot: {metadata}"
+        );
+        assert!(captured.metadata.get("source").is_none(), "input untouched");
+
+        let page = json!({"url": "https://example.org/doc"});
+        let metadata = selection_metadata(&captured, &page);
+        assert_eq!(metadata["source"], page);
+        assert!(metadata.get("read").is_none(), "a URL carries its own lead");
+    }
 }

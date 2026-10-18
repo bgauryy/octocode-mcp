@@ -37,10 +37,15 @@ pub(super) async fn owner_exists(
     }
 }
 
+/// The scope check of an empty search: a missing repository fails, an
+/// archived one is named, and an existing one leads to what verifies the
+/// absence. `broadened`: the search offers `broadenSearch`, which takes the
+/// root listing's place.
 pub(super) async fn empty_scope(
     value: &mut Value,
     diagnostics: &mut crate::tools::result::ToolDiagnostics,
     query: &GhSearchCodeQuery,
+    broadened: bool,
     transport: &GitHubTransport,
     context: &RequestContext,
 ) -> Result<(), ProviderError> {
@@ -84,7 +89,9 @@ pub(super) async fn empty_scope(
                 // contents (`findCode`): that targeted lead keeps the slots.
                 if !path_mode_given_code(query) {
                     add_clone_lead(value, query, owner.as_str(), repo.as_str());
-                    add_root_lead(value, query, owner.as_str(), repo.as_str());
+                    if !broadened {
+                        add_root_lead(value, query, owner.as_str(), repo.as_str());
+                    }
                 }
                 return Ok(());
             };
@@ -136,8 +143,7 @@ pub(super) async fn empty_scope(
 
 /// The index proves nothing about absence: a local clone of the searched ref
 /// is the check that does. Offered for a repository-wide search only: a path
-/// scope already leads to its listing, and a row shows two leads at most, so
-/// a third would push `broadenSearch` out.
+/// scope already leads to its listing.
 fn add_clone_lead(value: &mut Value, query: &GhSearchCodeQuery, owner: &str, repo: &str) {
     let mut clone = json!({"owner":owner,"repo":repo});
     if let Some(reference) = requested_ref(query) {
@@ -150,13 +156,9 @@ fn add_clone_lead(value: &mut Value, query: &GhSearchCodeQuery, owner: &str, rep
 }
 
 /// `cloneRepo` runs only where clone is available, so an empty repo-wide
-/// search also gets the root listing at the searched ref, which every
-/// surface runs. A row shows two leads at most: a search with a narrowing
-/// to drop keeps that slot for `broadenSearch`.
+/// search with nothing to broaden also gets the root listing at the
+/// searched ref, which every surface runs.
 fn add_root_lead(value: &mut Value, query: &GhSearchCodeQuery, owner: &str, repo: &str) {
-    if super::leads::broaden_search(query, usize::MAX).is_some() {
-        return;
-    }
     let mut root = json!({"owner":owner,"repo":repo});
     if let Some(reference) = requested_ref(query) {
         root["ref"] = json!(reference);

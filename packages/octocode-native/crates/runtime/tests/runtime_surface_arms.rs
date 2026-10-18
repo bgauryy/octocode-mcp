@@ -1,6 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
-
 //! Catalog-shape switches: `tools.enabled`/`tools.disabled` narrow
 //! availability, and the `mcp.*` presentation switches reach hosts through the
 //! runtime catalog. Defaults keep the full catalog.

@@ -6,7 +6,12 @@
 //! hundreds of GB of stale copies in target/. One binary links once and runs
 //! all tests in one parallel harness. Run one file with
 //! `cargo test -p octocode-native --test integration <module>::`.
-#![allow(clippy::expect_used, reason = "integration-test assertions")]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "integration tests assert by unwrapping, expecting and panicking"
+)]
 
 mod support;
 
@@ -18,11 +23,13 @@ mod runtime_batch_indices;
 mod runtime_batch_response;
 mod runtime_clasify;
 mod runtime_clasify_media;
+mod runtime_clasify_sections;
 mod runtime_clasify_url;
 mod runtime_d1_shapes;
 mod runtime_empty_error_rows;
 mod runtime_flow_edge_replay;
 mod runtime_generic_walk;
+mod runtime_gh_default_branch;
 mod runtime_gh_structure;
 mod runtime_github;
 mod runtime_github_cache;

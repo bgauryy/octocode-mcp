@@ -58,7 +58,7 @@ fn publish_at(value: &mut Value, schemas: &[&Value], defs: &Value) {
                                 && value
                                     .as_array()
                                     .is_some_and(|items| items.iter().all(Value::is_string)))
-                                || (value["tool"].is_string() && value["query"].is_object())
+                                || crate::tools::result::is_call(value)
                         }),
                         _ => false,
                     };
@@ -99,35 +99,31 @@ fn collect_hints(
                 .for_each(|item| collect_hints(item, None, strings, seen));
             return;
         }
-        Value::Object(mut fields) => {
-            if let (Some(tool), Some(query)) = (
-                fields.get("tool").and_then(Value::as_str),
-                fields.get("query"),
-            ) {
-                let qualification =
-                    if fields.get("confidence").and_then(Value::as_str) == Some("low") {
-                        "Approximate: "
-                    } else {
-                        ""
-                    };
-                {
-                    let call = format!("{qualification}{tool} {query}");
-                    let mut identity = query.clone();
-                    identity.sort_all_objects();
-                    if !seen.insert(format!("{qualification}{tool} {identity}")) {
-                        return;
-                    }
-                    label.map_or(call.clone(), |label| format!("{label}: {call}"))
-                }
-            } else {
-                if let Some(text) = fields.shift_remove(HINT_TEXT_KEY) {
-                    collect_hints(text, None, strings, seen);
-                }
-                fields
-                    .into_iter()
-                    .for_each(|(name, hint)| collect_hints(hint, Some(&name), strings, seen));
+        call @ Value::Object(_) if crate::tools::result::is_call(&call) => {
+            let mut identity = call.clone();
+            identity["query"].sort_all_objects();
+            let (Some(line), Some(identity)) = (
+                crate::tools::result::call_line(&call),
+                crate::tools::result::call_line(&identity),
+            ) else {
+                return;
+            };
+            if !seen.insert(identity) {
                 return;
             }
+            match label {
+                Some(label) => format!("{label}: {line}"),
+                None => line,
+            }
+        }
+        Value::Object(mut fields) => {
+            if let Some(text) = fields.shift_remove(HINT_TEXT_KEY) {
+                collect_hints(text, None, strings, seen);
+            }
+            fields
+                .into_iter()
+                .for_each(|(name, hint)| collect_hints(hint, Some(&name), strings, seen));
+            return;
         }
         _ => return,
     };
@@ -526,12 +522,12 @@ mod tests {
     }
 
     fn walk(value: &mut Value, tool: ToolId) {
+        if crate::tools::result::is_call(value) {
+            return;
+        }
         match value {
             Value::Array(items) => items.iter_mut().for_each(|item| walk(item, tool)),
             Value::Object(object) => {
-                if object.get("tool").is_some() && object.get("query").is_some() {
-                    return;
-                }
                 shape(object, tool, false, false);
                 for (key, child) in object.iter_mut() {
                     if key != "next" && key != "hints" {
@@ -1224,6 +1220,13 @@ mod tests {
                 assert!(
                     page < rows && next < rows,
                     "{tool:?} {format:?}: continuation after the rows:\n{text}"
+                );
+                // YAML prints each call as the one line the CLI runs.
+                let call = &row_object(&response, tool)["next"]["nextPage"];
+                let line = crate::tools::result::call_line(call).expect("call");
+                assert!(
+                    format == TextFormat::Json || text.contains(&format!("nextPage: {line}\n")),
+                    "{tool:?}: the call is not one line:\n{text}"
                 );
             }
         }

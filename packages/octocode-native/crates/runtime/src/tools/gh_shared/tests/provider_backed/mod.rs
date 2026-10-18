@@ -163,16 +163,16 @@ async fn mount_code_search(server: &MockServer) {
 
 async fn mount_content(server: &MockServer, file: &str, body: &str) {
     Mock::given(method("GET"))
-            // The contents route encodes the path as one segment.
-            .and(path(format!(
-                "/api/v3/repos/a/b/contents/{}",
-                file.replace('/', "%2F")
-            )))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "type":"file","encoding":"base64","content":STANDARD.encode(body)
-            })))
-            .mount(server)
-            .await;
+        // The contents route encodes the path as one segment.
+        .and(path(format!(
+            "/api/v3/repos/a/b/contents/{}",
+            file.replace('/', "%2F")
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "type":"file","encoding":"base64","content":STANDARD.encode(body)
+        })))
+        .mount(server)
+        .await;
 }
 
 const SHA: &str = "0123456789abcdef0123456789abcdef01234567";

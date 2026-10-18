@@ -859,9 +859,12 @@ mod tests {
             super::super::page_out_of_range(&paged).map(|limit| limit.reason),
             Some("providerResultCap")
         );
-        assert!(super::super::validate_cursor_state(ArtifactType::Nuget, &at(3999)).is_ok());
+        assert!(
+            super::super::validate_cursor_state(ArtifactType::Nuget, &at(3999), q.page_size())
+                .is_ok()
+        );
         assert_eq!(
-            super::super::validate_cursor_state(ArtifactType::Nuget, &at(4000))
+            super::super::validate_cursor_state(ArtifactType::Nuget, &at(4000), q.page_size())
                 .expect_err("past the reach")
                 .code,
             "invalidInput"

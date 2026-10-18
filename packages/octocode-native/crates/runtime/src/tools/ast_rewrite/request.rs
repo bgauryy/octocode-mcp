@@ -165,8 +165,8 @@ fn split_rule_file(value: Value) -> Result<(Value, Map<String, Value>), String> 
 /// A YAML rule string as the equivalent rule object and its rule-file
 /// sections.
 pub(super) fn rule_from_yaml(text: &str) -> Result<(Value, Map<String, Value>), String> {
-    let value: Value =
-        serde_yaml_ng::from_str(text).map_err(|error| format!("invalid rule YAML: {error}"))?;
+    let value = octocode_engine::portable::yaml_to_json(text)
+        .map_err(|error| format!("invalid rule YAML: {error}"))?;
     split_rule_file(value)
 }
 

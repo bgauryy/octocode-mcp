@@ -16,22 +16,46 @@ test('every native build script routes through build-native.cjs', () => {
   assert.equal(scripts['build:dev'], driver);
   assert.equal(scripts['build:all'], `yarn clean:binaries && ${driver} --release --all`);
   assert.equal(scripts['build:target'], `${driver} --release --target`);
+  assert.equal(scripts['check:target'], `${driver} --check --target`);
   for (const platform of Object.keys(PLATFORMS)) assert.equal(scripts[`build:${platform}`], undefined, platform);
   for (const [name, command] of Object.entries(scripts)) {
     if (name.startsWith('build')) assert.doesNotMatch(command, /cargo build|napi build|--only/, name);
   }
 });
 
+test('test:rust is nextest runs, and bacon test jobs use the same selections', () => {
+  const { testRustSelections } = require('../scripts/test-rust-selections.cjs');
+  const selections = testRustSelections();
+  assert.ok(selections.length > 0);
+  for (const selection of selections) assert.equal(selection[0], '--locked');
+  const bacon = readFileSync(join(__dirname, '..', 'bacon.toml'), 'utf8').replace(/,\s+/g, ', ');
+  for (const selection of selections) {
+    assert.ok(bacon.includes(selection.map(arg => JSON.stringify(arg)).join(', ')), selection.join(' '));
+  }
+  assert.throws(() => testRustSelections({ scripts: { 'test:rust': 'cargo test -p x' } }), /not "cargo nextest run/);
+});
+
 test('host build selects both host crates in one locked cargo invocation', () => {
   const { PLATFORMS } = require('../bin/platform.cjs');
-  const { hostsCommand } = require('../scripts/build-native.cjs');
+  const { GLIBC_FLOOR, hostsCommand } = require('../scripts/build-native.cjs');
   for (const platform of [null, ...Object.keys(PLATFORMS)]) {
-    const args = hostsCommand(platform, true, '/tmp/hosts').join(' ');
-    assert.match(args, /-p octocode-cli -p octocode-runtime-napi --bins --lib/);
-    assert.match(args, /--locked/);
-    assert.match(args, /--target-dir \/tmp\/hosts/);
-    assert.doesNotMatch(args, /napi-test|--all-features/);
-    if (platform) assert.match(args, new RegExp(`--target ${PLATFORMS[platform].triple}`));
+    for (const mode of [{ release: true }, { check: true }]) {
+      const { command, args } = hostsCommand(platform, mode, '/tmp/hosts');
+      const line = args.join(' ');
+      assert.match(command, /^cargo(-zigbuild)?$/);
+      assert.match(line, /-p octocode-cli -p octocode-runtime-napi --bins --lib/);
+      assert.match(line, /--locked/);
+      assert.match(line, /--target-dir \/tmp\/hosts/);
+      assert.doesNotMatch(line, /napi-test|--all-features/);
+      assert.equal(line.includes('--release'), Boolean(mode.release), line);
+      if (platform) assert.match(line, new RegExp(`--target ${PLATFORMS[platform].triple}`));
+      // A check never links: every cross tool runs its `check` subcommand.
+      if (mode.check) assert.ok([args[0], args[1]].includes('check'), `${command} ${line}`);
+      // zigbuild links gnu targets against Node's glibc floor, not zig's default.
+      if (command === 'cargo-zigbuild' && PLATFORMS[platform].libc === 'gnu') {
+        assert.match(line, new RegExp(`--target ${PLATFORMS[platform].triple}\\.${GLIBC_FLOOR.replace('.', '\\.')} `));
+      }
+    }
   }
 });
 

@@ -155,7 +155,13 @@ test('C5 checks keyed reader growth even when clasify is absent', () => {
   assert.ok(!tools.some(tool => tool.name === 'clasify'));
   assert.ok(surfaceBudget(measureMcpSurface(tools, ''), { profile: 'keyed', baseline }).reasons.some(reason => reason.startsWith('localSearch adds ')));
   const beta = surfaceTools('keyedBeta');
-  beta.find(tool => tool.name === 'clasify').description = 'x'.repeat(MCP_SURFACE_BUDGETS.clasify);
+  // The published entry holds evaluate/models (`clasify`) plus section research (`sectionsAddition`).
+  const clasify = beta.find(tool => tool.name === 'clasify');
+  const quota = MCP_SURFACE_BUDGETS.clasify + MCP_SURFACE_BUDGETS.sectionsAddition;
+  clasify.description = '';
+  clasify.description = 'x'.repeat(quota - measureMcpSurface([clasify], '').perTool.clasify);
+  assert.deepEqual(surfaceBudget(measureMcpSurface(beta, ''), { profile: 'keyedBeta', baseline }).reasons.filter(reason => reason.startsWith('clasify ')), []);
+  clasify.description += 'x';
   assert.ok(surfaceBudget(measureMcpSurface(beta, ''), { profile: 'keyedBeta', baseline }).reasons.some(reason => reason.startsWith('clasify ')));
 });
 

@@ -1,10 +1,13 @@
 import type { Usage } from '@earendil-works/pi-ai';
 import type { AgentToolResult, MessageRenderer, Theme, ToolRenderResultOptions } from '@earendil-works/pi-coding-agent';
 import { Box, type Component } from '@earendil-works/pi-tui';
+import { archiveSearch, LIBRARY_FILE } from '../shared/archive.js';
 import { fencedParts } from '../shared/fence.js';
-import { formatCost, formatDuration, formatTokenUsage, shortPath, toolCallCount } from '../shared/format.js';
-import { bodyLines, clip, timingOf, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
+import { formatCost, formatDuration, formatTokens, formatTokenUsage, shortPath, toolCallCount } from '../shared/format.js';
+import { bodyLines, clip, plural, timingOf, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
 import { contentText, isRecord } from '../shared/util.js';
+import type { Ask } from '../team/asks.js';
+import { noticeText, type ChildNotices, type Compactions } from './events.js';
 import type { ReportStatus } from './report.js';
 
 /**
@@ -12,6 +15,17 @@ import type { ReportStatus } from './report.js';
  * progress while it runs and `⎿ Done (name · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12 · 38s)` with the answer once it finishes. The row
  * stays one short line; the full prompt the agent was given shows in the expanded view, above its progress or report.
  */
+
+/**
+ * The child's saved conversation: its session id (it names the child's Octocode folder `<home>/agent/pi/sessions/<id>`),
+ * its transcript file once written, and the folder of its archive of compacted history (`shared/archive.ts`) once it
+ * compacted: Markdown the parent can search with the Octocode tools.
+ */
+export interface ChildSessionDetails {
+  id: string;
+  file?: string;
+  archive?: string;
+}
 
 /** The `agent` tool's result details, updated as the child streams. */
 export interface RunDetails {
@@ -39,6 +53,16 @@ export interface RunDetails {
   status: 'waiting' | 'running' | 'background' | 'done' | 'failed';
   /** The child waits for the user's answer to one of its dialogs (shown in this session). */
   waiting?: boolean;
+  /** The child compacts its context now. */
+  compacting?: boolean;
+  /** Its compactions so far; absent when none started. */
+  compactions?: Compactions;
+  /** Warnings and errors its extensions showed (a child has no screen): an inline page, then a count and the file with every one. */
+  notices?: ChildNotices;
+  /** Its saved conversation. */
+  session?: ChildSessionDetails;
+  /** Its questions to the parent (`sendMessage` with `replyRequired`), each with its answer and wait; set when the run ends, absent when it asked none. */
+  asks?: Ask[];
   /** Someone stopped the run; it is closing (the child, an isolated run's worktree). */
   stopping?: boolean;
   /** The `provider/id` it runs on (with any `:thinking` suffix); absent when it runs on the parent's model. */
@@ -71,6 +95,11 @@ export interface ResultDetails {
   usage?: Usage;
   /** Whether any of the run's replies came from a model without pricing (then `usage.cost` leaves them out). */
   unpriced?: boolean;
+  /** Its compactions, warnings and errors, and saved conversation, as in `RunDetails`. */
+  compactions?: Compactions;
+  notices?: ChildNotices;
+  session?: ChildSessionDetails;
+  asks?: Ask[];
 }
 
 /** The model a run is on: its `provider/id`, marked as the parent's when the profile's preference was unavailable. */
@@ -82,11 +111,53 @@ function modelLabel(details: Pick<RunDetails, 'model' | 'fallback'>): string {
 /** `2 denied`: tool calls the child had no one to approve (empty when none). */
 export const deniedLabel = (details: Pick<RunDetails, 'denied'>): string => (details.denied ? `${details.denied} denied` : '');
 
-type Progress = Pick<RunDetails, 'id' | 'toolCalls' | 'denied' | 'input' | 'cacheRead' | 'output' | 'cost' | 'unpriced' | 'model' | 'fallback'>;
+/** `2 compactions (1 failed)`: how often the child compacted its context (empty when it never did). */
+export function compactionLabel(details: Pick<RunDetails, 'compactions'>): string {
+  const { done = 0, aborted = 0, failed = 0 } = details.compactions ?? {};
+  const bad = [failed ? `${failed} failed` : '', aborted ? `${aborted} aborted` : ''].filter(Boolean).join(', ');
+  return done + aborted + failed === 0 ? '' : `${plural(done + aborted + failed, 'compaction')}${bad ? ` (${bad})` : ''}`;
+}
+
+/** The child's compactions as a line of the parent's own report: `Compactions: 2 done, 1 failed; latest 150k → 32k tokens.` (the failure's text is in `noticeLines`). */
+export function compactionNote(details: Pick<RunDetails, 'compactions'>): string {
+  const { done = 0, aborted = 0, failed = 0, tokensBefore, tokensAfter } = details.compactions ?? {};
+  if (done + aborted + failed === 0) return '';
+  const counts = [done ? `${done} done` : '', aborted ? `${aborted} aborted` : '', failed ? `${failed} failed` : ''].filter(Boolean).join(', ');
+  const size = tokensBefore !== undefined && tokensAfter !== undefined ? `; latest ${formatTokens(tokensBefore)} → ${formatTokens(tokensAfter)} tokens` : '';
+  return `Compactions: ${counts}${size}.`;
+}
+
+/**
+ * What the child's extensions said that a person would have read on screen (warnings, errors, the latest compaction
+ * failure), one line each and whole, identical repeats folded with a count. Notices past the inline page end in one line
+ * naming the file that holds every notice. Text of the child: callers place it with the child's own words, never among
+ * the parent's.
+ */
+export function noticeLines(details: Pick<RunDetails, 'compactions' | 'notices'>): string[] {
+  const { kept = [], more = 0, file } = details.notices ?? {};
+  const failure = details.compactions?.error;
+  const rest = file ? `+${more} more notices; every notice, whole, is in ${shortPath(file)} (read it, or search it)` : `+${more} more notices, not saved`;
+  const lines = [...kept.map(noticeText), ...(more > 0 ? [rest] : []), ...(failure ? [`latest compaction failure: ${failure}`] : [])];
+  return lines.length > 0 ? ['Notices from the subagent (it has no screen):', ...lines.map((line) => `- ${line}`)] : [];
+}
+
+/** Where the child's archive of compacted history is, for the parent's report (empty when it never compacted). */
+export function archiveNote(details: Pick<RunDetails, 'session'>): string {
+  const archive = details.session?.archive;
+  return archive ? `Its compacted history is archived in ${archive} (${LIBRARY_FILE} indexes it). ${archiveSearch()}` : '';
+}
+
+/** `Session inky-kraken: <file>`: where the child's conversation is saved (the id alone until its file exists). */
+export function sessionNote(details: Pick<RunDetails, 'session'>): string {
+  const { session } = details;
+  return session ? `Session ${session.id}${session.file ? `: ${shortPath(session.file)}` : ''}` : '';
+}
+
+type Progress = Pick<RunDetails, 'id' | 'toolCalls' | 'denied' | 'input' | 'cacheRead' | 'output' | 'cost' | 'unpriced' | 'model' | 'fallback' | 'compactions'>;
 
 /** `inky-kraken · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12`, then `extra` (a duration), then the model. */
 function runStats(details: Progress, ...extra: string[]): string {
-  return [details.id, toolCallCount(details.toolCalls), deniedLabel(details), formatTokenUsage(details), formatCost(details), ...extra, modelLabel(details)].filter(Boolean).join(' · ');
+  return [details.id, toolCallCount(details.toolCalls), deniedLabel(details), compactionLabel(details), formatTokenUsage(details), formatCost(details), ...extra, modelLabel(details)].filter(Boolean).join(' · ');
 }
 
 export const capitalize = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
@@ -150,7 +221,7 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
       ...(details.thinking ? [theme.italic(theme.fg('thinkingText', `✻ ${clip(details.thinking, 200)}…`))] : []),
       ...(details.shot ? [theme.fg('dim', `📷 ${clip(shortPath(details.shot), 200)}`)] : []),
     ];
-    const summary = details.stopping ? `stopping… (${runStats(details)})` : details.waiting ? `waiting for your approval (${runStats(details)})` : runStats(details);
+    const summary = details.stopping ? `stopping… (${runStats(details)})` : details.waiting ? `waiting for your approval (${runStats(details)})` : details.compacting ? `compacting its context (${runStats(details)})` : runStats(details);
     return resultBlock(theme, context, { summary, lines, max: lines.length, prefaceLabel: 'prompt', preface: promptPreface(theme, task, lines.length > 0 ? 'Progress' : undefined) });
   }
   if (details.status === 'background') {

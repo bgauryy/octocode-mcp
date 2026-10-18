@@ -48,7 +48,7 @@ function fakePi(models: TestModel[]) {
     hasUI: true,
     cwd: '/repo',
     modelRegistry: { getAll: () => catalog, find: (provider: string, id: string) => catalog.find((model) => model.provider === provider && model.id === id) },
-    sessionManager: { getSessionId: () => 's1', getBranch: () => [] },
+    sessionManager: { getSessionId: () => 's1', getBranch: () => [], getHeader: () => null },
     getContextUsage: () => ({ tokens: 1, contextWindow: 1_000_000, percent: usage.percent }),
   };
   return { pi, ctx, handlers, registerProvider, usage, catalog: () => catalog, fire: (name: string, event: unknown = {}) => handlers.get(name)!(event, ctx) };

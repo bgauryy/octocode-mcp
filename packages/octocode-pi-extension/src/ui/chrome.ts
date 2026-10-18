@@ -5,6 +5,7 @@ import { mixColors, rgbColor, type Color, type TUI } from '@earendil-works/pi-tu
 import { packageRoot } from '../shared/package.js';
 import { appKey, expandKey, statusColor, stopRowTimers } from '../shared/render.js';
 import { bannerLines, type BannerPaint } from './banner.js';
+import { STATUS } from '../shared/status.js';
 import { registerFooter } from './footer.js';
 
 let version: { value: string | undefined } | undefined;
@@ -24,7 +25,6 @@ export function packageVersion(): string | undefined {
 const SHINE_MS = 1_100;
 const SHINE_FRAME_MS = 40;
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const SPEED_STATUS = 'octocode-speed';
 
 /** Colour at `t` (0..1) along evenly spaced stops. */
 function along(stops: Color[], t: number): Color {
@@ -49,6 +49,7 @@ export function themeRamp(theme: Theme): BannerPaint['ramp'] {
   if (!colors) return undefined;
   const stops = [colors.accent, colors.borderAccent, colors.mdLink, colors.syntaxOperator].filter((color): color is Color => color !== undefined);
   if (stops.length === 0 || typeof theme.style !== 'function') return undefined;
+  // The dark theme's `text` is the terminal's default foreground (an empty token), which cannot be mixed: it glows white.
   const highlight = theme.appearance === 'light' ? colors.text : rgbColor(255, 255, 255);
   const cache = new Map<string, Color>();
   return (t, shade, glow, text) => {
@@ -135,7 +136,7 @@ export function registerUi(pi: ExtensionAPI, isSubagent: boolean): void {
   let messageStartedAt: number | undefined;
   pi.on('session_start', async (event, ctx) => {
     if (!ctx.hasUI) return;
-    ctx.ui.setStatus(SPEED_STATUS, undefined);
+    ctx.ui.setStatus(STATUS.speed, undefined);
     // Shine once, on a fresh start with nothing below the banner. Module state cannot remember it: Pi re-imports
     // extensions for every runtime (/new, /resume, /fork, /reload). And a resumed transcript pushes the banner above
     // the viewport, where every changed frame makes pi-tui clear and redraw the whole scrollback.
@@ -160,7 +161,7 @@ export function registerUi(pi: ExtensionAPI, isSubagent: boolean): void {
     stopRowTimers();
     if (!ctx.hasUI) return;
     const speed = tokensPerSecond(generated.output, generated.ms);
-    if (speed !== undefined) ctx.ui.setStatus(SPEED_STATUS, statusColor(ctx, 'dim', `${speed.toFixed(0)} tok/s`));
+    if (speed !== undefined) ctx.ui.setStatus(STATUS.speed, statusColor(ctx, 'dim', `${speed.toFixed(0)} tok/s`));
   });
 }
 
@@ -172,7 +173,8 @@ function decorate(ctx: ExtensionContext, shineFrom: number | undefined): void {
 
 function paintIndicators(ctx: ExtensionContext): void {
   const theme = ctx.ui.theme;
-  ctx.ui.setWorkingIndicator({ frames: spinnerFrames(theme), intervalMs: 80 });
+  // Pi's loader steps every 80 ms when no interval is given.
+  ctx.ui.setWorkingIndicator({ frames: spinnerFrames(theme) });
   // Shown in place of a thinking block when `hideThinkingBlock` is on (the thinking toggle shows it again).
   ctx.ui.setHiddenThinkingLabel(`${theme.italic(theme.fg('thinkingText', '✻ Thinking…'))}${theme.fg('dim', ` (${appKey('app.thinking.toggle', 'ctrl+t')})`)}`);
 }

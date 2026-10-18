@@ -282,8 +282,8 @@ pub struct LocalSearchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next: Option<serde_json::Value>,
     /// Some candidate content was not searched (unreadable paths, or a binary
-    /// file cut at its first NUL), so the returned matches are not the full set
-    /// and zero matches do not prove absence.
+    /// file cut at its first NUL) or is past a cursor maximum, so the returned
+    /// matches are not the full set and zero matches do not prove absence.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_partial: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]

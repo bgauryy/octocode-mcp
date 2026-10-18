@@ -994,6 +994,20 @@ struct Placed {
 /// Upper bound of the `incomplete — …` envelope warning and its key.
 const INCOMPLETE_BANNER_CHARS: usize = 160;
 
+/// [`paginate_rows_reserving`] with no room kept for the page's
+/// `responsePagination` block (the plan tests measure rows alone).
+#[cfg(test)]
+pub(super) fn paginate_rows(
+    structured: Map<String, Value>,
+    full: &str,
+    options: &ResponsePageOptions,
+    volatile: Vec<Option<Map<String, Value>>>,
+    remaining: &[Vec<Remaining>],
+    tool: Option<crate::tools::id::ToolId>,
+) -> (Map<String, Value>, ResponsePagination) {
+    paginate_rows_reserving(structured, full, options, volatile, remaining, tool, &|_| 0)
+}
+
 /// Row-aware pages: pack whole rows (or fragments of oversized rows) into
 /// complete envelopes. `responseOffset` addresses the zero-based page.
 /// The first page gives every row a fair share of the budget, so each row
@@ -1001,13 +1015,21 @@ const INCOMPLETE_BANNER_CHARS: usize = 160;
 /// continues; the rest of each row follows in row order, and a split row's
 /// page continuations ride its last part ([`PartShare`]). Pages are assigned
 /// from fragment sizes; only the requested page is built.
-pub(super) fn paginate_rows(
+///
+/// The budget is the whole rendered page, so the plan keeps room for the
+/// `responsePagination` block the caller attaches afterwards: `block` is that
+/// block's size in chars for a given pagination (0 when none is attached).
+/// The room is the block of a page with more behind it, at the widest page
+/// numbers, so every page of one plan has the same row budget; a response
+/// that fits one page keeps only the block a finished page carries.
+pub(super) fn paginate_rows_reserving(
     mut structured: Map<String, Value>,
     full: &str,
     options: &ResponsePageOptions,
     mut volatile: Vec<Option<Map<String, Value>>>,
     remaining: &[Vec<Remaining>],
     tool: Option<crate::tools::id::ToolId>,
+    block: &dyn Fn(&ResponsePagination) -> usize,
 ) -> (Map<String, Value>, ResponsePagination) {
     let budget = options.response_length.unwrap_or(1).max(1);
     let rows_key = tool.map_or("results", |tool| tool.output().rows_key());
@@ -1017,16 +1039,49 @@ pub(super) fn paginate_rows(
     };
     volatile.resize(rows.len(), None);
     let overhead = json_chars(&structured) + rows_key.len() + 6;
-    // Room for the envelope warning a page with rows left over leads with.
-    let row_budget = budget
-        .saturating_sub(overhead + INCOMPLETE_BANNER_CHARS)
-        .max(1);
-    let mut plan = RowPlan::new(rows, &volatile, row_budget, tool);
     let total = full.encode_utf16().count();
     let snapshot = format!(
-        "response-rows-v5:{budget}:{}",
+        "response-rows-v6:{budget}:{}",
         crate::digest::sha256(full.as_bytes())
     );
+    let template = |has_more: bool| ResponsePagination {
+        scope: "rows".into(),
+        current_page: total.max(1),
+        total_pages: total.max(1),
+        has_more,
+        char_offset: total,
+        char_length: total,
+        total_chars: total,
+        snapshot: snapshot.clone(),
+        expected_snapshot: None,
+        changed: None,
+        restart: None,
+        next_char_offset: has_more.then_some(total),
+        oversized: None,
+        next: None,
+    };
+    // Room for the envelope warning a page with rows left over leads with,
+    // and for the pagination block.
+    let plan_with = |reserve: usize, rows: Vec<Value>| {
+        let row_budget = budget
+            .saturating_sub(overhead + INCOMPLETE_BANNER_CHARS + reserve)
+            .max(1);
+        RowPlan::new(rows, &volatile, row_budget, tool)
+    };
+    let finished = block(&template(false));
+    let widest = block(&template(true));
+    let mut plan = if total + finished <= budget {
+        let plan = plan_with(finished, rows.clone());
+        // By size alone one page holds it; a plan that splits it anyway
+        // carries the block of a page with more on every page.
+        if plan.total_pages == 1 {
+            plan
+        } else {
+            plan_with(widest, rows)
+        }
+    } else {
+        plan_with(widest, rows)
+    };
     let requested = options.response_offset.unwrap_or(0);
     let changed = options.response_snapshot.as_deref() != Some(&snapshot);
     if requested > 0 && (changed || requested >= plan.total_pages) {
@@ -1063,25 +1118,26 @@ pub(super) fn paginate_rows(
     }
     let has_more = requested + 1 < plan.total_pages;
     let char_length = json_chars(&structured);
-    (
-        structured,
-        ResponsePagination {
-            scope: "rows".into(),
-            current_page: requested + 1,
-            total_pages: plan.total_pages,
-            has_more,
-            char_offset: requested,
-            char_length,
-            total_chars: total,
-            snapshot,
-            expected_snapshot: None,
-            changed: None,
-            restart: None,
-            next_char_offset: has_more.then_some(requested + 1),
-            oversized: (char_length > budget).then_some(true),
-            next: None,
-        },
-    )
+    let mut pagination = ResponsePagination {
+        scope: "rows".into(),
+        current_page: requested + 1,
+        total_pages: plan.total_pages,
+        has_more,
+        char_offset: requested,
+        char_length,
+        total_chars: total,
+        snapshot,
+        expected_snapshot: None,
+        changed: None,
+        restart: None,
+        next_char_offset: has_more.then_some(requested + 1),
+        oversized: None,
+        next: None,
+    };
+    // Oversized: the page with its own block still passes the budget, because
+    // one fragment could not be divided further.
+    pagination.oversized = (char_length + block(&pagination) > budget).then_some(true);
+    (structured, pagination)
 }
 
 /// Lead the envelope with the warning that `later` of `rows` rows continue
@@ -1784,7 +1840,12 @@ mod lazy_page_tests {
     use super::*;
 
     fn envelope() -> Map<String, Value> {
-        let matches = (0..400)
+        envelope_of(400)
+    }
+
+    /// [`envelope`] with `count` matches in each broad file.
+    fn envelope_of(count: usize) -> Map<String, Value> {
+        let matches = (0..count)
             .map(|line| json!({"line": line, "value": format!("fn item_{line}() {{ \u{1F600} }}")}))
             .collect::<Vec<_>>();
         let huge = json!({"line": 9999, "value": "x".repeat(900)});
@@ -1853,10 +1914,10 @@ mod lazy_page_tests {
             &[],
             None,
         );
-        assert!(first.snapshot.starts_with("response-rows-v5:"));
+        assert!(first.snapshot.starts_with("response-rows-v6:"));
         let obsolete = first
             .snapshot
-            .replacen("response-rows-v5:", "response-rows-v4:", 1);
+            .replacen("response-rows-v6:", "response-rows-v5:", 1);
         let (page, pagination) = paginate_rows(
             structured,
             &full,
@@ -1917,8 +1978,14 @@ mod lazy_page_tests {
 
     #[test]
     fn every_row_is_delivered_exactly_once_within_the_page_bound() {
-        let structured = envelope();
-        let mut expected: Vec<(u64, String, u64)> = (0..400)
+        // Every page re-plans every row, so the rows are only as broad as the
+        // lengths need: a broad row still spans several pages at the largest
+        // length below that splits it (9_000).
+        const MATCHES: usize = 200;
+        let structured = envelope_of(MATCHES);
+        let broad = structured["results"][2].to_string().len();
+        assert!(broad > 9_000, "a broad row ({broad} chars) splits at 9_000");
+        let mut expected: Vec<(u64, String, u64)> = (0..MATCHES as u64)
             .flat_map(|line| [(0, "a.rs".to_owned(), line), (2, "c.rs".to_owned(), line)])
             .chain([(0, "b.rs".to_owned(), 9999)])
             .collect();

@@ -21,6 +21,7 @@ import { agentDbPath, peerDbPath, peerRegistryDir } from '../shared/home.js';
 import { saveMessageFile } from './spill.js';
 import { agentName, LINE_MAX, newMember } from './identity.js';
 import { TeamTicker, type TeamView } from './ticker.js';
+import type { Ask } from './asks.js';
 
 export type { TeamView } from './ticker.js';
 /** Refresh the agent's row at least this often so peers can tell it is alive (and its leases stay valid). */
@@ -279,6 +280,18 @@ export class Team {
     } catch (error) {
       if (this.schemaProblem) return { members: [], traffic: [], error: this.schemaProblem };
       return { members: [], traffic: [], error: `Team database unavailable: ${errorMessage(error)}`, retrying: true };
+    }
+  }
+
+  /**
+   * The questions `child` sent its `parent` since `since`, with their answers. None when the database cannot be read:
+   * this is a measurement, so it never fails the run it describes.
+   */
+  asks(child: string, parent: string, since: number): Ask[] {
+    try {
+      return this.existing()?.asks(child, parent, since) ?? [];
+    } catch {
+      return [];
     }
   }
 

@@ -1,15 +1,44 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
 //! Large pull-request review: changed-file inventory, patch availability,
 //! provider file-list cap, continuation payload size, and scan latency.
 
 use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 use support::{Workspace, call, row_data};
 use wiremock::matchers::{method, path, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+
+/// When each request reached the mock: wiremock asks a responder for its
+/// template on arrival, before the template's delay runs.
+#[derive(Clone, Default)]
+struct Arrivals(Arc<Mutex<Vec<Instant>>>);
+
+impl Arrivals {
+    fn sorted(&self) -> Vec<Instant> {
+        let mut times = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        times.sort();
+        times
+    }
+}
+
+struct Recording(ResponseTemplate, Arrivals);
+
+impl Respond for Recording {
+    fn respond(&self, _: &Request) -> ResponseTemplate {
+        (self.1)
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Instant::now());
+        self.0.clone()
+    }
+}
 
 /// No page and no lead: `next` is absent and `hints` holds at most prose.
 fn no_continuation(value: &serde_json::Value) -> bool {
@@ -73,7 +102,12 @@ async fn mount_pr(server: &MockServer, changed_files: usize) {
 }
 
 /// Mount `batches` provider file pages; every page but the last links `next`.
-async fn mount_file_batches(server: &MockServer, batches: Vec<Vec<Value>>, delay: Duration) {
+async fn mount_file_batches(
+    server: &MockServer,
+    batches: Vec<Vec<Value>>,
+    delay: Duration,
+) -> Arrivals {
+    let arrivals = Arrivals::default();
     let count = batches.len();
     for (index, files) in batches.into_iter().enumerate() {
         let page = index + 1;
@@ -94,10 +128,11 @@ async fn mount_file_batches(server: &MockServer, batches: Vec<Vec<Value>>, delay
         Mock::given(method("GET"))
             .and(path("/api/v3/repos/a/b/pulls/9/files"))
             .and(query_param("page", page.to_string()))
-            .respond_with(response)
+            .respond_with(Recording(response, arrivals.clone()))
             .mount(server)
             .await;
     }
+    arrivals
 }
 
 fn numbered(batch: usize, size: usize) -> Vec<Value> {
@@ -392,7 +427,11 @@ async fn pr_inventory_page_reports_the_provider_total() {
     assert_eq!(page["totalItems"], 250, "{page}");
     assert_eq!(page["totalPages"], 3, "{page}");
     assert_eq!(page["hasMore"], true, "{page}");
-    assert_eq!(page["nextPage"], 2, "{page}");
+    // The cursor rides `next`, never the page block.
+    assert!(page.get("nextPage").is_none(), "{page}");
+    let next = &data["next"]["nextFilePage"]["query"]["queries"][0];
+    assert_eq!(next["page"], 2, "{data}");
+    assert_eq!(next["sections"], json!(["files"]), "{data}");
 }
 
 #[tokio::test]
@@ -489,27 +528,32 @@ async fn patch_window_does_not_repeat_the_file_cursor_in_content_pagination() {
 #[tokio::test]
 async fn selected_patch_scan_reads_file_batches_concurrently() {
     // A selected late file must not cost one sequential round trip per
-    // provider batch before it: six 300 ms batches read in parallel.
+    // provider batch before it: the six batches are read in parallel. Each
+    // reply is held `delay`, so a sequential scan sends no request within
+    // `delay` of the one before; overlapping requests prove the parallel
+    // reads whatever the machine's load (a wall-clock bound does not).
+    let delay = Duration::from_millis(300);
     let server = MockServer::builder().start().await;
     mount_pr(&server, 600).await;
     let mut batches = (1..=6).map(|b| numbered(b, 100)).collect::<Vec<_>>();
     batches[5][99] = rest_file("src/late.rs", Some("@@ -1 +1 @@\n-a\n+late"), 1, 1);
-    mount_file_batches(&server, batches, Duration::from_millis(300)).await;
-    let started = Instant::now();
+    let arrivals = mount_file_batches(&server, batches, delay).await;
     let data = run(
         &server,
         json!({"sections":["patches"],"include":["src/late.rs"],
                "extras": []}),
     )
     .await;
-    let elapsed = started.elapsed();
     let file = &data["pullRequests"][0]["files"][0];
     assert_eq!(file["path"], "src/late.rs", "{data}");
     assert_eq!(file["patch"], "@@ -1 +1 @@\n1\t-a\n1\t+late");
-    assert!(
-        elapsed < Duration::from_millis(1_200),
-        "sequential scan: {elapsed:?}"
-    );
+    let times = arrivals.sorted();
+    assert_eq!(times.len(), 6, "every batch is read once");
+    let overlapping = times
+        .windows(2)
+        .filter(|pair| pair[1].duration_since(pair[0]) < delay)
+        .count();
+    assert!(overlapping > 0, "sequential scan: {times:?}");
 }
 
 #[tokio::test]

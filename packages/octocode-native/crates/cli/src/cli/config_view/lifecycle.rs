@@ -76,10 +76,7 @@ async fn serve(no_open: bool, idle_timeout: Duration, json_out: bool) -> Result<
     };
     tokio::pin!(signal);
     if json_out {
-        println!(
-            "{}",
-            json!({"url":url,"idleTimeoutSeconds":idle_timeout.as_secs()})
-        );
+        crate::cli::write_json(&json!({"url":url,"idleTimeoutSeconds":idle_timeout.as_secs()}));
     } else {
         println!(
             "Octocode config view: {url}\nPress Ctrl+C to close. This temporary URL grants access to your configuration."

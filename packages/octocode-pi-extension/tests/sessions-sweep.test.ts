@@ -103,6 +103,32 @@ describe('session sweep', () => {
     expect(fs.existsSync(log)).toBe(false);
   });
 
+  it('counts an archive write as activity of its session and removes the archive with the session folder', async () => {
+    const index = new SessionIndex(sharedAgentDb());
+    const sessions = path.join(home, 'agent', 'pi', 'sessions');
+    // Everything else in both folders is old; one has just archived a compaction, the other has not for a month.
+    const active = folder('unindexed-archiving', ['output', 'archive']);
+    const idle = folder('unindexed-idle', ['output', 'archive']);
+    fs.writeFileSync(path.join(active, 'archive', '1-c1.md'), 'segment');
+    fs.writeFileSync(path.join(idle, 'archive', '1-c1.md'), 'segment');
+    age(active, 31 * DAY);
+    age(idle, 31 * DAY);
+    fs.utimesSync(path.join(active, 'archive'), new Date(), new Date());
+    expect(await sweepSessions(index, 'current', { force: true, listed: async () => new Set<string>() })).toEqual(['unindexed-idle']);
+    expect(fs.existsSync(path.join(sessions, 'unindexed-idle'))).toBe(false);
+    expect(fs.existsSync(path.join(active, 'archive', '1-c1.md'))).toBe(true);
+    // A kept session keeps its archive: it is the searchable twin of the transcript.
+    const kept = folder('kept', ['output', 'archive']);
+    fs.writeFileSync(path.join(kept, 'archive', '1-c1.md'), 'segment');
+    age(kept, 31 * DAY);
+    expect(await sweepSessions(index, 'current', { force: true, listed: async () => new Set(['kept']) })).toEqual([]);
+    expect(fs.existsSync(path.join(kept, 'archive', '1-c1.md'))).toBe(true);
+    // Once the archive is old too, the unlisted session goes with it.
+    age(active, 31 * DAY);
+    expect(await sweepSessions(index, 'current', { force: true, listed: async () => new Set(['kept']) })).toEqual(['unindexed-archiving']);
+    expect(fs.existsSync(active)).toBe(false);
+  });
+
   it('skips a malformed session id instead of abandoning the sweep', async () => {
     const index = new SessionIndex(sharedAgentDb());
     age(folder('unindexed-old'), 31 * DAY);

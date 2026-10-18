@@ -1,13 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { plural, statusColor } from '../shared/render.js';
-import { errorMessage } from '../shared/util.js';
+import { errorMessage, isRecord } from '../shared/util.js';
 import { notify } from '../shared/commands.js';
+import { STATUS } from '../shared/status.js';
 
 type Send = ExtensionAPI['sendMessage'];
 type Message = Parameters<Send>[0];
 type Options = Parameters<Send>[1];
-
-export const QUEUED_STATUS = 'octocode-queued';
 
 /**
  * Keeps extension messages (subagent reports, background job reports, teammate messages) that `pi.sendMessage` queued
@@ -42,7 +41,7 @@ export class Delivery {
     });
     pi.on('message_start', async (event) => {
       const { message } = event;
-      if (message.role === 'custom' && isObject(message.details) && delivery.waiting.delete(message.details)) delivery.paint();
+      if (message.role === 'custom' && isRecord(message.details) && delivery.waiting.delete(message.details)) delivery.paint();
     });
     pi.on('agent_settled', async (_event, ctx) => delivery.settle(ctx));
     return delivery;
@@ -58,7 +57,7 @@ export class Delivery {
     const busy = this.running || this.preparing();
     this.send(message, options);
     const queued = busy && options?.triggerTurn !== false && options?.deliverAs !== 'nextTurn';
-    if (!queued || !isObject(message.details)) return;
+    if (!queued || !isRecord(message.details)) return;
     this.waiting.set(message.details, message);
     this.paint();
   }
@@ -105,22 +104,19 @@ export class Delivery {
   private reset(ctx: ExtensionContext | undefined): void {
     this.waiting.clear();
     this.running = false;
+    // The new session's UI is painted (a replaced session's status clears through it); a shutdown clears its own UI.
+    if (ctx) this.ctx = ctx;
     this.paint();
     this.ctx = ctx;
-    this.paint();
   }
 
   private paint(): void {
     const ctx = this.ctx;
     if (!ctx?.hasUI) return;
     try {
-      ctx.ui.setStatus(QUEUED_STATUS, this.waiting.size > 0 ? statusColor(ctx, 'accent', `✉ ${this.waiting.size} queued`) : undefined);
+      ctx.ui.setStatus(STATUS.queued, this.waiting.size > 0 ? statusColor(ctx, 'accent', `✉ ${this.waiting.size} queued`) : undefined);
     } catch {
       // The session was replaced.
     }
   }
-}
-
-function isObject(value: unknown): value is object {
-  return typeof value === 'object' && value !== null;
 }

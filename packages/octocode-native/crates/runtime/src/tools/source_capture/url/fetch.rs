@@ -5,11 +5,12 @@
 //! carries no credential or cookie and follows no redirect itself; the body
 //! is read within the request budget and a byte limit.
 use super::{Reply, failure};
+use crate::policy::network::is_public;
 use crate::tools::judgment::ClassificationError;
 use octocode_github::{BodyError, BudgetStop, RequestBudget, read_bounded};
 use octocode_io::http::{ClientPolicy, Proxy};
 use reqwest::header::{ACCEPT, CONTENT_TYPE, LOCATION};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use url::{Host, Url};
 
 /// The largest response body a capture reads.
@@ -54,9 +55,19 @@ impl Network<'_> {
                 .collect(),
         };
         let addresses = public_addresses(&host, addresses)?;
+        self.send(url, &host, addresses).await
+    }
+
+    /// The request itself, connected to exactly `addresses` (already checked).
+    async fn send(
+        &self,
+        url: &Url,
+        host: &Host<String>,
+        addresses: Vec<SocketAddr>,
+    ) -> Result<Reply, ClassificationError> {
         let policy = ClientPolicy {
             proxy: Proxy::Direct,
-            resolve: match &host {
+            resolve: match host {
                 Host::Domain(name) => Some((name.clone(), addresses)),
                 _ => None,
             },
@@ -77,7 +88,7 @@ impl Network<'_> {
             .wait(client.get(target).header(ACCEPT, self.accept).send())
             .await
             .map_err(stopped)?
-            .map_err(|_| unreachable(&host, "the connection failed"))?;
+            .map_err(|_| unreachable(host, "the connection failed"))?;
         let status = response.status().as_u16();
         let header = |name| {
             response
@@ -101,7 +112,7 @@ impl Network<'_> {
                         ),
                         "Select a smaller page or section, or supply the text as state.",
                     ),
-                    BodyError::Transport => unreachable(&host, "the body read failed"),
+                    BodyError::Transport => unreachable(host, "the body read failed"),
                 })?
                 .to_vec()
         } else {
@@ -131,70 +142,6 @@ pub(super) fn public_addresses(
         )));
     }
     Ok(addresses)
-}
-
-/// Publicly routable unicast: not loopback, private, link-local, shared
-/// (CGNAT), documentation, benchmarking, multicast, broadcast, reserved or
-/// unspecified, nor an IPv6 form that embeds or tunnels such an address.
-pub(super) fn is_public(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => is_public_v4(ip),
-        IpAddr::V6(ip) => is_public_v6(ip),
-    }
-}
-
-fn is_public_v4(ip: Ipv4Addr) -> bool {
-    let [a, b, c, _] = ip.octets();
-    !(ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_multicast()
-        || ip.is_broadcast()
-        || ip.is_documentation()
-        || a == 0
-        // Shared address space (RFC 6598).
-        || (a == 100 && (64..128).contains(&b))
-        // IETF protocol assignments (RFC 6890).
-        || (a == 192 && b == 0 && c == 0)
-        // Benchmarking (RFC 2544).
-        || (a == 198 && (18..20).contains(&b))
-        // Reserved (RFC 1112).
-        || a >= 240)
-}
-
-fn is_public_v6(ip: Ipv6Addr) -> bool {
-    if let Some(v4) = ip.to_ipv4_mapped() {
-        return is_public_v4(v4);
-    }
-    let segments = ip.segments();
-    let embedded = |high: u16, low: u16| {
-        let [a, b] = high.to_be_bytes();
-        let [c, d] = low.to_be_bytes();
-        Ipv4Addr::new(a, b, c, d)
-    };
-    // NAT64 (RFC 6052) and 6to4 (RFC 3056) carry an IPv4 destination.
-    if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
-        return is_public_v4(embedded(segments[6], segments[7]));
-    }
-    if segments[0] == 0x2002 {
-        return is_public_v4(embedded(segments[1], segments[2]));
-    }
-    !(ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_multicast()
-        || ip.is_unique_local()
-        || ip.is_unicast_link_local()
-        // IPv4-compatible (deprecated) ::a.b.c.d.
-        || segments[..6] == [0; 6]
-        // Site-local (deprecated).
-        || (segments[0] & 0xffc0) == 0xfec0
-        // Documentation (RFC 3849).
-        || (segments[0] == 0x2001 && segments[1] == 0x0db8)
-        // Teredo tunnels (RFC 4380).
-        || (segments[0] == 0x2001 && segments[1] == 0)
-        // Discard-only (RFC 6666).
-        || segments[..4] == [0x100, 0, 0, 0])
 }
 
 pub(super) fn denied(message: &str) -> ClassificationError {
@@ -233,56 +180,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_publicly_routable_addresses_pass() {
-        for public in [
-            "93.184.216.34",
-            "8.8.8.8",
-            "100.128.0.1",
-            "2606:4700::1111",
-            "::ffff:93.184.216.34",
-            "64:ff9b::808:808",
-            "2002:5db8:d822::1",
-        ] {
-            assert!(is_public(public.parse().unwrap()), "{public}");
-        }
-        for internal in [
-            "127.0.0.1",
-            "10.1.2.3",
-            "172.16.0.1",
-            "192.168.1.1",
-            "169.254.169.254",
-            "0.0.0.0",
-            "0.1.2.3",
-            "100.64.0.1",
-            "192.0.0.8",
-            "192.0.2.1",
-            "198.18.0.1",
-            "198.51.100.1",
-            "203.0.113.1",
-            "224.0.0.1",
-            "240.0.0.1",
-            "255.255.255.255",
-            "::",
-            "::1",
-            "::127.0.0.1",
-            "fc00::1",
-            "fd12:3456::1",
-            "fe80::1",
-            "fec0::1",
-            "ff02::1",
-            "2001:db8::1",
-            "2001::1",
-            "100::1",
-            "::ffff:127.0.0.1",
-            "::ffff:10.0.0.1",
-            "64:ff9b::a00:1",
-            "2002:c0a8:0101::1",
-        ] {
-            assert!(!is_public(internal.parse().unwrap()), "{internal}");
-        }
-    }
-
-    #[test]
     fn one_internal_answer_denies_the_whole_host() {
         let host = Host::Domain("docs.example.org".to_owned());
         let mixed = vec![
@@ -296,6 +193,208 @@ mod tests {
         assert_eq!(error.code, "classificationContextFailed");
         let one = vec!["93.184.216.34:443".parse().unwrap()];
         assert_eq!(public_addresses(&host, one.clone()).unwrap(), one);
+    }
+
+    use std::net::TcpListener;
+    use std::time::Duration;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const NAME: &str = "docs.example.org";
+
+    /// `route` on `server`, addressed by a public-looking name pinned to the
+    /// loopback listener, as a real capture pins a name to its checked addresses.
+    fn pinned(server: &MockServer, route: &str) -> (Url, Host<String>, Vec<SocketAddr>) {
+        let address = *server.address();
+        (
+            Url::parse(&format!("http://{NAME}:{}{route}", address.port())).unwrap(),
+            Host::Domain(NAME.to_owned()),
+            vec![address],
+        )
+    }
+
+    fn budgeted(handle: &tokio::runtime::Handle, budget: RequestBudget) -> Network<'_> {
+        Network {
+            handle,
+            accept: ACCEPTED,
+            budget,
+        }
+    }
+
+    async fn fetch_error(
+        server: &MockServer,
+        route: &str,
+        budget: RequestBudget,
+    ) -> ClassificationError {
+        let handle = tokio::runtime::Handle::current();
+        let (url, host, addresses) = pinned(server, route);
+        budgeted(&handle, budget)
+            .send(&url, &host, addresses)
+            .await
+            .err()
+            .expect("the request fails")
+    }
+
+    fn budget(limit: usize) -> RequestBudget {
+        RequestBudget::with_timeout(Duration::from_secs(5), limit)
+    }
+
+    #[tokio::test]
+    async fn a_reply_carries_status_headers_and_body_and_the_request_carries_no_identity() {
+        let server = MockServer::builder().start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw("<p>hi</p>", "text/html"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let handle = tokio::runtime::Handle::current();
+        let (url, host, addresses) = pinned(&server, "/page#section");
+        let reply = budgeted(&handle, budget(MAX_BODY_BYTES))
+            .send(&url, &host, addresses)
+            .await
+            .expect("a reply");
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.content_type.as_deref(), Some("text/html"));
+        assert_eq!(reply.location, None);
+        assert_eq!(reply.body, b"<p>hi</p>");
+        let seen = server.received_requests().await.expect("recorded");
+        let request = &seen[0];
+        assert_eq!(
+            request
+                .headers
+                .get("accept")
+                .and_then(|value| value.to_str().ok()),
+            Some(ACCEPTED)
+        );
+        let agent = request.headers.get("user-agent").expect("user agent");
+        assert!(
+            agent.to_str().unwrap().starts_with("octocode-native/"),
+            "{agent:?}"
+        );
+        for name in ["cookie", "authorization"] {
+            assert!(request.headers.get(name).is_none(), "{name} is never sent");
+        }
+        assert_eq!(
+            request
+                .headers
+                .get("host")
+                .and_then(|value| value.to_str().ok()),
+            Some(format!("{NAME}:{}", server.address().port()).as_str()),
+            "the name is kept for the Host header while the address is pinned"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_redirect_is_reported_not_followed_and_an_error_status_has_no_body() {
+        let server = MockServer::builder().start().await;
+        Mock::given(path("/old"))
+            .respond_with(ResponseTemplate::new(307).insert_header("location", "/elsewhere"))
+            .mount(&server)
+            .await;
+        Mock::given(path("/missing"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("no such page"))
+            .mount(&server)
+            .await;
+        let handle = tokio::runtime::Handle::current();
+        let network = budgeted(&handle, budget(MAX_BODY_BYTES));
+        let (url, host, addresses) = pinned(&server, "/old");
+        let moved = network.send(&url, &host, addresses).await.ok().unwrap();
+        assert_eq!(moved.status, 307);
+        assert_eq!(moved.location.as_deref(), Some("/elsewhere"));
+        assert!(moved.body.is_empty());
+        let (url, host, addresses) = pinned(&server, "/missing");
+        let missing = network.send(&url, &host, addresses).await.ok().unwrap();
+        assert_eq!(missing.status, 404);
+        assert!(missing.body.is_empty(), "an error page is never read");
+        let requested = server.received_requests().await.unwrap();
+        assert_eq!(requested.len(), 2, "the Location was not requested");
+    }
+
+    #[tokio::test]
+    async fn a_body_up_to_the_limit_is_read_and_one_byte_more_is_refused() {
+        let server = MockServer::builder().start().await;
+        Mock::given(path("/exact"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![b'a'; 1024]))
+            .mount(&server)
+            .await;
+        Mock::given(path("/over"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![b'a'; MAX_BODY_BYTES + 1]))
+            .mount(&server)
+            .await;
+        let handle = tokio::runtime::Handle::current();
+        let (url, host, addresses) = pinned(&server, "/exact");
+        let reply = budgeted(&handle, budget(1024))
+            .send(&url, &host, addresses)
+            .await
+            .expect("a body at the limit fits");
+        assert_eq!(reply.body.len(), 1024);
+        let (url, host, addresses) = pinned(&server, "/exact");
+        let error = budgeted(&handle, budget(1023))
+            .send(&url, &host, addresses)
+            .await
+            .err()
+            .expect("one byte over the limit");
+        assert_eq!(error.code, "classificationContextTooLarge");
+        let error = fetch_error(&server, "/over", budget(MAX_BODY_BYTES)).await;
+        assert_eq!(error.code, "classificationContextTooLarge");
+        assert!(
+            error.message.contains("exceeds the 2 MiB capture limit"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_connection_names_the_host_and_asks_for_the_text_as_state() {
+        let closed = {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap()
+        };
+        let handle = tokio::runtime::Handle::current();
+        let url = Url::parse(&format!("http://{NAME}:{}/", closed.port())).unwrap();
+        let error = budgeted(&handle, budget(MAX_BODY_BYTES))
+            .send(&url, &Host::Domain(NAME.to_owned()), vec![closed])
+            .await
+            .err()
+            .expect("nothing listens");
+        assert_eq!(error.code, "classificationContextFailed");
+        assert!(
+            error.message.contains(
+                "The page at docs.example.org could not be fetched: the connection failed."
+            ),
+            "{}",
+            error.message
+        );
+    }
+
+    #[tokio::test]
+    async fn a_slow_server_hits_the_deadline_and_a_cancelled_call_stops_first() {
+        let server = MockServer::builder().start().await;
+        Mock::given(path("/slow"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(30)))
+            .mount(&server)
+            .await;
+        let short = RequestBudget::with_timeout(Duration::from_millis(200), MAX_BODY_BYTES);
+        let error = fetch_error(&server, "/slow", short).await;
+        assert_eq!(error.code, "timeout");
+
+        let cancelled = budget(MAX_BODY_BYTES);
+        cancelled.cancellation.cancel();
+        let error = fetch_error(&server, "/slow", cancelled).await;
+        assert_eq!(error.code, "cancelled");
+    }
+
+    #[tokio::test]
+    async fn a_url_without_a_host_is_denied_before_any_lookup() {
+        let handle = tokio::runtime::Handle::current();
+        let error = budgeted(&handle, budget(MAX_BODY_BYTES))
+            .request(&Url::parse("data:text/plain,hi").unwrap())
+            .await
+            .err()
+            .expect("no host");
+        assert_eq!(error.code, "securityValidationFailed");
+        assert_eq!(error.message, "The URL names no host.");
     }
 
     fn network(runtime: &tokio::runtime::Runtime) -> Network<'_> {

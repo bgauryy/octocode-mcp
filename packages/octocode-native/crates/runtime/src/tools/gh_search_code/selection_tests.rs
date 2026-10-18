@@ -335,10 +335,7 @@ fn selected_equivalent_paths_keep_their_reads_without_admitting_other_repositori
         "next":{"readHits":alias.clone(),"otherRepo":read("other", "src/copy.rs")},
         "hints":{"read":primary.clone(),"excluded":read("r", "src/excluded.rs")}
     });
-    crate::tools::gh_shared::finish_code_selection(
-        &mut page,
-        &json!({"owner":"o","fields":["path"]}),
-    );
+    super::finish_code_selection(&mut page, &json!({"owner":"o","fields":["path"]}));
     assert_eq!(page["next"]["readHits"], alias);
     assert_eq!(page["hints"]["read"], primary);
     assert!(page["next"].get("otherRepo").is_none());

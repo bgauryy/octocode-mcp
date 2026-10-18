@@ -192,7 +192,7 @@ fn budget_error(stop: BudgetStop) -> ClassificationError {
         BudgetStop::Deadline => ClassificationError::new(
             "timeout",
             "Classification request exceeded its total deadline.",
-            "Retry later or increase the shared request timeout.",
+            "Retry unresolved evidence in a smaller request.",
         ),
     }
 }
@@ -293,7 +293,7 @@ fn denied(reason: GateDenied) -> ClassificationError {
         GateDenied::Deadline => ClassificationError::new(
             "timeout",
             "Classification request exceeded its total deadline while waiting for provider capacity.",
-            "Retry later, reduce concurrent clasify calls, or increase the shared request timeout.",
+            "Retry later or reduce concurrent clasify calls.",
         ),
         GateDenied::RateLimited { retry_after } => rate_limited(None, Some(retry_after), true),
         GateDenied::QuotaExhausted => quota_exhausted(),

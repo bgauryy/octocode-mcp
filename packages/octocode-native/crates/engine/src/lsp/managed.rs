@@ -352,6 +352,7 @@ thread_local! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TmpDir;
 
     fn install(root: &Path, name: &str, platform: &str, bytes: &[u8]) -> PathBuf {
         let bin = cached_server_bin_path(root, name, platform).expect("bin path");
@@ -382,35 +383,23 @@ mod tests {
         bin
     }
 
-    fn temp_root(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "octocode-managed-{tag}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ))
-    }
-
     /// A binary installed from a different asset than the one the
     /// manifest now pins (same release-tag path) is not trusted.
     #[test]
     fn resolve_rejects_marker_for_a_different_asset() {
-        let root = temp_root("asset");
+        let root = TmpDir::new();
         install_with_asset(&root, "rust-analyzer", "linux-x64", b"ra", &"0".repeat(64));
         assert_eq!(
             resolve_cached_server(&root, "rust-analyzer", "linux-x64"),
             None
         );
-        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Review M7: an unchanged binary is hashed once per process, not on
     /// every resolve; a changed binary is hashed again and rejected.
     #[test]
     fn resolve_hashes_an_unchanged_binary_once() {
-        let root = temp_root("memo");
+        let root = TmpDir::new();
         let bin = install(&root, "rust-analyzer", "linux-x64", b"ra-memo");
         let before = HASH_CALLS.with(std::cell::Cell::get);
         for _ in 0..3 {
@@ -436,7 +425,6 @@ mod tests {
             None
         );
         assert_eq!(HASH_CALLS.with(std::cell::Cell::get) - before, 2);
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -503,6 +491,5 @@ mod tests {
             resolve_cached_server(&root, "rust-analyzer", "linux-x64"),
             None
         );
-        let _ = std::fs::remove_dir_all(root);
     }
 }

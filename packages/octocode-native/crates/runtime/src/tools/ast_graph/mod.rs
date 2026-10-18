@@ -31,14 +31,6 @@ pub struct AstTopologyRuntimeOptions {
     pub response_window: Option<usize>,
 }
 
-/// Contract maximum of an astTopology query field; an undeclared bound stays
-/// open (validation enforces it).
-fn topology_max(field: &str) -> u32 {
-    let max =
-        crate::contracts::query_schema_max(crate::tools::id::ToolId::AstTopology, None, field);
-    u32::try_from(max).unwrap_or(u32::MAX)
-}
-
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };

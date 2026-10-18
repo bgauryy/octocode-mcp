@@ -126,7 +126,8 @@ where
 /// be started, and print it: the exit code. `None` means the caller runs it
 /// in process.
 #[cfg(unix)]
-pub(super) async fn call(tool: &str, input: &Value, json_out: bool) -> Option<u8> {
+pub(super) async fn call(tool: &str, input: &Value, mode: super::OutputMode) -> Option<u8> {
+    let json_out = mode.json;
     let target = target()?;
     let mut stream = match connect(&target.socket).await {
         Some(stream) => stream,
@@ -192,7 +193,7 @@ pub(super) async fn call(tool: &str, input: &Value, json_out: bool) -> Option<u8
     for notice in notices {
         eprintln!("{notice}");
     }
-    Some(printed.print())
+    Some(printed.print(mode))
 }
 
 /// A server's answer: the call as printed, and the notices it raised
@@ -205,7 +206,7 @@ struct Reply {
 }
 
 #[cfg(not(unix))]
-pub(super) async fn call(_tool: &str, _input: &Value, _json_out: bool) -> Option<u8> {
+pub(super) async fn call(_tool: &str, _input: &Value, _mode: super::OutputMode) -> Option<u8> {
     None
 }
 
@@ -249,7 +250,7 @@ fn target() -> Option<Target> {
         RuntimeSurface, acquire_config_input, is_persistent_storage_enabled, resolve_config,
     };
     let cwd = same_dir_form(&std::env::current_dir().ok()?);
-    let os_home = std::env::home_dir()?;
+    let os_home = octocode_io::env::home_dir()?;
     let env = served_env(octocode_io::env::vars_lossy());
     let input = acquire_config_input(env.clone(), cwd.clone(), os_home, RuntimeSurface::Cli);
     let config = resolve_config(&input);
@@ -1112,6 +1113,7 @@ mod tests {
                 exit: 1,
                 stream: crate::cli::Stream::Stdout,
                 body: "{}".into(),
+                error_text: None,
             })
         );
         let sent: Value = serde_json::from_str(&peer.await.expect("peer")).expect("json");
@@ -1562,7 +1564,7 @@ mod tests {
         /// The identity a client in `cwd` sends.
         fn identity(&self, cwd: &Path) -> String {
             use octocode_native::config::{RuntimeSurface, acquire_config_input, resolve_config};
-            let os_home = std::env::home_dir().expect("home");
+            let os_home = octocode_io::env::home_dir().expect("home");
             let env = served_env(self.env.clone());
             let input =
                 acquire_config_input(env.clone(), cwd.to_path_buf(), os_home, RuntimeSurface::Cli);

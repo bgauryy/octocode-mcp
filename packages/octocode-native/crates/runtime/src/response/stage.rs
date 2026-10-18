@@ -114,21 +114,22 @@ pub(crate) fn respond(
             *slot = Some(structured.clone());
         }
     };
-    let explicit = options.explicit();
-    if explicit {
+    // A scoped window pages as asked; a length alone sizes whole-row pages.
+    let scoped = options.scoped();
+    if scoped {
         kept(&structured);
     }
-    // An explicitly paged text response hashes and windows the rendered
-    // text, so transient telemetry must leave before rendering (row pages
-    // keep per-call facts outside their snapshot; the pager handles both).
-    let stripped = explicit && !options.rows_scope();
+    // A text or envelope window hashes and windows serialized bytes, so
+    // transient telemetry must leave before rendering (row pages keep
+    // per-call facts outside their snapshot; the pager handles both).
+    let stripped = scoped && !options.rows_scope();
     if stripped && let Some(envelope) = structured.as_object_mut() {
         super::pager::strip_transient_telemetry(envelope);
     }
     context.check()?;
     // Row and envelope windows carry their own JSON: only a text response
     // draws the rendered text.
-    let render = options.render_text.unwrap_or(mcp) || failure.is_some() || explicit;
+    let render = options.render_text.unwrap_or(mcp) || failure.is_some() || scoped;
     let draw = |windowed: bool| {
         (render && !windowed).then(|| {
             let draw =
@@ -139,9 +140,9 @@ pub(crate) fn respond(
             }
         })
     };
-    let rendered_text = if allow_auto_paging && !explicit {
+    let rendered_text = if allow_auto_paging && !scoped {
         let rendered = options.auto_paginate(&structured, auto_page_chars, || draw(false));
-        if options.explicit() {
+        if options.scoped() {
             kept(&structured);
         }
         rendered
@@ -369,6 +370,82 @@ mod tests {
         assert!(
             rendered && !kept,
             "a one-page response is rendered, never copied"
+        );
+    }
+
+    /// An explicit `responseLength` alone sizes whole-row pages: both
+    /// channels carry rows, never an emptied `results` beside a text
+    /// `responseWindow`, and the continuation keeps the scope it pages by.
+    /// Only `responseScope:"text"` windows the rendered text. A response
+    /// that fits the length is one unpaged response, without a page header.
+    #[test]
+    fn an_explicit_length_pages_rows_and_only_the_text_scope_windows_text() {
+        let rows: Vec<Value> = (0..4)
+            .map(|index| {
+                json!({"index":index,"data":{"path":"a.txt","content":"x".repeat(2_000),
+                    "totalLines":1}})
+            })
+            .collect();
+        let respond_with = |length: usize, scope: Option<&str>| {
+            finish(
+                StageInput {
+                    tool: ToolId::LocalFetch,
+                    structured: json!({ "results": rows }),
+                    response_query: json!({ "queries": vec![json!({"path":"/tmp/a.txt"}); 4] }),
+                    options: ResponsePageOptions {
+                        response_length: Some(length),
+                        response_scope: scope.map(Into::into),
+                        ..ResponsePageOptions::default()
+                    },
+                    mcp: true,
+                    failure: None,
+                    auto_page_chars: 20_000,
+                    text_format: super::super::render::TextFormat::Yaml,
+                    allow_auto_paging: true,
+                    source_digest: None,
+                },
+                &context(),
+            )
+            .expect("stage runs")
+            .expect("valid envelope")
+        };
+        let paged = respond_with(3_000, None).structured_content;
+        assert!(
+            paged["results"]
+                .as_array()
+                .is_some_and(|rows| !rows.is_empty()),
+            "{paged}"
+        );
+        assert!(paged.get("responseWindow").is_none(), "{paged}");
+        assert_eq!(paged["responsePagination"]["scope"], "rows", "{paged}");
+        let next = &paged["responsePagination"]["next"]["query"];
+        assert_eq!(next["responseScope"], "rows", "{paged}");
+        assert_eq!(next["responseLength"], 3_000, "{paged}");
+
+        let text = respond_with(3_000, Some("text")).structured_content;
+        assert!(text["responseWindow"].is_string(), "{text}");
+        assert_eq!(text["results"], json!([]), "{text}");
+        assert_eq!(
+            text["responsePagination"]["next"]["query"]["responseScope"], "text",
+            "{text}"
+        );
+
+        let whole = respond_with(50_000, None);
+        assert!(
+            whole.structured_content.get("responsePagination").is_none(),
+            "{}",
+            whole.structured_content
+        );
+        assert_eq!(
+            whole.structured_content["results"].as_array().map(Vec::len),
+            Some(4)
+        );
+        assert!(
+            whole
+                .content
+                .iter()
+                .all(|item| !item.text.contains("# Response page")),
+            "one unpaged response"
         );
     }
 

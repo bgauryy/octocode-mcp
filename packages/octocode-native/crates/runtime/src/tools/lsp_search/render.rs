@@ -189,24 +189,39 @@ pub(super) struct PageCut<'a> {
     pub(super) resume: Option<usize>,
 }
 
-/// One page of `items` with the `nextPage` cursor the response stage moves to
-/// `next`. A page past the end is empty, terminal and flagged `outOfRange`,
+/// The page a continuation asks for next, and the snapshot that pins it. The
+/// cursor rides `next.nextPage` (see [`super::failure::offer_next_page`]),
+/// never the pagination block.
+pub(super) struct NextPage {
+    pub(super) page: usize,
+    pub(super) snapshot: String,
+}
+
+/// One page of `items`, with the cursor of the page after it when there is
+/// one. A page past the end is empty, terminal and flagged `outOfRange`,
 /// never clamped to the last page, which would repeat rows the caller has.
-pub(super) fn paginate(items: &[Value], page: u32, cut: &PageCut<'_>) -> (Vec<Value>, Value) {
-    let (range, pagination) = page_window(page, cut);
-    (items[range].to_vec(), pagination)
+pub(super) fn paginate(
+    items: &[Value],
+    page: u32,
+    cut: &PageCut<'_>,
+) -> (Vec<Value>, Value, Option<NextPage>) {
+    let (range, pagination, next) = page_window(page, cut);
+    (items[range].to_vec(), pagination, next)
 }
 
 /// The item range of one page over the `cut.sizes` items, with its
-/// pagination (see [`paginate`]) and `snapshot`.
+/// pagination facts (see [`paginate`]) and the cursor of the next page.
 ///
 /// A character cut depends on the response window, which differs between
-/// batches, so its `snapshot` also names the row the next page starts at
+/// batches, so the next page's snapshot also names the row it starts at
 /// (`{digest}@{row}.{check}`, see [`row_cursor`]): a continuation run under
 /// any window resumes at exactly that row. A count cut is the same under
 /// every window (its size is in the digest), so its snapshot is the digest
 /// alone.
-pub(super) fn page_window(page: u32, cut: &PageCut<'_>) -> (std::ops::Range<usize>, Value) {
+pub(super) fn page_window(
+    page: u32,
+    cut: &PageCut<'_>,
+) -> (std::ops::Range<usize>, Value, Option<NextPage>) {
     use crate::response::pages::PageFacts;
     use crate::tools::page_windows::Paging;
     let total = cut.sizes.len();
@@ -232,15 +247,15 @@ pub(super) fn page_window(page: u32, cut: &PageCut<'_>) -> (std::ops::Range<usiz
         Paging::Count(size) => PageFacts::counted(page, size, total),
         Paging::Chars(_) => PageFacts::sized(page, pages, total, more),
     };
-    let mut pagination = facts.out_of_range(page > pages.max(1)).to_value();
-    if more {
-        pagination["nextPage"] = json!(page + 1);
-    }
-    pagination["snapshot"] = json!(match paging {
-        Paging::Chars(_) if more => row_cursor(cut.snapshot, range.end, page + 1),
-        _ => cut.snapshot.to_owned(),
+    let pagination = facts.out_of_range(page > pages.max(1)).to_value();
+    let next = more.then(|| NextPage {
+        page: page + 1,
+        snapshot: match paging {
+            Paging::Chars(_) => row_cursor(cut.snapshot, range.end, page + 1),
+            Paging::Count(_) => cut.snapshot.to_owned(),
+        },
     });
-    (range, pagination)
+    (range, pagination, next)
 }
 
 /// The cursor a character-cut continuation names: the digest, the row

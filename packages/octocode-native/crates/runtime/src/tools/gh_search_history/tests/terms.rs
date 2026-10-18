@@ -435,7 +435,7 @@ fn pull_request_and_issue_windows_reach_the_search() {
     }
 }
 
-/// Closed-but-unmerged pull requests are a GitHub search filter
+/// Unmerged pull requests (open or closed) are a GitHub search filter
 /// (`is:unmerged`, or `-is:merged`): both run on the search route as
 /// `is:unmerged`, beside a `state`; issues have no merge state.
 #[test]
@@ -464,6 +464,51 @@ fn unmerged_pull_requests_are_a_search_filter() {
     }
     let issue = Filters::parse(&typed("issue", None, "is:unmerged")).expect_err("issues");
     assert!(issue.message.contains("is not supported"), "{issue:?}");
+}
+
+/// A merged state beside an unmerged filter asks for no pull request:
+/// refused before any request, naming both as the caller wrote them.
+#[test]
+fn a_merged_state_beside_an_unmerged_filter_is_refused_naming_both() {
+    let typed = |state: Option<&str>, qualifiers: &str| {
+        let mut row =
+            json!({"operation":"pullRequest","owner":"o","repo":"r","qualifiers":qualifiers});
+        if let Some(state) = state {
+            row["state"] = json!(state);
+        }
+        let prepared = crate::contracts::validate_query("ghSearchHistory", row).expect(qualifiers);
+        serde_json::from_value::<GhSearchHistoryQuery>(prepared).expect("typed")
+    };
+    for (state, qualifiers, named) in [
+        (
+            Some("merged"),
+            "is:unmerged",
+            ["is:unmerged", "state \"merged\""],
+        ),
+        (
+            Some("merged"),
+            "-is:merged",
+            ["-is:merged", "state \"merged\""],
+        ),
+        (None, "is:merged is:unmerged", ["is:unmerged", "is:merged"]),
+    ] {
+        let error = Filters::parse(&typed(state, qualifiers)).expect_err(qualifiers);
+        assert_eq!(error.kind, octocode_github::ProviderErrorKind::Validation);
+        for name in named {
+            assert!(
+                error.message.contains(name),
+                "{qualifiers}: {}",
+                error.message
+            );
+        }
+    }
+    // An open or closed state keeps the filter.
+    for state in ["open", "closed"] {
+        assert!(
+            Filters::parse(&typed(Some(state), "is:unmerged")).is_ok(),
+            "{state}"
+        );
+    }
 }
 
 /// Without its person qualifiers a search may name nothing else: no lead

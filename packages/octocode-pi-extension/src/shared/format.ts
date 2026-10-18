@@ -1,7 +1,7 @@
 /** Compact numbers, durations, clock times, paths, tokens and cost for the agents panel, the footer and `coordinate list`. */
 import os from 'node:os';
 import path from 'node:path';
-import type { UsageTotals } from './util.js';
+import { DAY_MS, HOUR_MS, type UsageTotals } from './util.js';
 
 /** `file` relative to `cwd` when inside it, else with the home directory as `~`; otherwise unchanged. */
 export function shortPath(file: string, cwd = process.cwd(), home = os.homedir()): string {
@@ -13,6 +13,14 @@ export function shortPath(file: string, cwd = process.cwd(), home = os.homedir()
   if (local) return local;
   const homed = inside(home);
   return homed ? `~${path.sep}${homed}` : file;
+}
+
+/**
+ * The line that goes before the end of a captured stream (`shown` of its `total` characters): how much it shows and where
+ * the whole is (`file`), or that the rest could not be saved. Callers add it only when the stream did not fit.
+ */
+export function tailNote(label: string, shown: number, total: number, file: string | undefined): string {
+  return `[${label}: last ${shown} of ${total} characters; ${file ? `whole: ${shortPath(file)}` : 'the rest could not be saved'}]`;
 }
 
 /** `950`, `12.4k`, `250k`, `1.2M`, `144M`. */
@@ -57,6 +65,21 @@ export function formatDuration(ms: number, precise = false): string {
   const pad = (value: number, unit: string) => (value ? `${String(value).padStart(2, '0')}${unit}` : '');
   return minutes < 60 ? `${minutes}m${pad(seconds % 60, 's')}` : `${Math.floor(minutes / 60)}h${pad(minutes % 60, 'm')}`;
 }
+
+/**
+ * A coarse span for times that are read, not measured: `45s`, `12m`, `5h20m`, `3d4h`. Under a day it is `formatDuration`
+ * without the seconds of a span over a minute; from a day on it counts days.
+ */
+export function formatSpan(ms: number): string {
+  const safe = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+  if (safe < DAY_MS) return formatDuration(safe).replace(/(\d+m)\d+s$/, '$1');
+  const days = Math.floor(safe / DAY_MS);
+  const hours = Math.floor((safe % DAY_MS) / HOUR_MS);
+  return `${days}d${hours ? `${hours}h` : ''}`;
+}
+
+/** The one relative-time format: `45s ago`, `12m ago`, `5h20m ago`, `3d4h ago`. */
+export const formatAgo = (ms: number): string => `${formatSpan(ms)} ago`;
 
 export const toolCallCount = (count: number) => `${count} tool call${count === 1 ? '' : 's'}`;
 

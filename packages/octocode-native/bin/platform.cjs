@@ -10,6 +10,7 @@ const PLATFORMS = {
   'linux-arm64-gnu': { triple: 'aarch64-unknown-linux-gnu', os: 'linux', arch: 'arm64', libc: 'gnu' },
   'linux-x64-gnu': { triple: 'x86_64-unknown-linux-gnu', os: 'linux', arch: 'x64', libc: 'gnu' },
   'linux-x64-musl': { triple: 'x86_64-unknown-linux-musl', os: 'linux', arch: 'x64', libc: 'musl' },
+  'win32-arm64-msvc': { triple: 'aarch64-pc-windows-msvc', os: 'win32', arch: 'arm64', libc: null },
   'win32-x64-msvc': { triple: 'x86_64-pc-windows-msvc', os: 'win32', arch: 'x64', libc: null },
 };
 

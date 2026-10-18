@@ -295,8 +295,7 @@ fn disk_entries_that_are_not_bounded_regular_files_are_evicted_misses() {
     };
 
     let fifo = disk.file(&key("fifo", "x"));
-    let name = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    crate::tools::test_support::make_fifo(&fifo);
     let (sender, receiver) = std::sync::mpsc::channel();
     let reader = std::sync::Arc::clone(&store);
     std::thread::spawn(move || {

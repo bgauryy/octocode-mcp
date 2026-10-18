@@ -40,6 +40,7 @@ const TASKS = {
   ]],
   lint: ['Run every workspace lint script', [health('run', 'lint')]],
   'lint:ci': ['Lint without benchmark or native', [health('run', 'lint', ...CI_EXCLUDE)]],
+  format: ['Fix the formatting lint checks: every workspace `format` script (eslint --fix or prettier --write)', [yarn('workspaces', 'foreach', '-Apt', 'run', 'format')]],
   typecheck: ['Run every workspace typecheck script', [health('run', 'typecheck')]],
   'typecheck:ci': ['Typecheck without benchmark or native', [health('run', 'typecheck', ...CI_EXCLUDE)]],
   verify: ['Full repo contract: dedupe, docs, per-package verify', [health('verify')]],

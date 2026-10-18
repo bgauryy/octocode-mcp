@@ -120,9 +120,10 @@ describe('saved results carried into the compaction summary', () => {
     const lines = /<saved-results>\n([\s\S]*?)\n<\/saved-results>/.exec(secondOut.summary)![1]!.split('\n').slice(1);
     expect(lines).toEqual([fileOf(earlier), fileOf(later)]);
     expect(secondOut.details).toMatchObject({ [SAVED_RESULTS_DETAILS]: [path.resolve(fileOf(earlier)), path.resolve(fileOf(later))] });
-    // The model's part of an earlier summary comes back without the block, so it is not written twice.
+    // The model's part of an earlier summary comes back without the block, so it is not written twice. The user messages
+    // sit before the Recovery section, where `writeSummary` puts them.
     const section = userMessagesSection([], 0, ['ask']);
-    expect(splitSummary(`${firstOut.summary}${section}`).body).toBe('## Goal\nwork');
+    expect(splitSummary(firstOut.summary.replace('\n\n## Recovery', `${section}\n\n## Recovery`)).body).toBe('## Goal\nwork');
     expect(withoutSavedResults('## Goal\nx')).toBe('## Goal\nx');
   });
 
@@ -194,6 +195,31 @@ describe('saved results carried into the compaction summary', () => {
     // The newest compaction that carries paths wins; none carries none.
     expect(carriedSavedResults([{ type: 'compaction', details: { [SAVED_RESULTS_DETAILS]: ['/old'] } }, { type: 'compaction', details: { [SAVED_RESULTS_DETAILS]: ['/new'] } }] as never)).toEqual(['/new']);
     expect(carriedSavedResults([{ type: 'compaction', summary: 'x' }] as never)).toEqual([]);
+  });
+
+  it('recovers the files saved during a stretch that Pi\'s default summary covered, and drops swept ones', async () => {
+    const earlier = trimmed('bash-before', 'BEFORE');
+    const during = trimmed('bash-during', 'DURING');
+    const kept = trimmed('bash-kept', 'KEPT');
+    const first = (await summarize([result('a', earlier)]))!.compaction!;
+    const message = (id: string, text: string) => ({ type: 'message', id, message: result(id, text) });
+    const branch = [
+      { type: 'compaction', id: 'c1', firstKeptEntryId: 'k1', fromHook: true, summary: first.summary, details: first.details },
+      // Summarized by the default compaction below: no Octocode record holds this file.
+      { type: 'message', id: 'k1', message: { role: 'user', content: 'go on' } },
+      message('r1', during),
+      // Kept by the default compaction, so the next summary's own messages hold it.
+      message('k2', kept),
+      { type: 'compaction', id: 'c2', firstKeptEntryId: 'k2', fromHook: false, summary: '## Goal\ndefault', details: { readFiles: [], modifiedFiles: [] } },
+    ];
+    expect(carriedSavedResults(branch as never)).toEqual([path.resolve(fileOf(earlier)), path.resolve(fileOf(during))]);
+    const next = (await summarize([result('b', kept)], { branch, previousSummary: '## Goal\ndefault' }))!.compaction!;
+    expect(next.details).toMatchObject({ [SAVED_RESULTS_DETAILS]: [path.resolve(fileOf(earlier)), path.resolve(fileOf(during)), path.resolve(fileOf(kept))] });
+    // A file the session sweep removed is no longer listed.
+    fs.rmSync(path.resolve(fileOf(earlier)));
+    const swept = (await summarize([], { branch, previousSummary: '## Goal\ndefault' }))!.compaction!;
+    expect(swept.details).toMatchObject({ [SAVED_RESULTS_DETAILS]: [path.resolve(fileOf(during))] });
+    expect(swept.summary).not.toContain(fileOf(earlier));
   });
 
   it('finds the log a finished background job report names, and its rotated part', () => {

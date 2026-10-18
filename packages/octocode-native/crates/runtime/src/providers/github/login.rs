@@ -3,6 +3,7 @@
 mod flow_tests;
 
 use super::{CredentialStore, OAuthToken, StoredCredentials};
+use crate::civil_date::unix_secs;
 use octocode_github::{CredentialSource, ProviderError, ProviderErrorKind};
 
 use reqwest::header::{ACCEPT, USER_AGENT};
@@ -288,7 +289,7 @@ async fn login_device_flow_with_store(
                 fetch_authenticated_login(&endpoints.api_origin, &access, LOGIN_HTTP_TIMEOUT)
                     .await
                     .unwrap_or_default();
-            let now_secs = unix_now();
+            let now_secs = unix_secs();
             let now = crate::civil_date::iso8601_secs(now_secs);
             let scopes = token.scope.as_deref().map(parse_granted_scopes);
             let stored = StoredCredentials {
@@ -425,17 +426,8 @@ fn parse_granted_scopes(value: &str) -> Vec<String> {
         .collect()
 }
 
-/// Seconds since the Unix epoch (0 if the clock is before it).
-fn unix_now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |value| {
-            i64::try_from(value.as_secs()).unwrap_or(i64::MAX)
-        })
-}
-
 fn rfc3339_now() -> String {
-    crate::civil_date::iso8601_secs(unix_now())
+    crate::civil_date::iso8601_secs(unix_secs())
 }
 
 /// The RFC 3339 instant `seconds` after `now`.
@@ -555,16 +547,23 @@ async fn acquire_refresh_lock(
             "cannot open the GitHub token refresh lock",
         )
     };
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|_| unavailable())?;
-    }
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(path)
-        .map_err(|_| unavailable())?;
+    // Creating the directory and opening the file touch the disk, so they run
+    // off the async executor.
+    let lock_path = path.to_path_buf();
+    let file = tokio::task::spawn_blocking(move || {
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+    })
+    .await
+    .map_err(|_| unavailable())?
+    .map_err(|_| unavailable())?;
     let deadline = Instant::now() + wait;
     loop {
         match file.try_lock() {
@@ -705,7 +704,7 @@ async fn refresh_stored_credentials(
         ));
     }
     let token = exchange_refresh_token(endpoints, client_id, &refresh_token).await?;
-    let now = unix_now();
+    let now = unix_secs();
     let updated = StoredCredentials {
         hostname: stored.hostname.clone(),
         username: stored.username.clone(),
@@ -841,8 +840,9 @@ mod tests {
         LoginEndpoints, RefreshMode, RefreshStore, StoredCredentials, device_code_form,
         exchange_refresh_token, is_refresh_token_expired, is_token_expired,
         login_device_flow_in_store, parse_granted_scopes, refresh_locked, refresh_token_form,
-        token_poll_form, unix_now,
+        token_poll_form,
     };
+    use crate::civil_date::unix_secs;
     use crate::providers::github::OAuthToken;
     use octocode_github::{ProviderError, ProviderErrorKind};
     use std::sync::{Arc, Mutex};
@@ -932,9 +932,9 @@ mod tests {
 
     #[test]
     fn expiry_helpers_match_five_minute_skew() {
-        let future = crate::civil_date::iso8601_secs(unix_now() + 3600);
+        let future = crate::civil_date::iso8601_secs(unix_secs() + 3600);
         assert!(!is_token_expired(&stored(Some(&future), Some("r"))));
-        let soon = crate::civil_date::iso8601_secs(unix_now() + 30);
+        let soon = crate::civil_date::iso8601_secs(unix_secs() + 30);
         assert!(is_token_expired(&stored(Some(&soon), Some("r"))));
         assert!(!is_token_expired(&stored(None, Some("r"))));
         assert!(!is_refresh_token_expired(&stored(None, Some("r"))));
@@ -944,11 +944,11 @@ mod tests {
     /// unparsable (and so expired) one.
     #[test]
     fn expiry_honors_negative_and_positive_offsets() {
-        let in_two_hours = crate::civil_date::iso8601_secs(unix_now() + 2 * 3600);
+        let in_two_hours = crate::civil_date::iso8601_secs(unix_secs() + 2 * 3600);
         let local = |sign: char| {
             // The same instant written in UTC-05:00 / UTC+05:00 local time.
             let shift = if sign == '-' { -5 * 3600 } else { 5 * 3600 };
-            let wall = crate::civil_date::iso8601_secs(unix_now() + 2 * 3600 + shift);
+            let wall = crate::civil_date::iso8601_secs(unix_secs() + 2 * 3600 + shift);
             format!("{}.000{sign}05:00", wall.trim_end_matches('Z'))
         };
         for expiry in [in_two_hours, local('-'), local('+')] {
@@ -988,7 +988,7 @@ mod tests {
     }
 
     fn expired_stored(refresh: &str) -> StoredCredentials {
-        let past = crate::civil_date::iso8601_secs(unix_now() - 60);
+        let past = crate::civil_date::iso8601_secs(unix_secs() - 60);
         let mut value = stored(Some(&past), Some(refresh));
         value.hostname = "example.test".into();
         value

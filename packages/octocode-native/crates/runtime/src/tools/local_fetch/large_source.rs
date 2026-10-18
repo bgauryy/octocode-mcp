@@ -16,6 +16,7 @@ use super::types::*;
 use crate::security::scan::ContentScan;
 use crate::security::{BlockLine, KeyBlockState, LineShape, LineShapeScan, is_key_header_prefix};
 use crate::tools::cancel::CancellationCheck;
+use crate::tools::num::usize_of;
 use std::path::Path;
 
 /// Largest source a window may be streamed from.
@@ -463,7 +464,6 @@ fn line_chunk_query(q: &LocalFetchQuery, offset: usize) -> LocalFetchQuery {
 
 /// Serve `q` from a source larger than the whole-file ceiling, streamed
 /// from `source`, the read's open handle on `path`.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn fetch_window(
     q: &LocalFetchQuery,
     path: &Path,
@@ -618,7 +618,6 @@ fn stream_window(
 }
 
 /// The page of one streamed window, mapped back to the whole file.
-#[allow(clippy::too_many_arguments)]
 fn serve_window(
     q: &LocalFetchQuery,
     streamed: Streamed,
@@ -744,7 +743,7 @@ fn serve_window(
         page.length = end + 1 - start;
         page.total_lines = last + 1 - origin;
         if chunked {
-            page.total_bytes = usize::try_from(len).unwrap_or(usize::MAX);
+            page.total_bytes = usize_of(len);
         }
         page.has_more = end < last;
         page.next_offset = page.has_more.then_some(end + 1 - origin);
@@ -981,7 +980,7 @@ fn past_end_row(
             length: 0,
             window: q.window_length().unwrap_or(WINDOW_LINES),
             total_lines: read_total,
-            total_bytes: usize::try_from(len).unwrap_or(usize::MAX),
+            total_bytes: usize_of(len),
             has_more: false,
             next_offset: None,
             resume_line: None,

@@ -475,7 +475,7 @@ async fn an_empty_repo_search_leads_to_a_runnable_clone() {
         "{}",
         out.data
     );
-    // A path scope leads to its listing instead; a row shows two leads at most.
+    // A path scope leads to its listing instead.
     let out = run_empty(json!({"owner":"a","repo":"b","keywords":["zzqq"],"path":"src"})).await;
     assert!(out.data["next"].get("cloneRepo").is_none(), "{}", out.data);
     assert!(out.data["next"].get("viewTree").is_some(), "{}", out.data);
@@ -483,8 +483,8 @@ async fn an_empty_repo_search_leads_to_a_runnable_clone() {
 
 /// `cloneRepo` runs only where clone is available, so an empty repo-wide
 /// search also lists the root at the searched ref, a route every surface
-/// runs. A search with a narrowing to drop keeps its second lead slot for
-/// `broadenSearch` instead.
+/// runs. A search with a narrowing to drop leads to `broadenSearch`
+/// instead.
 #[tokio::test]
 async fn an_empty_repo_search_also_lists_the_root_on_every_surface() {
     let out = run_empty(json!({"owner":"a","repo":"b","keywords":["zzqq"],"ref":"v1"})).await;
@@ -1131,6 +1131,62 @@ async fn a_ref_without_a_repo_is_invalid_input_repaired_without_it() {
     assert_eq!(repair["owner"], "o", "{next}");
     assert_eq!(repair["keywords"], json!(["needle"]), "{next}");
     assert_eq!(repair["pageSize"], 5, "{next}");
+    assert!(
+        server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    );
+}
+
+/// `filename:` matches names containing its text, never a glob: a glob is
+/// invalid input before any request. One whose only wildcards are leading
+/// or trailing `*` repairs to its text; any other names the rule.
+#[tokio::test]
+async fn a_filename_glob_is_refused_before_any_request() {
+    let server = MockServer::builder().start().await;
+    let provider = one_shot_provider(&server);
+    let context = default_context();
+    async fn refused(
+        provider: &octocode_github::GitHubProvider<octocode_github::NoCache>,
+        context: &octocode_github::RequestContext,
+        filename: &str,
+    ) -> crate::tools::gh_shared::GhFailure {
+        let query: GhSearchCodeQuery = serde_json::from_value(json!({
+            "owner":"o","repo":"r","keywords":["describe"],"filename":filename
+        }))
+        .expect("query");
+        match super::run(provider, &query, Ok(context), &Passthrough).await {
+            Err(failure) => failure,
+            Ok(_) => panic!("{filename}: a glob filename is refused"),
+        }
+    }
+    for (glob, text) in [
+        ("*.test.js", ".test.js"),
+        ("README*", "README"),
+        ("*util*", "util"),
+    ] {
+        let failure = refused(&provider, &context, glob).await;
+        assert_eq!(
+            failure.error.kind,
+            octocode_github::ProviderErrorKind::Validation
+        );
+        assert!(failure.message.contains(glob), "{}", failure.message);
+        let next = failure.next.expect("repair");
+        let repair = &next["repair"]["query"]["queries"][0];
+        assert_eq!(repair["filename"], text, "{next}");
+        assert_eq!(repair["keywords"], json!(["describe"]), "{next}");
+    }
+    for glob in ["a*b.js", "*.{js,ts}", "*"] {
+        let failure = refused(&provider, &context, glob).await;
+        assert!(failure.next.is_none(), "{glob}");
+        assert!(
+            failure.message.contains("names containing its text"),
+            "{}",
+            failure.message
+        );
+    }
     assert!(
         server
             .received_requests()

@@ -49,9 +49,17 @@ const SERVER_UNANSWERED: &str = "serverUnanswered";
 /// read.
 const HERITAGE_UNREAD: &str = "heritageUnread";
 
+/// Partial reason of a server answer beside which the heritage scan found
+/// declarations the server left out (listed, labelled, unverified).
+const SCAN_ONLY: &str = "scanOnlyImplementations";
+
 /// How `textDocument/implementation` was answered.
 enum Implemented {
-    Server(Vec<octocode_engine::lsp::types::JsCodeSnippet>),
+    /// The server's answer, with the heritage scan when it was kept beside it.
+    Server {
+        found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
+        scan: Option<heritage::HeritageScan>,
+    },
     /// The heritage scan, with the note that labels it and the files it
     /// could not read.
     Scan {
@@ -61,9 +69,6 @@ enum Implemented {
     },
 }
 
-/// Flag a heritage-scan row incomplete: its note states what it is, and the
-/// retry asks the server again. Files the scan could not read are named,
-/// with a text search over them, so the gap can be followed.
 /// The anchor type has implementation candidates past this walk's window:
 /// the row is partial, and on its last result page `next.nextCandidatePage`
 /// walks the next window of candidates (each window checked exactly once).
@@ -94,6 +99,9 @@ fn mark_more_candidates(row: &mut Value, query: &LspSearchQuery, digest: &str) {
             .build();
 }
 
+/// Flag a heritage-scan row incomplete: its note states what it is, and the
+/// retry asks the server again. Files the scan could not read are named,
+/// with a text search over them, so the gap can be followed.
 fn mark_scan_answer(
     row: &mut Value,
     query: &LspSearchQuery,
@@ -118,6 +126,38 @@ fn mark_scan_answer(
         row["next"]["findText"] =
             text_search_lead(base, &scope.root, &scope.include, Some(&unread)).build();
     }
+}
+
+/// The heritage scan's declarations outside the server's answer, with the
+/// base it matched: a scan row is in the answer when a server location in
+/// its file spans its line (servers locate an implementation at its name or
+/// over its whole declaration).
+fn scan_only(
+    found: &[octocode_engine::lsp::types::JsCodeSnippet],
+    scan: heritage::HeritageScan,
+) -> (Vec<octocode_engine::lsp::types::JsCodeSnippet>, String) {
+    let file = |uri: &str| super::scope::canonical(&uri_to_path(uri));
+    let answered = found
+        .iter()
+        .map(|snippet| {
+            (
+                file(&snippet.uri),
+                snippet.range.start.line,
+                snippet.range.end.line,
+            )
+        })
+        .collect::<Vec<_>>();
+    let extra = scan
+        .found
+        .into_iter()
+        .filter(|snippet| {
+            let (path, line) = (file(&snippet.uri), snippet.range.start.line);
+            !answered
+                .iter()
+                .any(|(file, start, end)| *file == path && (*start..=*end).contains(&line))
+        })
+        .collect();
+    (extra, scan.base)
 }
 
 /// Everything one operation needs, borrowed from `execute`.
@@ -459,8 +499,6 @@ impl Operation<'_, '_> {
         })
     }
 
-    /// A call or type hierarchy walk; TS/JS incoming walks also verify the
-    /// importers the server's level-1 answer does not cover.
     /// `supertypes`/`subtypes` on a server with no type hierarchy: the
     /// resolved immediate heritage edges in the shared bounded walker.
     /// Unverified syntax substitutes remain partial and name their source.
@@ -473,8 +511,8 @@ impl Operation<'_, '_> {
             super::walk::Expansion::Supertypes
         };
         let mut candidates = if kind == "subtypes" {
-            match self.implemented(true).await? {
-                Implemented::Server(found) => {
+            match self.implemented(true, false).await? {
+                Implemented::Server { found, .. } => {
                     let Some(window) =
                         super::fallback_hierarchy::CandidateWindow::cut(query, found)
                     else {
@@ -600,7 +638,9 @@ impl Operation<'_, '_> {
     /// `implementation`: the server's answer, or, for a type declaration the
     /// server cannot answer in time, the labelled heritage scan standing in
     /// for it. Another anchor (a member, a function) has no heritage clause
-    /// a scan could read, so its failure stays the failure.
+    /// a scan could read, so its failure stays the failure. Beside a server
+    /// answer for a type, the scan's declarations the server left out (a
+    /// function-local impl, say) follow its rows, each labelled.
     async fn implementation(self) -> Result<Value, LspFailure> {
         let query = self.query;
         let content = self
@@ -612,24 +652,55 @@ impl Operation<'_, '_> {
         let scannable = query.symbol_name().is_some_and(|name| {
             heritage::anchors_type_declaration(&content, self.path, self.line, name)
         });
-        let (found, scanned) = match self.implemented(scannable).await? {
-            Implemented::Server(found) => (found, None),
+        let (found, scanned, extra) = match self.implemented(scannable, scannable).await? {
+            Implemented::Server { found, scan } => {
+                let extra = scan.map(|scan| scan_only(&found, scan));
+                (found, None, extra)
+            }
             Implemented::Scan {
                 found,
                 note,
                 unread,
-            } => (found, Some((note, unread))),
+            } => (found, Some((note, unread)), None),
         };
         let (scope, paths) = (self.scope, self.sources.policy());
+        let extra_rows = extra.as_ref().map_or(&[][..], |(rows, _)| rows.as_slice());
         scope.answer(
-            std::iter::once(self.path).chain(found.iter().map(|snippet| snippet.uri.as_str())),
+            std::iter::once(self.path).chain(
+                found
+                    .iter()
+                    .chain(extra_rows)
+                    .map(|snippet| snippet.uri.as_str()),
+            ),
         );
+        let rows = found
+            .into_iter()
+            .map(|snippet| serde_json::to_value(snippet).unwrap_or(Value::Null))
+            .chain(extra_rows.iter().map(|snippet| {
+                let mut value = serde_json::to_value(snippet).unwrap_or(Value::Null);
+                value["source"] = json!(SCAN_SOURCE);
+                value
+            }))
+            .collect::<Vec<_>>();
         let mut row = self
-            .locations("implementation", "implementationProvider", found)
+            .locations("implementation", "implementationProvider", rows)
             .await;
         if let Some((note, unread)) = scanned {
             row["lsp"]["source"] = json!(SCAN_SOURCE);
             mark_scan_answer(&mut row, query, scope, paths, note, &unread);
+        }
+        if let Some((rows, base)) = &extra
+            && !rows.is_empty()
+            && row.get("errorCode").is_none()
+        {
+            crate::tools::paging::mark_partial(
+                &mut row,
+                SCAN_ONLY,
+                &[format!(
+                    "{} implementation(s) labelled `source: \"{SCAN_SOURCE}\"` are not in the language server's answer: their extends/implements clause names `{base}`, read from source. They are unverified: the base is matched by name, not resolved to this declaration.",
+                    rows.len()
+                )],
+            );
         }
         Ok(row)
     }
@@ -637,8 +708,9 @@ impl Operation<'_, '_> {
     /// The server's `textDocument/implementation` answer. The heritage scan
     /// (when `scannable`) runs while the request is pending: a failure that
     /// has the scan as fallback takes it without a second wait, and a server
-    /// still silent a grace after the scan finishes yields to it.
-    async fn implemented(&self, scannable: bool) -> Result<Implemented, LspFailure> {
+    /// still silent a grace after the scan finishes yields to it. `keep`
+    /// also waits for the scan beside a server answer.
+    async fn implemented(&self, scannable: bool, keep: bool) -> Result<Implemented, LspFailure> {
         let scan = async {
             if scannable {
                 self.heritage_scan().await
@@ -657,10 +729,20 @@ impl Operation<'_, '_> {
                     wait.as_secs()
                 ))
             },
+            keep,
         )
         .await;
         match raced {
-            Ok(found) => Ok(Implemented::Server(found)),
+            Ok((found, scan)) => Ok(Implemented::Server {
+                found,
+                // A scan that could not run adds nothing to the server's
+                // answer; only cancellation stops the request.
+                scan: match scan {
+                    Some(Err(failure)) if failure.code == "cancelled" => return Err(failure),
+                    Some(Ok(scan)) => scan,
+                    _ => None,
+                },
+            }),
             Err((failure, Some(scan))) => match scan? {
                 Some(scan) => Ok(Implemented::Scan {
                     note: heritage::describe_scan(
@@ -714,6 +796,8 @@ impl Operation<'_, '_> {
         }))
     }
 
+    /// A call or type hierarchy walk; TS/JS incoming walks also verify the
+    /// importers the server's level-1 answer does not cover.
     async fn hierarchy(self) -> Result<Value, LspFailure> {
         let query = self.query;
         if matches!(query.op(), Op::Supertypes | Op::Subtypes)
@@ -810,7 +894,7 @@ impl Operation<'_, '_> {
         self,
         kind: &str,
         provider: &str,
-        found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
+        found: Vec<impl serde::Serialize>,
     ) -> Value {
         locations(
             self.query,
@@ -1102,6 +1186,52 @@ fn site_start(snippet: &octocode_engine::lsp::types::JsCodeSnippet) -> (String, 
 #[cfg(test)]
 mod tests {
     use super::{binding_rank, language_name, match_tier, rank_workspace_symbols};
+
+    fn snippet(path: &str, start: u32, end: u32) -> octocode_engine::lsp::types::JsCodeSnippet {
+        use octocode_engine::lsp::types::{JsExactPosition, JsRange};
+        let at = |line| JsExactPosition { line, character: 0 };
+        octocode_engine::lsp::types::JsCodeSnippet {
+            uri: format!("file://{path}"),
+            range: JsRange {
+                start: at(start),
+                end: at(end),
+            },
+            content: String::new(),
+            symbol_kind: None,
+            display_range: None,
+        }
+    }
+
+    /// The heritage scan beside a server answer adds only declarations the
+    /// answer does not cover: a server location spanning the scan row's
+    /// line (at its name, or over its whole declaration) is the same row.
+    #[test]
+    fn the_scan_adds_only_the_declarations_the_server_left_out() {
+        let found = [snippet("/r/a.ts", 3, 3), snippet("/r/b.ts", 10, 20)];
+        let scan = super::heritage::HeritageScan {
+            base: "Base".into(),
+            files: 3,
+            found: vec![
+                snippet("/r/a.ts", 3, 3),
+                snippet("/r/b.ts", 12, 12),
+                snippet("/r/b.ts", 25, 25),
+                snippet("/r/c.ts", 3, 3),
+            ],
+            unread: Vec::new(),
+        };
+        let (extra, base) = super::scan_only(&found, scan);
+        let left = extra
+            .iter()
+            .map(|row| {
+                (
+                    row.uri.rsplit('/').next().unwrap_or_default(),
+                    row.range.start.line,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(left, [("b.ts", 25), ("c.ts", 3)]);
+        assert_eq!(base, "Base");
+    }
 
     /// Every project-marker family a workspace-root search names takes its
     /// language id from the grammar registry.

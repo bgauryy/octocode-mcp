@@ -39,13 +39,14 @@ The working, contract and change rules live in `<repo>/AGENTS.md`. Rebuild order
 
 ## Task runner
 
-Root `package.json` keeps only `build:native:all`, `lint:fix`, `test:quiet`, `contracts:regen`. Run every other repo task with `$DEV`. Extra arguments pass through; `$DEV --help` lists all tasks.
+Root `package.json` keeps only `build:native:all` and `contracts:regen`. Run every other repo task with `$DEV`. Extra arguments pass through; `$DEV --help` lists all tasks.
 
 | Need | Command |
 |---|---|
 | Fast local build (default) | `$DEV build:dev` |
 | Release build (slow) | `$DEV build` |
 | Tests / lint / typecheck | `$DEV test` · `$DEV lint` · `$DEV typecheck` (`:ci` variants skip benchmark) |
+| Fix formatting that lint checks | `$DEV format` (each workspace `format`: eslint `--fix` or prettier `--write`) |
 | Every tool end to end (CLI + MCP, hermetic, after `build:dev`) | `$DEV test:tools [tool,...]` |
 | Full repo contract before handoff | `$DEV verify` |
 | Docs links, catalog, config keys | `$DEV docs:verify` |

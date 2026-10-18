@@ -1,0 +1,44 @@
+#:schema https://dystroy.org/bacon/.bacon.schema.json
+
+# bacon watch loop: `bacon` (check), `bacon clippy`, `bacon test`, `bacon test-engine`.
+# Each job uses the package and feature selection of a package.json script, so
+# it reuses that script's compiled crates instead of compiling another copy.
+# Plain `cargo check` here would build only the default member without
+# `dev-unify`: a separate copy of every workspace crate.
+
+default_job = "check"
+env.CARGO_TERM_COLOR = "always"
+
+# Same selection as `yarn typecheck` and `yarn lint`.
+[jobs.check]
+command = ["cargo", "check", "--locked", "--workspace", "--all-targets", "--all-features"]
+need_stdout = false
+
+# Same command as `yarn lint`.
+[jobs.clippy]
+command = ["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"]
+need_stdout = false
+
+# The two `yarn test:rust` selections, verbatim (tests/build-publication.test.cjs
+# checks it). Narrow a run: `bacon test -- <filter>`.
+[jobs.test]
+command = [
+    "cargo", "nextest", "run", "--hide-progress-bar", "--failure-output", "final",
+    "--locked", "-p", "octocode-native", "-p", "octocode-github", "-p", "octocode-io", "-p", "octocode-cli", "-p", "octocode-runtime-napi",
+    "--features", "octocode-runtime-napi/napi-test,octocode-native/dev-unify",
+]
+need_stdout = true
+analyzer = "nextest"
+
+[jobs.test-engine]
+command = [
+    "cargo", "nextest", "run", "--hide-progress-bar", "--failure-output", "final",
+    "--locked", "-p", "octocode-engine", "--all-features",
+]
+need_stdout = true
+analyzer = "nextest"
+
+[keybindings]
+c = "job:clippy"
+t = "job:test"
+e = "job:test-engine"

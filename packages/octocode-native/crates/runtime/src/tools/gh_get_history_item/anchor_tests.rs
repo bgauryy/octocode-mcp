@@ -1,7 +1,6 @@
 //! Happy-path anchors: each operation's row carries the values the next hop
 //! reads (`number`, `headSha`/`baseSha`/`mergeCommitSha`, `commitSha`,
 //! changed files as path+stat, patch lines numbered on their own side).
-#![allow(clippy::expect_used)]
 use super::{HistoryItemRequest, execute};
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::test_support::{fixture_context, mock_provider, mount_json};

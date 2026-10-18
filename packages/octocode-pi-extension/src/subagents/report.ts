@@ -4,7 +4,7 @@ import path from 'node:path';
 import { formatSize, truncateHead } from '@earendil-works/pi-coding-agent';
 import { shortPath } from '../shared/format.js';
 import { visibleControls } from '../shared/sanitize.js';
-import { capChars, capOutput, cutText } from '../shared/util.js';
+import { capOutput, cutText } from '../shared/util.js';
 
 export const REPORT_MAX_BYTES = 8 * 1024;
 const REPORT_MAX_LINES = 200;
@@ -83,7 +83,7 @@ export class ReportTracker {
 
   answer(raw: string | undefined, stopReason: unknown, errorMessage?: unknown): void {
     const failed = stopReason === 'error' || stopReason === 'aborted' || stopReason === 'length';
-    this.failure = failed ? capChars(visibleControls(String(errorMessage ?? (stopReason === 'length' ? 'Model output limit reached; the report is incomplete' : stopReason))), 500) : undefined;
+    this.failure = failed ? visibleControls(String(errorMessage ?? (stopReason === 'length' ? 'Model output limit reached; the report is incomplete' : stopReason))) : undefined;
     if (!raw) return;
     const text = visibleControls(raw);
     this.lastText = preview(text);

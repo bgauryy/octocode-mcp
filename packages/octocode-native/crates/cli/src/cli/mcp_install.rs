@@ -94,13 +94,11 @@ pub fn run(mut args: InstallArgs) -> u8 {
         let dest = rollback_destination(&bak);
         if args.dry_run {
             if args.json {
-                println!(
-                    "{}",
-                    json!({"success": true, "dryRun": true, "restored": dest, "from": bak})
+                return super::write_json(
+                    &json!({"success": true, "dryRun": true, "restored": dest, "from": bak}),
                 );
-            } else {
-                println!("Would restore {} from {}", dest.display(), bak.display());
             }
+            println!("Would restore {} from {}", dest.display(), bak.display());
             return 0;
         }
         let restore = (|| {
@@ -114,15 +112,11 @@ pub fn run(mut args: InstallArgs) -> u8 {
                 .map(|(changed, _)| changed)
         })();
         return match restore {
+            Ok(_) if args.json => {
+                super::write_json(&json!({"success": true, "restored": dest, "from": bak}))
+            }
             Ok(_) => {
-                if args.json {
-                    println!(
-                        "{}",
-                        json!({"success": true, "restored": dest, "from": bak})
-                    );
-                } else {
-                    println!("Restored {} from {}", dest.display(), bak.display());
-                }
+                println!("Restored {} from {}", dest.display(), bak.display());
                 0
             }
             Err(e) => {
@@ -134,11 +128,10 @@ pub fn run(mut args: InstallArgs) -> u8 {
     if args.list {
         let ids: Vec<_> = CLIENTS.iter().map(|client| client.id).collect();
         if args.json {
-            println!("{}", json!({ "ides": ids }));
-        } else {
-            for id in ids {
-                println!("{id}");
-            }
+            return super::write_json(&json!({ "ides": ids }));
+        }
+        for id in ids {
+            println!("{id}");
         }
         return 0;
     }
@@ -295,10 +288,9 @@ fn install(client: &ClientSpec, config_path: &Path, args: &InstallArgs) -> Resul
     if args.dry_run {
         let preview = json!({"success":true,"dryRun":true,"ide":client.id,"configPath":config_path,"entry":mcp_manage::projection(client,Some(&server))});
         if args.json {
-            println!("{preview}");
-        } else {
-            println!("{}", dry_run_text(client, config_path, &server, &existing));
+            return Ok(super::write_json(&preview));
         }
+        println!("{}", dry_run_text(client, config_path, &server, &existing));
         return Ok(0);
     }
     // An existing agent file keeps its previous content in the rolling backup.
@@ -310,21 +302,19 @@ fn install(client: &ClientSpec, config_path: &Path, args: &InstallArgs) -> Resul
     )
     .map_err(|error| error.to_string())?;
     if args.json {
-        println!(
-            "{}",
-            json!({"success":true,"configPath":config_path,"backupPath":backed_up})
-        );
-    } else {
-        println!(
-            "Installed octocode MCP for {} at {}",
-            client.id,
-            config_path.display()
-        );
-        println!(
-            "Next: restart {} so it loads the server; check GitHub access with `octocode auth status`.",
-            client.id
-        );
+        return Ok(super::write_json(
+            &json!({"success":true,"configPath":config_path,"backupPath":backed_up}),
+        ));
     }
+    println!(
+        "Installed octocode MCP for {} at {}",
+        client.id,
+        config_path.display()
+    );
+    println!(
+        "Next: restart {} so it loads the server; check GitHub access with `octocode auth status`.",
+        client.id
+    );
     Ok(0)
 }
 
@@ -364,12 +354,14 @@ fn report_check(
 ) -> Result<u8, String> {
     let ide = client.id;
     let valid = valid_server(client, root);
+    let exit = if valid { 0 } else { 1 };
     if args.json {
-        println!(
-            "{}",
-            json!({"success": valid, "check": true, "ide": ide, "configPath": path, "installed": valid})
+        let written = super::write_json(
+            &json!({"success": valid, "check": true, "ide": ide, "configPath": path, "installed": valid}),
         );
-    } else if valid {
+        return Ok(if written == 0 { exit } else { written });
+    }
+    if valid {
         println!("Octocode MCP is configured for {ide} at {}", path.display());
     } else {
         eprintln!(
@@ -377,7 +369,7 @@ fn report_check(
             path.display()
         );
     }
-    Ok(if valid { 0 } else { 1 })
+    Ok(exit)
 }
 
 /// An entry's runner and its arguments: opencode keeps both in one
@@ -482,38 +474,31 @@ fn already_installed(
 ) -> Result<u8, String> {
     if existing == Existing::Same {
         if args.json {
-            println!(
-                "{}",
-                json!({
-                    "success": true,
-                    "alreadyInstalled": true,
-                    "unchanged": true,
-                    "configPath": config_path
-                })
-            );
-        } else {
-            eprintln!(
-                "octocode is already installed in {} — unchanged",
-                config_path.display()
-            );
+            return Ok(super::write_json(&json!({
+                "success": true,
+                "alreadyInstalled": true,
+                "unchanged": true,
+                "configPath": config_path
+            })));
         }
+        eprintln!(
+            "octocode is already installed in {} — unchanged",
+            config_path.display()
+        );
         return Ok(0);
     }
     if args.json {
-        println!(
-            "{}",
-            json!({
-                "success": false,
-                "alreadyInstalled": true,
-                "configPath": config_path
-            })
-        );
-    } else {
-        eprintln!(
-            "octocode is already installed in {} — pass --force to overwrite",
-            config_path.display()
-        );
+        let written = super::write_json(&json!({
+            "success": false,
+            "alreadyInstalled": true,
+            "configPath": config_path
+        }));
+        return Ok(if written == 0 { 1 } else { written });
     }
+    eprintln!(
+        "octocode is already installed in {} — pass --force to overwrite",
+        config_path.display()
+    );
     Ok(1)
 }
 
@@ -726,7 +711,7 @@ mod tests {
         let (rendered, already) =
             render_fixture(spec("goose"), None, &default_args()).expect("render");
         assert_eq!(already, Existing::Absent);
-        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&rendered).expect("valid yaml");
+        let parsed = octocode_engine::portable::yaml_to_json(&rendered).expect("valid yaml");
         let entry = &parsed["extensions"]["octocode"];
         assert_eq!(entry["type"].as_str(), Some("stdio"));
         assert_eq!(entry["cmd"].as_str(), Some("npx"));
@@ -735,7 +720,7 @@ mod tests {
         let existing = "extensions:\n  other:\n    type: stdio\n    cmd: foo\n";
         let (merged, _) =
             render_fixture(spec("goose"), Some(existing), &default_args()).expect("merge");
-        let parsed: serde_yaml_ng::Value = serde_yaml_ng::from_str(&merged).expect("valid yaml");
+        let parsed = octocode_engine::portable::yaml_to_json(&merged).expect("valid yaml");
         assert!(
             parsed["extensions"].get("other").is_some(),
             "preserves other"

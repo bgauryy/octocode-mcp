@@ -2,7 +2,6 @@
 //! response pages. The continuation carries only the admitted rows (a
 //! rejected row would fail the output contract); the rejected row rides the
 //! first page and the snapshot mark keeps the admitted rows' indices.
-#![allow(clippy::panic, clippy::unwrap_used)]
 
 use crate::support::{Run as _, Workspace};
 use serde_json::{Value, json};

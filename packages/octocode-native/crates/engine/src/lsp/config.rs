@@ -17,6 +17,10 @@ struct ServerSpec {
     language_id: &'static str,
     command: &'static str,
     args: &'static [&'static str],
+    /// The `workspace/configuration` section this server's
+    /// `initializationOptions` stand for (rust-analyzer and gopls take the
+    /// same keys under their own name); `None` = options are not a section.
+    configuration_section: Option<&'static str>,
 }
 
 #[derive(Deserialize)]
@@ -982,70 +986,95 @@ fn spec_for_extension(extension: &str) -> Option<ServerSpec> {
             language_id: "typescript",
             command: "typescript-language-server",
             args: &["--stdio"],
+            configuration_section: None,
         },
         ".tsx" => ServerSpec {
             language_id: "typescriptreact",
             command: "typescript-language-server",
             args: &["--stdio"],
+            configuration_section: None,
         },
         ".js" | ".mjs" | ".cjs" => ServerSpec {
             language_id: "javascript",
             command: "typescript-language-server",
             args: &["--stdio"],
+            configuration_section: None,
         },
         ".jsx" => ServerSpec {
             language_id: "javascriptreact",
             command: "typescript-language-server",
             args: &["--stdio"],
+            configuration_section: None,
         },
         ".py" | ".pyi" => ServerSpec {
             language_id: "python",
             command: "pylsp",
             args: &[],
+            configuration_section: None,
         },
         ".go" => ServerSpec {
             language_id: "go",
             command: "gopls",
             args: &["serve"],
+            configuration_section: Some("gopls"),
         },
         ".rs" => ServerSpec {
             language_id: "rust",
             command: "rust-analyzer",
             args: &[],
+            configuration_section: Some("rust-analyzer"),
         },
         ".java" => ServerSpec {
             language_id: "java",
             command: "jdtls",
             args: &[],
+            configuration_section: None,
         },
         ".c" | ".h" => ServerSpec {
             language_id: "c",
             command: "clangd",
             args: &[],
+            configuration_section: None,
         },
         ".cpp" | ".cc" | ".cxx" | ".hpp" | ".hh" | ".hxx" => ServerSpec {
             language_id: "cpp",
             command: "clangd",
             args: &[],
+            configuration_section: None,
         },
         ".cu" | ".cuh" => ServerSpec {
             language_id: "cuda",
             command: "clangd",
             args: &[],
+            configuration_section: None,
         },
         ".cs" => ServerSpec {
             language_id: "csharp",
             command: "csharp-ls",
             args: &[],
+            configuration_section: None,
         },
         ".scala" | ".sc" | ".sbt" => ServerSpec {
             language_id: "scala",
             command: "metals",
             args: &[],
+            configuration_section: None,
         },
         _ => return None,
     };
     Some(spec)
+}
+
+/// The `workspace/configuration` section the built-in server for `language_id`
+/// takes its `initializationOptions` under: the one place a server's section
+/// is declared, found by the language id every built-in spec carries.
+pub(crate) fn configuration_section(language_id: Option<&str>) -> Option<&'static str> {
+    let language_id = language_id?;
+    crate::signatures::languages::supported_extensions()
+        .into_iter()
+        .filter_map(|extension| spec_for_extension(&format!(".{extension}")))
+        .find(|spec| spec.language_id == language_id)
+        .and_then(|spec| spec.configuration_section)
 }
 
 /// How to get each built-in server above that octocode does not install
@@ -1439,6 +1468,7 @@ mod tests {
         resolve_server_invocation, resolve_server_invocation_with_environment,
     };
     use crate::lsp::types::{JsLanguageServerConfig, ServerSource};
+    use crate::test_support::TmpDir;
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -1474,14 +1504,7 @@ mod tests {
     fn rustup_proxy_counts_only_when_a_toolchain_ships_the_component() {
         use super::rustup_proxy_component_installed;
         use std::os::unix::fs::PermissionsExt;
-        let base = std::env::temp_dir().join(format!(
-            "octocode-rustup-probe-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
+        let base = TmpDir::new();
         let bin = base.join("cargo/bin");
         let home = base.join("rustup");
         std::fs::create_dir_all(&bin).unwrap();
@@ -1501,7 +1524,6 @@ mod tests {
         let real = base.join("real-rust-analyzer");
         executable(&real);
         assert!(rustup_proxy_component_installed(&real, None));
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -1571,22 +1593,15 @@ mod tests {
 
     #[test]
     fn builtin_routes_intersect_enabled_grammars_exactly() {
-        let mut expected = vec![
-            "c", "cjs", "cts", "go", "h", "java", "js", "jsx", "mjs", "mts", "py", "pyi", "rs",
-            "ts", "tsx",
-        ];
-        if cfg!(feature = "tree-sitter-cpp") {
-            expected.extend(["cc", "cpp", "cxx", "hh", "hpp", "hxx"]);
-        }
-        if cfg!(feature = "tree-sitter-c-sharp") {
-            expected.push("cs");
-        }
-        if cfg!(feature = "tree-sitter-cuda") {
-            expected.extend(["cu", "cuh"]);
-        }
-        if cfg!(feature = "tree-sitter-scala") {
-            expected.extend(["sbt", "sc", "scala"]);
-        }
+        // Every enabled grammar routes to a built-in server except assembly,
+        // which claims none.
+        let mut expected: Vec<_> = crate::signatures::languages::supported_extensions()
+            .into_iter()
+            .filter(|extension| {
+                crate::signatures::languages::find_entry(extension)
+                    .is_some_and(|entry| entry.language_id != Some("asm"))
+            })
+            .collect();
         expected.sort_unstable();
         let mut actual: Vec<_> = crate::signatures::languages::supported_extensions()
             .into_iter()
@@ -1594,6 +1609,23 @@ mod tests {
             .collect();
         actual.sort_unstable();
         assert_eq!(actual, expected, "built-in LSP route inventory drift");
+    }
+
+    #[test]
+    fn only_rust_and_go_servers_take_options_as_a_configuration_section() {
+        assert_eq!(
+            super::configuration_section(Some("rust")),
+            Some("rust-analyzer")
+        );
+        assert_eq!(super::configuration_section(Some("go")), Some("gopls"));
+        for language_id in ["typescript", "python", "java", "cpp", "unknown"] {
+            assert_eq!(
+                super::configuration_section(Some(language_id)),
+                None,
+                "{language_id}"
+            );
+        }
+        assert_eq!(super::configuration_section(None), None);
     }
 
     #[test]
@@ -1671,7 +1703,6 @@ mod tests {
         let empty = base.join("empty");
         std::fs::create_dir_all(&empty).expect("empty root");
         assert!(default_server_for_workspace_root(&empty.to_string_lossy(), &options).is_none());
-        let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]
@@ -1697,7 +1728,6 @@ mod tests {
         let empty = root.join("src/nested");
         std::fs::remove_file(empty.join("app.ts")).expect("remove");
         assert!(workspace_root_representative_source(&root.to_string_lossy()).is_none());
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1730,7 +1760,6 @@ mod tests {
         let found = workspace_root_representative_source(&root.to_string_lossy())
             .expect("a src TypeScript source");
         assert!(found.ends_with("src/other.ts"), "{found}");
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1806,7 +1835,7 @@ mod tests {
 
     #[test]
     fn workspace_lsp_config_is_ignored_by_default() {
-        let root = temp_test_root("octocode-engine-untrusted-lsp-config");
+        let root = TmpDir::new();
         write_lsp_config(
             &root,
             r#"{"languageServers":{".ts":{"command":"node","args":["-e","process.exit(99)"],"languageId":"typescript"}}}"#,
@@ -1823,13 +1852,11 @@ mod tests {
             config.args.as_deref(),
             Some(&["-e".to_owned(), "process.exit(99)".to_owned()][..])
         );
-
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn trusted_workspace_lsp_config_rejects_interpreter_eval_launch() {
-        let root = temp_test_root("octocode-engine-trusted-lsp-config-eval");
+        let root = TmpDir::new();
         write_lsp_config(
             &root,
             r#"{"languageServers":{".ts":{"command":"node","args":["-e","process.exit(99)"],"languageId":"typescript"}}}"#,
@@ -1850,13 +1877,11 @@ mod tests {
             config.args.as_deref(),
             Some(&["-e".to_owned(), "process.exit(99)".to_owned()][..])
         );
-
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn explicit_discovery_options_support_arbitrary_extensions() {
-        let root = temp_test_root("octocode-engine-explicit-lsp-config");
+        let root = TmpDir::new();
         std::fs::create_dir_all(&root).expect("create temporary root");
         let config_path = root.join("native-lsp.json");
         std::fs::write(
@@ -1876,7 +1901,6 @@ mod tests {
         .expect("explicit server config");
         assert_eq!(config.command, "custom-php-server");
         assert_eq!(config.language_id.as_deref(), Some("php"));
-        let _ = std::fs::remove_dir_all(root);
     }
 
     /// Settings come from the host's resolved configuration (which includes
@@ -1884,7 +1908,7 @@ mod tests {
     /// in the octocode home.
     #[test]
     fn resolved_settings_and_octocode_home_drive_discovery() {
-        let home = temp_test_root("octocode-engine-resolved-settings");
+        let home = TmpDir::new();
         std::fs::create_dir_all(&home).expect("create home");
         std::fs::write(
             home.join("lsp-servers.json"),
@@ -1892,7 +1916,7 @@ mod tests {
         )
         .expect("write user lsp config");
         let options = LspDiscoveryOptions {
-            octocode_home: Some(home.clone()),
+            octocode_home: Some(home.to_path_buf()),
             ..LspDiscoveryOptions::default()
         };
         // A user entry replaces a built-in server (the retired
@@ -1906,12 +1930,11 @@ mod tests {
         let php = default_server_for_file("demo.php", "/workspace", &options)
             .expect("user server from the octocode home");
         assert_eq!(php.command, "home-php-server");
-        let _ = std::fs::remove_dir_all(home);
     }
 
     #[test]
     fn retired_server_path_env_does_not_override_the_trusted_workspace_config() {
-        let root = temp_test_root("octocode-engine-env-retired-lsp-config");
+        let root = TmpDir::new();
         write_lsp_config(
             &root,
             r#"{"languageServers":{".ts":{"command":"custom-language-server","args":["--stdio"],"languageId":"typescript"}}}"#,
@@ -1932,8 +1955,6 @@ mod tests {
             .expect("default ts server config");
 
         assert_eq!(config.command, "custom-language-server");
-
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1947,7 +1968,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn wraps_non_executable_typescript_cli_with_current_node() {
-        let root = temp_test_root("octocode-engine-ts-cli");
+        let root = TmpDir::new();
         let cli = root
             .join("node_modules")
             .join("typescript-language-server")
@@ -1973,15 +1994,13 @@ mod tests {
             std::fs::canonicalize(&cli).expect("canonicalize temporary cli")
         );
         assert_eq!(args[1], "--stdio");
-
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[cfg(unix)]
     #[test]
     fn resolves_bundled_typescript_server_from_current_dir_for_external_workspace() {
-        let workspace_root = temp_test_root("octocode-engine-external-workspace");
-        let package_root = temp_test_root("octocode-engine-package-root");
+        let workspace_root = TmpDir::new();
+        let package_root = TmpDir::new();
         let cli = package_root
             .join("node_modules")
             .join("typescript-language-server")
@@ -2014,9 +2033,6 @@ mod tests {
         );
         assert_eq!(args[1], "--stdio");
         assert_eq!(source, crate::lsp::types::ServerSource::Workspace);
-
-        let _ = std::fs::remove_dir_all(workspace_root);
-        let _ = std::fs::remove_dir_all(package_root);
     }
 
     /// A scanned checkout's own `node_modules` cannot supply the
@@ -2026,7 +2042,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn workspace_typescript_server_requires_a_trusted_workspace() {
-        let base = temp_test_root("octocode-engine-ts-trust");
+        let base = TmpDir::new();
         let write_cli = |root: &std::path::Path| {
             let cli = root
                 .join("node_modules")
@@ -2160,13 +2176,12 @@ mod tests {
             None,
             "invoked elsewhere, the checkout's server is never trusted"
         );
-        let _ = std::fs::remove_dir_all(base);
     }
 
     #[cfg(unix)]
     #[test]
     fn absolute_non_executable_non_node_command_is_unavailable() {
-        let root = temp_test_root("octocode-engine-non-executable");
+        let root = TmpDir::new();
         let command = root.join("server");
         std::fs::create_dir_all(&root).expect("create temporary command dir");
         std::fs::write(&command, "not executable\n").expect("write temporary command");
@@ -2176,8 +2191,6 @@ mod tests {
         };
         assert!(!command_resolves_to_executable(command_str));
         assert!(!is_command_available(command_str).expect("check command availability"));
-
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[cfg(unix)]
@@ -2219,7 +2232,7 @@ mod tests {
     fn command_probe_timeout_kills_the_whole_process_group() {
         // A rustup-style proxy forks the real binary; killing only the
         // leader would leave that child running after the probe returns.
-        let root = temp_test_root("octocode-engine-probe-group");
+        let root = TmpDir::new();
         std::fs::create_dir_all(&root).expect("root");
         let pid_file = root.join("child.pid");
         let script = format!(
@@ -2245,7 +2258,6 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        let _ = std::fs::remove_dir_all(root);
     }
 
     /// A probe child that calls `setsid` leaves the process group; the
@@ -2260,7 +2272,7 @@ mod tests {
         if !has_python {
             return;
         }
-        let root = temp_test_root("octocode-engine-probe-setsid");
+        let root = TmpDir::new();
         std::fs::create_dir_all(&root).expect("root");
         let pid_file = root.join("escaped.pid");
         let pid_arg = pid_file.to_string_lossy().into_owned();
@@ -2285,7 +2297,6 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2308,7 +2319,7 @@ mod tests {
 
     #[test]
     fn user_rust_analyzer_options_win_over_headless_defaults() {
-        let root = temp_test_root("octocode-engine-ra-user-options");
+        let root = TmpDir::new();
         std::fs::create_dir_all(&root).expect("root");
         let config_path = root.join("lsp.json");
         std::fs::write(
@@ -2335,7 +2346,6 @@ mod tests {
             Some(&json!(false))
         );
         assert_eq!(options.pointer("/checkOnSave"), Some(&json!(false)));
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2463,7 +2473,7 @@ mod tests {
     #[test]
     fn python_route_prefers_basedpyright_then_pyright_then_pylsp() {
         use std::os::unix::fs::PermissionsExt;
-        let root = temp_test_root("octocode-engine-python-route");
+        let root = TmpDir::new();
         let path_dir = root.join("path-bin");
         let workspace = root.join("workspace");
         let workspace_bin = workspace.join("node_modules").join(".bin");
@@ -2506,15 +2516,6 @@ mod tests {
             resolve().map(|(c, _)| PathBuf::from(c)),
             Some(path_dir.join("pyright-langserver"))
         );
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    fn temp_test_root(name: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("{name}-{}-{nanos}", std::process::id()))
     }
 
     fn write_lsp_config(root: &std::path::Path, json: &str) {
@@ -2525,7 +2526,7 @@ mod tests {
 
     #[test]
     fn managed_install_resolves_ahead_of_path_and_behind_an_override() {
-        let home = temp_test_root("octocode-engine-managed-install");
+        let home = TmpDir::new();
         let bin = crate::lsp::managed::cached_server_bin_path(
             &home.join("lsp"),
             "rust-analyzer",
@@ -2548,7 +2549,7 @@ mod tests {
         )
         .expect("marker");
         let mut options = LspDiscoveryOptions {
-            octocode_home: Some(home.clone()),
+            octocode_home: Some(home.to_path_buf()),
             ..LspDiscoveryOptions::default()
         };
         let managed =
@@ -2568,7 +2569,6 @@ mod tests {
             default_server_for_file("src/lib.rs", "/workspace", &options).expect("rust route");
         assert_ne!(PathBuf::from(&unmanaged.command), bin);
         assert_eq!(unmanaged.source, ServerSource::Path);
-        let _ = std::fs::remove_dir_all(home);
     }
 
     /// A built-in server takes the host-derived memory cap; a per-server
@@ -2576,7 +2576,7 @@ mod tests {
     /// override, and `env` of a user entry reaches the server process.
     #[test]
     fn the_memory_cap_is_host_derived_with_a_per_server_override() {
-        let home = temp_test_root("octocode-engine-memory-cap-setting");
+        let home = TmpDir::new();
         std::fs::create_dir_all(&home).expect("create home");
         std::fs::write(
             home.join("lsp-servers.json"),
@@ -2584,7 +2584,7 @@ mod tests {
         )
         .expect("write user lsp config");
         let options = LspDiscoveryOptions {
-            octocode_home: Some(home.clone()),
+            octocode_home: Some(home.to_path_buf()),
             ..LspDiscoveryOptions::default()
         };
         let unset = default_server_for_file("a.go", "/workspace", &options).expect("go");
@@ -2602,7 +2602,6 @@ mod tests {
         );
         let disabled = default_server_for_file("a.lua", "/workspace", &options).expect("lua");
         assert_eq!(disabled.max_memory_mb, Some(0), "0 disables the cap");
-        let _ = std::fs::remove_dir_all(home);
     }
 
     /// typescript-language-server runs headless: no network typings, one
@@ -2680,7 +2679,7 @@ mod tests {
     #[test]
     fn a_trusted_workspace_tsgo_is_preferred_over_tsserver() {
         use std::os::unix::fs::PermissionsExt;
-        let root = temp_test_root("octocode-engine-tsgo-preferred");
+        let root = TmpDir::new();
         let bin = root.join("node_modules").join(".bin");
         std::fs::create_dir_all(&bin).expect("bin dir");
         let tsgo = bin.join("tsgo");
@@ -2737,15 +2736,14 @@ mod tests {
                 .contains("typescript-language-server"),
             "{untrusted:?}"
         );
-        let _ = std::fs::remove_dir_all(root);
     }
 
     /// An install tree whose `node_modules` ships octocode's own tsgo, plus
     /// the anchor file (the executable or addon) inside it.
     #[cfg(unix)]
-    fn install_with_bundled_tsgo(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+    fn install_with_bundled_tsgo() -> (TmpDir, PathBuf, PathBuf) {
         use std::os::unix::fs::PermissionsExt;
-        let install = temp_test_root(name);
+        let install = TmpDir::new();
         let package = install
             .join("node_modules")
             .join("@typescript")
@@ -2772,8 +2770,8 @@ mod tests {
     fn the_bundled_tsgo_serves_typescript_in_an_untrusted_workspace() {
         use super::default_server_for_file_from;
         use std::os::unix::fs::PermissionsExt;
-        let (install, anchor, tsgo) = install_with_bundled_tsgo("octocode-engine-bundled-tsgo");
-        let workspace = temp_test_root("octocode-engine-bundled-tsgo-workspace");
+        let (_install, anchor, tsgo) = install_with_bundled_tsgo();
+        let workspace = TmpDir::new();
         let shipped = workspace.join("node_modules").join(".bin");
         std::fs::create_dir_all(&shipped).expect("bin dir");
         let shipped_tsgo = shipped.join("tsgo");
@@ -2809,8 +2807,6 @@ mod tests {
                 default_server_for_file_from(file, root, &untrusted, Some(&anchor)).expect(file);
             assert_ne!(PathBuf::from(&js.command), tsgo, "{file}");
         }
-        let _ = std::fs::remove_dir_all(install);
-        let _ = std::fs::remove_dir_all(workspace);
     }
 
     /// A trusted workspace's own tsgo (its TypeScript version) still wins
@@ -2820,8 +2816,8 @@ mod tests {
     fn a_trusted_workspace_tsgo_wins_over_the_bundled_one() {
         use super::default_server_for_file_from;
         use std::os::unix::fs::PermissionsExt;
-        let (install, anchor, bundled) = install_with_bundled_tsgo("octocode-engine-tsgo-order");
-        let workspace = temp_test_root("octocode-engine-tsgo-order-workspace");
+        let (_install, anchor, bundled) = install_with_bundled_tsgo();
+        let workspace = TmpDir::new();
         let shipped = workspace.join("node_modules").join(".bin");
         std::fs::create_dir_all(&shipped).expect("bin dir");
         let shipped_tsgo = shipped.join("tsgo");
@@ -2837,8 +2833,6 @@ mod tests {
             default_server_for_file_from("a.ts", root, &trusted, Some(&anchor)).expect("ts");
         assert_eq!(PathBuf::from(&config.command), shipped_tsgo);
         assert_ne!(PathBuf::from(&config.command), bundled);
-        let _ = std::fs::remove_dir_all(install);
-        let _ = std::fs::remove_dir_all(workspace);
     }
 
     /// Without a bundled tsgo the route stays tsserver, and the fallback is
@@ -2902,11 +2896,11 @@ mod tests {
     #[test]
     fn tsserver_is_the_fallback_when_tsgo_is_absent_or_fails() {
         use super::{default_server_for_file_from, typescript_server_fallback_from};
-        let (install, anchor, tsgo) = install_with_bundled_tsgo("octocode-engine-tsgo-fallback");
-        let bare = temp_test_root("octocode-engine-tsgo-absent");
+        let (_install, anchor, tsgo) = install_with_bundled_tsgo();
+        let bare = TmpDir::new();
         std::fs::create_dir_all(&bare).expect("bare install");
         let bare_anchor = bare.join("octocode");
-        let workspace = temp_test_root("octocode-engine-tsgo-fallback-workspace");
+        let workspace = TmpDir::new();
         std::fs::create_dir_all(&workspace).expect("workspace");
         let root = workspace.to_str().expect("utf-8 root");
         let options = LspDiscoveryOptions::default();
@@ -2935,7 +2929,7 @@ mod tests {
             "JavaScript never used tsgo"
         );
 
-        let home = temp_test_root("octocode-engine-tsgo-user-entry");
+        let home = TmpDir::new();
         std::fs::create_dir_all(&home).expect("home");
         std::fs::write(
             home.join("lsp-servers.json"),
@@ -2943,15 +2937,12 @@ mod tests {
         )
         .expect("user config");
         let user = LspDiscoveryOptions {
-            octocode_home: Some(home.clone()),
+            octocode_home: Some(home.to_path_buf()),
             ..LspDiscoveryOptions::default()
         };
         assert!(
             typescript_server_fallback_from("a.ts", root, &user, Some(&anchor)).is_none(),
             "an explicit user entry has no silent fallback"
         );
-        for dir in [install, bare, workspace, home] {
-            let _ = std::fs::remove_dir_all(dir);
-        }
     }
 }

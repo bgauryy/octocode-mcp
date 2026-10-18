@@ -17,7 +17,6 @@ pub(super) struct Chunk {
 /// The candidate chunks of view `text`. `source_lines` maps each view line
 /// to its source line when the view was extracted from `source` (ranges,
 /// matches); chunk edges follow the source's declarations either way.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn chunks(
     text: &str,
     source_lines: Option<&[usize]>,

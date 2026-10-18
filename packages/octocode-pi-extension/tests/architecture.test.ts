@@ -37,7 +37,7 @@ const ALLOWED: Record<string, string[]> = {
   mcp: ['shared'],
   web: ['shared', 'permission'],
   browser: ['shared', 'web', 'permission'],
-  compaction: ['shared', 'files'],
+  compaction: ['shared', 'files', 'permission'],
   ui: ['shared', 'permission'],
   subagents: ['shared', 'mcp', 'team', 'permission'],
   agentdb: ['shared'],

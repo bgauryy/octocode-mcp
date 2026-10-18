@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { closeModels, resolveModel, routeModel, type ModelRef } from '../src/subagents/model.js';
 import { buildAgentArgs } from '../src/subagents/process.js';
 
+const SESSION = { dir: '/s/session', id: 'inky-kraken' };
+
 const available: ModelRef[] = [
   { provider: 'openai', id: 'gpt-5' },
   { provider: 'anthropic', id: 'claude-sonnet-5-5' },
@@ -61,7 +63,7 @@ describe('buildAgentArgs model', () => {
   it('passes the resolved model, and never the profile\'s own unresolved preference', () => {
     const profile = { name: 'p', description: '', prompt: '', model: 'claude-haiku-5-5' };
     const model = (args: string[]) => args[args.indexOf('--model') + 1];
-    expect(model(buildAgentArgs(profile, 'anthropic/claude-haiku-5-5:low', undefined))).toBe('anthropic/claude-haiku-5-5:low');
-    expect(buildAgentArgs(profile, undefined, undefined)).not.toContain('--model');
+    expect(model(buildAgentArgs(profile, 'anthropic/claude-haiku-5-5:low', undefined, undefined, SESSION))).toBe('anthropic/claude-haiku-5-5:low');
+    expect(buildAgentArgs(profile, undefined, undefined, undefined, SESSION)).not.toContain('--model');
   });
 });

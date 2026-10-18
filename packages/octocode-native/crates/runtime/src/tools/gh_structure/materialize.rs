@@ -9,7 +9,6 @@ mod tests;
 
 /// Write this page's files under `location.localPath` (the listed
 /// directory) and return where a continuation resumes, if anywhere.
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn materialize_page<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,

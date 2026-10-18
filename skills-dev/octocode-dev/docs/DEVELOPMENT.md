@@ -80,14 +80,18 @@ A new configuration setting follows [ADDING_CONFIG.md](ADDING_CONFIG.md).
 Run from the repo root. Repo-wide tasks run through `node skills-dev/octocode-dev/scripts/dev.mjs <task>`; the task table is in [SKILL.md](../SKILL.md#task-runner).
 
 - `yarn workspace @octocodeai/octocode-native build:all`: release native binaries for all platforms (clears old binaries first). Root `yarn build:native:all` runs it.
+- `yarn workspace @octocodeai/octocode-native check:target <platform>`: type-check one other platform (cargo-zigbuild or cargo-xwin) without linking; the fast loop for `cfg(windows)`/`cfg(target_os)` code. Details: [PUBLISHING.md](../../../packages/octocode-native/docs/PUBLISHING.md#build).
 - `yarn contracts:regen`: regenerate the tool contract from core.
 
 | Package | Test | Lint / format |
 |---|---|---|
-| native | `test` (scripts + vitest + `test:rust`), `test:rust` alone | `lint` (clippy `-D warnings`), `fmt:rust`, `fmt:rust:check` |
+| native | `test` (scripts + vitest + `test:rust`), `test:rust` alone (nextest), `coverage:rust`, `check:features` | `lint` (clippy `-D warnings`), `fmt:rust`, `fmt:rust:check`, `deny`, `shear` |
 | config | `test`, `check:tool-contract`, `check:config-contract` | `lint` |
-| mcp | `test` | `lint`, `format:check` |
-| octocode, vscode, skill-installer, benchmark | `test` | `lint` |
+| mcp, octocode, vscode | `test` | `lint` (eslint, prettier included), `format` (eslint `--fix`) |
+| chrome-devtools, claude-plugin, codex-plugin | `test` | `lint` (prettier `--check`), `format` (prettier `--write`) |
+| agents-communication, benchmark, mcp-cli, pi-extension | `test` | `lint` |
+
+`$DEV format` runs every workspace `format` script.
 
 ### Tool health
 
@@ -117,7 +121,24 @@ Each tool prints one line, `PASS`/`FAIL`/`SKIP`, with its total and slowest-call
 - Rust integration tests are one binary per crate: `tests/main.rs` declares each `tests/*.rs` as a `mod`.
 - Don't commit local lld or sccache Cargo configuration.
 - One build lane uses the repo's warm `target/`. Parallel lanes share at most three Cargo target directories in total, each in a scratch directory (never `target/<name>`), deleted when done. Cargo's lock serializes builds in one directory, and the same `--features` keeps compiled units shared.
-- Reset a bloated `target/` with `dev.mjs clean:cache` (stale native copies) or `dev.mjs clean` (all build outputs).
+- Reset a bloated `target/` with `dev.mjs clean:cache` (stale native copies) or `dev.mjs clean` (all build outputs). Most of the bloat is `target/debug/incremental`: Cargo keeps one session per crate hash and never removes one when features or the toolchain change; `clean:cache` drops them with our crates and keeps dependencies warm.
+- After a `rust-toolchain.toml` bump, the old toolchain's dependency builds stay in `target/` (about 29 GiB on the 1.99.1 bump). `cargo sweep --toolchains <new-toolchain> .` (cargo-sweep) removes them, `target/platforms/` included, then `clean:cache` drops the stale incremental sessions.
+
+### Rust dev tools
+
+Install the prebuilt binaries once: `cargo binstall cargo-nextest cargo-deny cargo-shear cargo-llvm-cov cargo-hack cargo-mutants bacon` (or `brew install` the same names). rustup installs `llvm-tools` from `rust-toolchain.toml`. Scripts are in `packages/octocode-native`; run them with `yarn workspace @octocodeai/octocode-native <script>`.
+
+| Tool | Script or command | Config | When |
+|---|---|---|---|
+| cargo-nextest | `test:rust` | `.config/nextest.toml` (CI sets `NEXTEST_PROFILE=ci`) | every change; CI |
+| cargo-shear | `shear`: unused or misplaced dependencies, unlinked files, a doctest under `doctest = false` | `[package.metadata.cargo-shear]` | `verify`; CI |
+| cargo-deny | `deny` | `deny.toml` | `verify`; CI |
+| cargo-llvm-cov | `coverage:rust [--html \| --lcov --output-path lcov.info \| --summary-only]` | runs the `test:rust` selections in `target/llvm-cov-target` (about 17 GiB; delete it when done) | before and after test work |
+| cargo-hack | `check:features`: every crate with each feature alone and with none (about 4 min warm) | | after changing `[features]` or `#[cfg(feature)]` code |
+| cargo-mutants | `cargo mutants --in-diff <diff>` or `-f <file>` | `.cargo/mutants.toml` | occasionally, on changed code |
+| bacon | `bacon`, `bacon clippy`, `bacon test`, `bacon test-engine` | `bacon.toml` | edit loop |
+
+`scripts/test-rust-selections.cjs` reads the package and feature selections from `test:rust`; `coverage:rust` and `dev.mjs check:dev-unify` use it, and a script test keeps the `bacon.toml` test jobs equal to them. Library crates set `doctest = false`: nextest runs no doctests, and `shear` fails if one appears.
 
 ## Development environment variables
 

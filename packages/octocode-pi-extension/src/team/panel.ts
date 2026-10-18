@@ -1,16 +1,14 @@
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui';
-import { formatCost, formatDuration, formatTokenUsage } from '../shared/format.js';
+import { formatAgo, formatCost, formatDuration, formatTokenUsage, toolCallCount } from '../shared/format.js';
 import { clip, plural, statusColor } from '../shared/render.js';
+import { STATUS } from '../shared/status.js';
 import type { Team } from './session.js';
 import { GOAL_SHOWN_CHARS } from './identity.js';
 import type { Member, Traffic } from './model.js';
 
 /** The panel widget's key. The widget is static text only: its rows are pure in (members, width, now), so repainting never moves the transcript. */
 const WIDGET_KEY = 'octocode-agents';
-const STATUS_KEY = 'octocode-team';
-/** Footer count of background subagents the panel does not show (the team database is off, or they have not joined yet). */
-const BACKGROUND_KEY = 'octocode-subagents';
 const MAX_ROWS = 6;
 /** Recent messages shown under the agents, picked after filtering out other sessions' traffic. */
 const TRAFFIC_ROWS = 3;
@@ -56,7 +54,7 @@ function cells(member: Member, depth: number, now: number): Record<Column, Cell>
     model: { text: modelLabel(member.model), color: 'muted' },
     state: { text: working ? 'working' : 'idle', color: working ? 'accent' : 'dim' },
     age: { text: formatDuration(now - member.joinedAt), color: 'dim', right: true },
-    tools: { text: plural(member.toolCalls, 'tool'), color: 'dim', right: true },
+    tools: { text: toolCallCount(member.toolCalls), color: 'dim', right: true },
     tokens: { text: formatTokenUsage(member), color: 'dim', right: true },
     cost: { text: formatCost(member), color: 'dim', right: true },
     flags: { text: flags, color: member.pending ? 'warning' : 'dim' },
@@ -108,7 +106,7 @@ export function trafficRow(message: Traffic, now: number, theme: Theme, width: n
   const head = `${theme.fg('accent', '✉')} ${theme.fg('dim', `#${message.id}${message.replyTo ? `↩#${message.replyTo}` : ''}`)} ${theme.fg('text', safe(message.from, 64))} ${theme.fg('dim', '→')} ${theme.fg('text', to)}`;
   const state = theme.fg(STATE_COLOR[message.state], message.state);
   const body = theme.fg('muted', `"${safe(message.text)}"`);
-  return truncateToWidth(` ${head} ${theme.fg('dim', `${formatDuration(now - message.at)} ago ·`)} ${state}  ${body}`, Math.max(1, width), '…');
+  return truncateToWidth(` ${head} ${theme.fg('dim', `${formatAgo(now - message.at)} ·`)} ${state}  ${body}`, Math.max(1, width), '…');
 }
 
 /**
@@ -217,7 +215,7 @@ export class AgentsView {
     if (text === this.backgroundStatus) return;
     this.backgroundStatus = text;
     try {
-      ctx.ui.setStatus(BACKGROUND_KEY, text);
+      ctx.ui.setStatus(STATUS.subagents, text);
     } catch {
       // The session was replaced.
     }
@@ -230,7 +228,7 @@ export class AgentsView {
     if (ctx && this.backgroundStatus !== undefined) {
       this.backgroundStatus = undefined;
       try {
-        ctx.ui.setStatus(BACKGROUND_KEY, undefined);
+        ctx.ui.setStatus(STATUS.subagents, undefined);
       } catch {
         // The session was replaced.
       }
@@ -244,7 +242,7 @@ export class AgentsView {
   private setStatus(ctx: ExtensionContext, text: string | undefined): void {
     if (text === this.status) return;
     this.status = text;
-    ctx.ui.setStatus(STATUS_KEY, text);
+    ctx.ui.setStatus(STATUS.team, text);
   }
 
   private clear(ctx: ExtensionContext): void {
@@ -252,7 +250,7 @@ export class AgentsView {
     this.status = undefined;
     try {
       ctx.ui.setWidget(WIDGET_KEY, undefined);
-      ctx.ui.setStatus(STATUS_KEY, undefined);
+      ctx.ui.setStatus(STATUS.team, undefined);
     } catch {
       // The session was replaced.
     }

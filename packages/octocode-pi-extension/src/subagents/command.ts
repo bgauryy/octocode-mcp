@@ -1,6 +1,8 @@
 import type { ExtensionCommandContext } from '@earendil-works/pi-coding-agent';
 import { say, wordCompletions, type Subcommand } from '../shared/commands.js';
 import { errorMessage } from '../shared/util.js';
+import { UserQuestions, type Ask } from '../team/asks.js';
+import type { Member } from '../team/model.js';
 import { describeMembers } from '../team/routing.js';
 import type { Team } from '../team/session.js';
 import { USER_SENDER } from '../shared/messages.js';
@@ -40,7 +42,10 @@ export function stopBackground(background: Background, id: string, by: string, k
  * `/octocode agents` (aliased as `/agents`) lists the agents; `tell`, `kill` and `merge` act on one. `kill` stops a
  * background subagent, or a foreground one (`foreground`) whose call then returns that the user stopped it.
  */
-export function agentsCommand(team: Team, background: Background, foreground: Background = new Map()): Subcommand {
+export function agentsCommand(team: Team, background: Background, foreground: Background = new Map(), questions = new UserQuestions()): Subcommand {
+  /** Each listed subagent's questions to its parent since it joined, with their answers. */
+  const asksOf = (members: readonly Member[]): Map<string, Ask[]> =>
+    new Map(members.flatMap((member) => (member.parentId ? [[member.id, questions.mark(team.asks(member.id, member.parentId, member.joinedAt))] as const] : [])));
   const running = () => [...background.keys(), ...foreground.keys()];
   const tell = async (args: string, ctx: ExtensionCommandContext, interrupt = false) => {
     const to = args.split(/\s+/, 1)[0] ?? '';
@@ -120,7 +125,8 @@ export function agentsCommand(team: Team, background: Background, foreground: Ba
       if (sub === 'merge') return merge(rest, ctx);
       if (sub) return say(ctx, AGENTS_USAGE, 'warning');
       const { members, error } = team.snapshot();
-      say(ctx, error ? `${error}\n${describeMembers(members, team.id)}` : describeMembers(members, team.id), error ? 'warning' : 'info');
+      const listing = describeMembers(members, team.id, Date.now(), asksOf(members));
+      say(ctx, error ? `${error}\n${listing}` : listing, error ? 'warning' : 'info');
     },
   };
 }

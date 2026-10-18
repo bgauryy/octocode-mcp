@@ -260,6 +260,46 @@ enum QuoteState {
     },
 }
 
+/// The bytes at which `strip_string_aware_comments` and `literal_ranges`
+/// can recognise a construct while outside a string: the first byte of each
+/// raw-string, verbatim-string, here-string, regex, quote-delimiter and (with
+/// `comments`) comment form. Every other byte is ordinary text, so a scan
+/// copies or skips the run up to the next marked byte in one step. Marked
+/// bytes are ASCII or sequence leads, never continuation bytes, so a run
+/// always ends on a char boundary.
+fn construct_starts(rules: &CommentRules, comments: bool) -> [bool; 256] {
+    let mut starts = [false; 256];
+    // Rust raw strings (`r"`, `br"`) and C# verbatim strings (`@"`, `$@"`)
+    // are tried whatever the rules.
+    for byte in *b"rb@$" {
+        starts[usize::from(byte)] = true;
+    }
+    starts[usize::from(b'/')] = rules.regex;
+    for delimiter in effective_delimiters(rules) {
+        starts[usize::from(delimiter.as_bytes()[0])] = true;
+    }
+    if comments {
+        for token in rules
+            .block
+            .iter()
+            .map(|rule| rule.start)
+            .chain(rules.line.iter().map(|rule| rule.token))
+        {
+            starts[usize::from(token.as_bytes()[0])] = true;
+        }
+    }
+    starts
+}
+
+/// The length of the run of ordinary text at `pos`: bytes before the next
+/// marked one (see [`construct_starts`]), or the rest of `bytes`.
+fn ordinary_run(bytes: &[u8], pos: usize, starts: &[bool; 256]) -> usize {
+    bytes[pos..]
+        .iter()
+        .position(|byte| starts[usize::from(*byte)])
+        .unwrap_or(bytes.len() - pos)
+}
+
 pub fn strip_string_aware_comments(content: &str, rules: &CommentRules) -> String {
     let bytes = content.as_bytes();
     let len = bytes.len();
@@ -271,6 +311,7 @@ pub fn strip_string_aware_comments(content: &str, rules: &CommentRules) -> Strin
     // This is loop-invariant, so build it once rather than per Outside-state char.
     let mut sorted_delims: Vec<&'static str> = effective_delimiters(rules).to_vec();
     sorted_delims.sort_by_key(|d| std::cmp::Reverse(d.len()));
+    let starts = construct_starts(rules, true);
 
     while pos < len {
         match &mut qstate {
@@ -304,6 +345,14 @@ pub fn strip_string_aware_comments(content: &str, rules: &CommentRules) -> Strin
             }
             // ── outside strings ───────────────────────────────────────────
             QuoteState::Outside => {
+                // 0. A run of text no construct starts in.
+                let run = ordinary_run(bytes, pos, &starts);
+                if run > 0 {
+                    result.push_str(&content[pos..pos + run]);
+                    pos += run;
+                    continue;
+                }
+
                 // 1. PowerShell here-string
                 if rules.powershell_here_strings
                     && let Some(end_pos) = find_powershell_here_string(content, pos)
@@ -408,6 +457,7 @@ pub fn literal_ranges(content: &str, rules: &CommentRules) -> Vec<(usize, usize)
 
     let mut sorted_delims: Vec<&'static str> = effective_delimiters(rules).to_vec();
     sorted_delims.sort_by_key(|d| std::cmp::Reverse(d.len()));
+    let starts = construct_starts(rules, false);
 
     while pos < len {
         match &mut qstate {
@@ -439,6 +489,11 @@ pub fn literal_ranges(content: &str, rules: &CommentRules) -> Vec<(usize, usize)
                 }
             }
             QuoteState::Outside => {
+                let run = ordinary_run(bytes, pos, &starts);
+                if run > 0 {
+                    pos += run;
+                    continue;
+                }
                 if rules.powershell_here_strings
                     && let Some(end_pos) = find_powershell_here_string(content, pos)
                 {
@@ -876,5 +931,44 @@ mod tests {
     fn literal_ranges_ignores_content_with_no_strings() {
         let rules = rules_for("hash").unwrap();
         assert!(literal_ranges("x = 1\ny = 2", rules).is_empty());
+    }
+
+    /// The scans skip every byte `construct_starts` leaves unmarked, so no
+    /// construct may start at one: for every comment group, at every byte
+    /// of a corpus built from each construct's first bytes and multibyte
+    /// text, none of the recognisers matches at an unmarked byte.
+    #[test]
+    fn no_construct_starts_at_an_unmarked_byte() {
+        let corpus = "x = r#\"raw\"# + br\"b\" @\"v\" $@\"i\" @$\"j\" @'h'\n@\"\nhere\n\"@ /re/g \
+            // line # hash -- sql ; semi ' \" ` \"\"\" ''' /* block */ <!-- html --> {- hs -} \
+            (* ml *) %{ percent } REM rem \u{e9}\u{1f642}\u{4e2d} #! shebang";
+        for (group, rules) in COMMENT_GROUPS {
+            let starts = construct_starts(rules, true);
+            let literal_starts = construct_starts(rules, false);
+            for (pos, byte) in corpus.bytes().enumerate() {
+                if !corpus.is_char_boundary(pos) {
+                    continue;
+                }
+                if !literal_starts[usize::from(byte)] {
+                    assert!(
+                        find_powershell_here_string(corpus, pos).is_none()
+                            && find_rust_raw_string(corpus, pos).is_none()
+                            && find_csharp_verbatim(corpus, pos).is_none()
+                            && find_regex_literal(corpus, pos).is_none()
+                            && !effective_delimiters(rules)
+                                .iter()
+                                .any(|delimiter| corpus[pos..].starts_with(delimiter)),
+                        "{group}: a literal starts at unmarked byte {pos}"
+                    );
+                }
+                if !starts[usize::from(byte)] {
+                    assert!(
+                        find_block_comment(corpus, pos, rules.block).is_none()
+                            && find_line_comment(corpus, pos, rules.line).is_none(),
+                        "{group}: a comment starts at unmarked byte {pos}"
+                    );
+                }
+            }
+        }
     }
 }

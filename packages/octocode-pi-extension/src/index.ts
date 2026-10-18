@@ -6,6 +6,8 @@ import { externalPermissionDialog } from './external/permission-dialog.js';
 import type { ExternalAgents } from './external/manager.js';
 import { EXTERNAL_SENDER, type MessageEnvelope } from './shared/messages.js';
 import { registerAskUser } from './ask/tool.js';
+import { registerArchiveCommand } from './compaction/archive-command.js';
+import { registerArchiveTool } from './compaction/archive-tool.js';
 import { registerCompaction } from './compaction/register.js';
 import { registerReadDedupe } from './files/dedupe.js';
 import { registerBashTool } from './files/bash.js';
@@ -37,7 +39,7 @@ import { registerMemory } from './memory/register.js';
 import { setCurrentSession } from './shared/home.js';
 import { currentCatalog } from './subagents/catalog.js';
 import { registerModelsCommand } from './subagents/models-command.js';
-import { loadProfiles, type AgentProfile } from './subagents/profiles.js';
+import { loadProfiles, profileFileName, type AgentProfile } from './subagents/profiles.js';
 import { maxSubagents } from './subagents/claim.js';
 import { registerAgentTool, type AgentControl } from './subagents/tool.js';
 import { spilledMessage, Team } from './team/session.js';
@@ -50,6 +52,7 @@ import { Delivery } from './ui/delivery.js';
 import { BrowserTool, registerBrowserTool } from './browser/tool.js';
 import { registerWebTool } from './web/web.js';
 import { interactive } from './shared/interactive.js';
+import { registerStaleBundleWarning } from './shared/stale-bundle.js';
 import { windowsTree } from './shared/winhelper.js';
 
 /**
@@ -83,12 +86,15 @@ export default function octocode(pi: ExtensionAPI): void {
   const guard = new FileGuard();
   const team = new Team(pi);
   let profiles = new Map<string, AgentProfile>();
+  /** Why each profile file was refused at load (`loadProfiles`' `onSkip`), by file name: the `agent` tool names it for an unknown profile. */
+  let refused = new Map<string, string>();
   const octocodeMcp = registerOctocodeMcp(pi, packageVersion());
   registerMcpCommand(commands, octocodeMcp);
   // One permission state per session: the mode, its grants, and the provenance tripwire's index.
   const permission = new Permission({ pi, isSubagent, agent: () => team.id });
   const annotations = (name: string) => pi.getAllTools().find((tool) => tool.name === name)?.annotations;
   const provenance = createProvenance({ annotations });
+  registerStaleBundleWarning(pi, { isSubagent });
 
   pi.on('session_start', async (_event, ctx) => {
     // Before anything writes output: spilled results, bash logs and checkpoints go to this session's folder.
@@ -138,7 +144,7 @@ export default function octocode(pi: ExtensionAPI): void {
     registerPermissionCommand(pi, commands, permission, () => provenance.size());
     registerTrustCommand(commands);
     registerAskUser(pi);
-    agents = registerAgentTool(pi, () => profiles, team, permission);
+    agents = registerAgentTool(pi, () => profiles, team, permission, () => refused);
     commands.add('agents', agents.command);
     registerModelsCommand(commands, () => profiles);
   }
@@ -183,6 +189,8 @@ export default function octocode(pi: ExtensionAPI): void {
   // After the hooks (handlers run in registration order): a PreCompact hook runs before Octocode adds its `file` tool's
   // paths to the file lists Pi carries into its summary. Pi writes the summary itself.
   registerCompaction(pi, guard, isSubagent);
+  registerArchiveCommand(commands);
+  registerArchiveTool(pi);
   // After the file guard's `tool_result` handler (`registerFileTool`), which must digest the text a read returned.
   registerReadDedupe(pi);
   registerHooksCommand(commands, hooks);
@@ -203,7 +211,11 @@ export default function octocode(pi: ExtensionAPI): void {
     // Reads in a resumed, reloaded or forked session's context still count; a new session starts empty.
     guard.restore(contextReads(ctx));
     const skipped: string[] = [];
-    profiles = loadProfiles(ctx.cwd, undefined, await projectTrust(ctx), process.env, (file, error) => skipped.push(`${file}: ${errorMessage(error)}`));
+    refused = new Map();
+    profiles = loadProfiles(ctx.cwd, undefined, await projectTrust(ctx), process.env, (file, error) => {
+      skipped.push(`${file}: ${errorMessage(error)}`);
+      refused.set(profileFileName(file), errorMessage(error));
+    });
     // After the profiles: the main session leaves `browser` to the profiles that carry it.
     turn.settleTools();
     if (skipped.length > 0 && interactive(ctx, isSubagent)) notify(ctx.ui, `Skipped subagent profiles that could not be read:\n${skipped.join('\n')}`, 'warning');
@@ -267,13 +279,14 @@ export default function octocode(pi: ExtensionAPI): void {
     return undefined;
   });
 
-  pi.on('session_shutdown', async (event, ctx) => {
+  pi.on('session_shutdown', async (_event, ctx) => {
     permission.shutdown(ctx);
     // Rows of the old session that were still running would otherwise tick every second for the life of the process.
     stopRowTimers();
     await api?.stop();
     await external?.reset();
-    if (event?.reason === 'quit') closeSharedAgentDb();
+    // Every reason: a new, resumed, forked or reloaded session imports this module again, so this connection would never be reused.
+    closeSharedAgentDb();
     // After the subagents and bash jobs (their own shutdown handlers ran first): the helper that holds their Windows job objects can end.
     await windowsTree.stopAll();
   });

@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 //! One shell exit code per tool-call outcome: 0 success (a next page is still
 //! success), 1 empty, 2 rejected input, 3 not found, 4
 //! authentication/permission, 5 execution failure, 7 rate limited, 130

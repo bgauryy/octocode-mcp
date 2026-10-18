@@ -1,6 +1,5 @@
-import { formatDuration } from '../shared/format.js';
+import { formatAgo, formatSpan } from '../shared/format.js';
 import { visibleControls } from '../shared/sanitize.js';
-import { DAY_MS, HOUR_MS } from '../shared/util.js';
 import { refText } from './row.js';
 import { priorityName, STATES, type BacklogStore, type Item, type Note, type State } from './store.js';
 
@@ -24,16 +23,7 @@ export function itemLine(item: Item, self?: string, parents?: ReadonlySet<string
   return `${item.ref} [${item.state} ${priorityName(item.priority)}] ${visibleControls(item.title)}${tags}${fromText(item)}${holder(item, self, parents)}`;
 }
 
-/** A compact span: `45s`, `12m`, `5h20m`, `3d4h`. */
-function span(ms: number): string {
-  const safe = Math.max(0, ms);
-  if (safe < DAY_MS) return formatDuration(safe).replace(/(\d+m)\d+s$/, '$1');
-  const days = Math.floor(safe / DAY_MS);
-  const hours = Math.floor((safe % DAY_MS) / HOUR_MS);
-  return `${days}d${hours ? `${hours}h` : ''}`;
-}
-
-const ago = (at: number, now: number) => `${span(now - at)} ago`;
+const ago = (at: number, now: number) => formatAgo(now - at);
 
 /** Local wall-clock time, `2026-10-12 21:03`. */
 function stamp(at: number): string {
@@ -54,7 +44,7 @@ function timeline(item: Item, now: number, self?: string, parents?: ReadonlySet<
   const parts = [`created ${stamp(item.createdAt)} (${ago(item.createdAt, now)}) by ${visibleControls(item.createdBy)}`];
   if (item.startedAt) parts.push(`claimed ${ago(item.startedAt, now)}${item.state === 'done' ? '' : heldBy}`);
   else if (item.assignee && item.state !== 'done') parts.push(`assignee ${who(item.assignee, self, parents)}`);
-  if (item.doneAt) parts.push(`done ${ago(item.doneAt, now)}${item.startedAt && item.startedAt <= item.doneAt ? ` (took ${span(item.doneAt - item.startedAt)})` : ''}${heldBy}`);
+  if (item.doneAt) parts.push(`done ${ago(item.doneAt, now)}${item.startedAt && item.startedAt <= item.doneAt ? ` (took ${formatSpan(item.doneAt - item.startedAt)})` : ''}${heldBy}`);
   if (item.updatedAt !== item.createdAt) parts.push(`updated ${ago(item.updatedAt, now)}`);
   return parts;
 }

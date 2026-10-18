@@ -9,7 +9,7 @@
 //! input.
 
 use super::LspSearchQuery;
-use super::failure::empty;
+use super::failure::{empty, offer_next_page};
 use super::render::{
     PageCut, as_array, document_symbol_rows, flatten_document_symbol, page_window, paginate,
     plain_sizes, read_row_cursor, symbol_kind_name, uri_to_path,
@@ -165,7 +165,7 @@ pub(super) async fn salted_locations(
             .fold(0usize, |sum, size| sum.saturating_add(*size));
         // Avoid materializing an oversized candidate just to measure it.
         if full_budget > budget && response_window.is_some_and(|window| full_budget <= window) {
-            let (_, pagination) = page_window(
+            let (_, pagination, _) = page_window(
                 1,
                 &PageCut {
                     page_size: None,
@@ -188,7 +188,7 @@ pub(super) async fn salted_locations(
             }
         }
     }
-    let (page, pagination) = paginate(
+    let (page, pagination, next_page) = paginate(
         &entries,
         query.page().unwrap_or(1),
         &PageCut {
@@ -221,6 +221,7 @@ pub(super) async fn salted_locations(
         ("matches", json!(page))
     };
     let mut row = location_payload(kind, provider, key, rows, &locations, pagination);
+    offer_next_page(query, &mut row, next_page);
     // A clipped body is a partial row with its reason; the reads reach the
     // omitted lines.
     if !declaration_reads.is_empty() {
@@ -766,7 +767,7 @@ pub(super) fn salted_items_payload(
         );
     }
     let sizes = sizes(&raw_items);
-    let (page, pagination) = paginate(
+    let (page, pagination, next_page) = paginate(
         &raw_items,
         query.page().unwrap_or(1),
         &PageCut {
@@ -777,12 +778,14 @@ pub(super) fn salted_items_payload(
             resume: resume_at(query),
         },
     );
-    json!({
+    let mut row = json!({
         "kind": kind,
         "matches": page,
         "lsp": { "serverAvailable": true },
         "pagination": pagination
-    })
+    });
+    offer_next_page(query, &mut row, next_page);
+    row
 }
 
 fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget: usize) -> Value {
@@ -812,7 +815,7 @@ fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget:
             )) + 1
         })
         .collect::<Vec<_>>();
-    let (window, pagination) = page_window(
+    let (window, pagination, next_page) = page_window(
         query.page().unwrap_or(1),
         &PageCut {
             page_size: query.page_size(),
@@ -837,6 +840,7 @@ fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget:
         },
         "pagination": pagination
     });
+    offer_next_page(query, &mut row, next_page);
     if let (Some(path), Some(read)) = (query.path(), outline_read(&page)) {
         row["next"]["read"] = crate::tools::result::Continuation::input(
             ToolId::LocalFetch,

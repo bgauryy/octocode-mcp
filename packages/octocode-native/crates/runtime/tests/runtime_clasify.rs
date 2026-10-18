@@ -1,8 +1,7 @@
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 //! Public clasify end to end: JEV questions over a literal state or a source
 //! captured through the authorized readers, answered by a mock provider.
 
-use crate::support::{Run as _, Workspace, provider_runtime};
+use crate::support::{Run as _, Workspace, clasify_runtime, provider_env};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -167,7 +166,7 @@ async fn public_clasify_requires_beta_and_a_nonblank_key_independently() {
 async fn configured_clasify_is_available_without_contacting_the_provider() {
     let server = provider(0).await;
     let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     assert!(runtime.is_available("clasify"));
     runtime.close().await;
 }
@@ -176,7 +175,7 @@ async fn configured_clasify_is_available_without_contacting_the_provider() {
 async fn a_state_row_sends_the_questions_unchanged_and_returns_provider_answers() {
     let server = provider(1).await;
     let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let mut row = state_row();
     row["questions"] = json!({
         "restart": {"type":"noul","instructions":{"question":"Requires `action`?","action":"restart"},
@@ -247,12 +246,10 @@ async fn a_state_row_sends_the_questions_unchanged_and_returns_provider_answers(
 async fn a_row_model_and_the_configured_model_reach_the_provider() {
     let server = provider(2).await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("OCTOCODE_CLASSIFICATION_MODEL", "jev-1.13.0".into()),
-    ]);
+    let runtime = workspace.runtime(&provider_env(
+        &server,
+        &[("OCTOCODE_CLASSIFICATION_MODEL", "jev-1.13.0".into())],
+    ));
     let mut pinned = state_row();
     pinned["id"] = json!("pinned");
     pinned["model"] = json!("jev-1.14.0");
@@ -271,7 +268,7 @@ async fn a_row_model_and_the_configured_model_reach_the_provider() {
 async fn an_identical_evaluation_replays_without_a_provider_request() {
     let server = provider(2).await;
     let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let first = clasify(&runtime, vec![state_row()]).await;
     let again = clasify(&runtime, vec![state_row()]).await;
     assert!(first["queries"][0].get("replayed").is_none());
@@ -294,7 +291,7 @@ async fn an_identical_evaluation_replays_without_a_provider_request() {
 async fn identical_rows_in_one_call_share_one_provider_request() {
     let server = provider(1).await;
     let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let mut second = state_row();
     second["id"] = json!("again");
     let out = clasify(&runtime, vec![state_row(), second]).await;
@@ -314,14 +311,7 @@ async fn identical_rows_in_one_call_share_one_provider_request() {
 async fn persistent_judgments_serve_a_fresh_runtime_and_memory_mode_does_not() {
     let server = provider(3).await;
     let workspace = Workspace::new();
-    let env = |mode: &str| {
-        vec![
-            ("OCTOCODE_BETA", "true".into()),
-            ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-            ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-            ("OCTOCODE_STORAGE_MODE", mode.to_owned()),
-        ]
-    };
+    let env = |mode: &str| provider_env(&server, &[("OCTOCODE_STORAGE_MODE", mode.to_owned())]);
     for (mode, replayed) in [
         ("persistent", None),
         ("persistent", Some(true)),
@@ -352,7 +342,7 @@ async fn a_local_source_judges_exactly_its_ranges_and_leads_to_the_same_read() {
         .map(|n| format!("line {n} {}\n", if n == 30 { "OUTSIDE" } else { "inside" }))
         .collect::<String>();
     workspace.write("docs/guide.md", &body);
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let out = clasify(
         &runtime,
         vec![json!({
@@ -405,7 +395,7 @@ async fn a_multi_page_capture_keeps_disjoint_ranges_on_every_page() {
         })
         .collect::<String>();
     workspace.write("data/rows.txt", &body);
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let out = clasify(
         &runtime,
         vec![json!({
@@ -438,7 +428,7 @@ async fn the_read_lead_returns_the_classified_capture() {
     let server = provider(1).await;
     let workspace = Workspace::new();
     workspace.write("src/a.rs", "fn a() {}\nfn b() {}\nfn c() {}\n");
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let out = clasify(
         &runtime,
         vec![json!({
@@ -486,7 +476,7 @@ async fn an_oversized_or_missing_source_fails_its_row_without_provider_work() {
         "big.txt",
         "x".repeat(80) + &"\nfiller line of text".repeat(3000),
     );
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let out = clasify(
         &runtime,
         vec![
@@ -550,12 +540,10 @@ async fn a_github_source_reads_its_requested_ref_and_pins_the_lead_to_that_commi
             .await;
     }
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", provider.uri()),
-        ("GITHUB_API_URL", format!("{}/api/v3", github.uri())),
-    ]);
+    let runtime = workspace.runtime(&provider_env(
+        &provider,
+        &[("GITHUB_API_URL", format!("{}/api/v3", github.uri()))],
+    ));
     let row = |reference: &str| {
         json!({"id":reference,"source":{"tool":"ghGetFileContent","query":{
             "owner":"a","repo":"b","path":"src/lib.rs","ref":reference,"fullContent":true}},
@@ -591,12 +579,10 @@ async fn a_github_source_reads_its_requested_ref_and_pins_the_lead_to_that_commi
 async fn a_disabled_reader_is_rejected_at_validation_before_any_work() {
     let server = provider(0).await;
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ("DISABLE_TOOLS", "localFetch".into()),
-    ]);
+    let runtime = workspace.runtime(&provider_env(
+        &server,
+        &[("DISABLE_TOOLS", "localFetch".into())],
+    ));
     let error = runtime
         .run(
             "disabled-reader".into(),
@@ -622,7 +608,7 @@ async fn a_disabled_reader_is_rejected_at_validation_before_any_work() {
 async fn removed_matrix_input_is_rejected_not_converted() {
     let server = provider(0).await;
     let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     for legacy in [
         json!({"resources":[{"value":"x"}],"questions":[{"type":"yesno","ask":"Relevant?"}]}),
         json!({"state":"x","questions":{"q":{"type":"locate","instructions":"Where?"}}}),
@@ -658,7 +644,7 @@ async fn a_provider_failure_fails_the_row_and_the_runtime_recovers() {
         .mount(&server)
         .await;
     let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let failed = clasify(&runtime, vec![state_row()]).await;
     assert_eq!(
         failed["queries"][0]["error"]["errorCode"], "classificationProviderError",
@@ -687,7 +673,7 @@ async fn a_provider_failure_keeps_the_pinned_source_inspection_call() {
         "src/evidence.txt",
         "RECOVERY_SOURCE_SENTINEL applies after restart.\n",
     );
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let out = clasify(
         &runtime,
         vec![json!({
@@ -725,7 +711,7 @@ async fn a_provider_failure_keeps_the_pinned_source_inspection_call() {
 async fn clasify_pages_complete_answers_once_and_replays_without_inference() {
     let server = provider(3).await;
     let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let labels: serde_json::Map<_, _> = (0..64)
         .map(|index| (format!("label{index:02}"), json!("criterion")))
         .collect();
@@ -847,14 +833,7 @@ async fn a_selection_past_its_deadline_withholds_bodies_and_recovers() {
             },
             ..crate::support::PROVIDER_LIMITS
         };
-        let runtime = workspace.runtime_with(
-            &[
-                ("OCTOCODE_BETA", "true".into()),
-                ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-                ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-            ],
-            limits,
-        );
+        let runtime = workspace.runtime_with(&provider_env(&server, &[]), limits);
         let query = json!({"path": file, "clasifyContext":{"classifiers":["Does this state the cancellation rule?"]}});
         async move {
             let row = crate::support::run(&runtime, "localFetch", query, &[]).await;
@@ -928,7 +907,7 @@ async fn a_provider_that_is_down_under_clasify_context_returns_the_unfiltered_hi
         .await;
     let workspace = Workspace::new();
     let file = workspace.write("src/a.rs", "fn recovery() {}\nfn other() { recovery(); }\n");
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let row = crate::support::run(
         &runtime,
         "localSearch",
@@ -997,14 +976,10 @@ async fn a_provider_that_is_down_under_clasify_context_shows_reads_and_code_page
         .await;
     let workspace = Workspace::new();
     let file = workspace.write("src/a.rs", body);
-    let runtime = workspace.runtime_with(
-        &[
-            ("OCTOCODE_BETA", "true".into()),
-            ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-            ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-            ("GITHUB_API_URL", format!("{}/api/v3", github.uri())),
-        ],
-        crate::support::PROVIDER_LIMITS,
+    let runtime = clasify_runtime(
+        &workspace,
+        &server,
+        &[("GITHUB_API_URL", format!("{}/api/v3", github.uri()))],
     );
     let context = json!({"classifiers": ["Does it add hints?"]});
     for (tool, query, shown) in [
@@ -1062,7 +1037,7 @@ async fn a_refused_credential_under_clasify_context_fails_the_row_with_its_error
         .await;
     let workspace = Workspace::new();
     let file = workspace.write("src/a.rs", "fn recovery() {}\nfn other() { recovery(); }\n");
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = clasify_runtime(&workspace, &server, &[]);
     let row = crate::support::run(
         &runtime,
         "localSearch",

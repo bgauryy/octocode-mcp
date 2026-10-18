@@ -48,17 +48,15 @@ pub(super) fn validate_github_search_queries(
             GithubSearchKind::Code => (
                 has_terms("keywords")
                     || has_terms("extensions")
-                    || ["path", "filename", "language"]
-                        .iter()
-                        .any(|field| has_text(field)),
-                "ghSearchCode needs keywords or a path, extensions, filename, or language filter",
+                    || ["path", "filename"].iter().any(|field| has_text(field)),
+                "ghSearchCode needs keywords or a path, extensions, or filename filter",
             ),
             GithubSearchKind::Repositories => (
                 has_terms("keywords")
                     || has_terms("topics")
                     || has_text("owner")
                     || REPO_SEARCH_FILTERS.iter().any(|field| has_text(field))
-                    || query.get("archived").is_some_and(Value::is_boolean),
+                    || query.get("includeArchived").is_some_and(Value::is_boolean),
                 "ghSearchRepo needs keywords, topics, owner, or a filter",
             ),
         };
@@ -140,6 +138,31 @@ mod tests {
             json!({"queries":[{"owner":"o","repo":"r","keywords":["x"],"language":"rust"}]}),
         )
         .expect("filters beside owner+repo search inside it");
+    }
+
+    /// The runnable-constraint rule reads the contract's own filters: a
+    /// repository search may be bounded by `includeArchived` alone (the
+    /// retired `archived` is no field), and the code-search message offers
+    /// only filters the tool has (it has no `language`).
+    #[test]
+    fn runnable_constraints_name_the_tools_real_filters() {
+        validate(
+            "ghSearchRepo",
+            json!({"queries":[{"includeArchived":true}]}),
+        )
+        .expect("includeArchived is a repository filter");
+        let error = validate(
+            "ghSearchCode",
+            json!({"queries":[{"owner":"o","repo":"r"}]}),
+        )
+        .expect_err("a repository alone does not bound a code search");
+        let message = &error
+            .issues
+            .iter()
+            .find(|issue| issue.rule_id == "gh-search.runnable-constraint")
+            .expect("constraint issue")
+            .message;
+        assert!(!message.contains("language"), "{message}");
     }
 
     /// A malformed repository date or count names the accepted forms (the

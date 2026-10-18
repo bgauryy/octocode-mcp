@@ -114,7 +114,7 @@ disclosure instead of offering an unreachable page.
 
 The engine's `scan_budget` holds the time and walk budget of an unbounded scan (no caller `maxFiles`): it stops at a chunk boundary past the budget and returns the walk-order index to resume from, and `lsp/module_path` anchors bundled language-server lookup at the loaded module (the N-API addon or the CLI binary), not at `current_exe()`, which is `node` under MCP.
 
-`crates/engine` is consumed as a Rust library with its default grammar set. PCRE2 and embedded ast-grep rewrite are unconditional; only `tree-sitter-cuda` is outside the default build. It exposes reusable algorithms, not public policy, and has no N-API surface; `crates/runtime-napi` does not depend on it. Engine errors carry a `reason` and an `ErrorKind`.
+`crates/engine` is consumed as a Rust library with its default grammar set. PCRE2 and embedded ast-grep rewrite are unconditional, and the default build includes every grammar. It exposes reusable algorithms, not public policy, and has no N-API surface; `crates/runtime-napi` does not depend on it. Engine errors carry a `reason` and an `ErrorKind`.
 
 Tension: the engine is described as algorithms, not policy, yet it owns the language-server pool and its process IO (`lsp/pool.rs`, `lsp/client.rs`). Those stay in the engine so the CLI daemon and the N-API addon share one pool; moving them out is a design decision, not a cleanup.
 
@@ -171,7 +171,7 @@ Config remains the shared home/dotenv policy owner; core contracts are unchanged
 
 ## Language capability ownership
 
-`crates/engine/src/signatures/languages.rs` is the sole native grammar inventory. Structural search/rewrite, signatures, graph facts, syntax inspection, directory language filters, and LSP grammar adapters derive from that registry; built-in language-server routing comes from a separate server table (`lsp/config.rs`). Counts, the optional CUDA grammar, and per-language coverage: [SUPPORTED_LANGUAGES_AND_FEATURES.md](docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md). YAML rule parsing is configuration syntax, not YAML source support.
+`crates/engine/src/signatures/languages.rs` is the sole native grammar inventory. Structural search/rewrite, signatures, graph facts, syntax inspection, directory language filters, and LSP grammar adapters derive from that registry; built-in language-server routing comes from a separate server table (`lsp/config.rs`). Counts, grammar features, and per-language coverage: [SUPPORTED_LANGUAGES_AND_FEATURES.md](docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md). YAML rule parsing is configuration syntax, not YAML source support.
 
 `engine::lsp::managed` owns the pinned server manifest and the verified install layout `<home>/lsp/<server>/<tag>/<bin>` with a `.ok` marker; the CLI only downloads and installs. Route resolution order is in [LSP_SERVER_LIFECYCLE.md](docs/engine/LSP_SERVER_LIFECYCLE.md#resolution). Engine LSP discovery reads no `OCTOCODE_*` process environment; the runtime passes resolved options.
 

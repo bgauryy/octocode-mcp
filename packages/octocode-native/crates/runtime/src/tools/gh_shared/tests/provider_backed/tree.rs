@@ -42,8 +42,21 @@ async fn tree_pattern_finds_paths_by_name_at_any_depth() {
     assert_eq!(bare.data["summary"]["files"], 2, "{}", bare.data);
     let none = run(&server, find("**/nope.py")).await.expect("no match");
     assert_eq!(none.status, Some("empty"));
-    // The empty status is the fact; the description carries the advice.
+    // The empty status is the fact; the broader listing of the same commit
+    // without the globs shows what the tree holds.
     assert!(none.data.get("hints").is_none(), "{}", none.data);
+    assert_eq!(
+        none.data["next"]["broadenSearch"]["query"]["queries"],
+        json!([{"owner":"a","repo":"b","ref":TREE_SHA}]),
+        "{}",
+        none.data
+    );
+    // `include` matches relative to `path`: under `starlette` a glob that
+    // repeats it names a `starlette/starlette/…` path.
+    let mut under = find("starlette/routing.py");
+    under["path"] = json!("starlette");
+    let under = run(&server, under).await.expect("path-anchored glob");
+    assert_eq!(under.status, Some("empty"), "{}", under.data);
     let invalid = run(&server, find("src/[")).await.expect_err("bad glob");
     assert_eq!(invalid.kind, ProviderErrorKind::Validation);
 }
@@ -270,7 +283,7 @@ async fn a_one_level_listing_types_symlinks_like_a_deep_one() {
         "{}",
         nested.data
     );
-    assert_eq!(nested.data["omitted"], json!({"link.rs (symlink)":1}));
+    assert_eq!(nested.data["omitted"], json!({"src/link.rs (symlink)":1}));
 }
 
 #[tokio::test]

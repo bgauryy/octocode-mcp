@@ -142,7 +142,6 @@ pub(crate) struct Evaluator {
 }
 
 impl Evaluator {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         key: Option<SecretString>,
         base_url: String,

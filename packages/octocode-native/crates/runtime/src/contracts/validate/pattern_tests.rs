@@ -76,3 +76,27 @@ fn continuation_queries_reject_non_ecmascript_owners_without_mutating_output() {
         assert_eq!(serde_json::to_vec(&output).expect("wire bytes"), before);
     }
 }
+
+/// A short pattern is the expected form, named with its field: the field's
+/// description is usage prose and stays out of the error. A pattern too long
+/// to read gives the field's note of the accepted forms instead.
+#[test]
+fn a_pattern_error_names_the_field_and_its_form_not_its_usage_prose() {
+    let message = |pattern: &str, note: &str| {
+        let schema = json!({"type":"object","properties":{"owner":{
+            "type":"string","pattern":pattern,"description":note}}});
+        let mut value = json!({"owner":"a b"});
+        let error = validate_input_schema(&schema, &schema, &mut value, &mut Vec::new())
+            .expect_err("pattern");
+        error.issues[0].message.clone()
+    };
+    assert_eq!(
+        message(r"^[\w.][\w.-]*$", "User or org; alone: its public repos."),
+        r#""a b" is not a valid owner: it must match ^[\w.][\w.-]*$"#
+    );
+    let long = format!("^(?:{})$", "[a-z]+|".repeat(10));
+    assert_eq!(
+        message(&long, r#"Forms: "10..50"."#),
+        r#""a b" does not match the expected form: Forms: "10..50"."#
+    );
+}

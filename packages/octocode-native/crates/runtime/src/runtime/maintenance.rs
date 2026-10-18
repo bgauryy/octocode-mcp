@@ -50,10 +50,7 @@ pub fn run_if_due(home: &Path, capture_ttl: Duration) -> bool {
         &crate::tools::source_capture::url::capture_root(home),
         capture_ttl,
     );
-    let epoch = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let epoch = crate::civil_date::unix_secs();
     let _ = fs::write(marker, epoch.to_string());
     true
 }

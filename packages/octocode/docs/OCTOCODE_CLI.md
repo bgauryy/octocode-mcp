@@ -351,11 +351,18 @@ state. Links to external development checkouts are left intact.
 
 ## Output and exit codes
 
-Tools and `graph` print readable text on a terminal and one JSON line on a pipe;
-`--json` forces JSON on a terminal. Errors follow the output: the
-`{"error":"…","errorCode":"…"}` envelope on stdout in JSON mode (plus `details`
-when there are repair steps), text on stderr otherwise. A mistyped command gets
-the same envelope. `NO_COLOR` disables color. If the npm launcher cannot resolve or start the
+Tools and `graph` print readable text on a terminal and JSON on a pipe;
+`schema` always prints JSON, and `--json` makes every command print JSON. JSON is
+indented on a terminal and one compact line on a pipe.
+
+Errors follow the output: the `{"error":"…","errorCode":"…"}` envelope on stdout
+in JSON mode (plus `details` when there are repair steps), text on stderr
+otherwise. Every command, `skill` included, uses this envelope. A mistyped command
+or flag gets it too: `error` is the parser's first line, and `details` keeps the
+rest, such as possible values, the did-you-mean tip and usage. When a pipe, not
+`--json`, chose JSON and stderr is a terminal, the error text is also written to
+stderr, so `octocode … | jq` still shows why a call failed; stdout is unchanged.
+`NO_COLOR` disables color. If the npm launcher cannot resolve or start the
 native binary, it reports the startup failure on stderr and exits `5`.
 
 ### Exit codes

@@ -15,6 +15,7 @@ use super::format::{
 use super::workspace::{Declared, Workspace};
 use crate::tools::ast_graph::edges::Load;
 use crate::tools::ast_graph::types::{BuiltGraph, Declaration, FileFacts};
+use octocode_engine::signatures::TYPE_DECLARATION_KINDS;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Detail of a file → file `contains` edge: a Rust `mod` declaration.
@@ -35,8 +36,6 @@ const NON_CALLABLE: &[&str] = &[
     "enum",
     "label",
 ];
-/// Declarations an `extends`/`implements` clause can name.
-const TYPE_KINDS: &[&str] = &["class", "interface", "struct", "trait", "type", "enum"];
 /// Method names nearly every type defines (trait/protocol conventions): a
 /// graph-wide unique match on `expr.name()` would be a coincidence.
 const COMMON_METHODS: &[&str] = &[
@@ -950,7 +949,7 @@ impl<'a> Projector<'a> {
             symbols
                 .symbol_kinds
                 .get(&id)
-                .is_some_and(|kind| TYPE_KINDS.contains(kind))
+                .is_some_and(|kind| TYPE_DECLARATION_KINDS.contains(kind))
         };
         let mut calls = CallStats::default();
         let mut linked = Vec::<PendingEdge>::new();

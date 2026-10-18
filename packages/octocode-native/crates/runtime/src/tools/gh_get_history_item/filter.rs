@@ -3,6 +3,7 @@
 use super::HistoryItemRequest;
 use super::inventory::*;
 use super::util::{str_at, usize_at};
+use crate::tools::num::usize_of;
 use globset::{GlobBuilder, GlobMatcher};
 use serde_json::Value;
 
@@ -203,7 +204,7 @@ impl FileScope {
                     .flat_map(|status| status.iter())
                     .map(ToString::to_string)
                     .collect::<Vec<_>>(),
-                min_changes.map(|n| usize::try_from(n.get()).unwrap_or(usize::MAX)),
+                min_changes.map(|n| usize_of(n.get())),
             ),
             _ => (Vec::new(), None),
         };

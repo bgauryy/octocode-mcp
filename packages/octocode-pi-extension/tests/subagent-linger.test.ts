@@ -195,8 +195,7 @@ describe('a lingering background subagent', () => {
     }
   }, 30_000);
 
-  it('saves its conversation under its own name when lingering is on, and stays ephemeral otherwise', () => {
-    expect(buildAgentArgs(undefined, undefined, undefined, undefined)).toContain('--no-session');
+  it('saves every child\'s conversation under its own name, lingering or not: only a lingering one is resumable', () => {
     const args = buildAgentArgs(undefined, undefined, undefined, undefined, { dir: '/s/session', id: 'inky-kraken' });
     expect(args).not.toContain('--no-session');
     expect(args.join(' ')).toContain('--session-dir /s/session --session-id inky-kraken');
@@ -237,7 +236,8 @@ describe('a lingering background subagent', () => {
     const off = setup();
     const id = await off.start('linger default');
     await vi.waitFor(() => expect(off.reports()).toHaveLength(1), { timeout: 10_000 });
-    expect(off.reports()[0]).toContain('--no-session');
+    expect(off.reports()[0]).toContain('--session-dir');
+    expect(off.reports()[0]).not.toContain('--no-session');
     expect((await off.team.send(id, 'linger again', { replyRequired: false }))).toEqual({ error: expect.stringMatching(/has finished/) });
     off.team.stop();
   }, 30_000);

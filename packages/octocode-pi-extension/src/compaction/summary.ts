@@ -1,10 +1,13 @@
 import type { Api, Context, Model, SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { compact, type ExtensionAPI, type ExtensionContext, type SessionBeforeCompactEvent, type SessionBeforeCompactResult, type SessionEntry } from '@earendil-works/pi-coding-agent';
 import { clearedResults } from '../files/reads.js';
+import { nextSegment } from '../shared/archive.js';
 import { tildePath } from '../shared/home.js';
 import { CHARS_PER_TOKEN } from '../shared/tokens.js';
 import { contentText, cutText, errorMessage, escapeRegExp, isRecord } from '../shared/util.js';
+import { archivePointer, fullTextIn, TLDR_HEADING, TOPICS_LABEL } from './archive.js';
 import { carriedSavedResults, SAVED_RESULTS_DETAILS, savedResultPaths, savedResultsBlock, withoutModelSavedResults, withoutSavedResults } from './saved-results.js';
+import { recordCompactionNote } from './record.js';
 import { sharedSummary } from './shared-summary.js';
 import { notify } from '../shared/commands.js';
 
@@ -22,7 +25,7 @@ import { notify } from '../shared/commands.js';
 
 /** The user's own messages kept after the summary, newest first, up to about 15k tokens in all (their words are the one record the summary cannot rebuild)... */
 export const USER_MESSAGES_CHARS = 60_000;
-/** ...each cut in the middle beyond this (a pasted log must not take the whole budget), with a note that the transcript holds the whole message. */
+/** ...each cut in the middle beyond this (a pasted log must not take the whole budget), with a note where the whole message is (its archive segment, else the transcript). */
 export const USER_MESSAGE_CHARS = 6_000;
 
 /**
@@ -55,17 +58,29 @@ Also add these sections after "## Critical Context", in this order:
 ## Follow-ups
 - Work promised, deferred or suggested but not started, and open questions for the user, or "(none)".
 
-Everywhere, keep file paths, symbols, commands, error strings, URLs and identifiers exact. When updating a previous summary, keep the entries of these sections and add the new ones; newer messages win where they contradict, resolve or supersede it. Write only what the messages show; never guess.`;
+${TLDR_HEADING}
+One or two lines on what the messages above did (only those, not the earlier summary), then a line "${TOPICS_LABEL} " with 3 to 8 comma-separated keywords. An index of the conversation's history uses it as this stretch's label.
+
+Everywhere, keep file paths, symbols, commands, error strings, URLs and identifiers exact. When updating a previous summary, keep the entries of these sections and add the new ones (except ${TLDR_HEADING}: write it afresh for the messages above); newer messages win where they contradict, resolve or supersede it. Write only what the messages show; never guess.`;
 
 /** The instructions passed to `compact()`: the user's own first, then the add-on. */
 export function summaryInstructions(custom: string | undefined): string {
   return custom?.trim() ? `${custom.trim()}\n\n${SUMMARY_FOCUS}` : SUMMARY_FOCUS;
 }
 
-/** Where the summarized messages stay verbatim, appended to the summary so exact details are read, not guessed. */
-export function transcriptNote(sessionFile: string | undefined, backlog: boolean): string {
+/**
+ * Where the summarized messages stay verbatim, appended to the summary so exact details are read, not guessed: the
+ * archive's lines first (`archivePointer`; none when this session cannot archive), the session's transcript (the
+ * archive's fallback, or the whole answer when there is no archive) and the backlog. Every line is one `- ` bullet:
+ * `splitSummary` removes the section by that shape when the summary is rewritten.
+ */
+export function transcriptNote(sessionFile: string | undefined, backlog: boolean, archive: readonly string[] = []): string {
+  const transcript = sessionFile ? tildePath(sessionFile) : undefined;
   const lines = [
-    ...(sessionFile ? [`The full transcript before this summary is ${tildePath(sessionFile)} (JSONL, one entry per line): search it for an exact message, error or tool result instead of guessing.`] : []),
+    ...archive,
+    ...(transcript
+      ? [archive.length > 0 ? `If the archive does not have it, the full transcript is ${transcript} (JSONL, one entry per line).` : `The full transcript before this summary is ${transcript} (JSONL, one entry per line): search it for an exact message, error or tool result instead of guessing.`]
+      : []),
     ...(backlog ? ['Record follow-ups that must outlive this session with `backlog`.'] : []),
   ];
   return lines.length > 0 ? `\n\n${RECOVERY_HEADING}\n${lines.map((line) => `- ${line}`).join('\n')}` : '';
@@ -114,21 +129,23 @@ export function userText(message: unknown): string | undefined {
   return text === '' ? undefined : text.replace(SKILL_BLOCK, (_, name: string, location: string) => `[skill ${name} loaded from ${location}]`);
 }
 
-/** One message cut in the middle to `max` characters, with a note that the transcript has it whole. */
-function cutMessage(text: string, max: number): string {
+/** One message cut in the middle to `max` characters, with a note where it is whole (`segment`: its archive segment, if one is written). */
+function cutMessage(text: string, max: number, segment: number | undefined): string {
   if (text.length <= max) return text;
   const half = Math.floor(max / 2);
   const head = cutText(text, half, { chars: true });
   const tail = cutText(text, half, { chars: true, tail: true });
-  return `${head}\n[… ${text.length - head.length - tail.length} characters of this message are left out here; the transcript has it whole]\n${tail}`;
+  return `${head}\n[… ${text.length - head.length - tail.length} characters of this message are left out here; ${fullTextIn(segment)} has it whole]\n${tail}`;
 }
 
 /**
  * The user-messages section: earlier kept messages then the new ones, the newest kept first while they fit
  * `USER_MESSAGES_CHARS`, each cut to `USER_MESSAGE_CHARS`. Empty when there are none.
  */
-export function userMessagesSection(earlier: readonly string[], omittedBefore: number, added: readonly string[], budget = { total: USER_MESSAGES_CHARS, perMessage: USER_MESSAGE_CHARS }): string {
-  const all = [...earlier, ...added.map((text) => cutMessage(inertUserText(text), budget.perMessage))];
+export function userMessagesSection(
+  earlier: readonly string[], omittedBefore: number, added: readonly string[], budget = { total: USER_MESSAGES_CHARS, perMessage: USER_MESSAGE_CHARS }, segment?: number,
+): string {
+  const all = [...earlier, ...added.map((text) => cutMessage(inertUserText(text), budget.perMessage, segment))];
   const kept: string[] = [];
   let used = 0;
   for (let index = all.length - 1; index >= 0; index--) {
@@ -139,7 +156,7 @@ export function userMessagesSection(earlier: readonly string[], omittedBefore: n
   }
   const omitted = omittedBefore + all.length - kept.length;
   if (kept.length === 0) return '';
-  const note = omitted > 0 ? `\nEarlier user messages not kept here: ${omitted} (the transcript has them).` : '';
+  const note = omitted > 0 ? `\nEarlier user messages not kept here: ${omitted} (${fullTextIn(segment, true)} has them).` : '';
   return `\n\n${USER_HEADING}${note}\n${kept.map((text) => `<user-message>\n${text}\n</user-message>`).join('\n')}`;
 }
 
@@ -165,13 +182,13 @@ const SUMMARIZER_HEAD_CHARS = 1_000;
  * (where a test run, build or stack trace puts its errors and verdict) within that cut, instead of the head alone.
  * Copies; the session's messages are never changed.
  */
-export function summarizerView<T>(messages: readonly T[]): T[] {
+export function summarizerView<T>(messages: readonly T[], segment?: number): T[] {
   return messages.map((message) => {
     if (!isRecord(message) || message['role'] !== 'toolResult' || !Array.isArray(message['content'])) return message;
     const content = message['content'] as unknown[];
     const text = contentText(content);
     if (text.length <= SUMMARIZER_RESULT_CHARS) return message;
-    const gap = (left: number) => `\n[… ${left} characters in the middle left out for the summary; the transcript has them]\n`;
+    const gap = (left: number) => `\n[… ${left} characters in the middle left out for the summary; ${fullTextIn(segment)} has them]\n`;
     const room = SUMMARIZER_RESULT_CHARS - SUMMARIZER_HEAD_CHARS - gap(text.length).length;
     const head = cutText(text, SUMMARIZER_HEAD_CHARS, { chars: true });
     const tail = cutText(text, room, { chars: true, tail: true });
@@ -186,43 +203,71 @@ function notifyStandalone(ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, reason: s
   if (ctx.hasUI) notify(ctx.ui, `Octocode could not write the compaction summary from the prompt cache (${reason}); it uses a standalone request that pays for the whole input.`, 'warning');
 }
 
-/** Octocode's compaction result, or undefined to let Pi write its default summary. */
+/**
+ * The compaction `details` key that names how this summary was written: `{ method: 'cache-shared' }`, or
+ * `{ method: 'standalone', reason }` with why the cache-sharing request was not used. Without it the method could
+ * only be guessed from the cache numbers of the request.
+ */
+export const SUMMARY_METHOD_DETAILS = 'summaryMethod';
+
+/** How Octocode wrote the summary of a compaction entry's `details` (`cache-shared`, `standalone`); undefined when it did not (Pi's default summary, another extension's). */
+export function summaryMethodOf(details: unknown): string | undefined {
+  const method = isRecord(details) && isRecord(details[SUMMARY_METHOD_DETAILS]) ? details[SUMMARY_METHOD_DETAILS]['method'] : undefined;
+  return typeof method === 'string' ? method : undefined;
+}
+
+/** Octocode's compaction result, or undefined to let Pi write its default summary (the reason is recorded in the session). */
 export async function writeSummary(
-  pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getActiveTools' | 'getSettings'>,
+  pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getActiveTools' | 'getSettings' | 'appendEntry'>,
   event: SessionBeforeCompactEvent,
   ctx: Pick<ExtensionContext, 'model' | 'modelRegistry' | 'sessionManager' | 'hasUI' | 'ui'>,
   summaryModel?: Model<Api>,
 ): Promise<SessionBeforeCompactResult | undefined> {
   // A compaction before a downshift summarizes on the model the context still fits.
   const model = summaryModel ?? ctx.model;
-  if (!model || event.signal.aborted) return undefined;
+  if (event.signal.aborted) return undefined;
+  if (!model) {
+    recordCompactionNote(pi, 'default-summary', 'no model is selected for the summary');
+    return undefined;
+  }
   try {
     // Through the model registry, as Pi's own session streams: request-time auth, and providers an extension registered.
     const stream = (request: typeof model, context: Context, options?: SimpleStreamOptions) => ctx.modelRegistry.streamSimple(request, context, options);
     const instructions = summaryInstructions(event.customInstructions);
+    // The archive writes this compaction's messages as the next segment once it succeeds (`register.ts`).
+    const segment = nextSegment();
     // The model updates only its own part of the previous summary; code carries the user messages and the note.
     const previous = event.preparation.previousSummary === undefined ? undefined : splitSummary(event.preparation.previousSummary);
     const preparation = {
       ...event.preparation,
-      messagesToSummarize: summarizerView(event.preparation.messagesToSummarize),
-      turnPrefixMessages: summarizerView(event.preparation.turnPrefixMessages),
+      messagesToSummarize: summarizerView(event.preparation.messagesToSummarize, segment),
+      turnPrefixMessages: summarizerView(event.preparation.turnPrefixMessages, segment),
       ...(previous === undefined ? {} : { previousSummary: previous.body }),
     };
     // On the session's own model the summary is asked for inside the session's request, which the prompt cache already
     // holds; on another (a downshift) or when that fails, as a standalone request that pays for the whole input.
-    const result = (summaryModel === undefined ? await sharedSummary(pi, event, ctx, model, instructions, (reason) => notifyStandalone(ctx, reason)) : undefined)
-      ?? (await compact(preparation, model, undefined, undefined, instructions, event.signal, pi.getThinkingLevel(), stream));
+    let fallback = summaryModel === undefined ? 'the cache-sharing request was cancelled' : `the summary ran on ${model.id}, the model before a downshift, not the session's own`;
+    const shared = summaryModel === undefined
+      ? await sharedSummary(pi, event, ctx, model, instructions, (reason, userChoice) => {
+          fallback = reason;
+          if (!userChoice) notifyStandalone(ctx, reason);
+        })
+      : undefined;
+    const result = shared ?? (await compact(preparation, model, undefined, undefined, instructions, event.signal, pi.getThinkingLevel(), stream));
+    const method = shared ? { method: 'cache-shared' } : { method: 'standalone', reason: fallback };
     const added = [...event.preparation.messagesToSummarize, ...event.preparation.turnPrefixMessages].flatMap((message) => userText(message) ?? []);
     // Sized for the window the summary lands in (this session's model; after a downshift, the smaller one).
     const total = windowBudget(ctx.model?.contextWindow, event.preparation.settings.reserveTokens, USER_MESSAGES_SHARE, USER_MESSAGES_CHARS);
-    const messages = userMessagesSection(previous?.messages ?? [], previous?.omitted ?? 0, added, { total, perMessage: Math.min(USER_MESSAGE_CHARS, Math.max(500, Math.floor(total / 4))) });
-    const note = transcriptNote(ctx.sessionManager.getSessionFile(), pi.getActiveTools().includes('backlog'));
+    const messages = userMessagesSection(previous?.messages ?? [], previous?.omitted ?? 0, added, { total, perMessage: Math.min(USER_MESSAGE_CHARS, Math.max(500, Math.floor(total / 4))) }, segment);
+    const note = transcriptNote(ctx.sessionManager.getSessionFile(), pi.getActiveTools().includes('backlog'), archivePointer(segment));
     // Every file saved from the summarized results (and by earlier summaries), named once, like the file lists.
     const saved = savedResultPaths([...event.preparation.messagesToSummarize, ...event.preparation.turnPrefixMessages], clearedResults(event.branchEntries), carriedSavedResults(event.branchEntries));
-    const details = saved.length > 0 ? { ...(isRecord(result.details) ? result.details : {}), [SAVED_RESULTS_DETAILS]: saved } : result.details;
+    const details = { ...(isRecord(result.details) ? result.details : {}), ...(saved.length > 0 ? { [SAVED_RESULTS_DETAILS]: saved } : {}), [SUMMARY_METHOD_DETAILS]: method };
     return { compaction: { ...result, summary: `${withoutModelSavedResults(result.summary)}${savedResultsBlock(saved)}${messages}${note}`, details } };
   } catch (error) {
-    if (!event.signal.aborted && ctx.hasUI) notify(ctx.ui, `Octocode's compaction summary failed (${errorMessage(error)}); Pi writes its default summary.`, 'warning');
+    if (event.signal.aborted) return undefined;
+    recordCompactionNote(pi, 'default-summary', `Octocode's compaction summary failed (${errorMessage(error)})`);
+    if (ctx.hasUI) notify(ctx.ui, `Octocode's compaction summary failed (${errorMessage(error)}); Pi writes its default summary.`, 'warning');
     return undefined;
   }
 }

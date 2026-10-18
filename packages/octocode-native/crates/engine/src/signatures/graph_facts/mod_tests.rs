@@ -897,6 +897,28 @@ fn keyword_named_declarations_survive_outside_the_js_family() {
     }
 }
 
+/// The tree-sitter lane (what TypeScript falls back to when oxc cannot
+/// parse it) names TypeScript aliases, abstract classes and namespaces with
+/// the kinds the oxc lane uses.
+#[test]
+fn tree_sitter_typescript_declarations_keep_their_kinds() {
+    let source = "export type Id = string;\nexport abstract class Shape {}\nnamespace Geo { export const x = 1; }\n";
+    let facts = extract_graph_facts_with_metadata_with_extension(source, "a.ts", "ts")
+        .expect("tree-sitter graph facts")
+        .facts;
+    let kind_of = |name: &str| {
+        facts
+            .declarations
+            .iter()
+            .find(|declaration| declaration.name == name)
+            .map(|declaration| declaration.kind.clone())
+            .unwrap_or_else(|| panic!("{name}: {:?}", facts.declarations))
+    };
+    assert_eq!(kind_of("Id"), "type");
+    assert_eq!(kind_of("Shape"), "class");
+    assert_eq!(kind_of("Geo"), "namespace");
+}
+
 #[test]
 fn keyword_named_class_members_stay_legal_in_clean_js() {
     let js = declared_names("class A {\n  if() {}\n  build() {}\n}\n", "a.js");

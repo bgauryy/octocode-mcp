@@ -1,5 +1,7 @@
 import { McpClient, McpConnectionClosedError, StdioTransport, type CallToolResult, type Tool } from '@earendil-works/pi-mcp';
+import { tailNote } from '../shared/format.js';
 import { visibleControls } from '../shared/sanitize.js';
+import { saveFullOutput } from '../shared/spill.js';
 import { cutText, errorMessage } from '../shared/util.js';
 
 /** How the server process starts. */
@@ -38,6 +40,7 @@ interface ServerOptions {
 }
 
 const REQUEST_TIMEOUT_MS = 60_000;
+/** Characters of a server's stderr a failure shows (its end); a longer one is saved whole. */
 const STDERR_TAIL_CHARS = 2_000;
 
 /**
@@ -260,7 +263,11 @@ export class OctocodeServer {
 
   private describe(message: string, transport: StdioTransport): string {
     // The server's stderr is untrusted text that reaches the terminal and the model: no escape sequences.
-    const tail = cutText(visibleControls(transport.stderr).trim(), STDERR_TAIL_CHARS, { chars: true, tail: true });
-    return tail && !message.includes(tail) ? `${message}\n${tail}` : message;
+    const stderr = visibleControls(transport.stderr).trim();
+    const tail = cutText(stderr, STDERR_TAIL_CHARS, { chars: true, tail: true });
+    if (!tail || message.includes(tail)) return message;
+    // A stderr that does not fit is saved whole; the error says how much it shows and where the rest is.
+    const note = tail.length < stderr.length ? `\n${tailNote('server stderr', tail.length, stderr.length, saveFullOutput(stderr, 'mcp-stderr'))}` : '';
+    return `${message}${note}\n${tail}`;
   }
 }

@@ -1,6 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used)]
-
 use crate::support;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};

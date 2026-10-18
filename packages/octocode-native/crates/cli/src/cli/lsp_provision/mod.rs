@@ -502,7 +502,6 @@ fn run_status(
         if json {
             return super::write_json(
                 &serde_json::json!({ "managedRoot": root, "installed": installed }),
-                true,
             );
         }
         println!("LSP status");
@@ -548,16 +547,13 @@ fn run_status(
             .is_none_or(|l| l.is_empty() || l == "plaintext");
 
     if json {
-        return super::write_json(
-            &serde_json::json!({
-                "filePath": path,
-                "languageId": lang,
-                "serverAvailable": server_available,
-                "serverCommand": server_command,
-                "probeError": probe_error,
-            }),
-            true,
-        );
+        return super::write_json(&serde_json::json!({
+            "filePath": path,
+            "languageId": lang,
+            "serverAvailable": server_available,
+            "serverCommand": server_command,
+            "probeError": probe_error,
+        }));
     }
 
     if unresolved && !looks_like_path {
@@ -654,7 +650,7 @@ fn run_list(root: &Path, platform: &str, json: bool) -> u8 {
                 })
             })
             .collect();
-        return super::write_json(&serde_json::json!({ "servers": rows }), true);
+        return super::write_json(&serde_json::json!({ "servers": rows }));
     }
     println!("Auto-downloadable language servers");
     for (name, server) in servers {
@@ -712,7 +708,7 @@ where
         }));
     }
     if json {
-        super::write_json(&serde_json::json!({ "install": results }), true);
+        super::write_json(&serde_json::json!({ "install": results }));
     }
     worst
 }
@@ -735,7 +731,7 @@ fn run_uninstall(root: &Path, platform: &str, names: Vec<String>, json: bool) ->
         results.push(serde_json::json!({ "name": name, "removed": removed }));
     }
     if json {
-        super::write_json(&serde_json::json!({ "uninstall": results }), true);
+        super::write_json(&serde_json::json!({ "uninstall": results }));
     }
     0
 }
@@ -744,10 +740,7 @@ fn run_clean(root: &Path, yes: bool, json: bool) -> u8 {
     let root_display = root.to_string_lossy().into_owned();
     if !yes {
         if json {
-            super::write_json(
-                &serde_json::json!({ "clean": "dry-run", "root": root_display }),
-                true,
-            );
+            super::write_json(&serde_json::json!({ "clean": "dry-run", "root": root_display }));
         } else {
             println!(
                 "Would remove the managed LSP cache at {root_display}. Re-run with --yes to confirm."
@@ -763,7 +756,6 @@ fn run_clean(root: &Path, yes: bool, json: bool) -> u8 {
         if json {
             super::write_json(
                 &serde_json::json!({ "clean": "failed", "root": root_display, "error": error.to_string() }),
-                true,
             );
         } else {
             eprintln!("Could not remove the managed LSP cache at {root_display}: {error}");
@@ -771,10 +763,7 @@ fn run_clean(root: &Path, yes: bool, json: bool) -> u8 {
         return 5;
     }
     if json {
-        super::write_json(
-            &serde_json::json!({ "clean": "done", "root": root_display }),
-            true,
-        );
+        super::write_json(&serde_json::json!({ "clean": "done", "root": root_display }));
     } else {
         println!("cleaned: {root_display}");
     }

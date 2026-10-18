@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { errorMessage, withTimeout } from '../shared/util.js';
+import { errorMessage, wholeSeconds, withTimeout } from '../shared/util.js';
 import { abortError } from './abort.js';
 import type { BrowserSession } from './cdp.js';
 
@@ -282,7 +282,7 @@ export async function waitForText(page: Pick<Page, 'evaluate' | 'untilDialog'>, 
     if (!probe) return undefined;
     // A probe that failed (a navigation tore the page down) or ran out of time proves nothing either way.
     if (probe.body !== undefined && probe.body.includes(text) !== gone) return Date.now() - started;
-    if (Date.now() - started >= timeoutMs) throw new Error(`Timed out after ${Math.round(timeoutMs / 1000)}s waiting for ${JSON.stringify(text)} to ${gone ? 'disappear' : 'appear'}.`);
+    if (Date.now() - started >= timeoutMs) throw new Error(`Timed out after ${wholeSeconds(timeoutMs)}s waiting for ${JSON.stringify(text)} to ${gone ? 'disappear' : 'appear'}.`);
     if (signal?.aborted) throw abortError(signal);
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

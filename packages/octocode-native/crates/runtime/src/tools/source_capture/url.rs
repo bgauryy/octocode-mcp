@@ -25,7 +25,7 @@ use crate::tools::judgment::ClassificationError;
 use fetch::Fetch;
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use url::Url;
 
 /// Redirects one capture follows.
@@ -518,14 +518,7 @@ impl<'a> Store<'a> {
                 "Supply the page text as state.",
             )
         })?;
-        let expires_at = SystemTime::now()
-            .checked_add(self.ttl)
-            .unwrap_or_else(SystemTime::now)
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        let expires_at = crate::civil_date::iso8601_millis(
-            i64::try_from(expires_at.as_millis()).unwrap_or(i64::MAX),
-        );
+        let expires_at = crate::civil_date::iso8601_millis_after(self.ttl);
         Ok(json!({"path": readable.canonical, "snapshot": snapshot, "expiresAt": expires_at}))
     }
 }

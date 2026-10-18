@@ -72,6 +72,8 @@ fn held_memo_is_evicted_when_an_external_ignore_dependency_appears() {
 /// of the rules that decided the walk drops it: the page restarts.
 #[test]
 fn repository_rules_keep_the_memo_and_an_edit_drops_it() {
+    // Every fixture is written first, so one wait settles them all.
+    let mut fixtures = Vec::new();
     for kind in ["ancestor", "exclude", "worktree", "jj", "nested"] {
         let root = Fixture::new();
         let scope = sources(&root.0);
@@ -113,7 +115,10 @@ fn repository_rules_keep_the_memo_and_an_edit_drops_it() {
         };
         std::fs::write(&rules, ignored).expect("ignore rule");
         let (paths, security) = simple_policy(&root.0);
-        settle();
+        fixtures.push((kind, root, scope, rules, paths, security));
+    }
+    settle();
+    for (kind, _root, scope, rules, paths, security) in fixtures {
         let first = run(&query(&scope, false), &paths, &security);
         assert_eq!(first["matchCount"], 2, "{kind}: {first}");
         let snapshot = first["snapshot"].as_str().expect("snapshot");

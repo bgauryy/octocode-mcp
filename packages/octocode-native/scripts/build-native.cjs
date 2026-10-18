@@ -7,12 +7,17 @@
  *   build-native.cjs [--release]
  *   build-native.cjs --release --target <platform> [--target <platform>...]
  *   build-native.cjs --release --all [--jobs N]
+ *   build-native.cjs --check [--target <platform>... | --all] [--jobs N]
  *
  * No --target builds for the host and stages the binaries and addon into
  * npm/<host>/, plus the addon into the package root (what the local launcher
  * and MCP load). A --target build stages all three artifacts into
  * npm/<platform>/ (and the root addon too when the platform is the host).
  * Cross targets use cargo-zigbuild (Linux) or cargo-xwin (Windows).
+ *
+ * --check type-checks the same selection for each platform through the same
+ * cross tool (its C build scripts included) without linking or staging: the
+ * fast loop for platform-specific code (`cfg(windows)`, `cfg(target_os)`).
  */
 'use strict';
 
@@ -28,24 +33,26 @@ const ROOT = join(__dirname, '..');
 function usage(message) {
   if (message) console.error(`build-native: ${message}`);
   console.error(
-    'Usage: build-native.cjs [--release] [--target <platform>... | --all] [--jobs N]\n' +
+    'Usage: build-native.cjs [--release | --check] [--target <platform>... | --all] [--jobs N]\n' +
       `Platforms: ${Object.keys(PLATFORMS).join(', ')}`,
   );
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const options = { release: false, targets: [], all: false, jobs: null };
+  const options = { release: false, check: false, targets: [], all: false, jobs: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => (i + 1 < argv.length ? argv[++i] : usage(`${arg} needs a value`));
     if (arg === '--release') options.release = true;
+    else if (arg === '--check') options.check = true;
     else if (arg === '--all') options.all = true;
     else if (arg === '--target') options.targets.push(value());
     else if (arg === '--jobs') options.jobs = Number(value());
     else usage(`unknown argument ${arg}`);
   }
   if (options.all && options.targets.length) usage('--all and --target are exclusive');
+  if (options.check && options.release) usage('--check and --release are exclusive');
   if (options.all) options.targets = Object.keys(PLATFORMS);
   for (const target of options.targets) if (!PLATFORMS[target]) usage(`unknown platform ${target}`);
   if (options.jobs !== null && !(Number.isInteger(options.jobs) && options.jobs > 0)) usage('--jobs must be a positive integer');
@@ -125,14 +132,30 @@ function crossEnv(platform) {
   return env;
 }
 
-function hostsCommand(platform, release, dir) {
+/** The Cargo invocation for `platform` (null: the host) as `{ command, args }`. */
+/**
+ * The oldest glibc a cross-linked gnu artifact runs on: Node 24's own floor
+ * (nodejs/node BUILDING.md, platform list), so the addon loads wherever Node
+ * does. cargo-zigbuild reads it from the target suffix; without it zig links
+ * hard GLIBC_2.29/2.30 version requirements (libm `pow`/`log`, and std's
+ * weak `gettid`). A native Linux build links the host's glibc instead.
+ */
+const GLIBC_FLOOR = '2.28';
+
+function hostsCommand(platform, { release = false, check = false }, dir) {
   const target = platform && PLATFORMS[platform];
-  let cargo = ['build'];
+  const subcommand = check ? 'check' : 'build';
+  let command = 'cargo';
+  let cargo = [subcommand];
+  let triple = target?.triple;
   if (target && needsCrossLinker(platform)) {
-    if (target.os === 'linux') cargo = ['zigbuild'];
-    else if (target.os === 'win32') cargo = ['xwin', 'build'];
+    // `cargo zigbuild` is only the build subcommand; check is `cargo-zigbuild check`.
+    if (target.os === 'linux') {
+      [command, cargo] = ['cargo-zigbuild', [check ? 'check' : 'zigbuild']];
+      if (target.libc === 'gnu') triple = `${target.triple}.${GLIBC_FLOOR}`;
+    } else if (target.os === 'win32') cargo = ['xwin', subcommand];
   }
-  return [
+  const args = [
     ...cargo,
     '--locked',
     '-p', 'octocode-cli',
@@ -140,9 +163,10 @@ function hostsCommand(platform, release, dir) {
     '--bins', '--lib',
     // Dev builds share compiled crates with `test:rust` (see crates/runtime `dev-unify`).
     ...(release ? ['--release'] : ['--features', 'octocode-native/dev-unify']),
-    ...(target ? ['--target', target.triple] : []),
+    ...(target ? ['--target', triple] : []),
     '--target-dir', dir,
   ];
+  return { command, args };
 }
 
 function artifactNames(platform) {
@@ -192,7 +216,9 @@ async function buildPlatform(platform, explicitTarget, options) {
   const label = explicitTarget ? platform : 'host';
   const target = explicitTarget ? platform : null;
   const dir = targetDir(target);
-  await run(`${label}:hosts`, 'cargo', hostsCommand(target, options.release, dir), crossEnv(target));
+  const { command, args } = hostsCommand(target, options, dir);
+  await run(`${label}:${options.check ? 'check' : 'hosts'}`, command, args, crossEnv(target));
+  if (options.check) return;
 
   const staged = stageHosts(platform, explicitTarget, options.release, dir);
   verifyStaged(platform, staged);
@@ -223,7 +249,7 @@ async function main() {
     } else {
       const queue = [...options.targets];
       const jobs = options.jobs ?? defaultJobs(queue.length);
-      console.log(`building ${queue.join(', ')} with ${jobs} concurrent platform job(s)`);
+      console.log(`${options.check ? 'checking' : 'building'} ${queue.join(', ')} with ${jobs} concurrent platform job(s)`);
       await Promise.all(
         Array.from({ length: jobs }, async () => {
           while (queue.length) await buildPlatform(queue.shift(), true, options);
@@ -239,4 +265,4 @@ async function main() {
 }
 
 if (require.main === module) main();
-else module.exports = { hostsCommand, targetDir };
+else module.exports = { GLIBC_FLOOR, hostsCommand, targetDir };

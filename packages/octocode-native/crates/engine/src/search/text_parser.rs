@@ -81,11 +81,16 @@ fn clips_to_window(line: &str, column: u32, max_chars: usize) -> bool {
 /// Lines whose match already fits the head are truncated from the start; otherwise
 /// the window starts a quarter-snippet before the match and is marked with `…`.
 /// A window near the line's end starts earlier instead, so it still spends
-/// `max_chars` (the tail it ends on is the line's own, unmarked).
+/// `max_chars` (the tail it ends on is the line's own, unmarked). A limit too
+/// short for a marker shows the line's own chars from the match.
 fn clip_around_match(line: &str, column: u32, max_chars: usize) -> String {
     let line_chars = line.chars().count();
     if line_chars <= max_chars {
         return line.to_owned();
+    }
+    if max_chars <= 3 {
+        let start = utf16_to_char_index(line, column).min(line_chars - max_chars);
+        return line.chars().skip(start).take(max_chars).collect();
     }
     if !clips_to_window(line, column, max_chars) {
         return truncate_unicode(line, max_chars);
@@ -103,17 +108,11 @@ fn clip_around_match(line: &str, column: u32, max_chars: usize) -> String {
 }
 
 /// Truncates a string to at most `max_chars` Unicode scalar values, appending
-/// `...` when truncated.
+/// `...` when truncated; a limit too short for the marker keeps the leading
+/// chars themselves.
 pub(crate) fn truncate_unicode(s: &str, max_chars: usize) -> String {
-    if max_chars == 0 {
-        return String::new();
-    }
     if max_chars <= 3 {
-        let mut chars = s.chars();
-        if chars.by_ref().take(max_chars).count() < max_chars || chars.next().is_none() {
-            return s.to_owned();
-        }
-        return ".".repeat(max_chars);
+        return s.chars().take(max_chars).collect();
     }
 
     let head_chars = max_chars - 3;
@@ -618,11 +617,22 @@ mod tests {
         assert_eq!(truncate_unicode("hello", 0), "");
     }
 
+    /// A limit too short for the `...` marker returns real chars, never
+    /// only dots.
     #[test]
-    fn truncate_unicode_tiny_limits_never_exceed_limit() {
-        assert_eq!(truncate_unicode("hello", 1), ".");
-        assert_eq!(truncate_unicode("hello", 2), "..");
-        assert_eq!(truncate_unicode("hello", 3), "...");
+    fn truncate_unicode_tiny_limits_return_real_chars() {
+        assert_eq!(truncate_unicode("hello", 1), "h");
+        assert_eq!(truncate_unicode("hello", 2), "he");
+        assert_eq!(truncate_unicode("hello", 3), "hel");
+        assert_eq!(truncate_unicode("héllo", 2), "hé");
+    }
+
+    /// A tiny limit shows the match's own chars, ending at the line's end.
+    #[test]
+    fn a_tiny_clip_shows_the_match() {
+        assert_eq!(clip_around_match("xxxxx needle", 6, 3), "nee");
+        assert_eq!(clip_around_match("xxxxx needle", 11, 3), "dle");
+        assert_eq!(clip_around_match("needle xxxxx", 0, 2), "ne");
     }
 
     #[test]

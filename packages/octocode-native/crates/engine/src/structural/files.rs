@@ -6,9 +6,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use super::language::AgLanguage;
-use super::octo::{
-    ExecutionError, Found, OctoCompiledMatcher, compile_diagnostic, compile_matcher,
-};
+use super::octo::{CompileError, Found, OctoCompiledMatcher, compile_matcher};
 use super::query::{Prefilter, StructuralQuery, invalid_query_explanation};
 use super::types::{
     FileMatches, StructuralDemand, StructuralDetailedMatch, StructuralDiagnostic,
@@ -209,7 +207,7 @@ pub(crate) fn search_files_with_budget(
     })
 }
 
-type CompiledMatchers = BTreeMap<String, Result<OctoCompiledMatcher, String>>;
+type CompiledMatchers = BTreeMap<String, Result<OctoCompiledMatcher, CompileError>>;
 
 fn invalid_query_result(
     path: String,
@@ -380,9 +378,9 @@ impl FileScan<'_> {
         };
         let run = match compiled {
             Ok(run) => run,
-            Err(message) => {
-                if let Some(error) = ExecutionError::from_compile_message(message) {
-                    let diagnostic = error.diagnostic(&path_string);
+            Err(error) => {
+                if let Some(interruption) = error.interruption() {
+                    let diagnostic = interruption.diagnostic(&path_string);
                     return (
                         Tally::None,
                         skipped_file(path_string, "truncated", "queryCompile", diagnostic),
@@ -394,7 +392,7 @@ impl FileScan<'_> {
                         path_string.clone(),
                         "parserFailed",
                         "queryCompile",
-                        compile_diagnostic(message).with_path(path_string),
+                        error.diagnostic().with_path(path_string),
                     ),
                 );
             }

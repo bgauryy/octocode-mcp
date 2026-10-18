@@ -9,6 +9,7 @@ use crate::tools::ast_graph::store as graph_store;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::id::{ToolFamily, ToolId};
 use crate::tools::local_fetch::LocalFetchRegex;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::FailureKind;
 
 use base64::Engine as _;
@@ -208,12 +209,7 @@ impl PageReplayMemo {
 }
 
 fn page_expiry() -> String {
-    let expires = std::time::SystemTime::now()
-        .checked_add(PAGE_REPLAY_TTL)
-        .unwrap_or(std::time::SystemTime::now())
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    crate::civil_date::iso8601_millis(i64::try_from(expires.as_millis()).unwrap_or(i64::MAX))
+    crate::civil_date::iso8601_millis_after(PAGE_REPLAY_TTL)
 }
 
 fn decode_saved_snapshot(snapshot: &str) -> Option<([u8; 32], String)> {
@@ -330,41 +326,53 @@ fn rejected_row(
     (index, row)
 }
 
-/// A rejected input's `hints.repair` lead, and what a lossy one drops.
+/// A rejected input's `hints.repair` lead, and what a lossy or approximate
+/// one changes.
 struct RepairLead {
     lead: Value,
     /// The caller's fields the lead drops (paths); empty for an exact fix.
     dropped: Vec<String>,
+    /// The fields the lead sets to a best reading (paths).
+    approximate: Vec<String>,
 }
 
 impl RepairLead {
-    /// The note a lossy lead needs: what it drops (a field the contract
-    /// does not own, or a value its field does not list, whose default then
-    /// applies). `row` renames the one-row repair call's `queries.0` to the
-    /// caller's row.
+    /// The note a lossy or approximate lead needs: what it drops (a field
+    /// the contract does not own, or one another form of the row declares)
+    /// and which values it guesses. `row` renames the one-row repair call's
+    /// `queries.0` to the caller's row.
     fn note(&self, row: Option<usize>) -> Option<String> {
-        if self.dropped.is_empty() {
-            return None;
+        let rename = |paths: &[String]| {
+            paths
+                .iter()
+                .map(|path| match (row, path.strip_prefix("queries.0.")) {
+                    (Some(row), Some(rest)) => format!("queries.{row}.{rest}"),
+                    _ => path.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let mut notes = Vec::new();
+        if !self.dropped.is_empty() {
+            notes.push(format!(
+                "The repair lead drops {}: without it (or with the field's default) the call may read more broadly than asked. Express that constraint with a supported field if it matters.",
+                rename(&self.dropped)
+            ));
         }
-        let dropped = self
-            .dropped
-            .iter()
-            .map(|path| match (row, path.strip_prefix("queries.0.")) {
-                (Some(row), Some(rest)) => format!("queries.{row}.{rest}"),
-                _ => path.clone(),
-            })
-            .collect::<Vec<_>>();
-        Some(format!(
-            "The repair lead drops {}: without it (or with the field's default) the call may read more broadly than asked. Express that constraint with a supported field if it matters.",
-            dropped.join(", ")
-        ))
+        if !self.approximate.is_empty() {
+            notes.push(format!(
+                "The repair lead reads {} from the value as sent; a ref may contain '/', so check them before relying on the result.",
+                rename(&self.approximate)
+            ));
+        }
+        (!notes.is_empty()).then(|| notes.join(" "))
     }
 }
 
 /// The call that fixes a rejected input, when every issue has a fix and the
 /// fixed call is admitted. An exact fix is `high` confidence; one that drops
-/// a field the caller set (no contract field owns it) is `low` and named,
-/// since it reads more broadly than the call asked.
+/// a field the caller set (no contract field owns it) or guesses a value is
+/// `low` and named, since it may read other than the call asked.
 fn repair_lead(
     tool: ToolId,
     input: &Value,
@@ -382,23 +390,21 @@ fn repair_lead(
         Ok(())
     })?;
     let mut repaired = repaired;
-    // A cursor clamped to the schema's maximum may still be past the last
-    // page the tool reaches: the lead goes there in the same hop.
-    if tool == ToolId::ArtifactSearch
-        && let Some(rows) = repaired.input["queries"].as_array_mut()
-    {
+    // The tool settles what the schema admits but it would not reach (an
+    // artifactSearch page past the last its search reaches).
+    if let Some(rows) = repaired.input["queries"].as_array_mut() {
+        let output = tool.output();
         for row in rows {
-            if let Some(page) = crate::tools::artifact_search::reachable_page(row) {
-                row["page"] = json!(page);
-            }
+            output.settle_repaired_row(row);
         }
     }
-    let exact = repaired.dropped.is_empty();
+    let exact = repaired.dropped.is_empty() && repaired.approximate.is_empty();
     Some(RepairLead {
         lead: crate::tools::result::Continuation::input(tool, repaired.input)
             .confidence(if exact { "high" } else { "low" })
             .build(),
         dropped: repaired.dropped,
+        approximate: repaired.approximate,
     })
 }
 
@@ -534,8 +540,7 @@ impl BatchBudget {
         } else {
             1
         };
-        let walk_threads =
-            (width > 1).then(|| u32::try_from((cores / width).max(1)).unwrap_or(u32::MAX));
+        let walk_threads = (width > 1).then(|| u32_of_usize((cores / width).max(1)));
         Self {
             width,
             walk_threads,
@@ -1913,19 +1918,17 @@ impl ChannelRun {
     /// row, diagnostics, cache mark, hint policy, verbose prune, minimize.
     fn evaluate_rows(&self, context: &ExecutionContext) -> Result<EvaluatedRows, ExecutionError> {
         let (id, queries, dispatcher) = (self.id, &self.queries, &self.dispatcher);
-        let auto_page_chars = self.output.auto_page_chars;
-        let response_page = self.options.response_length.unwrap_or(auto_page_chars);
+        let response_page = self
+            .options
+            .response_length
+            .unwrap_or(self.output.auto_page_chars);
         let evaluated =
             execute_ordinary_queries(id, queries, Some(response_page), dispatcher, context)?;
-        let evaluated = read_share::share_window(
-            id,
-            queries,
-            evaluated,
-            (!self.options.explicit()).then_some(auto_page_chars),
-            |shortened| {
+        // Source reads fit the response page, the caller's or the automatic.
+        let evaluated =
+            read_share::share_window(id, queries, evaluated, response_page, |shortened| {
                 execute_ordinary_queries(id, shortened, Some(response_page), dispatcher, context)
-            },
-        )?;
+            })?;
         let mut rows = Vec::with_capacity(queries.len());
         let mut source_digest = None;
         let mut failure = None;
@@ -2042,7 +2045,7 @@ mod output_recovery_tests {
             {"index":1,"data":{
                 "owner":"a","repo":"b","bytes":0,
                 "location":{
-                    "kind":"repo","localPath":"/tmp/repo","source":"clone",
+                    "kind":"repo","localPath":"/tmp/repo",
                     "cached":false,"commitSha":"abc","verified":true,
                     "resolvedRef":"main"
                 }

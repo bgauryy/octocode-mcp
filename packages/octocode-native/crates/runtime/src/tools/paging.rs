@@ -23,6 +23,16 @@ pub(crate) fn admitted(
     (next <= crate::contracts::query_schema_max(tool, operation, field)).then_some(next)
 }
 
+/// Rows per page: `requested`, at least one and at most the contract maximum
+/// of `tool`'s `pageSize` (the variant admitting `operation`). The one clamp
+/// every tool's page-size accessor applies, so no site can forget the bound.
+pub(crate) fn clamp_page_size(tool: ToolId, operation: Option<&str>, requested: usize) -> usize {
+    requested.clamp(
+        1,
+        crate::contracts::query_schema_max(tool, operation, "pageSize"),
+    )
+}
+
 /// Clone a continuation query with one admitted cursor advance and any
 /// numeric cursors that must restart when that outer axis advances.
 pub(crate) fn admitted_query(

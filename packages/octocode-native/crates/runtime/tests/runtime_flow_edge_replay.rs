@@ -1,6 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-
 //! Flow edges replay verbatim: every `next.*` page and `hints.*` lead a
 //! local tool emits is a complete fresh or saved tool input, passes the
 //! strict input contract of the tool it names, uses only current field and
@@ -224,10 +221,10 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
             "localFetch",
             json!({"path": lib, "ranges": ["5-6"], "block": true}),
         ),
-        // Response paging: responsePagination.next.
+        // Text window paging (responseScope:"text"): responsePagination.next.
         (
             "localFetch",
-            json!({"path": lib, "fullContent": true, "responseLength": 400}),
+            json!({"path": lib, "fullContent": true, "responseLength": 400, "responseScope": "text"}),
         ),
     ];
     let mut edges = Vec::new();

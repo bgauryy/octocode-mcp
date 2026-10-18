@@ -5,7 +5,6 @@
 //! unless its message is the whole answer, an empty row carries a tool-specific
 //! recovery too (a lead or hint text, never a bare empty), `retryable` is never
 //! `false`, and the exit class says the call did not succeed.
-#![allow(clippy::panic, clippy::unwrap_used)]
 
 use crate::support::{self, PROVIDER_LIMITS, Workspace};
 use octocode_native::runtime::{ExitClass, ToolOutcome};

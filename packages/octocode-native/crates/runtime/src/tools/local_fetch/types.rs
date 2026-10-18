@@ -275,8 +275,10 @@ pub struct NextCalls {
         default
     )]
     pub ignore_case: Option<FetchCall>,
-    /// The same match read without its `ranges`, after the ranges selected
-    /// no line while the file has hits outside them.
+    /// The same read with one input fixed: a match read without its
+    /// `ranges`, after the ranges selected no line while the file has hits
+    /// outside them, or a missing file's mistyped name corrected to its one
+    /// close sibling.
     #[serde(rename = "read", skip_serializing_if = "Option::is_none", default)]
     pub read: Option<FetchCall>,
     /// The same read with each regex item that does not compile repaired.
@@ -814,9 +816,18 @@ pub struct PathFailure {
     /// for a path inside it, else the allowed root that holds the path,
     /// else its closest admitted ancestor directory.
     pub search_root: Option<String>,
-    /// A missing path's nearest existing admitted parent directory, where
-    /// a mistyped name's siblings show.
-    pub nearest_dir: Option<Box<str>>,
+    /// A missing path's `viewTree` lead ([`missing_path_lead`]): the tree
+    /// of its nearest existing admitted parent, where a mistyped name's
+    /// siblings show.
+    ///
+    /// [`missing_path_lead`]: crate::tools::result::missing_path_lead
+    pub view_tree: Option<serde_json::Value>,
+    /// The path a missing file's name was likely mistyped for, written as
+    /// the request wrote its directory: a readable file in the same
+    /// directory ([`close_name`]).
+    ///
+    /// [`close_name`]: crate::tools::leads::find_file::close_name
+    pub corrected: Option<String>,
 }
 /// What a path names instead of a regular file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -827,7 +838,7 @@ pub enum NotAFile {
 }
 
 pub trait PathAccess {
-    fn validate_read(&self, path: &Path) -> Result<ValidatedRead, PathFailure>;
+    fn validate_read(&self, path: &Path) -> Result<ValidatedRead, Box<PathFailure>>;
 }
 /// Byte spans one regex selected, in source order. `truncated` says the scan
 /// stopped at its match limit with further matches unseen.
@@ -924,21 +935,30 @@ impl RegexMatch for LocalFetchRegex {
 }
 
 impl PathAccess for crate::policy::path::PathPolicy {
-    fn validate_read(&self, path: &Path) -> Result<ValidatedRead, PathFailure> {
+    fn validate_read(&self, path: &Path) -> Result<ValidatedRead, Box<PathFailure>> {
         crate::policy::path::PathPolicy::validate_read(self, path)
             .map(|validated| {
                 let resolved = self
                     .workspace_relative(&validated.canonical)
                     .unwrap_or_else(|| validated.canonical.to_string_lossy().into_owned());
-                // The request is a symlink, or names its file through one
-                // inside the workspace (`link/a.rs`, `link/../a.rs`). Links
-                // above the workspace (`/tmp`) rename nothing.
+                // The request is a symlink, or names its file through a
+                // directory link inside the workspace (`link/a.rs`): a
+                // component of the path, as `.` and `..` fold it, is one.
+                // Links above the workspace (`/tmp`) rename nothing, and a
+                // name that differs from the file's only in letter case (a
+                // case-insensitive file system) is no link.
                 let lexical = self.expand_and_resolve(path);
-                let through_link = fs::symlink_metadata(&lexical)
-                    .is_ok_and(|meta| meta.file_type().is_symlink())
-                    || self
-                        .workspace_relative(&lexical)
-                        .is_some_and(|name| name != resolved);
+                let is_link = |at: &Path| {
+                    fs::symlink_metadata(at).is_ok_and(|meta| meta.file_type().is_symlink())
+                };
+                let through_link = is_link(&lexical)
+                    || lexical
+                        .ancestors()
+                        .skip(1)
+                        .take_while(|dir| {
+                            self.workspace_relative(dir).is_some_and(|name| name != ".")
+                        })
+                        .any(is_link);
                 let (named, target) = if through_link {
                     (path.to_string_lossy().into_owned(), Some(resolved))
                 } else {
@@ -954,7 +974,7 @@ impl PathAccess for crate::policy::path::PathPolicy {
             .map_err(|error| {
                 let missing = error.code == crate::policy::PolicyErrorCode::NotFound;
                 let resolved = self.expand_and_resolve(path);
-                PathFailure {
+                Box::new(PathFailure {
                     code: error.local_error_code("fileAccessFailed").into(),
                     message: error.message,
                     safe_path: error.safe_path,
@@ -969,13 +989,38 @@ impl PathAccess for crate::policy::path::PathPolicy {
                     search_root: missing
                         .then(|| missing_search_root(self, path, &resolved))
                         .flatten(),
-                    nearest_dir: missing
-                        .then(|| self.nearest_existing_dir(&path.to_string_lossy()))
+                    view_tree: missing
+                        .then(|| {
+                            crate::tools::result::missing_path_lead(self, &path.to_string_lossy())
+                        })
                         .flatten()
-                        .map(String::into_boxed_str),
-                }
+                        .and_then(|mut next| next.get_mut("viewTree").map(serde_json::Value::take)),
+                    corrected: missing
+                        .then(|| corrected_path(self, path, &resolved))
+                        .flatten(),
+                })
             })
     }
+}
+
+/// The readable file a missing file's name was likely mistyped for: the
+/// one close name in its admitted parent directory ([`close_name`]), in the
+/// requested path's own directory spelling. Only a path the policy admits
+/// reading is named, so a recovery never reveals a withheld file.
+///
+/// [`close_name`]: crate::tools::leads::find_file::close_name
+fn corrected_path(
+    policy: &crate::policy::path::PathPolicy,
+    requested: &Path,
+    resolved: &Path,
+) -> Option<String> {
+    requested.file_name()?;
+    let parent = policy.validate(resolved.parent()?).ok()?;
+    let name = resolved.file_name()?.to_string_lossy();
+    let close = crate::tools::leads::find_file::close_name(&parent.canonical, &name)?;
+    let corrected = requested.with_file_name(close);
+    crate::policy::path::PathPolicy::validate_read(policy, &corrected).ok()?;
+    Some(corrected.to_string_lossy().into_owned())
 }
 
 /// The admitted directory a missing file's listing searches from: the

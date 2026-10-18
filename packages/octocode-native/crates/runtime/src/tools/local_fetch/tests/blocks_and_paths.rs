@@ -32,11 +32,17 @@ fn streamed_oversized_line_pages_its_retained_bytes_and_later_selected_lines() {
     let path = fixture.0.join("large.log");
     let retained = "x".repeat(4 * 1024 * 1024);
     let selected_tail = "selected tail\n";
+    // Streamed sources are those over the in-memory ceiling: the lines
+    // after the oversized one only take the file just past it.
+    let outside = (super::super::executor::MAX_SOURCE_BYTES as usize)
+        .saturating_sub(retained.len())
+        / "outside\n".len()
+        + 1_000;
     fixture.write(
         "large.log",
         format!(
             "{retained}unretained suffix\n{selected_tail}{}",
-            "outside\n".repeat(900_000)
+            "outside\n".repeat(outside)
         ),
     );
     let paths = Paths(fixture.0.clone());
@@ -1627,8 +1633,34 @@ fn reads_through_a_symlink_keep_the_requested_path() {
     }
 }
 
+/// On a case-insensitive file system a path that differs from the file's
+/// name only in letter case reads the file under its own name: no
+/// component is a symlink, so no symlink is named.
+#[test]
+fn a_case_only_difference_is_not_a_symlink() {
+    let t = Fixture::new();
+    let root = fs::canonicalize(&t.0).expect("canonical");
+    fs::create_dir_all(root.join("src")).expect("dir");
+    fs::write(root.join("src/Readme.md"), "# readme\n").expect("fixture");
+    if !root.join("SRC/README.MD").exists() {
+        return; // case-sensitive: the other spelling names no file
+    }
+    let policy = workspace_policy(&root);
+    let mut req = LocalFetchQuery::test_default();
+    req.path = "SRC/README.MD".parse().expect("path");
+    let result = fetch(&req, &policy);
+    assert_eq!(result.status, "success", "{:?}", result.error);
+    assert!(
+        !result.warnings.iter().any(|w| w.contains("symlink")),
+        "{:?}",
+        result.warnings
+    );
+    assert_eq!(result.path, "src/Readme.md", "{result:?}");
+}
+
 /// A missing file leads to its parent's tree, where a mistyped name's
-/// siblings show, beside the listing that finds a moved file.
+/// siblings show, beside the listing that finds a moved file and the read
+/// of the one sibling its mistyped name is close to.
 #[test]
 fn a_missing_file_leads_to_its_parents_tree() {
     let t = Fixture::new();
@@ -1646,4 +1678,37 @@ fn a_missing_file_leads_to_its_parents_tree() {
     assert_eq!(tree["path"], "src", "{next}");
     assert!(next.get("findFile").is_some(), "{next}");
     assert!(!r.path.is_empty(), "an error row names its path");
+    let read = &r
+        .next
+        .as_ref()
+        .expect("next")
+        .read
+        .as_ref()
+        .expect("read")
+        .query;
+    assert_eq!(
+        read.path.as_str(),
+        t.0.join("src/executor.rs").to_string_lossy(),
+        "{next}"
+    );
+    assert_eq!(fetch(read, &policy).status, "success");
+}
+
+/// A mistyped name close to a file the path policy withholds names no
+/// read of it: recovery never reveals a withheld file.
+#[test]
+fn a_missing_file_close_to_a_withheld_one_offers_no_read() {
+    let t = Fixture::new();
+    t.write(".aws/credentials", "secret\n");
+    let policy = workspace_policy(&t.0);
+    let r = fetch(
+        &qj(&t.0.join(".aws/credentails"), serde_json::json!({})),
+        &policy,
+    );
+    assert!(r.error_code.is_some(), "{r:?}");
+    assert!(
+        r.next.as_ref().is_none_or(|next| next.read.is_none()),
+        "{:?}",
+        r.next
+    );
 }

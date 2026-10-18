@@ -1447,7 +1447,9 @@ fn topology_files(out: &Value) -> std::collections::BTreeSet<String> {
         .flatten()
         // Re-export consumers are astTopology's addition over the edge walk,
         // and the graph store models a Rust `mod` declaration as containment.
-        .filter(|row| row.get("reexportVia").is_none() && row["edgeKinds"] != json!(["rust-module"]))
+        .filter(|row| {
+            row.get("reexportVia").is_none() && row["edgeKinds"] != json!(["rust-module"])
+        })
         .filter_map(|row| row["file"].as_str().map(str::to_owned))
         .collect()
 }

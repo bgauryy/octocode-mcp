@@ -19,6 +19,7 @@ import type { Permission } from '../permission/ask.js';
 import { actionWhy, decide } from '../permission/mode.js';
 import { isWithin, workspaceRoot } from '../shared/home.js';
 import { timedTool } from '../shared/render.js';
+import { formatDuration } from '../shared/format.js';
 import { visibleControls } from '../shared/sanitize.js';
 import { visibleError } from '../shared/visible-error.js';
 import { capOutputToFile } from '../shared/spill.js';
@@ -488,7 +489,7 @@ async function wait({ session, page, params, signal }: PageAction): Promise<Acti
   const seconds = Math.min(Math.max(params.timeout ?? WAIT_DEFAULT_S, 1), WAIT_MAX_S);
   const took = await withSnapshotOnTimeout(session, signal, () => waitForText(page, params.text!, params.gone === true, seconds * 1000, signal));
   if (took === undefined) return pageResult(await snapshot(session, signal));
-  return pageResult(`${JSON.stringify(params.text)} ${params.gone ? 'is gone' : 'appeared'} after ${(took / 1000).toFixed(1)}s.\n\n${await snapshot(session, signal, { changesOnly: true })}`);
+  return pageResult(`${JSON.stringify(params.text)} ${params.gone ? 'is gone' : 'appeared'} after ${formatDuration(took, true)}.\n\n${await snapshot(session, signal, { changesOnly: true })}`);
 }
 
 async function evaluate({ page, params, signal }: PageAction): Promise<ActionResult> {
@@ -559,7 +560,7 @@ function pageResult(text: string) {
 async function waitUntil(session: BrowserSession, text: string, timeout: number | undefined, signal?: AbortSignal): Promise<string> {
   const seconds = Math.min(Math.max(timeout ?? WAIT_DEFAULT_S, 0), WAIT_MAX_S);
   const ms = session.dialog ? undefined : await withSnapshotOnTimeout(session, signal, () => waitForText(session.page, text, false, seconds * 1000, signal));
-  return ms === undefined ? '' : `${JSON.stringify(text)} appeared after ${(ms / 1000).toFixed(1)}s.\n\n`;
+  return ms === undefined ? '' : `${JSON.stringify(text)} appeared after ${formatDuration(ms, true)}.\n\n`;
 }
 
 /** A timed-out wait still fails, but carries the current page so the model sees where it landed instead of retrying blind. */

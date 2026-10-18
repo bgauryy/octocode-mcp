@@ -493,7 +493,6 @@ impl RegistryClient<'_> {
     /// straight from the body) before it is cached: an 8 MB packument read
     /// for its version list keeps only that list. `name` keys the view apart
     /// from the full answer.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn json_view(
         &self,
         artifact_type: ArtifactType,

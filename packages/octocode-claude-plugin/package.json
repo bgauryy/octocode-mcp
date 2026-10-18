@@ -24,8 +24,8 @@
   ],
   "scripts": {
     "build": "node scripts/build.ts",
-    "build:dev": "node scripts/build.ts",
-    "lint": "node ../../node_modules/prettier/bin/prettier.cjs --check package.json tsconfig.json src scripts tests README.md ARCHITECTURE.md",
+    "lint": "prettier --check package.json tsconfig.json src scripts tests README.md ARCHITECTURE.md",
+    "format": "prettier --write package.json tsconfig.json src scripts tests README.md ARCHITECTURE.md",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test tests/package.test.ts",
     "test:smoke": "node scripts/smoke.ts",
@@ -36,6 +36,7 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^24.19.2",
+    "prettier": "^3.9.10",
     "typescript": "^6.0.3"
   }
 }

@@ -574,21 +574,15 @@ fn a_capture_is_saved_immutably_and_its_lead_reads_exactly_those_bytes() {
 #[test]
 fn expiry_follows_the_existing_retention_ttl() {
     let home = Home::new();
-    let before = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+    let before = crate::civil_date::unix_millis();
     let (_, captured) = captured_page(&home);
-    let after = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+    let after = crate::civil_date::unix_millis();
     let expires = captured.source.unwrap()["expiresAt"]
         .as_str()
         .unwrap()
         .to_owned();
-    let earliest = crate::civil_date::iso8601_millis(i64::try_from(before + 3_600_000).unwrap());
-    let latest = crate::civil_date::iso8601_millis(i64::try_from(after + 3_600_000).unwrap());
+    let earliest = crate::civil_date::iso8601_millis(before + 3_600_000);
+    let latest = crate::civil_date::iso8601_millis(after + 3_600_000);
     assert!(
         earliest <= expires && expires <= latest,
         "{earliest} <= {expires} <= {latest}"

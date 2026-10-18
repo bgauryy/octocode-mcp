@@ -1,12 +1,16 @@
 [package]
 name = "octocode-io"
 version.workspace = true
-publish = false
+publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "The one owner of the primitives Octocode crates share (listed in src/lib.rs)"
+
+# No doctests: nextest runs the tests (crates/runtime/Cargo.toml).
+[lib]
+doctest = false
 
 [dependencies]
 getrandom = { workspace = true }

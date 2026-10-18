@@ -2,7 +2,6 @@
 
 use crate::error::ErrorCode;
 use serde_json::{Value, json};
-use std::path::Path;
 
 /// What the client knows when the server asks it something.
 #[derive(Clone)]
@@ -17,14 +16,6 @@ pub(crate) struct ClientRequestContext {
     /// answered from `configuration` itself when it has no wrapping key.
     pub(crate) section_root: Option<String>,
     pub(crate) workspace_folders: Value,
-}
-
-/// The configuration section a server's `initializationOptions` stand for,
-/// derived from the server command's file stem. `None` = options are not a
-/// configuration section (sections are then looked up as keys).
-pub(crate) fn configuration_section_for_command(command: &str) -> Option<String> {
-    let stem = Path::new(command).file_stem()?.to_str()?;
-    matches!(stem, "rust-analyzer" | "gopls").then(|| stem.to_owned())
 }
 
 /// A reply to a server→client request. Genuinely unknown methods map to
@@ -220,22 +211,6 @@ mod tests {
         );
         // No items (or a malformed params object) → an empty array.
         assert_eq!(configuration(&settings, json!([])), json!([]));
-    }
-
-    #[test]
-    fn section_root_is_derived_from_the_command_stem() {
-        assert_eq!(
-            configuration_section_for_command("/usr/bin/rust-analyzer").as_deref(),
-            Some("rust-analyzer")
-        );
-        assert_eq!(
-            configuration_section_for_command("gopls.exe").as_deref(),
-            Some("gopls")
-        );
-        assert_eq!(
-            configuration_section_for_command("typescript-language-server"),
-            None
-        );
     }
 
     #[test]

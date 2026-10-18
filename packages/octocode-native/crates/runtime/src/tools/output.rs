@@ -127,6 +127,11 @@ pub trait ToolOutput: Sync {
     /// Finish a classified provider page's row `data` after selection: the
     /// tool's own leads may only name the selected evidence.
     fn finish_selection(&self, _data: &mut Value, _query: &Value) {}
+
+    /// Settle a row of a repair lead (a corrected rejected call) that the
+    /// schema admits but this tool would not serve as asked, so the lead
+    /// reaches the answer in one hop.
+    fn settle_repaired_row(&self, _row: &mut Value) {}
 }
 
 /// Roots are widened only from a trusted source, so the hint names where the

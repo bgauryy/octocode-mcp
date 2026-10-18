@@ -846,8 +846,10 @@ fn truncated_windows_are_not_merged() {
 }
 
 // Single-page results carry no redundant accounting: no engine constant,
-// no pagination block, no per-file row counters or per-file pagination
-// unless that file has more match pages.
+// no per-file row counters, and a pagination block only where something
+// continues (LS-3: rows left in a shown file count, so the block's `hasMore`
+// agrees with `next.nextMatchPage`); per-file pagination only for a file
+// with more match pages.
 #[test]
 fn single_page_results_omit_redundant_accounting() {
     let body = search_fixture(
@@ -858,7 +860,16 @@ fn single_page_results_omit_redundant_accounting() {
         ),
     );
     assert!(body.get("searchEngine").is_none(), "{body}");
-    assert!(body.get("pagination").is_none(), "{body}");
+    assert_eq!(body["pagination"]["hasMore"], true, "{body}");
+    assert_eq!(body["pagination"]["totalPages"], 1, "{body}");
+    let finished = search_fixture(
+        &[("a.txt", "foo\n"), ("b.txt", &"foo\n".repeat(2))],
+        ls_query(
+            serde_json::json!({"matchString": "foo".to_string(), "matchPageSize": 2, "contextLines": 0}),
+            None,
+        ),
+    );
+    assert!(finished.get("pagination").is_none(), "{finished}");
     let files = body["files"].as_array().expect("files");
     for file in files {
         assert!(file.get("totalMatchRows").is_none(), "{file}");

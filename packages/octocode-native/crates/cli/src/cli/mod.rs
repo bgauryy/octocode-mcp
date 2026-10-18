@@ -32,7 +32,8 @@ use std::io::{self, Write};
 pub struct Args {
     #[command(subcommand)]
     command: Command,
-    /// Print JSON (tools, `graph`, and `schema` already do on a pipe).
+    /// Print JSON (tools, `graph`, and `schema` already do on a pipe):
+    /// indented on a terminal, one line on a pipe.
     #[arg(long, global = true)]
     json: bool,
 }
@@ -48,7 +49,11 @@ Code graph (persisted; see `octocode graph --help`):
   octocode graph ingest <path>      parse once into <workspace>/.octocode/graph
   octocode graph query <op> [ref]   callers, impact, cycles, issues, ... in milliseconds
 
+JSON is indented on a terminal and one compact line on a pipe.
+
 Errors follow the output: JSON on stdout in JSON mode, text on stderr otherwise.
+When a pipe (not --json) chose JSON and stderr is a terminal, the error is also
+written there as text.
 
 Exit codes:
   0    success
@@ -63,25 +68,68 @@ Exit codes:
 A result with more to read (a next page, a partial read) is still 0: follow the
 next.* continuation or pagination.hasMore in the output."#;
 
-/// A command's own failure (not a tool call's): the `{error, errorCode}`
-/// envelope tool errors use, on stdout in JSON mode, else the message on
-/// stderr. Every code is a declared `errorCodes` entry.
-fn emit_error(code: &str, message: &str, json_out: bool) {
-    let message = octocode_native::security::scrub_error_text(message);
-    if json_out {
-        let mut envelope = octocode_native::contracts::tool_error(&message, Vec::new());
-        envelope["errorCode"] = json!(code);
-        println!("{envelope}");
-    } else {
-        eprintln!("{message}");
+/// How a command answers: JSON or text, and whether a pipe chose JSON.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct OutputMode {
+    /// The command prints JSON.
+    pub(super) json: bool,
+    /// JSON because stdout is a pipe; the caller did not pass `--json`.
+    piped: bool,
+}
+
+impl OutputMode {
+    /// `--json`, or a pipe for a command that answers a pipe in JSON.
+    fn new(json_flag: bool, answers_pipe_in_json: bool) -> Self {
+        let piped = !json_flag && answers_pipe_in_json && !stdout_is_terminal();
+        Self {
+            json: json_flag || piped,
+            piped,
+        }
+    }
+
+    /// An error in this mode is also written as text on stderr: a pipe chose
+    /// JSON, and stderr is a terminal, so a person may be watching it while
+    /// the JSON goes on to the next program.
+    fn tells_stderr(self) -> bool {
+        use std::io::IsTerminal;
+        self.piped && io::stderr().is_terminal()
     }
 }
 
-/// Machine output: a tool, `graph`, or `--json` call whose stdout is a pipe,
-/// or any call with `--json`. A terminal keeps text.
-fn machine_output(json_flag: bool) -> bool {
+impl From<bool> for OutputMode {
+    /// A command's explicit choice: JSON for `--json`, else text.
+    fn from(json: bool) -> Self {
+        Self { json, piped: false }
+    }
+}
+
+fn stdout_is_terminal() -> bool {
     use std::io::IsTerminal;
-    json_flag || !io::stdout().is_terminal()
+    io::stdout().is_terminal()
+}
+
+/// A command's own failure (not a tool call's): the `{error, errorCode}`
+/// envelope tool errors use, on stdout in JSON mode, else the message on
+/// stderr. Every code is a declared `errorCodes` entry.
+fn emit_error(code: &str, message: &str, mode: impl Into<OutputMode>) {
+    let mode = mode.into();
+    let envelope = error_envelope(code, message, &[]);
+    if mode.json {
+        write_json(&envelope);
+    }
+    if !mode.json || mode.tells_stderr() {
+        eprintln!("{}", envelope["error"].as_str().unwrap_or_default());
+    }
+}
+
+/// The `{error, errorCode[, details]}` envelope of a command's own failure,
+/// with secrets scrubbed from every line.
+fn error_envelope(code: &str, message: &str, details: &[&str]) -> Value {
+    use octocode_native::security::scrub_error_text;
+    let details = details.iter().map(|line| scrub_error_text(line)).collect();
+    let mut envelope = octocode_native::contracts::tool_error(&scrub_error_text(message), details);
+    envelope["errorCode"] = json!(code);
+    envelope
 }
 
 /// Commands whose output is text for people unless `--json` asks otherwise;
@@ -93,16 +141,47 @@ fn text_command(name: &str) -> bool {
     )
 }
 
-/// Whether a parse error is reported as JSON: `--json` anywhere, or a
+/// How a parse error is reported: as JSON for `--json` anywhere, or for a
 /// non-text command (a mistyped tool name included) whose stdout is a pipe.
-fn json_errors_for(argv: &[std::ffi::OsString]) -> bool {
+fn parse_error_mode(argv: &[std::ffi::OsString]) -> OutputMode {
     let json_flag = argv.iter().any(|arg| arg == "--json");
     let command = argv
         .iter()
         .skip(1)
         .filter_map(|arg| arg.to_str())
         .find(|arg| !arg.starts_with('-'));
-    json_flag || (!command.is_some_and(text_command) && machine_output(false))
+    OutputMode::new(json_flag, !command.is_some_and(text_command))
+}
+
+/// Clap's diagnostic as text on stderr, colored when stderr is a terminal,
+/// with secrets scrubbed.
+fn print_clap_error(error: &clap::Error) {
+    let rendered = error.render().to_string();
+    let sanitized = octocode_native::security::scrub_error_text(&rendered);
+    if sanitized == rendered {
+        let _ = error.print();
+    } else {
+        let _ = io::stderr().lock().write_all(sanitized.as_bytes());
+    }
+}
+
+/// Clap's whole diagnostic as the JSON envelope: `error` is its error line
+/// and `tip:` lines (the did-you-mean names), and every other line (possible
+/// values, usage) is a `details` entry.
+fn clap_error_envelope(error: &clap::Error) -> Value {
+    let rendered = error.render().to_string();
+    let (message, details): (Vec<&str>, Vec<&str>) = rendered
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .partition(|line| line.starts_with("error: ") || line.starts_with("tip: "));
+    let message = message
+        .iter()
+        .map(|line| line.strip_prefix("error: ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("; ");
+    // A rejected command line is the caller's input, like a bad query.
+    error_envelope("invalidInput", &message, &details)
 }
 
 pub fn parse_args() -> Result<Args, u8> {
@@ -117,7 +196,7 @@ where
     let mut argv: Vec<std::ffi::OsString> = argv.into_iter().map(Into::into).collect();
     // A bare `octocode` on a pipe is an agent asking what it can do. A
     // terminal is the ordinary clap help path (stdout and a successful exit).
-    if argv.len() == 1 && machine_output(false) {
+    if argv.len() == 1 && !stdout_is_terminal() {
         argv.push("schema".into());
     } else if argv.len() == 1 {
         argv.push("--help".into());
@@ -142,27 +221,15 @@ where
                 let _ = error.print();
                 return Err(error.exit_code() as u8);
             }
-            if !json_errors_for(&argv) {
-                let rendered = error.render().to_string();
-                let sanitized = octocode_native::security::scrub_error_text(&rendered);
-                if sanitized == rendered {
-                    let _ = error.print();
-                } else {
-                    let _ = io::stderr().lock().write_all(sanitized.as_bytes());
-                }
+            let mode = parse_error_mode(&argv);
+            if !mode.json {
+                print_clap_error(&error);
                 return Err(error.exit_code() as u8);
             }
-            // The error line and clap's `tip:` (the did-you-mean names).
-            let rendered = error.render().to_string();
-            let message = rendered
-                .lines()
-                .map(str::trim)
-                .filter(|line| line.starts_with("error: ") || line.starts_with("tip: "))
-                .map(|line| line.trim_start_matches("error: "))
-                .collect::<Vec<_>>()
-                .join("; ");
-            // A rejected command line is the caller's input, like a bad query.
-            emit_error("invalidInput", &message, true);
+            write_json(&clap_error_envelope(&error));
+            if mode.tells_stderr() {
+                print_clap_error(&error);
+            }
             Err(2)
         }
     }
@@ -182,7 +249,7 @@ fn is_help(error: &clap::Error) -> bool {
 /// config warnings.
 fn hide_unavailable_tools(mut command: clap::Command) -> clap::Command {
     use octocode_native::config::{acquire_config_input, resolve_config};
-    let (Ok(cwd), Some(home)) = (std::env::current_dir(), std::env::home_dir()) else {
+    let (Ok(cwd), Some(home)) = (std::env::current_dir(), octocode_io::env::home_dir()) else {
         return command;
     };
     let surface = RuntimeSurface::Cli;
@@ -287,7 +354,8 @@ fn machine_catalog(runtime: &ToolRuntime) -> Result<Value, String> {
 
 pub async fn run(args: Args) -> u8 {
     let Args { command, json } = args;
-    let json_out = command.json_output(json);
+    let mode = command.output_mode(json);
+    let json_out = mode.json;
     let command = match command {
         Command::Config {
             command:
@@ -300,14 +368,14 @@ pub async fn run(args: Args) -> u8 {
             return config_view::run(no_open, idle_timeout, json_out).await;
         }
         Command::Serve { socket } => return serve::run(&socket).await,
-        Command::Tool(tool) => return run_tool(tool, json_out).await,
+        Command::Tool(tool) => return run_tool(tool, mode).await,
         command => command,
     };
     let runtime = match ToolRuntime::from_host(cli_host()) {
         Ok(runtime) => runtime,
-        Err(error) => return start_failed(&error, json_out),
+        Err(error) => return start_failed(&error, mode),
     };
-    let result = dispatch(command, &runtime, json_out).await;
+    let result = dispatch(command, &runtime, mode).await;
     runtime.close().await;
     result
 }
@@ -330,23 +398,25 @@ fn credential_changed(code: u8) -> u8 {
 }
 
 /// A runtime that could not start: its error in the command's output mode.
-fn start_failed(error: &RuntimeError, json_out: bool) -> u8 {
-    emit_error(&error.code, &error.message, json_out);
+fn start_failed(error: &RuntimeError, mode: OutputMode) -> u8 {
+    emit_error(&error.code, &error.message, mode);
     exit_code(error.exit_class())
 }
 
 impl Command {
     /// The output mode the command was asked for: tools, `graph`, and
     /// `schema` answer a pipe in JSON; every command answers `--json` in JSON.
-    fn json_output(&self, json: bool) -> bool {
-        match self {
-            Self::Tool(_) | Self::Graph { .. } | Self::Schema { .. } => machine_output(json),
-            _ => json,
-        }
+    fn output_mode(&self, json: bool) -> OutputMode {
+        let answers_pipe_in_json = matches!(
+            self,
+            Self::Tool(_) | Self::Graph { .. } | Self::Schema { .. }
+        );
+        OutputMode::new(json, answers_pipe_in_json)
     }
 }
 
-async fn dispatch(command: Command, runtime: &ToolRuntime, json_out: bool) -> u8 {
+async fn dispatch(command: Command, runtime: &ToolRuntime, mode: OutputMode) -> u8 {
+    let json_out = mode.json;
     match command {
         Command::Schema { tool, view, select } => {
             let value = machine_catalog(runtime)
@@ -358,15 +428,14 @@ async fn dispatch(command: Command, runtime: &ToolRuntime, json_out: bool) -> u8
                     }
                 });
             match value {
-                // A terminal gets indented JSON; a pipe gets one line.
-                Ok(value) => write_json(&value, json_out),
+                Ok(value) => write_json(&value),
                 Err(error) => {
                     let code = if error.exit == 2 {
                         "invalidInput"
                     } else {
                         "contract"
                     };
-                    emit_error(code, &error.message, json_out);
+                    emit_error(code, &error.message, mode);
                     error.exit
                 }
             }
@@ -406,7 +475,7 @@ async fn dispatch(command: Command, runtime: &ToolRuntime, json_out: bool) -> u8
             ),
             AuthCommand::Logout => credential_changed(system::logout(runtime, json_out)),
         },
-        Command::Graph { command } => graph::graph(runtime, command, json_out),
+        Command::Graph { command } => graph::graph(runtime, command, mode),
         Command::Skill { command } => skill::run(runtime, command, json_out).await,
         Command::Install(args) => mcp_install::run(mcp_install::InstallArgs {
             json: json_out,
@@ -444,11 +513,10 @@ fn config_management(runtime: &ToolRuntime) -> u8 {
             config_management_response(runtime, &request)
         });
     match result {
-        Ok(response) => write_json(&response, true),
+        Ok(response) => write_json(&response),
         Err(error) => {
             write_json(
                 &json!({"success": false, "apiVersion": 1, "error": {"code": error.code(), "message": error.to_string()}}),
-                true,
             );
             error.exit_code()
         }
@@ -491,24 +559,24 @@ fn config_management_response(
 
 /// Parse the query, then run it on the workspace's warm server (read-only
 /// tools) or in this process.
-async fn run_tool(tool: commands::ToolCommand, json_out: bool) -> u8 {
+async fn run_tool(tool: commands::ToolCommand, mode: OutputMode) -> u8 {
     let input = match tool_input(tool.name, &tool.args) {
         Ok(input) => input,
         Err(message) => {
-            emit_error("invalidInput", &message, json_out);
+            emit_error("invalidInput", &message, mode);
             return 2;
         }
     };
     if ToolId::from_name(tool.name).is_some_and(serve::runs_on_server)
-        && let Some(code) = serve::call(tool.name, &input, json_out).await
+        && let Some(code) = serve::call(tool.name, &input, mode).await
     {
         return code;
     }
     let runtime = match ToolRuntime::from_host(cli_host()) {
         Ok(runtime) => runtime,
-        Err(error) => return start_failed(&error, json_out),
+        Err(error) => return start_failed(&error, mode),
     };
-    let code = execute(&runtime, tool.name, input, json_out).await;
+    let code = execute(&runtime, tool.name, input, mode).await;
     runtime.close().await;
     code
 }
@@ -558,13 +626,13 @@ fn channel(json_out: bool) -> Channel {
 
 /// Execute one tool call and print its result. Exits with the code of the
 /// runtime's [`ExitClass`].
-async fn execute(runtime: &ToolRuntime, tool: &str, input: Value, json_out: bool) -> u8 {
+async fn execute(runtime: &ToolRuntime, tool: &str, input: Value, mode: OutputMode) -> u8 {
     const REQUEST: &str = "cli-1";
     let admission = match runtime.admit(REQUEST.into()) {
         Ok(admission) => admission,
-        Err(error) => return Printed::finish(tool, Err(error), json_out).print(),
+        Err(error) => return Printed::finish(tool, Err(error), mode.json).print(mode),
     };
-    let execution = runtime.execute(admission, tool.into(), input, channel(json_out));
+    let execution = runtime.execute(admission, tool.into(), input, channel(mode.json));
     tokio::pin!(execution);
     let result = tokio::select! {
         result = &mut execution => result,
@@ -578,14 +646,16 @@ async fn execute(runtime: &ToolRuntime, tool: &str, input: Value, json_out: bool
                     == Interrupted::Forced
                 {
                     // Work that ignores cancellation must not hold the
-                    // terminal hostage: the user asked twice.
+                    // terminal hostage: the user asked twice. Returning would
+                    // drop the runtime in `main`, which joins its blocking
+                    // threads, so the process exits here instead.
                     std::process::exit(130);
                 }
                 return 130;
             }
         }
     };
-    Printed::finish(tool, result, json_out).print()
+    Printed::finish(tool, result, mode.json).print(mode)
 }
 
 /// Where a finished call's output goes.
@@ -602,8 +672,12 @@ struct Printed {
     /// The exit code of the call's [`ExitClass`].
     exit: u8,
     stream: Stream,
-    /// The serialized JSON or rendered text, without a trailing newline.
+    /// The serialized JSON (compact) or rendered text, without a trailing
+    /// newline.
     body: String,
+    /// A failed call's text when its body is the JSON envelope, for a person
+    /// watching stderr ([`OutputMode::tells_stderr`]).
+    error_text: Option<String>,
 }
 
 impl Printed {
@@ -620,27 +694,35 @@ impl Printed {
                 } else {
                     outcome_text(&outcome.content)
                 },
+                error_text: None,
             },
             Err(error) => {
                 let projected = tool_error_result(tool, &error);
-                let (stream, body) = if json_out {
-                    (Stream::Stdout, projected.envelope.to_string())
+                let (stream, body, error_text) = if json_out {
+                    let envelope = projected.envelope.to_string();
+                    (Stream::Stdout, envelope, Some(projected.text))
                 } else {
-                    (Stream::Stderr, projected.text)
+                    (Stream::Stderr, projected.text, None)
                 };
                 Self {
                     exit: exit_code(error.exit_class()),
                     stream,
                     body,
+                    error_text,
                 }
             }
         }
     }
 
-    /// The warm server's reply line: `{exit, stderr, body}`.
+    /// The warm server's reply line: `{exit, stderr, body[, errorText]}`.
     #[cfg(unix)]
     fn to_json(&self) -> Value {
-        json!({"exit": self.exit, "stderr": self.stream == Stream::Stderr, "body": self.body})
+        let mut reply =
+            json!({"exit": self.exit, "stderr": self.stream == Stream::Stderr, "body": self.body});
+        if let Some(text) = &self.error_text {
+            reply["errorText"] = json!(text);
+        }
+        reply
     }
 
     /// A reply line read back; `None` when it is not one.
@@ -657,18 +739,31 @@ impl Printed {
                 Value::String(body) => body,
                 _ => return None,
             },
+            error_text: match reply["errorText"].take() {
+                Value::String(text) => Some(text),
+                Value::Null => None,
+                _ => return None,
+            },
         })
     }
 
-    /// Print the body; a failed write (other than a closed pipe) is exit 5.
-    fn print(&self) -> u8 {
+    /// Print the body in the call's output `mode`, and a JSON error's text
+    /// on stderr when [`OutputMode::tells_stderr`]; a failed write (other
+    /// than a closed pipe) is exit 5.
+    fn print(&self, mode: OutputMode) -> u8 {
         let printed = match self.stream {
+            Stream::Stdout if mode.json => write_serialized_json(&self.body),
             Stream::Stdout => write_text(&self.body),
             Stream::Stderr => {
                 eprintln!("{}", self.body);
                 0
             }
         };
+        if let Some(text) = self.error_text.as_deref()
+            && mode.tells_stderr()
+        {
+            eprintln!("{text}");
+        }
         if printed == 0 { self.exit } else { printed }
     }
 }
@@ -703,15 +798,33 @@ pub(super) fn write_text(text: &str) -> u8 {
     }
 }
 
-pub(super) fn write_json(value: &Value, compact: bool) -> u8 {
-    let text = if compact {
-        serde_json::to_string(value)
-    } else {
-        serde_json::to_string_pretty(value)
-    };
-    match text {
+/// Print JSON on stdout: the one writer of every JSON answer, indented for a
+/// terminal and one compact line on a pipe.
+pub(super) fn write_json(value: &Value) -> u8 {
+    match json_text(value, stdout_is_terminal()) {
         Ok(text) => write_text(&text),
         Err(_) => 5,
+    }
+}
+
+/// Print JSON already serialized compactly (a tool call's body, which the
+/// warm server sends as text) as [`write_json`] does: unchanged on a pipe.
+fn write_serialized_json(compact: &str) -> u8 {
+    if !stdout_is_terminal() {
+        return write_text(compact);
+    }
+    match serde_json::from_str::<Value>(compact) {
+        Ok(value) => write_json(&value),
+        Err(_) => write_text(compact),
+    }
+}
+
+/// `value` as printed on a `terminal` (indented) or a pipe (one line).
+fn json_text(value: &Value, terminal: bool) -> serde_json::Result<String> {
+    if terminal {
+        serde_json::to_string_pretty(value)
+    } else {
+        serde_json::to_string(value)
     }
 }
 
@@ -720,6 +833,73 @@ mod tests {
     use super::{Printed, Stream, parse_args_from};
     use octocode_native::runtime::RuntimeError;
     use serde_json::json;
+
+    /// A terminal gets indented JSON, a pipe one compact line, whatever the
+    /// command; both are the same value.
+    #[test]
+    fn json_is_indented_for_a_terminal_and_compact_for_a_pipe() {
+        let value = json!({"results": [{"index": 0, "data": {"a": [1, 2]}}], "root": "/w"});
+        let pipe = super::json_text(&value, false).expect("compact");
+        assert_eq!(
+            pipe,
+            r#"{"results":[{"index":0,"data":{"a":[1,2]}}],"root":"/w"}"#
+        );
+        assert_eq!(pipe, value.to_string());
+        let terminal = super::json_text(&value, true).expect("pretty");
+        assert!(terminal.starts_with("{\n  \"results\": [\n"), "{terminal}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&terminal).ok(),
+            Some(value)
+        );
+    }
+
+    /// A clap error keeps every line in JSON: the first is `error`, the rest
+    /// (possible values, tips, usage) are `details`.
+    #[test]
+    fn clap_errors_keep_every_line_in_json() {
+        use clap::CommandFactory;
+        let error = super::Args::command()
+            .try_get_matches_from(["octocode", "graph", "query", "notAnOp"])
+            .expect_err("invalid op");
+        let envelope = super::clap_error_envelope(&error);
+        assert_eq!(envelope["errorCode"], "invalidInput");
+        assert_eq!(envelope["error"], "invalid value 'notAnOp' for '<OP>'");
+        let details = envelope["details"].as_array().expect("details");
+        assert!(
+            details[0]
+                .as_str()
+                .is_some_and(|line| line.starts_with("[possible values: stats, ")),
+            "{envelope}"
+        );
+    }
+
+    /// A JSON error carries its text through the warm server, so a client
+    /// can tell a watching stderr; a result or a text error carries none.
+    #[cfg(unix)]
+    #[test]
+    fn printed_calls_round_trip_through_the_reply_line() {
+        let error = || RuntimeError {
+            code: "timeout".into(),
+            message: "Tool call timed out.".into(),
+            payload: None,
+            validation_issues: None,
+        };
+        let json_error = Printed::finish("localSearch", Err(error()), true);
+        assert!(
+            json_error
+                .error_text
+                .as_deref()
+                .is_some_and(|text| text.ends_with("(errorCode: timeout)"))
+        );
+        let text_error = Printed::finish("localSearch", Err(error()), false);
+        assert_eq!(text_error.error_text, None);
+        for printed in [json_error, text_error] {
+            assert_eq!(
+                Printed::from_json(printed.to_json()).as_ref(),
+                Some(&printed)
+            );
+        }
+    }
 
     /// After the first Ctrl-C cancels, a second Ctrl-C must stop waiting
     /// for work that ignores cancellation; without one, the drain completes.

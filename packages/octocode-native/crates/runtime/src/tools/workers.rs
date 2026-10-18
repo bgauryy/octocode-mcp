@@ -2,6 +2,8 @@
 //! rule every per-row fan-out sizes itself by, so concurrent rows split the
 //! cores the batch budget gave them instead of each taking every core.
 
+use crate::tools::num::usize_of;
+
 /// The host's cores; one when the count is unknown, so an unproven host
 /// never runs more threads than it can.
 pub(crate) fn host_cores() -> usize {
@@ -14,9 +16,7 @@ pub(crate) fn host_cores() -> usize {
 /// with its rationale beside it) and `items`, at least one.
 pub(crate) fn workers(walk_threads: Option<u32>, items: usize, cap: Option<usize>) -> usize {
     walk_threads
-        .map_or_else(host_cores, |share| {
-            usize::try_from(share).unwrap_or(usize::MAX)
-        })
+        .map_or_else(host_cores, usize_of)
         .min(cap.unwrap_or(usize::MAX))
         .min(items)
         .max(1)

@@ -79,6 +79,70 @@ layout. The [shell primer](../prompts/local-shell.md) lists permitted read-only 
 the [MCP primer](../prompts/mcp.md) explains that arm's tool use. Workers cannot read
 private rubrics, judge outputs or the competing answer.
 
+## Compare installed local models with the native tools
+
+The [local model runner](../scripts/local_model_benchmark.py) uses FreeLlama MCP for
+inference and the built native CLI for repository research. It exposes only `structureSearch`,
+`localSearch`, `localFetch`, `astSearch`, `lspSearch` and beta `astTopology`. The classifier,
+GitHub tools and shell commands are outside this lane.
+
+Use an existing local Ollama/FreeLlama setup and a built FreeLlama MCP server. Read its
+`models` tool with `view: "installed"` first; choose exact installed chat-model tags rather
+than assuming the examples below are available. The runner refuses missing tags and never
+downloads models. From this package:
+
+```bash
+export FREELLAMA_MCP_SERVER=/absolute/path/to/freellama/packages/mcp/dist/index.js
+BENCH_RUN="results/local-models-$(date -u +%Y%m%dT%H%M%SZ)"
+python3 scripts/local_model_benchmark.py \
+  --output "$BENCH_RUN" \
+  --models qwen3.5:9b-q4_K_M gemma4:12b-mlx ornith:9b gemma4:latest \
+  --questions all --turns 3
+```
+
+Each model gets six explicit tool probes and a fresh conversation for every question.
+The default budget is three research turns and one requested final-answer turn; a turn
+can contain multiple independent tool calls. Change budgets before starting a comparison,
+then keep them identical between models. `--questions 1,18,26` selects a smaller engineering
+pilot; `--skip-probes` skips the explicit probe set. `--help` lists the accepted flags.
+
+The runner snapshots the native executable, checks assigned repository revisions and tracked
+cleanliness and captures live query schemas. Immediately before each trial it reads a fresh
+initial filename overview and saves `trials/<model>/<Qn>/orientation.json`, so saved-response
+continuations are not reused from an earlier model or question. Setup reads are excluded
+from model-selected research counts and timing. Every model gets the same overview query
+on the pinned corpus. It confines model-selected paths to the assigned repository, rejects classifiers
+and remote tools, preserves native pages and continuations, and makes no argument repairs.
+
+Results stream into `trials/<model>/<Qn>/result.json`, readable answers and individual turn
+receipts. `probes/` holds the six-tool checks, `progress.json` counts finished trials, and
+`results.json` is written after every requested trial finishes. The run directory must be new.
+Original question files are read unchanged. Keep private source keys and grades outside
+`local/repos/`; the solver must not read another answer, rubric or prior result.
+
+Protocol success and a nonempty answer do not establish correctness. Apply the
+[source-backed judge policy](../docs/judging.md) to each question, report parser failures and partial outputs separately,
+and distinguish model-selected research tool use from the explicit probes. Never present
+an ungraded response count as a model-quality ranking. Provider input counts include the
+initial prompt; adjusted input usage is unknown and excluded from comparison totals.
+
+Render a progress snapshot or the completed comparison:
+
+```bash
+python3 scripts/local_model_report.py --run results/local-model-example --prepare-review
+```
+
+The report writes `comparison.html`, `report-summary.json` and identity-masked review
+worksheets under `quality/review/`. Keep `quality/identity-map.json` private from a judge
+until their source review is recorded. Add `quality/grades.json` as a model-name mapping
+to question IDs: each question has `marks` (three values, one per original bullet) and
+`notes` explaining the source checks. Use `1` for a fully supported answer, `0` for a
+missing, materially incomplete or unsupported answer, and `null` for an unfinished check.
+Inspect useful partial text in the original receipts too. The report preserves it and
+does not mark it as a completed response. Re-render after adding grades; pending cases
+cannot establish a quality winner. Write a brief `README.md` in each result folder with
+the question, conditions, findings, limitations and replay command.
+
 ## Reproduce the native CLI versus shell exploration
 
 The recorded exploratory campaign is

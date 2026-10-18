@@ -36,7 +36,7 @@ static ANSWERS: crate::tools::page_memo::PageMemo<(
 /// an omitted one). The answer memo key and the snapshot id both digest it,
 /// so a page of one analysis never continues another's.
 pub(super) fn answer_fields(q: &AstTopologyQuery, b: &BuiltGraph) -> Value {
-    let mut query = serde_json::to_value(q).unwrap_or_default();
+    let mut query = crate::tools::result::query_value(q);
     if let Some(fields) = query.as_object_mut() {
         fields.retain(|_, value| !value.is_null());
         for cursor in [

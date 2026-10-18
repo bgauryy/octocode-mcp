@@ -3,9 +3,10 @@
  * clickable link (OSC 8), move the cursor or reorder text with bidi overrides. `sanitizeTerminalText` strips those
  * from text a person reads; `visibleControls` shows them as escapes in text the model reads. Adapted from the native composer's paste sanitiser.
  *
- * Which one: text that only a terminal or UI draws (a dialog, a panel row, a label) goes through `sanitizeTerminalText`; any text
+ * Which one: text that only a terminal or UI draws (a panel row, a label) goes through `sanitizeTerminalText`; any text
  * that reaches the model (a message body, a fenced body, a tool result) goes through `visibleControls`, which keeps the evidence
- * and is safe to draw too. `visibleControls` is not injective: a literal `\u{200d}` typed in the text and an escaped ZWJ read the
+ * and is safe to draw too. An approval dialog shows what the user is asked to allow, so it uses `visibleControls` as well: a hidden or
+ * bidi character stays visible instead of vanishing. `visibleControls` is not injective: a literal `\u{200d}` typed in the text and an escaped ZWJ read the
  * same. That is accepted: the escape exists so a reader can see that something was there, not to round-trip the text.
  */
 // An unterminated string ends at its line: a stray introducer must not swallow the rest of the text.

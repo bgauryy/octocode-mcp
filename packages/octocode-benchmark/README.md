@@ -17,6 +17,7 @@ questions that informed product changes are development cases, not sealed confir
 |---|---|---|
 | GitHub / external research | [External cookbook](external/README.md) | Claude or Pi for MCP versus gh/shell; Codex for MCP arms |
 | Pinned local repositories | [Local cookbook](local/README.md) | Fresh Codex MCP workers; existing Claude/Pi local shell arms |
+| Installed local models using native tools | [Local model cookbook](local/README.md#compare-installed-local-models-with-the-native-tools) | FreeLlama MCP inference and six current native local tools |
 | Native binary versus rg | [Recorded exploration](local/README.md#reproduce-the-native-cli-versus-shell-exploration) | Saved-run audit; no generic fresh Codex CLI/shell runner |
 
 Do not substitute one execution lane for another without recording the harness change and

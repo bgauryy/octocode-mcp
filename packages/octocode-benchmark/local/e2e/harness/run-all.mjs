@@ -19,6 +19,7 @@
 // checks.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { LIVE, RESULTS, TESTING, hermeticEnv } from './mcp-client.mjs';
 
@@ -62,6 +63,12 @@ function counts(stdout) {
   return { passed: passed + nodeTest('pass'), failed: [...failed, ...nodeFailed.slice(0, nodeTest('fail'))] };
 }
 
+// Language servers (rust-analyzer, tsgo) spend several CPU-seconds on a cold
+// first request; with the run queue far above the core count that wall time
+// outgrows the 30 s request budget and the LSP-backed checks time out.
+const OVERSUBSCRIBED = 2 * os.cpus().length;
+const loadAtStart = os.loadavg()[0];
+
 fs.mkdirSync(RESULTS, { recursive: true });
 const rows = [];
 const wallStart = Date.now();
@@ -85,4 +92,8 @@ const failedSuites = rows.filter(r => r.result === 'FAIL').map(r => r.suite);
 const wallSeconds = Math.round((Date.now() - wallStart) / 1000);
 fs.writeFileSync(path.join(RESULTS, 'summary.json'), JSON.stringify({ at: new Date().toISOString(), live: LIVE, wallSeconds, rows }, null, 2));
 console.log(failedSuites.length ? `FAIL run-all: ${failedSuites.length}/${rows.length} suites failed (${failedSuites.join(', ')}) in ${wallSeconds}s` : `PASS run-all: ${rows.length} suites in ${wallSeconds}s`);
+const loadPeak = Math.max(loadAtStart, os.loadavg()[0]);
+if (failedSuites.length && loadPeak > OVERSUBSCRIBED) {
+  console.log(`NOTE: load average ${loadPeak.toFixed(0)} on ${os.cpus().length} cores: LSP-backed checks (cold lspSearch timeouts) fail from CPU starvation; rerun on an idle machine before treating them as product failures.`);
+}
 process.exitCode = failedSuites.length ? 1 : 0;

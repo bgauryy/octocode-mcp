@@ -162,7 +162,7 @@ mod tests {
             assert!(!output.contains("removable comment"));
             assert!(output.len() < source.len());
         }
-        for extension in ["js", "jsx", "mjs", "cjs"] {
+        for &extension in crate::text::JS_EXTENSIONS {
             let source = "export function target(uniqueArgumentName) {\n  const anotherUniqueName = uniqueArgumentName + 1;\n  return anotherUniqueName;\n}\n";
             let output =
                 apply_content_view_minification_inner(source, &format!("fixture.{extension}"));

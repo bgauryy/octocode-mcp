@@ -799,6 +799,102 @@ fn every_clipped_value_on_a_default_page_is_one_expand_values_call_away() {
     }
 }
 
+/// A caller-sized page whose clipped values need more reads than one call
+/// holds offers every read: `expandValues`, then `expandValues2`, …, each a
+/// full call, and together they read every clipped row's line.
+#[test]
+fn a_grid_page_reads_every_clipped_value_in_numbered_calls() {
+    use crate::tools::id::{ToolId, channel, is_enrichment};
+    let limit = crate::tools::result::rows_per_call(ToolId::LocalFetch);
+    let root = tempfile::tempdir().expect("fixture directory");
+    let files = limit * 6;
+    for index in 0..files {
+        let mut text = String::new();
+        for hit in 0..10 {
+            text.push_str(&format!(
+                "{} needle{hit} {}\n",
+                "x".repeat(3000),
+                "x".repeat(3000)
+            ));
+            text.push_str(&"filler\n".repeat(15));
+        }
+        fs::write(root.path().join(format!("f{index:02}.txt")), text).expect("fixture");
+    }
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle",
+            "regex": "literal", "pageSize": files, "matchPageSize": 10, "sort": "path"}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+        .expect("search");
+    assert!(
+        !result.warnings.iter().any(|w| w.contains("expandValues")),
+        "{:?}",
+        result.warnings
+    );
+    let clipped = result
+        .files
+        .iter()
+        .flat_map(|file| {
+            file.matches
+                .iter()
+                .flatten()
+                .filter(|row| row.clipped)
+                .map(|row| (file.path.clone(), row.line))
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(clipped.len(), files * 10, "every row clipped");
+    let next = result.next.clone().unwrap_or_default();
+    let mut names = next
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(name, _)| name.clone())
+        .filter(|name| name.starts_with("expandValues"))
+        .collect::<Vec<_>>();
+    names.sort_by_key(|name| name["expandValues".len()..].parse::<usize>().unwrap_or(1));
+    let expected = (1..=6)
+        .map(|n| match n {
+            1 => "expandValues".to_owned(),
+            n => format!("expandValues{n}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names, expected);
+    let mut read = std::collections::BTreeSet::new();
+    for name in &names {
+        assert_eq!(
+            channel(ToolId::LocalSearch, name),
+            crate::tools::id::Channel::Page
+        );
+        assert!(is_enrichment(name), "{name}");
+        let lead = &next[name];
+        assert_eq!(lead["tool"], "localFetch", "{lead}");
+        assert_eq!(lead["confidence"], "exact", "{lead}");
+        let rows = lead["query"]["queries"].as_array().expect("rows");
+        assert!(!rows.is_empty() && rows.len() <= limit, "{lead}");
+        for row in rows {
+            let path = row["path"].as_str().expect("path").to_owned();
+            for range in row["ranges"].as_array().into_iter().flatten() {
+                let (start, end) = range
+                    .as_str()
+                    .and_then(|range| range.split_once('-'))
+                    .expect("range");
+                let (start, end): (u32, u32) =
+                    (start.parse().expect("start"), end.parse().expect("end"));
+                for line in start..=end {
+                    read.insert((path.clone(), line));
+                }
+            }
+        }
+    }
+    let unread = clipped.difference(&read).collect::<Vec<_>>();
+    assert!(
+        unread.is_empty(),
+        "clipped rows no read reaches: {unread:?}"
+    );
+}
+
 /// A multiline page whose clipped values need a file-scoped search in one
 /// file and a whole read in another still offers one executable
 /// `expandValues`: one tool (localFetch from each file's first clipped
@@ -923,8 +1019,8 @@ fn an_include_naming_a_pruned_directory_walks_it() {
     assert_eq!(paths, vec![serde_json::json!("src/a.rs")], "{plain}");
 }
 
-/// At the last page a continuation can name, file pages that remain are
-/// stated with the way to reach them: a narrower search.
+/// At the last page a continuation can name, file pages that remain end the
+/// row at a terminal limit the shared cursor owner states.
 #[test]
 fn the_page_ceiling_names_the_file_pages_past_it() {
     let max =
@@ -957,9 +1053,14 @@ fn the_page_ceiling_names_the_file_pages_past_it() {
         result.next
     );
     let warning = format!(
-        "Page {max} is the last page a continuation names; 2 later file pages need a narrower path or include."
+        "terminalLimit: page:{max} is the last a continuation may request; the rest is on no page."
     );
     assert!(result.warnings.contains(&warning), "{:?}", result.warnings);
+    assert!(result.terminal_limit && result.is_partial);
+    assert_eq!(
+        result.stats.partial_reasons,
+        [crate::tools::paging::CURSOR_MAXIMUM]
+    );
 }
 
 #[test]

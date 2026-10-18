@@ -2,7 +2,8 @@ import type { ToolAnnotations, ToolCallEvent, ToolResultEvent } from '@earendil-
 import { canonicalPath, isWithin, readPaths, resolveToolPath, tildePath, workspaceRoot } from '../shared/home.js';
 import { isMcpTool } from '../shared/octocode-tools.js';
 import { secretProblem } from '../shared/sanitize.js';
-import { contentText, isRecord, MINUTE_MS } from '../shared/util.js';
+import { formatAgo } from '../shared/format.js';
+import { contentText, isRecord } from '../shared/util.js';
 import { readOnlyMcp, runsLater } from './gate.js';
 import { commandNames, SHELL_TOOLS } from './shell.js';
 
@@ -65,7 +66,7 @@ interface ProvenanceOptions {
 }
 
 interface ProvenanceHit {
-  /** The dialog line: `contains text from web https://example.com/install (2 min ago)`. */
+  /** The dialog line: `contains text from web https://example.com/install (2m ago)`. */
   why: string;
 }
 
@@ -122,12 +123,6 @@ function hostOf(url: string): string | undefined {
 
 function tokens(text: string): number[] {
   return [...text.matchAll(TOKEN_PATTERN)].map((match) => match[0]).filter((token) => token.length >= 16 || (/\d/.test(token) && /[A-Za-z]/.test(token))).map((token) => atomKey('token', token));
-}
-
-function ago(ms: number): string {
-  const minutes = Math.floor(ms / MINUTE_MS);
-  if (minutes < 1) return 'just now';
-  return minutes < 60 ? `${minutes} min ago` : `${Math.floor(minutes / 60)} h ago`;
 }
 
 const str = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
@@ -289,14 +284,14 @@ class Provenance {
   private untrustedIn(value: string): ProvenanceHit | undefined {
     for (const key of atoms(value)) {
       const source = this.sourceOf(key, 'untrusted');
-      if (source) return { why: `contains a URL, host or e-mail first seen in ${source.label} (${ago(this.now() - source.at)})` };
+      if (source) return { why: `contains a URL, host or e-mail first seen in ${source.label} (${formatAgo(this.now() - source.at)})` };
     }
     const keys = shingles(normalize(value));
     let run = 0;
     for (const key of keys) {
       const source = this.sourceOf(key, 'untrusted');
       run = source ? run + 1 : 0;
-      if (source && run >= RUN) return { why: `contains text from ${source.label} (${ago(this.now() - source.at)})` };
+      if (source && run >= RUN) return { why: `contains text from ${source.label} (${formatAgo(this.now() - source.at)})` };
     }
     return undefined;
   }
@@ -307,7 +302,7 @@ class Provenance {
       for (const key of [...tokens(form), ...shingles(normalize(form))]) {
         const source = this.sourceOf(key, 'private');
         if (!source) continue;
-        const when = ago(this.now() - source.at);
+        const when = formatAgo(this.now() - source.at);
         return { why: source.secret ? `sends a secret seen in ${source.label} output (${when})` : `sends private text from ${source.label} (${when})` };
       }
     }

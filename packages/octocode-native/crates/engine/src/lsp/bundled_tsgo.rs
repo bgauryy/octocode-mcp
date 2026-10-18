@@ -51,15 +51,8 @@ fn bundled_tsgo_for(anchor: &Path, platform: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::{Path, PathBuf};
-
-    fn temp_root(name: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0);
-        std::env::temp_dir().join(format!("{name}-{}-{nanos}", std::process::id()))
-    }
+    use crate::test_support::TmpDir;
+    use std::path::Path;
 
     fn write_executable(path: &Path) {
         std::fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
@@ -89,19 +82,18 @@ mod tests {
     /// `node_modules` (a hoisted workspace install, a global one).
     #[test]
     fn a_hoisted_platform_package_is_found_from_any_ancestor() {
-        let root = temp_root("octocode-bundled-tsgo-hoisted");
+        let root = TmpDir::new();
         let tsgo = root.join("node_modules/@typescript/native-preview-linux-x64/lib/tsgo");
         write_executable(&tsgo);
         let anchor = root.join("node_modules/octocode-native/npm/addon/octocode.node");
         let found = bundled_tsgo_for(&anchor, "linux-x64").expect("found");
         assert_eq!(found, std::fs::canonicalize(&tsgo).expect("canonical"));
         assert_eq!(bundled_tsgo_for(&anchor, "linux-arm64"), None);
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn a_windows_package_resolves_the_exe_file() {
-        let root = temp_root("octocode-bundled-tsgo-windows");
+        let root = TmpDir::new();
         let exe = root.join("node_modules/@typescript/native-preview-win32-x64/lib/tsgo.exe");
         write_executable(&exe);
         let anchor = root.join("node_modules/octocode/out/octocode.exe");
@@ -111,7 +103,6 @@ mod tests {
         );
         // The plain name is the wrong file for Windows.
         assert_eq!(bundled_tsgo_for(&anchor, "linux-x64"), None);
-        let _ = std::fs::remove_dir_all(root);
     }
 
     /// An isolated install (pnpm) links `native-preview` to a store
@@ -119,7 +110,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn an_isolated_install_resolves_the_platform_package_beside_the_real_package() {
-        let root = temp_root("octocode-bundled-tsgo-isolated");
+        let root = TmpDir::new();
         let store = root.join("node_modules/.pnpm/@typescript+native-preview@1/node_modules");
         let tsgo = store.join("@typescript/native-preview-linux-x64/lib/tsgo");
         write_executable(&tsgo);
@@ -136,7 +127,6 @@ mod tests {
             bundled_tsgo_for(&anchor, "linux-x64"),
             Some(std::fs::canonicalize(&tsgo).expect("canonical"))
         );
-        let _ = std::fs::remove_dir_all(root);
     }
 
     /// A file that is not executable is not a server.
@@ -144,12 +134,11 @@ mod tests {
     #[test]
     fn a_non_executable_file_is_not_a_server() {
         use std::os::unix::fs::PermissionsExt;
-        let root = temp_root("octocode-bundled-tsgo-mode");
+        let root = TmpDir::new();
         let tsgo = root.join("node_modules/@typescript/native-preview-linux-x64/lib/tsgo");
         write_executable(&tsgo);
         std::fs::set_permissions(&tsgo, std::fs::Permissions::from_mode(0o644)).expect("chmod");
         let anchor = root.join("node_modules/octocode-native/octocode.node");
         assert_eq!(bundled_tsgo_for(&anchor, "linux-x64"), None);
-        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -5,13 +5,14 @@ use crate::signatures::extractor::AST_EXECUTION_TIMEOUT;
 
 use super::language::AgLanguage;
 use super::query::StructuralQuery;
-use super::types::StructuralDiagnostic;
 
+mod error;
 mod line_index_support;
 mod matching;
 mod pattern;
 mod rule;
 
+pub(super) use error::CompileError;
 pub(super) use matching::{ExecutionError, named_children, node_text, parse_tree_with_deadline};
 pub use rule::EXAMPLE_RULE;
 pub(super) use rule::{RawRule, parse_rule};
@@ -61,40 +62,7 @@ pub(super) fn pattern_declaration(lang: &AgLanguage, pattern: &str) -> Option<Pa
 pub(super) fn compile_matcher(
     lang: &AgLanguage,
     query: &StructuralQuery<'_>,
-) -> Result<OctoCompiledMatcher, String> {
-    compile_matcher_inner(lang, query).map_err(|message| {
-        if message.starts_with("[structural.") {
-            message
-        } else {
-            format!("[structural.query.compileFailed] {message}")
-        }
-    })
-}
-
-/// The diagnostic of a query that does not compile: a rule that does not
-/// parse as a rule is [`RULE_INVALID`], a rule or pattern this grammar
-/// cannot compile is `structural.query.compileFailed`.
-pub(super) fn compile_diagnostic(message: &str) -> StructuralDiagnostic {
-    if message.starts_with(&format!("[{RULE_INVALID}] ")) {
-        StructuralDiagnostic::new(RULE_INVALID, "error", "match", message.to_owned())
-            .with_recovery("Fix the rule object: the message names the key or value it rejects.")
-    } else {
-        StructuralDiagnostic::new(
-            "structural.query.compileFailed",
-            "error",
-            "match",
-            message.to_owned(),
-        )
-        .with_recovery(
-            "Check the structural pattern or YAML rule against this file's language grammar.",
-        )
-    }
-}
-
-fn compile_matcher_inner(
-    lang: &AgLanguage,
-    query: &StructuralQuery<'_>,
-) -> Result<OctoCompiledMatcher, String> {
+) -> Result<OctoCompiledMatcher, CompileError> {
     let language = lang.tree_sitter_language();
     let anchors = match query.prefilter() {
         Prefilter::None => None,
@@ -231,5 +199,5 @@ fn is_document_probe(pattern: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../octo_tests.rs"]
+#[path = "mod_tests.rs"]
 mod tests;

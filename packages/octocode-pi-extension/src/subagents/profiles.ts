@@ -34,6 +34,14 @@ export interface AgentProfile {
 /** The role of a subagent started without a profile. */
 export const GENERAL_PROFILE = 'general';
 
+/**
+ * Tools every subagent keeps whatever its profile says: `sendMessage` and `coordinate` are how it reaches its parent
+ * (a `--tools` allowlist drops extension tools it does not name), `read` is how it reads what it is sent, `archive`
+ * how it reads its parent's history (read-only). A profile with an allowlist gets them added when it loads; one that
+ * excludes or removes them is refused.
+ */
+export const CORE_TOOLS = ['read', 'sendMessage', 'coordinate', 'archive'] as const;
+
 const BUNDLED_DIR = path.join(packageRoot(), 'subagents');
 
 /**
@@ -60,7 +68,7 @@ export function loadProfiles(
     for (const file of files) {
       // Bad YAML or an unreadable entry skips that profile only; the rest still load.
       try {
-        const profile = parseProfile(path.basename(file, '.md'), fs.readFileSync(path.join(dir, file), 'utf8'));
+        const profile = parseProfile(profileFileName(file), fs.readFileSync(path.join(dir, file), 'utf8'));
         profiles.set(profile.name, profile);
       } catch (error) {
         onSkip(path.join(dir, file), error);
@@ -70,6 +78,9 @@ export function loadProfiles(
   return profiles;
 }
 
+/** The name a profile file answers to when its front matter names none: the file name without `.md`. */
+export const profileFileName = (file: string): string => path.basename(file, '.md');
+
 export function parseProfile(fallbackName: string, text: string): AgentProfile {
   const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(text);
   const field = (key: string) => (typeof frontmatter[key] === 'string' ? (frontmatter[key] as string).trim() : undefined);
@@ -77,8 +88,10 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
   const excludeTools = field('excludeTools');
   const model = field('model');
   const { declared, ignored } = declaredPermissions(frontmatter['permissions']);
-  // Called for its refusal: a bad `tools` selector fails the profile when it is loaded, not when it first runs.
-  selectedTools(tools);
+  const name = field('name') ?? fallbackName;
+  // A bad `tools` selector fails the profile when it is loaded, not when it first runs.
+  const selected = selectedTools(tools);
+  refuseCoreRemoval(name, selected, excludeTools);
   // Switches take YAML booleans only: a quoted "false" is a string, and a string never flips a switch.
   const flag = (key: string) => {
     const value = frontmatter[key];
@@ -86,10 +99,10 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
     throw new Error(`${key} must be true or false, not ${JSON.stringify(value)}`);
   };
   return {
-    name: field('name') ?? fallbackName,
+    name,
     description: field('description') ?? '',
     prompt: body.trim(),
-    ...(tools ? { tools } : {}),
+    ...(tools ? { tools: withCoreTools(tools, selected) } : {}),
     ...(excludeTools ? { excludeTools } : {}),
     ...(model ? { model } : {}),
     ...(flag('visibleBrowser') === true ? { visibleBrowser: true } : {}),
@@ -115,6 +128,26 @@ function selectedTools(tools: string | undefined): string[] | undefined {
 const matchesTool = (patterns: readonly string[], name: string): boolean =>
   patterns.some((pattern) => new RegExp(`^${pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(name));
 
+const isRelative = (selected: readonly string[] | undefined): boolean => selected?.some((name) => /^[+-]/.test(name)) === true;
+
+/**
+ * An absolute allowlist replaces Pi's whole selection, extension tools included, so it gets the core tools it does
+ * not already match. A relative list (`+name`/`-name`) changes the default selection, which has them: it is unchanged.
+ */
+function withCoreTools(tools: string, selected: readonly string[] | undefined): string {
+  if (isRelative(selected)) return tools;
+  return [...toolList(tools), ...CORE_TOOLS.filter((name) => !matchesTool(selected ?? [], name))].join(',');
+}
+
+/** A profile that excludes (any pattern matching) or removes (`-name`) a core tool would cut its child off from its parent: refused when it loads. */
+function refuseCoreRemoval(profile: string, selected: readonly string[] | undefined, excludeTools: string | undefined): void {
+  const excluded = toolList(excludeTools);
+  const removed = (selected ?? []).filter((entry) => entry.startsWith('-')).map((entry) => entry.slice(1));
+  const named = CORE_TOOLS.filter((name) => matchesTool(excluded, name) || removed.includes(name));
+  if (named.length === 0) return;
+  throw new Error(`Profile "${profile}" removes ${named.join(', ')} with excludeTools or a "-" entry in tools, but every subagent keeps ${CORE_TOOLS.join(', ')} to reach its parent. Remove ${named.length > 1 ? 'them' : 'it'} from the profile's excludeTools (a pattern such as "*" counts) or tools.`);
+}
+
 /** Excluding our file tool also excludes the native tools it replaces, including when a pattern matches it. */
 export function profileExcludes(excludeTools: string | undefined): string[] {
   const excluded = toolList(excludeTools);
@@ -124,7 +157,7 @@ export function profileExcludes(excludeTools: string | undefined): string[] {
 /** The workspace classes exposed by the child's native selection and Octocode's direct extension tools. */
 export function profileReach(profile: AgentProfile | undefined, defaultTools?: readonly string[]): ActionClass[] {
   const selected = selectedTools(profile?.tools);
-  const modifiers = selected?.some((name) => /^[+-]/.test(name)) === true;
+  const modifiers = isRelative(selected);
   const excluded = profileExcludes(profile?.excludeTools);
   // Native SettingsManager resolves ordered +/- entries. Only powershell among the checked tools depends on
   // defaults: file/bash register directly, and excluding file also removes native edit/write.

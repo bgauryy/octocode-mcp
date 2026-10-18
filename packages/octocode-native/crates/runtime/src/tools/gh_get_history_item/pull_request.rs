@@ -20,6 +20,7 @@ use super::window::{
 };
 use super::{HistoryItemRequest, Section, Sections, fetch, validation};
 use crate::contracts::tool_types::ExtraKind;
+use crate::tools::num::usize_of;
 use crate::tools::result::ToolData;
 use octocode_github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
 use serde_json::{Map, Value, json};
@@ -267,7 +268,7 @@ async fn load_raw(
 fn provider_count(raw: Option<&Value>, key: &str) -> Option<usize> {
     raw.and_then(|raw| raw.get(key))
         .and_then(Value::as_u64)
-        .map(|total| usize::try_from(total).unwrap_or(usize::MAX))
+        .map(usize_of)
 }
 
 async fn load_pr(
@@ -477,7 +478,7 @@ fn shape_files_section(
         let changed_files = raw
             .get("changed_files")
             .and_then(Value::as_u64)
-            .map(|total| usize::try_from(total).unwrap_or(usize::MAX));
+            .map(usize_of);
         reconcile_file_totals(
             page,
             state,

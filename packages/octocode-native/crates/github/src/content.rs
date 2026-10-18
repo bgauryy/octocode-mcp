@@ -2,7 +2,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use bytes::Bytes;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, ETAG, HeaderValue, IF_NONE_MATCH};
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::{future::Future, pin::Pin, time::Duration};
 
 use super::{
@@ -339,14 +338,7 @@ impl<C: ConditionalCache> GitHubProvider<C> {
         context: &RequestContext,
     ) -> Result<super::ContentsListing, ProviderError> {
         let partition = self.transport.cache_partition(context, None)?;
-        let key = {
-            let mut digest = Sha256::new();
-            for value in [owner, repo, path, reference] {
-                digest.update(value.as_bytes());
-                digest.update([0]);
-            }
-            format!("github-tree:{}", hex::encode(digest.finalize()))
-        };
+        let key = super::cache_key::fields_key("github-tree", &[owner, repo, path, reference]);
         // A listing at a full commit SHA is immutable: a cached one is served
         // without asking GitHub again, like a file read at one.
         let pinned = is_full_sha(reference);
@@ -707,17 +699,15 @@ fn ref_flights() -> &'static super::KeyedFlight<(Partition, String), ()> {
     &FLIGHTS
 }
 fn ref_memo_key(owner: &str, repo: &str, reference: &str) -> String {
-    let mut digest = Sha256::new();
     // Owner/repo names are case-insensitive on GitHub; refs are not.
-    for value in [
-        owner.to_ascii_lowercase().as_str(),
-        repo.to_ascii_lowercase().as_str(),
-        reference,
-    ] {
-        digest.update(value.as_bytes());
-        digest.update([0]);
-    }
-    format!("github-ref:{}", hex::encode(digest.finalize()))
+    super::cache_key::fields_key(
+        "github-ref",
+        &[
+            owner.to_ascii_lowercase().as_str(),
+            repo.to_ascii_lowercase().as_str(),
+            reference,
+        ],
+    )
 }
 /// The SHA a ref memo entry holds; the cache expires it after
 /// [`REF_MEMO_TTL`].
@@ -798,10 +788,8 @@ fn validate_name(value: &str) -> Result<(), ProviderError> {
     }
 }
 fn cache_key(request: &ContentRequest, resolved_ref: &str) -> String {
-    let mut h = Sha256::new();
-    for value in [&request.owner, &request.repo, &request.path, resolved_ref] {
-        h.update(value.as_bytes());
-        h.update([0]);
-    }
-    format!("github-content:{}", hex::encode(h.finalize()))
+    super::cache_key::fields_key(
+        "github-content",
+        &[&request.owner, &request.repo, &request.path, resolved_ref],
+    )
 }

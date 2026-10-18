@@ -117,7 +117,7 @@ export function fakeCtx(options: { cwd: string; hasUI?: boolean; mode?: string; 
     abort: () => undefined,
     hasPendingMessages: () => false,
     signal: undefined,
-    sessionManager: { getSessionId: () => 'session-test', getEntries: () => [], getBranch: () => [], getSessionFile: () => undefined, buildSessionProjection: () => ({ entries: [], messages: [] }) },
+    sessionManager: { getSessionId: () => 'session-test', getEntries: () => [], getBranch: () => [], getSessionFile: () => undefined, getHeader: () => null, getCwd: () => options.cwd, getSessionName: () => undefined, buildSessionProjection: () => ({ entries: [], messages: [] }) },
     model: options.model,
     getContextUsage: () => undefined,
   } as never;

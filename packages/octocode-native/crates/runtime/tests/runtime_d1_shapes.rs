@@ -3,7 +3,6 @@
 //! deny-list
 //! (`skills-dev/octocode-dev/scripts/retired-names.json`), checked against
 //! every tool output these tests produce.
-#![allow(clippy::panic, clippy::unwrap_used)]
 
 use crate::support::{self, Run as _, Workspace};
 use octocode_native::runtime::{ToolOutcome, ToolRuntime};

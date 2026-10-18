@@ -82,7 +82,7 @@ describe('boundImagePart on an animated GIF', () => {
     const file = /Original saved to (\S+?\.gif)\./.exec(note)?.[1];
     expect(file, note).toBeDefined();
     expect(fs.readFileSync(file!)).toEqual(original);
-  }, 30_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 
   it('replaces a GIF it cannot decode by a note naming the saved file, never dropping it silently', async () => {
     const broken = Buffer.concat([original.subarray(0, 13 + 768), Buffer.alloc(IMAGE_MAX_CHARS, 0x5a)]);
@@ -95,5 +95,5 @@ describe('boundImagePart on an animated GIF', () => {
     const file = /Saved to (\S+?\.gif)\./.exec(text)?.[1];
     expect(file, text).toBeDefined();
     expect(fs.readFileSync(file!)).toEqual(broken);
-  }, 30_000);
+  }, 120_000); // CPU-bound wasm resize: seconds alone, several times that on a loaded machine
 });

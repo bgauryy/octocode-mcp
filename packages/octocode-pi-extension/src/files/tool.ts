@@ -15,6 +15,7 @@ import { systemLines } from '../permission/effect.js';
 import { runsLater, stateFolderRefusal } from '../permission/gate.js';
 import { describeRanges, firstGap, lineCount, mergeRanges, readView, type LineRange } from './coverage.js';
 import { lastUserEntry, type Capture, type Checkpoints } from './checkpoint.js';
+import { notify } from '../shared/commands.js';
 import { askReview } from './review.js';
 import { timedTool } from '../shared/render.js';
 import { renderFileCall, renderFileResult, type QueryOutcome } from './render.js';
@@ -273,7 +274,7 @@ async function settleCheckpoint(ctx: ExtensionToolContext, checkpoints: Checkpoi
   } catch (error) {
     if (!warnedCheckpoints.has(checkpoints)) {
       warnedCheckpoints.add(checkpoints);
-      ctx.ui?.notify?.(`Octocode could not save a checkpoint (${errorMessage(error)}); /octocode rewind may not restore changed files.`, 'warning');
+      if (ctx.ui) notify(ctx.ui, `Octocode could not save a checkpoint (${errorMessage(error)}); /octocode rewind may not restore changed files.`, 'warning');
     }
     return ' (checkpoint not saved: /octocode rewind will not restore this change)';
   }

@@ -144,21 +144,34 @@ pub(super) struct Upstream {
     pub rate_limit: Option<Value>,
 }
 
+/// The runtime-owned services a local row runs against.
+pub(super) struct LocalEnv<'a> {
+    pub paths: &'a PathPolicy,
+    pub security: &'a ContentSecurity,
+    pub regex: &'a LocalFetchRegex,
+    pub views: &'a crate::security::scan::SanitizedViewMemo,
+    pub rewrite: &'a AstRewriteRuntimeOptions,
+    pub topology: &'a AstTopologyRuntimeOptions,
+    pub selection: Option<&'a crate::tools::selection::Runtime>,
+}
+
 /// Execute one local-filesystem row. The caller routes by [`ToolId`]; a tool
 /// outside the local family is a routing bug, not a row error.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_local(
     tool: ToolId,
     query: &Value,
-    paths: &PathPolicy,
-    security: &ContentSecurity,
     context: &ExecutionContext,
-    regex: &LocalFetchRegex,
-    views: &crate::security::scan::SanitizedViewMemo,
-    rewrite: &AstRewriteRuntimeOptions,
-    topology: &AstTopologyRuntimeOptions,
-    selection: Option<&crate::tools::selection::Runtime>,
+    env: &LocalEnv<'_>,
 ) -> Result<DomainResult, ExecutionError> {
+    let &LocalEnv {
+        paths,
+        security,
+        regex,
+        views,
+        rewrite,
+        topology,
+        selection,
+    } = env;
     // Generated query types carry the meta fields, so every tool parses the
     // validated row as-is through `parse_query`.
     macro_rules! parsed {
@@ -292,7 +305,6 @@ pub(super) fn invalid_query(error: &serde_json::Error) -> DomainResult {
     )
 }
 
-/// A tool payload whose own `status` field selects the row status.
 /// A tool's [`crate::tools::result::ToolData`] (a bare `Value` converts):
 /// its payload as [`value_result`], keeping the typed notes of what its pages
 /// leave to read.
@@ -303,6 +315,7 @@ pub(crate) fn data_result(data: impl Into<crate::tools::result::ToolData>) -> Do
     result
 }
 
+/// A tool payload whose own `status` field selects the row status.
 pub(crate) fn value_result(data: Value) -> DomainResult {
     let status = match data.get("status").and_then(Value::as_str) {
         Some("error") => Some("error"),
@@ -510,14 +523,16 @@ mod provider_failure_tests {
             let row = execute_local(
                 tool,
                 &query,
-                &paths,
-                &security,
                 &context,
-                &LocalFetchRegex,
-                &views,
-                &AstRewriteRuntimeOptions::default(),
-                &AstTopologyRuntimeOptions::default(),
-                None,
+                &LocalEnv {
+                    paths: &paths,
+                    security: &security,
+                    regex: &LocalFetchRegex,
+                    views: &views,
+                    rewrite: &AstRewriteRuntimeOptions::default(),
+                    topology: &AstTopologyRuntimeOptions::default(),
+                    selection: None,
+                },
             )
             .unwrap_or_else(|_| panic!("{tool} returns a row"));
             assert_eq!(row.status, Some("error"), "{tool}");
@@ -549,14 +564,16 @@ mod provider_failure_tests {
             let routed = execute_local(
                 tool,
                 &json!({}),
-                &paths,
-                &ContentSecurity::new(),
                 &context,
-                &LocalFetchRegex,
-                &crate::security::scan::SanitizedViewMemo::default(),
-                &AstRewriteRuntimeOptions::default(),
-                &AstTopologyRuntimeOptions::default(),
-                None,
+                &LocalEnv {
+                    paths: &paths,
+                    security: &ContentSecurity::new(),
+                    regex: &LocalFetchRegex,
+                    views: &crate::security::scan::SanitizedViewMemo::default(),
+                    rewrite: &AstRewriteRuntimeOptions::default(),
+                    topology: &AstTopologyRuntimeOptions::default(),
+                    selection: None,
+                },
             );
             assert!(
                 matches!(routed, Err(ExecutionError::UnroutedTool)),

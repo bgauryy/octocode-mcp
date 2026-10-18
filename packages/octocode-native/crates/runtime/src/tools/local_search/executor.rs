@@ -230,6 +230,8 @@ fn settle_row(
         coverage.gap(),
         next.is_none(),
     );
+    let ceilings = cursor_ceilings(query, layout, page.leftover_matches);
+    stats.partial_reasons.extend(ceilings.partial_reasons);
     let mut hints = coverage.empty_hints(empty);
     // Leads go in after the status is settled: they are optional follow-ups
     // and never stand in for a page.
@@ -264,29 +266,24 @@ fn settle_row(
         (coverage.scope_miss || (empty && coverage.binary_cut)).then_some(!coverage.scope_miss);
     route_beyond_pages(
         query,
-        layout,
         &stats,
         total_files,
         lists_scope,
         &mut next,
         &mut warnings,
     );
-    warnings.extend(match_page_ceiling_warning(
-        query,
-        page.leftover_matches,
-        next.as_ref(),
-    ));
+    warnings.extend(ceilings.warnings);
     Ok(LocalSearchResult {
         status,
         stats,
         files: rows.files,
-        pagination: file_paging(query, layout, total_files),
+        pagination: file_paging(query, layout, total_files, page.leftover_matches),
         hints,
         next,
-        is_partial: coverage.gap() || capped,
+        is_partial: coverage.gap() || capped || ceilings.terminal,
         // A retry over the skipped paths reaches the match, so no limit ends
         // this answer.
-        terminal_limit: settled_terminal && !skipped_match,
+        terminal_limit: (settled_terminal || ceilings.terminal) && !skipped_match,
         warnings,
         skipped_paths,
         source_snapshot: None,
@@ -361,10 +358,9 @@ fn annotate_rows<'q>(
 /// scope's listing: with the search's globs when they matched files
 /// (`Some(true)`), without them when they matched none, so the listing
 /// shows what names exist. File pages past the last page a continuation
-/// names are counted.
+/// names are [`cursor_ceilings`].
 fn route_beyond_pages(
     query: &LocalSearchQuery,
-    layout: &Layout,
     stats: &SearchStats,
     total_files: u32,
     lists_scope: Option<bool>,
@@ -387,60 +383,49 @@ fn route_beyond_pages(
         *next = None;
     }
     warnings.extend(uncollected);
-    warnings.extend(page_ceiling_warning(
-        query,
-        layout.total_pages,
-        next.as_ref(),
-    ));
 }
 
-/// File pages past the last page a continuation can name: how many, and
-/// that a narrower search reaches them.
-fn page_ceiling_warning(
-    query: &LocalSearchQuery,
-    total_pages: u32,
-    next: Option<&Value>,
-) -> Option<String> {
+/// What a row reports for the cursors its rest is past.
+struct Ceilings {
+    warnings: Vec<String>,
+    partial_reasons: Vec<String>,
+    terminal: bool,
+}
+
+/// Later file pages, and hits left in the shown files, past the contract
+/// maximum of their cursor (`page`, `matchPage`): the row ends at a terminal
+/// limit, written by the one cursor owner ([`crate::tools::paging::next_cursor`]).
+fn cursor_ceilings(query: &LocalSearchQuery, layout: &Layout, leftover_matches: bool) -> Ceilings {
+    let mut row = json!({});
+    let tool = crate::tools::id::ToolId::LocalSearch;
     let page = query.page().max(1);
-    let past = total_pages.saturating_sub(page);
-    (past > 0
-        && next.is_none_or(|next| next.get("nextPage").is_none())
-        && crate::tools::paging::admitted(
-            crate::tools::id::ToolId::LocalSearch,
-            None,
-            "page",
-            page as usize + 1,
-        )
-            .is_none())
-    .then(|| {
-        format!(
-            "Page {page} is the last page a continuation names; {past} later file pages need a narrower path or include."
-        )
-    })
-}
-
-/// Hits left in the shown files past the last match page a continuation can
-/// name: that a narrower search reaches them.
-fn match_page_ceiling_warning(
-    query: &LocalSearchQuery,
-    leftover_matches: bool,
-    next: Option<&Value>,
-) -> Option<String> {
-    let match_page = query.match_page().max(1);
-    (leftover_matches
-        && next.is_none_or(|next| next.get("nextMatchPage").is_none())
-        && crate::tools::paging::admitted(
-            crate::tools::id::ToolId::LocalSearch,
+    if page < layout.total_pages {
+        let _ = crate::tools::paging::next_cursor(&mut row, tool, None, "page", page as usize + 1);
+    }
+    if leftover_matches {
+        let match_page = query.match_page().max(1);
+        let _ = crate::tools::paging::next_cursor(
+            &mut row,
+            tool,
             None,
             "matchPage",
             match_page as usize + 1,
-        )
-        .is_none())
-    .then(|| {
-        format!(
-            "matchPage {match_page} is the last match page a continuation names; later hits in the shown files need a narrower path or include."
-        )
-    })
+        );
+    }
+    let strings = |key: &str| {
+        row[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    };
+    Ceilings {
+        warnings: strings("warnings"),
+        partial_reasons: strings("partialReasons"),
+        terminal: row["terminalLimit"] == true,
+    }
 }
 
 /// The symbol a page names declarations for: a small page names each hit's
@@ -455,26 +440,31 @@ pub(super) fn searched_symbol<'q>(query: &'q LocalSearchQuery, layout: &Layout) 
     .flatten()
 }
 
-/// File paging, reported only when it routes somewhere: more file pages, or
-/// a requested page past the end. Totals live once, in `stats` (occurrences
-/// and matched lines); the next page number and the snapshot live once, in
+/// File paging, reported only when it routes somewhere: more file pages,
+/// rows left in the shown files (`leftover_matches`), or a requested page
+/// past the end. Totals live once, in `stats` (occurrences and matched
+/// lines); the next page number and the snapshot live once, in
 /// `next.*.query`.
 pub(super) fn file_paging(
     query: &LocalSearchQuery,
     layout: &Layout,
     total_files: u32,
+    leftover_matches: bool,
 ) -> Option<FilePagination> {
     let page = query.page().max(1);
     let match_page = query.match_page().max(1);
-    (total_files > 0 && (layout.total_pages > 1 || layout.out_of_range)).then_some(FilePagination {
-        current_page: page,
-        match_page: (match_page > 1).then_some(match_page),
-        total_pages: layout.total_pages,
-        files_per_page: layout.files_per_page,
-        total_items: layout.total_items,
-        has_more: page < layout.total_pages,
-        out_of_range: layout.out_of_range,
-    })
+    let has_more = page < layout.total_pages || leftover_matches;
+    (total_files > 0 && (has_more || layout.total_pages > 1 || layout.out_of_range)).then_some(
+        FilePagination {
+            current_page: page,
+            match_page: (match_page > 1).then_some(match_page),
+            total_pages: layout.total_pages,
+            files_per_page: layout.files_per_page,
+            total_items: layout.total_items,
+            has_more,
+            out_of_range: layout.out_of_range,
+        },
+    )
 }
 
 /// A cut page whose shown values are verified.
@@ -545,7 +535,8 @@ pub(super) fn shape_page(
     })
 }
 
-/// The row's status, and whether it ends at a limit nothing continues.
+/// The row's status, and whether it ends at a limit nothing continues
+/// (a cursor past its maximum is [`cursor_ceilings`]).
 pub(super) fn settle(
     query: &LocalSearchQuery,
     layout: &Layout,
@@ -555,28 +546,15 @@ pub(super) fn settle(
     coverage_gap: bool,
     next_missing: bool,
 ) -> (SearchStatus, bool) {
-    let page = query.page().max(1);
-    let has_more = page < layout.total_pages;
-    let (status, terminal) = classify_search(
+    let has_more = query.page().max(1) < layout.total_pages;
+    classify_search(
         empty,
         capped,
         has_more,
         leftover_matches,
         coverage_gap,
         next_missing,
-    );
-    let past = |field: &str, current: u32| {
-        crate::tools::paging::admitted(
-            crate::tools::id::ToolId::LocalSearch,
-            None,
-            field,
-            current as usize + 1,
-        )
-        .is_none()
-    };
-    let at_ceiling = (has_more && past("page", page))
-        || (leftover_matches && past("matchPage", query.match_page().max(1)));
-    (status, terminal || at_ceiling)
+    )
 }
 
 /// A scan with what every later stage needs from it.

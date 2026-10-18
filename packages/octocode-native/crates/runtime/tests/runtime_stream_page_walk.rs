@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
 //! Default-layout listing walks: a streamed page sized for the response
 //! window never splits into row parts, so following only each row's
 //! `next.nextPage` reaches every row exactly once; and when a smaller

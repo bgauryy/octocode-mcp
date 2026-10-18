@@ -374,7 +374,7 @@ async function walkLeads(
     mcp,
     overrides = {},
     maxPages = 80,
-    include = lead => !/^unfiltered\d*$/.test(lead.kind),
+    include = lead => !lead.kind.startsWith('unfiltered'),
     errorCode,
   } = {}
 ) {

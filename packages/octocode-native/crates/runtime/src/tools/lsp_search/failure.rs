@@ -4,6 +4,7 @@
 use super::LspSearchQuery;
 use super::render::uri_to_path;
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use octocode_engine::error::{Error as EngineError, ErrorCode, ErrorKind};
 use serde_json::{Value, json};
 
@@ -36,6 +37,19 @@ impl LspFailure {
             message: message.into(),
             retryable: false,
             hint: "Correct the lspSearch fields (see `octocode schema lspSearch`), then retry.",
+            lexical_fallback: false,
+        }
+    }
+
+    /// A relation the source and the server's answers could not establish
+    /// (an unresolved base, an ambiguous candidate): asking again gives the
+    /// same answer, so it is never retryable.
+    pub(super) fn unestablished(message: impl Into<String>) -> Self {
+        Self {
+            code: "requestFailed",
+            message: message.into(),
+            retryable: false,
+            hint: "Confirm the relation in source: locate the declarations with astSearch and read them with localFetch.",
             lexical_fallback: false,
         }
     }
@@ -514,47 +528,32 @@ impl RequestFailures {
     }
 }
 
+/// `next.nextPage` for a row that has a page after it: this query at that
+/// page, pinned by its `snapshot`. A page past the contract's `page` maximum
+/// ends the row at a terminal limit instead, with no lead.
+pub(super) fn offer_next_page(
+    query: &LspSearchQuery,
+    row: &mut Value,
+    next: Option<super::render::NextPage>,
+) {
+    let Some(next) = next else {
+        return;
+    };
+    let Some(page) =
+        crate::tools::paging::next_cursor(row, ToolId::LspSearch, None, "page", next.page)
+    else {
+        return;
+    };
+    let mut next_query = query_value(query);
+    if let Some(object) = next_query.as_object_mut() {
+        object.insert("page".into(), json!(page));
+        object.insert("snapshot".into(), json!(next.snapshot));
+    }
+    row["next"]["nextPage"] = continuation(next_query);
+}
+
 pub(super) fn with_next(query: &LspSearchQuery, mut value: Value) -> Value {
-    if value
-        .pointer("/pagination/hasMore")
-        .and_then(Value::as_bool)
-        == Some(true)
-    {
-        let next_page = value
-            .pointer("/pagination/nextPage")
-            .and_then(Value::as_u64)
-            .and_then(|page| usize::try_from(page).ok())
-            .unwrap_or(2);
-        if let Some(page) = crate::tools::paging::next_cursor(
-            &mut value,
-            ToolId::LspSearch,
-            None,
-            "page",
-            next_page,
-        ) {
-            let mut next_query = query_value(query);
-            if let Some(object) = next_query.as_object_mut() {
-                object.insert("page".into(), json!(page));
-                if let Some(snapshot) =
-                    value.get("snapshot").and_then(Value::as_str).or_else(|| {
-                        value
-                            .pointer("/pagination/snapshot")
-                            .and_then(Value::as_str)
-                    })
-                {
-                    object.insert("snapshot".into(), json!(snapshot));
-                }
-            }
-            value["next"]["nextPage"] = continuation(next_query);
-        }
-        // The continuation states the next page and the snapshot; `pageSize`
-        // stays a page fact, so every page has one key set.
-        if let Some(pagination) = value.get_mut("pagination").and_then(Value::as_object_mut) {
-            for key in ["nextPage", "snapshot"] {
-                pagination.shift_remove(key);
-            }
-        }
-    } else if value.pointer("/kind").and_then(Value::as_str) == Some("empty") {
+    if value.pointer("/kind").and_then(Value::as_str) == Some("empty") {
         value["status"] = json!("empty");
         // A workspaceRoot-only query has no file to fall back to reading, and
         // reading source cannot stand in for missing diagnostics.
@@ -732,7 +731,7 @@ pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source:
         // A `line` past the end reads the file's last lines: a range wholly
         // past the end is an error, not a read.
         let last = source.map_or(u32::MAX, |source| {
-            u32::try_from(source.lines().count().max(1)).unwrap_or(u32::MAX)
+            u32_of_usize(source.lines().count().max(1))
         });
         let line = line.min(last);
         value["next"]["read"] = crate::tools::result::Continuation::new(

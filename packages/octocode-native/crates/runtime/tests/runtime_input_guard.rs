@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 use crate::support::{self, Run as _};
 
 use serde_json::{Value, json};
@@ -202,11 +200,7 @@ async fn clasify_rejects_a_credential_in_a_source_read() {
         .await;
     let workspace = Workspace::new();
     workspace.write("trace.txt", "Evidence is present.\n");
-    let runtime = workspace.runtime(&[
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-    ]);
+    let runtime = workspace.runtime(&support::provider_env(&server, &[]));
     let input = json!({"queries":[{
         "id":"decision",
         "mainGoal":"Decide whether the file states the fact.",

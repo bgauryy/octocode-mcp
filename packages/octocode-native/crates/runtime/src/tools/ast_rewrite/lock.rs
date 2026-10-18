@@ -5,7 +5,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -121,10 +121,7 @@ fn acquire_lock_directory(directory: &Path, root: &Path) -> Result<bool, Rewrite
                 token,
                 pid: std::process::id(),
                 root: root.to_path_buf(),
-                created_at: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_or(0, |duration| duration.as_nanos())
-                    .to_string(),
+                created_at: crate::civil_date::unix_nanos().to_string(),
             };
             let bytes = serde_json::to_vec(&owner)
                 .map_err(|error| RewriteError::new("lockUnavailable", error.to_string()))?;
@@ -153,12 +150,7 @@ fn read_lock_owner(directory: &Path) -> Option<LockOwner> {
 }
 
 fn remove_stale_lock(directory: &Path) {
-    let tombstone = directory.with_extension(format!(
-        "stale-{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |duration| duration.as_nanos())
-    ));
+    let tombstone = directory.with_extension(format!("stale-{}", crate::civil_date::unix_nanos()));
     if fs::rename(directory, &tombstone).is_ok() {
         let _ = fs::remove_dir_all(tombstone);
     }

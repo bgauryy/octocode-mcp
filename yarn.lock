@@ -985,6 +985,7 @@ __metadata:
   dependencies:
     "@modelcontextprotocol/sdk": "npm:^1.32.1"
     "@types/node": "npm:^24.19.2"
+    prettier: "npm:^3.9.10"
     typescript: "npm:^6.0.3"
   languageName: unknown
   linkType: soft
@@ -996,6 +997,7 @@ __metadata:
     "@modelcontextprotocol/sdk": "npm:^1.32.1"
     "@types/node": "npm:^24.19.2"
     ajv: "npm:^8.20.0"
+    prettier: "npm:^3.9.10"
     typescript: "npm:^6.0.3"
   languageName: unknown
   linkType: soft
@@ -1057,10 +1059,10 @@ __metadata:
 
 "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::locator=octocode-monorepo%40workspace%3A.":
   version: 21.0.0
-  resolution: "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core#///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::hash=580a3d&locator=octocode-monorepo%40workspace%3A."
+  resolution: "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core#///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::hash=4bfc4e&locator=octocode-monorepo%40workspace%3A."
   dependencies:
     zod: "npm:^4.6.2"
-  checksum: 10c0/c946c8fbe7c6e442a1b5078c60f6acb864da51dd2971c6997794e3ea78751a904c44f82ff1b8c190e8128df7f7f80fd485f2c509b0f0b8a54b542ce7505b9616
+  checksum: 10c0/bd88d032d877fdda02647c5eb7a2d02169b9afc095d484c876703631cd3f5bc9289446c7c91f5c8db35863ba8e961aa1d9912123730edc356258fe7c43a2067d
   languageName: node
   linkType: hard
 
@@ -1094,6 +1096,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@octocodeai/octocode-native-win32-arm64-msvc@workspace:*, @octocodeai/octocode-native-win32-arm64-msvc@workspace:packages/octocode-native/npm/win32-arm64-msvc":
+  version: 0.0.0-use.local
+  resolution: "@octocodeai/octocode-native-win32-arm64-msvc@workspace:packages/octocode-native/npm/win32-arm64-msvc"
+  languageName: unknown
+  linkType: soft
+
 "@octocodeai/octocode-native-win32-x64-msvc@workspace:*, @octocodeai/octocode-native-win32-x64-msvc@workspace:packages/octocode-native/npm/win32-x64-msvc":
   version: 0.0.0-use.local
   resolution: "@octocodeai/octocode-native-win32-x64-msvc@workspace:packages/octocode-native/npm/win32-x64-msvc"
@@ -1109,6 +1117,7 @@ __metadata:
     "@octocodeai/octocode-native-linux-arm64-gnu": "npm:20.2.0"
     "@octocodeai/octocode-native-linux-x64-gnu": "npm:20.2.0"
     "@octocodeai/octocode-native-linux-x64-musl": "npm:20.2.0"
+    "@octocodeai/octocode-native-win32-arm64-msvc": "npm:20.2.0"
     "@octocodeai/octocode-native-win32-x64-msvc": "npm:20.2.0"
     "@types/node": "npm:^24.19.2"
     typescript: "npm:^6.0.3"
@@ -1124,6 +1133,8 @@ __metadata:
     "@octocodeai/octocode-native-linux-x64-gnu":
       optional: true
     "@octocodeai/octocode-native-linux-x64-musl":
+      optional: true
+    "@octocodeai/octocode-native-win32-arm64-msvc":
       optional: true
     "@octocodeai/octocode-native-win32-x64-msvc":
       optional: true
@@ -1147,9 +1158,11 @@ __metadata:
     "@vitest/coverage-v8": "npm:^5.0.4"
     chrome-launcher: "npm:^1.2.2"
     esbuild: "npm:^0.28.2"
+    eslint: "npm:^10.12.0"
     octocode-mcp: "npm:^20.2.0"
     typebox: "npm:^1.3.37"
     typescript: "npm:^6.0.3"
+    typescript-eslint: "npm:^8.71.2"
     vite: "npm:^8.3.4"
     vitest: "npm:^5.0.4"
     zod: "npm:^4.6.7"
@@ -1174,13 +1187,6 @@ __metadata:
   version: 0.3.6
   resolution: "@pkgr/core@npm:0.3.6"
   checksum: 10c0/153f0f4563f505faeba13c733efa0e05e467ce1c6b941055a5fd3b4560da60fbf1dff4b11da0075f034ddda11f2842b90395f60895dde5825875b616edccc11c
-  languageName: node
-  linkType: hard
-
-"@polka/url@npm:^1.0.0-next.24":
-  version: 1.0.0-next.29
-  resolution: "@polka/url@npm:1.0.0-next.29"
-  checksum: 10c0/0d58e081844095cb029d3c19a659bfefd09d5d51a2f791bc61eba7ea826f13d6ee204a8a448c2f5a855c17df07b37517373ff916dd05801063c0568ae9937684
   languageName: node
   linkType: hard
 
@@ -1964,46 +1970,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vitest/pretty-format@npm:5.0.4":
-  version: 5.0.4
-  resolution: "@vitest/pretty-format@npm:5.0.4"
-  dependencies:
-    tinyrainbow: "npm:^3.2.0"
-  checksum: 10c0/706bcf32a5906d64274d6bb0663f40309733590b6e0c590adb718a2818ffd2d0f3eaa6dd3e5e7f74d725eb3c30fd81ba45c28e3a784fb6f0153ed1ee5258f27b
-  languageName: node
-  linkType: hard
-
 "@vitest/spy@npm:5.0.4":
   version: 5.0.4
   resolution: "@vitest/spy@npm:5.0.4"
   checksum: 10c0/f427195965fe1ddc92977e0a8458a245edd4636cfa1d6f02a30303c6c2b5a52641e89428cac0e05ec0f56d52e6d0820646eb14f0fb2476890fee5bfd639d8718
-  languageName: node
-  linkType: hard
-
-"@vitest/ui@npm:^5.0.4":
-  version: 5.0.4
-  resolution: "@vitest/ui@npm:5.0.4"
-  dependencies:
-    "@vitest/utils": "npm:5.0.4"
-    fflate: "npm:^0.8.3"
-    flatted: "npm:^3.4.4"
-    pathe: "npm:^2.0.3"
-    sirv: "npm:^3.0.2"
-    tinyrainbow: "npm:^3.2.0"
-  peerDependencies:
-    vitest: 5.0.4
-  checksum: 10c0/31eadce4c065a3d3ffb6c78e99395a4a5b3af5188f7d749c894a50ba7c9697b828a5f01db1982dc31bd7740a3443a0e1acf5055038411ff5337b9fdc17521650
-  languageName: node
-  linkType: hard
-
-"@vitest/utils@npm:5.0.4":
-  version: 5.0.4
-  resolution: "@vitest/utils@npm:5.0.4"
-  dependencies:
-    "@vitest/pretty-format": "npm:5.0.4"
-    convert-source-map: "npm:^2.0.0"
-    tinyrainbow: "npm:^3.2.0"
-  checksum: 10c0/1049e791cfdaffb0a391ea2c303362fa8944677637ac3b105ba687adb0eab447702820fddeb58ba66a8d50ff15d35581db5033ca487bfddf9b41926c7c7b700f
   languageName: node
   linkType: hard
 
@@ -2863,13 +2833,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fflate@npm:^0.8.3":
-  version: 0.8.3
-  resolution: "fflate@npm:0.8.3"
-  checksum: 10c0/eab181ca37f5348ae76d4b6f840e0026e30220e33153289ac942222d8b9638237d486507dbcc09878d724095bd354993a2ee48bbee99c8f2c6440d4448719aa7
-  languageName: node
-  linkType: hard
-
 "file-entry-cache@npm:11.1.5 || >11.1.6 <12":
   version: 11.1.5
   resolution: "file-entry-cache@npm:11.1.5"
@@ -2914,7 +2877,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"flatted@npm:^3.4.2, flatted@npm:^3.4.4":
+"flatted@npm:^3.4.2":
   version: 3.4.4
   resolution: "flatted@npm:3.4.4"
   checksum: 10c0/a3a52a88ea5a4c333e5a1f097dcd87a037fa31c236a77cf46222c2aa4036ef895ab9bc76138a66d9dc22bdb3652128f9598cd26e7439561bf19f67276e2bc37e
@@ -3739,13 +3702,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"mrmime@npm:^2.0.0":
-  version: 2.0.1
-  resolution: "mrmime@npm:2.0.1"
-  checksum: 10c0/af05afd95af202fdd620422f976ad67dc18e6ee29beb03dd1ce950ea6ef664de378e44197246df4c7cdd73d47f2e7143a6e26e473084b9e4aa2095c0ad1e1761
-  languageName: node
-  linkType: hard
-
 "ms@npm:^2.1.3":
   version: 2.1.3
   resolution: "ms@npm:2.1.3"
@@ -3893,7 +3849,6 @@ __metadata:
     "@types/node": "npm:^24.19.2"
     "@typescript/native-preview": "npm:7.0.0-dev.20260707.2"
     "@vitest/coverage-v8": "npm:^5.0.4"
-    "@vitest/ui": "npm:^5.0.4"
     esbuild: "npm:^0.28.2"
     eslint: "npm:^10.12.0"
     rollup: "npm:^4.64.6"
@@ -4060,13 +4015,6 @@ __metadata:
   version: 8.4.2
   resolution: "path-to-regexp@npm:8.4.2"
   checksum: 10c0/05b115c49b47ad252ce05faa32930f643f23769c68b8bcfe78ad833545140c48bbffb3266986d6c8d5db13a64cf12e07e0d72d9882cab830efeefa553533ebaf
-  languageName: node
-  linkType: hard
-
-"pathe@npm:^2.0.3":
-  version: 2.0.3
-  resolution: "pathe@npm:2.0.3"
-  checksum: 10c0/c118dc5a8b5c4166011b2b70608762e260085180bb9e33e80a50dcdb1e78c010b1624f4280c492c92b05fc276715a4c357d1f9edc570f8f1b3d90b6839ebaca1
   languageName: node
   linkType: hard
 
@@ -4578,17 +4526,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sirv@npm:^3.0.2":
-  version: 3.0.2
-  resolution: "sirv@npm:3.0.2"
-  dependencies:
-    "@polka/url": "npm:^1.0.0-next.24"
-    mrmime: "npm:^2.0.0"
-    totalist: "npm:^3.0.0"
-  checksum: 10c0/5930e4397afdb14fbae13751c3be983af4bda5c9aadec832607dc2af15a7162f7d518c71b30e83ae3644b9a24cea041543cc969e5fe2b80af6ce8ea3174b2d04
-  languageName: node
-  linkType: hard
-
 "source-map-js@npm:^1.2.1, source-map-js@npm:^1.2.2":
   version: 1.2.2
   resolution: "source-map-js@npm:1.2.2"
@@ -4678,13 +4615,6 @@ __metadata:
   version: 1.0.1
   resolution: "toidentifier@npm:1.0.1"
   checksum: 10c0/93937279934bd66cc3270016dd8d0afec14fb7c94a05c72dc57321f8bd1fa97e5bea6d1f7c89e728d077ca31ea125b78320a616a6c6cd0e6b9cb94cb864381c1
-  languageName: node
-  linkType: hard
-
-"totalist@npm:^3.0.0":
-  version: 3.0.1
-  resolution: "totalist@npm:3.0.1"
-  checksum: 10c0/4bb1fadb69c3edbef91c73ebef9d25b33bbf69afe1e37ce544d5f7d13854cda15e47132f3e0dc4cafe300ddb8578c77c50a65004d8b6e97e77934a69aa924863
   languageName: node
   linkType: hard
 

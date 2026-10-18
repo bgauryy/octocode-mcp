@@ -419,8 +419,12 @@ fn a_filtered_listing_names_the_links_it_does_not_follow() {
         );
         let plain = run(&root.0, json!({"operation":operation,"path":links})).expect("listing");
         assert!(plain.get("warnings").is_none(), "{operation}: {plain}");
+        // The link row names its own length (the target path's), then `symlink`.
+        let length = std::fs::symlink_metadata(links.join("skill"))
+            .expect("link")
+            .len();
         assert!(
-            has_string(&plain, "skill (symlink)") || plain.to_string().contains("symlink"),
+            has_string(&plain, &format!("skill ({length}, symlink)")),
             "{operation}: {plain}"
         );
     }
@@ -479,4 +483,87 @@ fn skip_reasons_name_ignore_files_workspace_relative() {
             "{operation}: {out}"
         );
     }
+}
+
+/// An entry the caller excluded is the caller's own filter: the walk drops
+/// it before the path policy sees it, so it is never counted as withheld
+/// or hidden.
+#[test]
+fn excluded_entries_are_not_counted_as_withheld_or_hidden() {
+    let root = sensitive_fixture();
+    for operation in ["tree", "files"] {
+        let plain = run(
+            &root.0,
+            json!({"operation":operation,"path":root.0,"includeHidden":true}),
+        )
+        .expect("listing");
+        assert!(
+            plain["warnings"].to_string().contains("withheld"),
+            "{operation}: {plain}"
+        );
+        let excluded = run(
+            &root.0,
+            json!({"operation":operation,"path":root.0,"includeHidden":true,"exclude":["terraform.tfstate",".aws"]}),
+        )
+        .expect("excluded listing");
+        assert!(
+            excluded.get("warnings").is_none(),
+            "{operation}: {excluded}"
+        );
+        let hidden = run(
+            &root.0,
+            json!({"operation":operation,"path":root.0,"exclude":[".aws"]}),
+        )
+        .expect("listing without hidden");
+        assert!(
+            !hidden.to_string().contains("\"hidden\""),
+            "{operation}: {hidden}"
+        );
+    }
+}
+
+/// An empty listing its name filters alone emptied (nothing skipped to
+/// lift) leads to the same listing without them (`broadenSearch`), which
+/// lists what is there; a tree keeps the depth it walked.
+#[test]
+fn a_name_filter_miss_leads_to_the_listing_without_its_name_filters() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join("src/deep")).expect("dir");
+    std::fs::write(root.0.join("src/deep/lib.rs"), "x\n").expect("file");
+    for query in [
+        json!({"operation":"files","path":root.0,"nameRegex":"^nomatch$","entryType":"f"}),
+        json!({"operation":"tree","path":root.0,"include":["*.nomatch"]}),
+    ] {
+        let out = run(&root.0, query.clone()).expect("empty listing");
+        assert_eq!(out["status"], "empty", "{out}");
+        let lead = &out["next"]["broadenSearch"];
+        assert_eq!(lead["tool"], "structureSearch", "{out}");
+        let row = &lead["query"]["queries"][0];
+        for field in ["nameRegex", "include", "extensions"] {
+            assert!(row.get(field).is_none(), "{field}: {row}");
+        }
+        assert_eq!(row["operation"], query["operation"], "{row}");
+        assert!(
+            out["hints"]
+                .as_array()
+                .is_some_and(|hints| hints.iter().any(|hint| hint
+                    .as_str()
+                    .is_some_and(|text| text.starts_with("No entry matches")))),
+            "{out}"
+        );
+        let broadened = run(&root.0, row.clone()).expect("broadened listing");
+        assert!(
+            broadened.to_string().contains("lib.rs"),
+            "{query}: {broadened}"
+        );
+    }
+    // Nothing under the path at all: no lead to a listing that finds nothing.
+    let empty = root.0.join("empty");
+    std::fs::create_dir(&empty).expect("empty dir");
+    let out = run(
+        &root.0,
+        json!({"operation":"files","path":empty,"nameRegex":"^nomatch$"}),
+    )
+    .expect("empty listing");
+    assert!(out["next"].get("broadenSearch").is_none(), "{out}");
 }

@@ -8,17 +8,9 @@ pub(crate) use output::Output;
 mod tests;
 mod tree;
 
-/// Contract maximum of a structureSearch query field (both operations agree);
-/// an undeclared bound stays open (validation enforces it).
-fn structure_max(field: &str) -> u32 {
-    let max =
-        crate::contracts::query_schema_max(crate::tools::id::ToolId::StructureSearch, None, field);
-    u32::try_from(max).unwrap_or(u32::MAX)
-}
-
 /// Entries one walk may visit: the contract `maxEntries` maximum.
 fn max_walk() -> u32 {
-    structure_max("maxEntries")
+    u32_of_usize(crate::tools::id::query_limits::structure_search::MAX_ENTRIES_MAXIMUM)
 }
 
 /// Wall time one listing walk may spend: the budget every unbounded local
@@ -30,6 +22,7 @@ const WALK_BUDGET: std::time::Duration = octocode_engine::scan_budget::SCAN_TIME
 use crate::policy::prune::PruneMode;
 use crate::tools::display_name;
 use crate::tools::empty_walk::{Cause, Hits, Verdict, Walk, diagnose_shown, lift};
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::ToolError;
 use serde_json::{Value, json};
 
@@ -178,13 +171,10 @@ fn restart_if_stale(
 /// Copy the query with `changes` applied as a `structureSearch` continuation;
 /// a `null` change drops that field.
 fn continuation(query: &impl serde::Serialize, changes: Value) -> Value {
-    let mut query = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
-    if let (Some(to), Some(from)) = (query.as_object_mut(), changes.as_object()) {
-        to.extend(from.clone());
-        for (field, _) in from.iter().filter(|(_, value)| value.is_null()) {
-            to.remove(field);
-        }
-    }
+    let query = crate::tools::result::with_changes(
+        serde_json::to_value(query).unwrap_or_else(|_| json!({})),
+        &changes,
+    );
     crate::tools::result::Continuation::new(crate::tools::id::ToolId::StructureSearch, query)
         .confidence("exact")
         .build()
@@ -960,6 +950,53 @@ impl WalkLeft {
         pruned
     }
 
+    /// The policy callback of a listing walk (`tree` and `files` alike):
+    /// whether the walk may enter or list `path`, counting what it leaves
+    /// out. The root itself stays admitted: a probe out of time lists
+    /// nothing under it, never fails. Dot entries out of view (no
+    /// `includeHidden`) are neither listed nor counted as withheld; the ones
+    /// `includeHidden:true` would walk (permitted, not ignored, not a pruned
+    /// directory) are counted as hidden, and the walk's own dot rule skips
+    /// them. Only an entry the filters could list makes a withheld one worth
+    /// naming, and a replayed entry was counted by the window this one
+    /// resumes.
+    fn admit(
+        &self,
+        policy: &WalkPolicy<'_>,
+        path: &std::path::Path,
+        file_type: Option<std::fs::FileType>,
+        visit: octocode_engine::portable::Visit,
+    ) -> bool {
+        if path != self.root
+            && policy
+                .bound
+                .is_some_and(|bound| !bound.admits(path, file_type))
+        {
+            return false;
+        }
+        let dot = display_name(path).starts_with('.');
+        let allowed = policy.discovery.permits_entry(path, file_type);
+        let fresh = visit == octocode_engine::portable::Visit::Fresh;
+        let unseen = if allowed {
+            Self::unfollowed(path, file_type, policy.filtered)
+        } else {
+            policy.probe.could_list(path)
+        };
+        if fresh && unseen && (policy.show_hidden || !dot) && reports_withheld(path) {
+            self.record_withheld(path);
+        }
+        if !allowed {
+            return false;
+        }
+        if dot && !policy.show_hidden {
+            if fresh && !self.excludes(path, file_type) {
+                self.count_hidden();
+            }
+            return true;
+        }
+        !self.prunes(path, file_type, visit)
+    }
+
     fn count_hidden(&self) {
         self.hidden
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1000,6 +1037,17 @@ impl WalkLeft {
                 .unwrap_or_else(|error| error.into_inner()),
         }
     }
+}
+
+/// What one listing walk's policy callback ([`WalkLeft::admit`]) decides
+/// by: the probe bound (a probe walk only), the path policy, the filters a
+/// withheld entry is weighed against, and the hidden and filtered flags.
+struct WalkPolicy<'a> {
+    bound: Option<&'a ProbeBound>,
+    discovery: crate::policy::path::DiscoveryWalk<'a>,
+    probe: FilterProbe,
+    show_hidden: bool,
+    filtered: bool,
 }
 
 impl<R: Sourced> Walked<R> {
@@ -1182,6 +1230,77 @@ fn probe_empty<R: Sourced>(
             cut,
         ))
     })
+}
+
+/// Query fields that filter by an entry's name or path (both operations'):
+/// an empty listing they alone emptied is broadened by dropping them.
+const NAME_FILTERS: [&str; 3] = ["include", "extensions", "nameRegex"];
+
+/// An empty listing that skipped nothing worth lifting (no
+/// `includeSkipped`) and filtered by name: when the same listing without its
+/// name filters (`walk` of the relaxed query, within the probe budget) finds
+/// entries below `root` (the listed directory itself is no find), lead to
+/// it (`next.broadenSearch`) and say how many it lists, so a name miss gets
+/// a runnable next step, never prose alone. `query` names every default the
+/// relaxed listing must keep (the walked depth).
+fn broaden_empty<Q, R>(
+    out: &mut Value,
+    query: &Q,
+    root: &std::path::Path,
+    walk: impl FnOnce(&Q, Walking<'_>) -> Result<Walked<R>, ToolError>,
+) -> Result<(), ToolError>
+where
+    Q: serde::Serialize + serde::de::DeserializeOwned,
+    R: Sourced,
+{
+    if out["status"] != "empty" || out["next"].get("includeSkipped").is_some() {
+        return Ok(());
+    }
+    let row = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
+    let dropped = NAME_FILTERS
+        .into_iter()
+        .filter(|field| crate::tools::output::has_value(&row, field))
+        .collect::<Vec<_>>();
+    if dropped.is_empty() {
+        return Ok(());
+    }
+    let mut changes = json!({"page": 1, "snapshot": null, "walkOffset": null, "scanOffset": null});
+    for field in &dropped {
+        changes[*field] = Value::Null;
+    }
+    let lead = continuation(query, changes);
+    let Ok(relaxed) = serde_json::from_value::<Q>(lead["query"]["queries"][0].clone()) else {
+        return Ok(());
+    };
+    let bound = ProbeBound::new(crate::tools::empty_walk::probe_budget());
+    let found = walk(&relaxed, Walking::Probe(&bound))?;
+    let count = found
+        .rows
+        .iter()
+        .filter(|row| row.seen().path != root)
+        .count();
+    if count == 0 {
+        return Ok(());
+    }
+    let cut = found.meta.was_capped || bound.cut();
+    let hint = format!(
+        "No entry matches {}; {}{count} {} without {}: the lead lists {}.",
+        dropped.join("/"),
+        if cut { "at least " } else { "" },
+        if count == 1 {
+            "entry matches"
+        } else {
+            "entries match"
+        },
+        if dropped.len() == 1 { "it" } else { "them" },
+        if count == 1 { "it" } else { "them" },
+    );
+    out["next"]["broadenSearch"] = lead;
+    match out["hints"].as_array_mut() {
+        Some(hints) => hints.push(json!(hint)),
+        None => out["hints"] = json!([hint]),
+    }
+    Ok(())
 }
 
 /// Whether a filtered listing could have listed `path` had the policy

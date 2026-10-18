@@ -2,8 +2,9 @@
 //! to a local directory (`materialize`).
 use crate::contracts::tool_types::ExtraKind;
 use crate::tools::gh_shared::{
-    GhFailure, PathRecovery, RepoPath, locate_path, missing_path, parent_dir, push_warning_front,
-    search_failure, tree_recovery, with_ref_recovery,
+    GhFailure, PathRecovery, RepoPath, default_branch, locate_path, missing_path, parent_dir,
+    push_warning_front, repo_key, search_failure, tree_recovery, with_default_branch,
+    with_ref_recovery,
 };
 use crate::tools::id::ToolId;
 use crate::tools::result::ToolData;
@@ -81,8 +82,11 @@ pub async fn run<C: octocode_github::ConditionalCache>(
     }
     if !missing_path(&error, Some(at.path)) {
         // A repository that did not resolve leads to a search for its name.
+        let failure = with_ref_recovery(search_failure(error, None), at.owner, at.repo);
+        let failure =
+            with_default_branch(provider, failure, ToolId::GhStructure, query, context).await;
         return Err(crate::tools::gh_shared::with_search_repair(
-            with_ref_recovery(search_failure(error, None), at.owner, at.repo),
+            failure,
             ToolId::GhStructure,
             query,
             1,
@@ -240,11 +244,11 @@ struct Traversal {
     /// Fallback walk stopped at [`MAX_DIRECTORY_FETCHES`].
     #[serde(default)]
     fetch_limit: bool,
-    /// What the listing does not show, by name: symlinks and submodules,
-    /// which have no listable content. Every committed directory is listed
-    /// and walked: a tree holds only tracked content, so the local
-    /// build-output prune names (`build/`, `coverage/`, `node_modules/`) do not
-    /// apply to it.
+    /// What the listing does not show, as `"<repo-relative path> (<kind>)"`:
+    /// symlinks and submodules, which have no listable content. Every
+    /// committed directory is listed and walked: a tree holds only tracked
+    /// content, so the local build-output prune names (`build/`,
+    /// `coverage/`, `node_modules/`) do not apply to it.
     #[serde(default)]
     omitted: std::collections::BTreeMap<String, usize>,
 }
@@ -270,7 +274,7 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
         max_depth: scope.depth,
     };
     let mut traversal = traverse(provider, &listing, context).await?;
-    scope.select(&mut traversal.entries);
+    scope.select(&mut traversal);
     let page = ListingPage::of(query, &traversal.entries);
     let mut value = json!({
         "files": build_structure(page.entries),
@@ -336,6 +340,9 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
     }
     if !resumed && structure_is_empty(&value) && value.get("isPartial").is_none() {
         output.status = Some("empty");
+        if let Some(broader) = broaden_listing(&pinned) {
+            value["next"]["broadenSearch"] = broader;
+        }
     } else if value.pointer("/location/localPath").is_some() {
         // A materialized listing continues with the local tools at
         // `location.localPath`; re-listing the tree it just returned adds
@@ -347,6 +354,21 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
     }
     output.data = value;
     Ok(output)
+}
+
+/// An empty filtered listing, broadened ([`crate::tools::gh_shared::broaden`]):
+/// the same commit's listing without its `include` globs, so what the tree
+/// holds names why they matched nothing. Never a materialization.
+fn broaden_listing(pinned: &GhStructureQuery) -> Option<Value> {
+    crate::tools::gh_shared::broaden(
+        ToolId::GhStructure,
+        &query_row(pinned, &[]),
+        &crate::tools::gh_shared::Broaden {
+            strip: &["materialize", "materializeOffset"],
+            groups: &[&["include"]],
+        },
+        1,
+    )
 }
 
 /// What dating a listing page left: entries no date reached, and whether
@@ -432,14 +454,28 @@ struct Scope {
 }
 
 impl Scope {
-    /// The listed entries of `entries`: those the `include` globs keep,
-    /// directory by directory in path order, so a page of a deep listing
-    /// carries each directory's files with its folders instead of every
-    /// folder of the tree before the first file.
-    fn select(&self, entries: &mut Vec<TreeEntry>) {
+    /// The listed entries of the walk: those the `include` globs keep
+    /// (matched relative to `path`, as the local tools match), directory by
+    /// directory in path order, so a page of a deep listing carries each
+    /// directory's files with its folders instead of every folder of the
+    /// tree before the first file. An omitted entry stays named only when
+    /// the globs keep its path too.
+    fn select(&self, traversal: &mut Traversal) {
         if let Some(filter) = &self.filter {
-            entries.retain(|entry| filter.iter().any(|glob| glob.matches(&entry.path)));
+            let kept = |path: &str| {
+                let path = relative(path, &self.path);
+                filter.iter().any(|glob| glob.matches(&path))
+            };
+            traversal.entries.retain(|entry| kept(&entry.path));
+            traversal.omitted.retain(|named, _| {
+                kept(
+                    named
+                        .rsplit_once(" (")
+                        .map_or(named.as_str(), |(path, _)| path),
+                )
+            });
         }
+        let entries = &mut traversal.entries;
         let parent = |path: &str| path.rsplit_once('/').map_or("", |(dir, _)| dir).to_owned();
         entries.sort_by(|left, right| {
             parent(&left.path)
@@ -667,7 +703,7 @@ mod tests {
     }
 
     /// A submodule is not listed, and not dropped silently: the listing
-    /// names it beside the directories it skips by design.
+    /// names it by its repository-relative path.
     #[test]
     fn a_submodule_is_named_not_silently_dropped() {
         let tree: octocode_github::TreeResponse = serde_json::from_value(json!({
@@ -682,7 +718,47 @@ mod tests {
         assert_eq!(traversal.entries.len(), 2);
         assert_eq!(
             serde_json::to_value(&traversal.omitted).expect("omitted"),
-            json!({"zlib (submodule)": 1})
+            json!({"third_party/zlib (submodule)": 1})
+        );
+    }
+
+    /// `include` matches paths relative to the listed `path`, as the local
+    /// tools do, and an omitted entry outside the globs is not named.
+    #[test]
+    fn include_globs_match_relative_to_the_listed_path() {
+        let query: GhStructureQuery = serde_json::from_value(json!({
+            "owner":"a","repo":"b","path":"pkg","include":["src/*.rs"]
+        }))
+        .expect("query");
+        let scope = Scope::of(&query).expect("scope");
+        let entry = |path: &str| TreeEntry {
+            path: path.into(),
+            kind: EntryKind::File,
+            size: Some(1),
+        };
+        let mut traversal = Traversal {
+            entries: vec![
+                entry("pkg/src/lib.rs"),
+                entry("pkg/src/nested/a.rs"),
+                entry("pkg/lib.rs"),
+            ],
+            omitted: [
+                ("pkg/src/link.rs (symlink)".to_owned(), 1),
+                ("pkg/vendor (submodule)".to_owned(), 1),
+            ]
+            .into(),
+            ..Traversal::default()
+        };
+        scope.select(&mut traversal);
+        let kept = traversal
+            .entries
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(kept, ["pkg/src/lib.rs"]);
+        assert_eq!(
+            serde_json::to_value(&traversal.omitted).expect("omitted"),
+            json!({"pkg/src/link.rs (symlink)": 1})
         );
     }
 

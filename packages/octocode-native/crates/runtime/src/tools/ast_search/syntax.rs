@@ -1,5 +1,5 @@
 use crate::tools::id::ToolId;
-use crate::tools::num::usize_of;
+use crate::tools::num::{u32_of, usize_of};
 use crate::tools::result::ToolError;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
@@ -15,12 +15,11 @@ impl AstSearchQuerySyntaxTree {
         self.language.as_ref().map(ToString::to_string)
     }
     pub(crate) fn page(&self) -> u32 {
-        u32::try_from(self.page.get()).unwrap_or(u32::MAX)
+        u32_of(self.page.get())
     }
     /// The caller's nodes per page; unset fills the response window.
     pub(crate) fn page_size(&self) -> Option<u32> {
-        self.page_size
-            .map(|size| u32::try_from(size.get()).unwrap_or(u32::MAX))
+        self.page_size.map(|size| u32_of(size.get()))
     }
     /// The first node of an explicit-size page; a window-sized page starts
     /// where the previous one ended, which only a walk of the nodes knows.
@@ -33,8 +32,7 @@ impl AstSearchQuerySyntaxTree {
     }
     /// The 1-based line whose covering node roots the tree (`line`).
     pub(crate) fn line(&self) -> Option<u32> {
-        self.line
-            .map(|line| u32::try_from(line.get()).unwrap_or(u32::MAX))
+        self.line.map(|line| u32_of(line.get()))
     }
 }
 
@@ -87,7 +85,7 @@ pub fn execute_syntax(
     };
     let budget = crate::tools::page_windows::page_budget(
         response_window,
-        &serde_json::to_value(q).unwrap_or_default(),
+        &crate::tools::result::query_value(q),
     );
     let page = read_page(q, &source, budget, &snapshot, cancel)?;
     Ok(render_tree_page(

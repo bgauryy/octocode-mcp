@@ -234,32 +234,21 @@ pub fn project_root_of_dir(directory: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TmpDir;
     use std::fs;
-
-    fn temp_dir(name: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let root = std::env::temp_dir().join(format!("octocode_ws_{name}_{nanos}"));
-        fs::create_dir_all(&root).expect("create temp dir");
-        root
-    }
 
     /// A source directory resolves to the project above it; a tree with no
     /// marker has no project root.
     #[test]
     fn project_root_of_dir_walks_up_to_the_marker() {
-        let root = temp_dir("dir_marker");
+        let root = TmpDir::new();
         fs::write(root.join("tsconfig.json"), b"{}").expect("write marker");
         let src = root.join("src").join("cli");
         fs::create_dir_all(&src).expect("create src");
-        let bare = temp_dir("dir_bare");
+        let bare = TmpDir::new();
         let found = project_root_of_dir(&src);
         let none = project_root_of_dir(&bare);
-        let _ = fs::remove_dir_all(&root);
-        let _ = fs::remove_dir_all(&bare);
-        assert_eq!(found, Some(root));
+        assert_eq!(found.as_deref(), Some(&*root));
         // The temp dir's ancestors may hold a marker on some hosts; only a
         // found root must be an ancestor.
         assert!(none.is_none_or(|dir| bare.starts_with(dir)));
@@ -268,7 +257,7 @@ mod tests {
     #[test]
     fn resolves_root_from_nearest_marker() {
         // Layout: root/package.json  root/src/index.ts
-        let root = temp_dir("marker");
+        let root = TmpDir::new();
         fs::write(root.join("package.json"), b"{}").expect("write marker");
         let src = root.join("src");
         fs::create_dir_all(&src).expect("create src");
@@ -278,12 +267,11 @@ mod tests {
         let result =
             resolve_workspace_root_for_file(file.to_string_lossy().into_owned()).expect("resolve");
 
-        let _ = fs::remove_dir_all(&root);
         // Normalize both sides in case of symlink-resolved paths (macOS /var → /private/var).
         let resolved = PathBuf::from(&result)
             .canonicalize()
             .unwrap_or_else(|_| PathBuf::from(&result));
-        let expected = root.canonicalize().unwrap_or(root);
+        let expected = root.canonicalize().unwrap_or_else(|_| root.0.clone());
         assert_eq!(resolved, expected);
     }
 
@@ -291,7 +279,7 @@ mod tests {
     fn resolves_root_skips_deep_nested_marker_in_favour_of_parent() {
         // Layout: root/Cargo.toml  root/a/b/file.rs
         // Nearest marker walking upward from file.rs is root/ (a/ and a/b/ have none).
-        let root = temp_dir("nested");
+        let root = TmpDir::new();
         fs::write(root.join("Cargo.toml"), b"[package]").expect("write marker");
         let deep = root.join("a").join("b");
         fs::create_dir_all(&deep).expect("create deep");
@@ -301,11 +289,10 @@ mod tests {
         let result =
             resolve_workspace_root_for_file(file.to_string_lossy().into_owned()).expect("resolve");
 
-        let _ = fs::remove_dir_all(&root);
         let resolved = PathBuf::from(&result)
             .canonicalize()
             .unwrap_or_else(|_| PathBuf::from(&result));
-        let expected = root.canonicalize().unwrap_or(root);
+        let expected = root.canonicalize().unwrap_or_else(|_| root.0.clone());
         assert_eq!(resolved, expected);
     }
 
@@ -314,7 +301,7 @@ mod tests {
     /// at itself, and a non-Rust file keeps the nearest marker.
     #[test]
     fn rust_files_root_at_their_cargo_workspace() {
-        let root = temp_dir("cargo_ws");
+        let root = TmpDir::new();
         fs::write(
             root.join("Cargo.toml"),
             b"[workspace]\nmembers = [\"crates/*\"]\n",
@@ -326,7 +313,7 @@ mod tests {
         fs::write(member.join("package.json"), b"{}").expect("npm wrapper");
         let rust = member.join("src").join("lib.rs");
         let script = member.join("src").join("gen.js");
-        let standalone = temp_dir("cargo_alone");
+        let standalone = TmpDir::new();
         fs::write(standalone.join("Cargo.toml"), b"[package]\nname = \"x\"\n").expect("alone");
         let resolve = |file: &Path| {
             PathBuf::from(
@@ -338,16 +325,14 @@ mod tests {
             resolve(&script),
             resolve(&standalone.join("main.rs")),
         );
-        let _ = fs::remove_dir_all(&root);
-        let _ = fs::remove_dir_all(&standalone);
-        assert_eq!(member_root, root);
+        assert_eq!(member_root, root.0);
         assert_eq!(script_root, member);
-        assert_eq!(alone_root, standalone);
+        assert_eq!(alone_root, standalone.0);
     }
 
     #[test]
     fn build_script_follows_cargo_defaults() {
-        let package = temp_dir("build_script");
+        let package = TmpDir::new();
         fs::create_dir_all(package.join("src")).expect("src");
         let manifest = package.join("Cargo.toml");
         fs::write(&manifest, b"[package]\nname = \"p\"\n").expect("manifest");
@@ -361,7 +346,6 @@ mod tests {
         let named = cargo_package_build_script(&package);
         fs::write(&manifest, b"[workspace]\nmembers = []\n").expect("virtual");
         let virtual_manifest = cargo_package_build_script(&package);
-        let _ = fs::remove_dir_all(&package);
         assert_eq!(none, None);
         assert_eq!(default, Some(package.join("build.rs")));
         assert_eq!(off, None);
@@ -374,7 +358,7 @@ mod tests {
     /// packages, comments and `include_str!` are not includes.
     #[test]
     fn package_includes_name_what_rust_analyzer_cannot_load() {
-        let outer = temp_dir("includes");
+        let outer = TmpDir::new();
         let package = outer.join("pkg");
         fs::create_dir_all(package.join("src/inner")).expect("src");
         fs::create_dir_all(package.join("nested/src")).expect("nested");
@@ -410,7 +394,6 @@ mod tests {
         fs::write(package.join("build.rs"), b"fn main() {}").expect("build.rs");
         let with_script = cargo_package_includes(&lib, 100).expect("package");
         let capped = cargo_package_includes(&lib, 1).expect("package");
-        let _ = fs::remove_dir_all(&outer);
         let outside = vec![outer.join("contract/types.rs")];
         assert_eq!(no_script.generated, Vec::<PathBuf>::new());
         assert_eq!(no_script.outside, outside);
@@ -424,7 +407,7 @@ mod tests {
     fn falls_back_to_file_dir_not_cwd() {
         // A temp directory with no marker anywhere above it resolves to the
         // file's own directory, never the process cwd.
-        let root = temp_dir("no_marker");
+        let root = TmpDir::new();
         let file = root.join("orphan.ts");
         fs::write(&file, b"// nothing").expect("write file");
         let has_marker_above = root
@@ -433,11 +416,10 @@ mod tests {
 
         let result = resolve_workspace_root_for_file(file.to_string_lossy().into_owned())
             .expect("resolve must not error");
-        let _ = fs::remove_dir_all(&root);
         let cwd = std::env::current_dir().expect("cwd");
         assert_ne!(PathBuf::from(&result), cwd);
         if !has_marker_above {
-            assert_eq!(PathBuf::from(&result), root);
+            assert_eq!(PathBuf::from(&result), root.0);
         }
     }
 }

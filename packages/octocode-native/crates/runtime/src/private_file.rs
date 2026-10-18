@@ -523,8 +523,7 @@ mod tests {
         assert!(open_no_follow(&link, false).is_err());
         assert!(open_no_follow(&link, true).is_err());
         let fifo = dir.path().join("fifo");
-        let name = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
-        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        crate::tools::test_support::make_fifo(&fifo);
         assert!(open_no_follow(&fifo, false).is_err());
         assert!(open_no_follow(&target, false).is_ok());
     }

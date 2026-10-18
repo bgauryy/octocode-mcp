@@ -6,7 +6,12 @@
 //! hundreds of GB of stale copies in target/. One binary links once and runs
 //! all tests in one parallel harness. Run one file with
 //! `cargo test -p octocode-cli --test integration <module>::`.
-#![allow(clippy::expect_used, reason = "integration-test assertions")]
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "integration-test assertions"
+)]
 
 mod support;
 
@@ -15,10 +20,12 @@ mod cli;
 mod cli_batch_response;
 mod cli_catalog;
 mod cli_exit_codes;
+mod cli_output;
 mod cli_skill;
 mod cli_tool_contract;
 mod config_edit;
 mod config_view;
+mod system_commands;
 mod warm_server;
 
 /// `autotests = false` means a `tests/*.rs` file missing from the list above

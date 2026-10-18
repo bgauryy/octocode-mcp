@@ -91,6 +91,92 @@ pub fn continuation_row_mut(call: &mut Value) -> Option<&mut Value> {
     call.get_mut("query")?.get_mut("queries")?.get_mut(0)
 }
 
+/// Whether `value` is one executable call: `{tool: string, query: object}`.
+#[must_use]
+pub fn is_call(value: &Value) -> bool {
+    value.get("tool").is_some_and(Value::is_string)
+        && value.get("query").is_some_and(Value::is_object)
+}
+
+/// The deepest nesting a walk of a result enters: rows nest items, page
+/// blocks and calls far above this.
+pub(crate) const NESTING_DEPTH: usize = 12;
+
+/// Every executable call in `value` ([`is_call`]) at any depth up to
+/// [`NESTING_DEPTH`]; a call's own query is caller content and never entered.
+pub fn for_each_call(value: &Value, visit: &mut impl FnMut(&Value)) {
+    fn walk(value: &Value, visit: &mut impl FnMut(&Value), depth: usize) {
+        if depth > NESTING_DEPTH {
+            return;
+        }
+        if is_call(value) {
+            visit(value);
+            return;
+        }
+        match value {
+            Value::Object(map) => map.values().for_each(|child| walk(child, visit, depth + 1)),
+            Value::Array(items) => items.iter().for_each(|item| walk(item, visit, depth + 1)),
+            _ => {}
+        }
+    }
+    walk(value, visit, 0);
+}
+
+/// [`for_each_call`], mutable.
+pub fn for_each_call_mut(value: &mut Value, visit: &mut impl FnMut(&mut Value)) {
+    fn walk(value: &mut Value, visit: &mut impl FnMut(&mut Value), depth: usize) {
+        if depth > NESTING_DEPTH {
+            return;
+        }
+        if is_call(value) {
+            visit(value);
+            return;
+        }
+        match value {
+            Value::Object(map) => map
+                .values_mut()
+                .for_each(|child| walk(child, visit, depth + 1)),
+            Value::Array(items) => items
+                .iter_mut()
+                .for_each(|item| walk(item, visit, depth + 1)),
+            _ => {}
+        }
+    }
+    walk(value, visit, 0);
+}
+
+/// One call as one pasteable line, `<tool> <compact query JSON>`, which the
+/// CLI runs as `octocode <tool> '<query JSON>'`; a low-confidence lead reads
+/// `Approximate: …`. The hints channel and the YAML text both print it.
+#[must_use]
+pub fn call_line(call: &Value) -> Option<String> {
+    let tool = call.get("tool").and_then(Value::as_str)?;
+    if !is_call(call) {
+        return None;
+    }
+    let qualification = if call.get("confidence").and_then(Value::as_str) == Some("low") {
+        "Approximate: "
+    } else {
+        ""
+    };
+    Some(format!("{qualification}{tool} {}", call["query"]))
+}
+
+/// `row` with `changes` applied: each change sets its field, and a `null`
+/// change drops it.
+pub(crate) fn with_changes(mut row: Value, changes: &Value) -> Value {
+    if let (Some(to), Some(from)) = (row.as_object_mut(), changes.as_object()) {
+        for (field, value) in from {
+            if value.is_null() {
+                to.shift_remove(field);
+            } else {
+                to.insert(field.clone(), value.clone());
+            }
+        }
+    }
+    row
+}
+
 /// How a call failed, for the caller's exit code and error state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum FailureKind {
@@ -302,9 +388,15 @@ pub(crate) fn stale_snapshot(restart: Value) -> Value {
     })
 }
 
+/// A generated query as JSON, every field as written. A generated query is
+/// plain data, so serializing it cannot fail.
+pub(crate) fn query_value(query: &impl Serialize) -> Value {
+    serde_json::to_value(query).unwrap_or_default()
+}
+
 /// A typed query as a continuation row: every field it sets, except `omit`.
 pub(crate) fn query_row(query: &impl Serialize, omit: &[&str]) -> Value {
-    let mut row = serde_json::to_value(query).unwrap_or_default();
+    let mut row = query_value(query);
     remove_nulls(&mut row);
     if let Some(row) = row.as_object_mut() {
         for key in omit {
@@ -338,7 +430,10 @@ pub(crate) fn remove_null_fields(value: &mut Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::{CURSOR_FIELDS, ToolError, restart_query, stale_snapshot};
+    use super::{
+        CURSOR_FIELDS, ToolError, for_each_call, for_each_call_mut, restart_query, stale_snapshot,
+        with_changes,
+    };
     use crate::tools::id::ToolId;
     use serde_json::{Value, json};
 
@@ -425,5 +520,41 @@ mod tests {
         let error = ToolError::stale_snapshot(restart.clone());
         assert_eq!(error.code, "staleSnapshot");
         assert_eq!(error.next.as_deref(), Some(&json!({"restart": restart})));
+    }
+
+    /// A change sets its field in place, a `null` change drops it, and the
+    /// fields left keep their order.
+    #[test]
+    fn changes_set_fields_and_nulls_drop_them() {
+        let row = json!({"path":"a","page":2,"pageSize":5,"snapshot":"s"});
+        let changed = with_changes(row, &json!({"page":3,"snapshot":null,"depth":1}));
+        assert_eq!(
+            serde_json::to_string(&changed).expect("json"),
+            r#"{"path":"a","page":3,"pageSize":5,"depth":1}"#
+        );
+    }
+
+    /// The call walk visits every `{tool, query}` at any depth (under `next`,
+    /// `hints`, items, a response page) and never enters a call's query.
+    #[test]
+    fn the_call_walk_visits_every_call_and_never_its_query() {
+        let inner = json!({"tool":"localFetch","query":{"queries":[{"path":"b"}]}});
+        let mut value = json!({
+            "next":{"nextPage":{"tool":"localSearch","query":{"queries":[{"path":"a"}],
+                "nested":inner}}},
+            "items":[{"hints":[inner]}],
+            "tool":"not a call"
+        });
+        let mut tools = Vec::new();
+        for_each_call(&value, &mut |call| tools.push(call["tool"].clone()));
+        assert_eq!(tools, vec![json!("localSearch"), json!("localFetch")]);
+        for_each_call_mut(&mut value, &mut |call| call["visited"] = json!(true));
+        assert_eq!(value["next"]["nextPage"]["visited"], true);
+        assert!(
+            value["next"]["nextPage"]["query"]["nested"]
+                .get("visited")
+                .is_none()
+        );
+        assert_eq!(value["items"][0]["hints"][0]["visited"], true);
     }
 }

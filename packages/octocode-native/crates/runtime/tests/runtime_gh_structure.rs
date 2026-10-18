@@ -1,6 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
-
 //! ghStructure: materialize layout ownership, refs and languages listings.
 use crate::support;
 

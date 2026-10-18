@@ -49,7 +49,7 @@ pub async fn execute_artifact(
         tags: context.tags,
     };
     let state = page_state(query);
-    validate_cursor_state(query.artifact_type(), &state)?;
+    validate_cursor_state(query.artifact_type(), &state, query.page_size())?;
     if query.version().is_some() && version_support(query.artifact_type().as_str()) == "none" {
         return Err(ArtifactError::new(
             "capabilityUnavailable",
@@ -120,7 +120,7 @@ fn page_state(query: &ArtifactSearchQuery) -> ArtifactProviderState {
 /// A next-page lead names only a page this admits.
 pub(crate) fn page_out_of_range(query: &ArtifactSearchQuery) -> Option<TerminalLimit> {
     let artifact_type = query.artifact_type();
-    validate_cursor_state(artifact_type, &page_state(query)).err()?;
+    validate_cursor_state(artifact_type, &page_state(query), query.page_size()).err()?;
     Some(TerminalLimit::result_cap(format!(
         "page {} starts past result {}, the deepest {artifact_type} search pages.",
         query.page(),
@@ -168,6 +168,7 @@ impl Reach {
 fn reach(artifact_type: ArtifactType) -> Reach {
     match artifact_type {
         ArtifactType::Npm => Reach::starting_at_most(NPM_MAX_FROM),
+        ArtifactType::Crates => Reach::ending_at(registries::CRATES_RELEVANCE_LIMIT),
         ArtifactType::Maven => Reach::ending_at(maven::REACHABLE_END),
         ArtifactType::Nuget => Reach::ending_at(nuget::REACHABLE_END),
         _ => Reach::starting_at_most(MAX_CURSOR_OFFSET),
@@ -186,11 +187,25 @@ pub(crate) fn reachable_end(artifact_type: ArtifactType) -> Option<u64> {
     reach(artifact_type).end
 }
 
+/// The result position a page of `page_size` rows starts at: the offset of
+/// an offset-addressed registry, `(page - 1) * page_size` of a
+/// page-addressed one.
+fn page_start(state: &ArtifactProviderState, page_size: usize) -> u64 {
+    state.offset.unwrap_or_else(|| {
+        state
+            .page
+            .unwrap_or(1)
+            .saturating_sub(1)
+            .saturating_mul(page_size as u64)
+    })
+}
+
 fn validate_cursor_state(
     artifact_type: ArtifactType,
     state: &ArtifactProviderState,
+    page_size: usize,
 ) -> Result<(), ArtifactError> {
-    let out_of_range = state.offset.unwrap_or(0) > max_start_offset(artifact_type)
+    let out_of_range = page_start(state, page_size) > max_start_offset(artifact_type)
         || state.page.unwrap_or(1) > MAX_CURSOR_PAGE
         || state.page == Some(0);
     if out_of_range {
@@ -279,7 +294,7 @@ mod cursor_state_tests {
             },
         ] {
             let error =
-                validate_cursor_state(ArtifactType::Nuget, &state).expect_err("out of range");
+                validate_cursor_state(ArtifactType::Nuget, &state, 50).expect_err("out of range");
             assert_eq!(error.code, "invalidInput");
         }
         for state in [
@@ -290,7 +305,30 @@ mod cursor_state_tests {
                 token: Some("issued".into()),
             },
         ] {
-            assert!(validate_cursor_state(ArtifactType::Nuget, &state).is_ok());
+            assert!(validate_cursor_state(ArtifactType::Nuget, &state, 50).is_ok());
+        }
+    }
+
+    /// A page-addressed registry's page is bounded by the result position
+    /// it starts at, like an offset: crates.io serves results below 1,000,
+    /// so 100-row pages end at page 10 and 30-row pages at page 34.
+    #[test]
+    fn a_page_addressed_registry_is_bounded_by_its_page_start() {
+        let at = |page: u64| ArtifactProviderState {
+            page: Some(page),
+            ..Default::default()
+        };
+        for (page, page_size, admitted) in [
+            (10, 100, true),
+            (11, 100, false),
+            (34, 30, true),
+            (35, 30, false),
+        ] {
+            assert_eq!(
+                validate_cursor_state(ArtifactType::Crates, &at(page), page_size).is_ok(),
+                admitted,
+                "page {page} of {page_size}"
+            );
         }
     }
 

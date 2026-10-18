@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { archiveSearch } from '../src/shared/archive.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
 import { registerAgentTool } from '../src/subagents/tool.js';
 import { renderAgentCall } from '../src/subagents/render.js';
@@ -118,6 +119,24 @@ describe('child identity', () => {
     expect(withIdentity('do it', { id: 'inky-kraken', role: 'reviewer', goal: GOAL, parentId: 'salty-squid', scratch: '/tmp/s' })).toBe(
       `do it\n\n## You\nYour name is \`inky-kraken\` (reviewer). Your goal: ${GOAL}. You work for \`salty-squid\`. Your scratch folder, for handoff files and a long report, is \`/tmp/s\`.`,
     );
+  });
+
+  it("adds one line naming the parent's archive library only when it is given", () => {
+    const identity = { id: 'inky-kraken', role: 'reviewer', parentId: 'salty-squid', scratch: '/tmp/s' };
+    const base = withIdentity('do it', identity);
+    expect(withIdentity('do it', identity, undefined)).toBe(base);
+    const library = '/home/u/.octocode/agent/pi/sessions/s/archive/LIBRARY.md';
+    expect(withIdentity('do it', identity, { library })).toBe(
+      `${base}\nEarlier history of your parent session, compacted out of its context, is archived in /home/u/.octocode/agent/pi/sessions/s/archive (read-only; LIBRARY.md indexes it; the repository shows today's state, the archive what was said and found then). ${archiveSearch()}`,
+    );
+  });
+
+  it('tells the child to search with the archive tool, and names rg on the folder for a child without it', () => {
+    const identity = { id: 'inky-kraken', role: 'reviewer', parentId: 'salty-squid', scratch: '/tmp/s' };
+    const library = '/home/u/.octocode/agent/pi/sessions/s/archive/LIBRARY.md';
+    const line = withIdentity('do it', identity, { library }).split('\n').at(-1)!;
+    expect(line).toContain('with the `archive` tool');
+    expect(line).toContain('`rg -n -C 8 <term>` in the folder');
   });
 });
 

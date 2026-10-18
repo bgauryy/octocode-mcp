@@ -22,14 +22,6 @@ pub(in crate::signatures) fn extract_graph_facts(content: &str, file_path: &str)
         .and_then(|extraction| serde_json::to_string(&extraction.facts).ok())
 }
 
-pub(super) fn extract_graph_facts_inner<const COMMON_JS: bool>(
-    content: &str,
-    file_path: &str,
-) -> Option<String> {
-    extract_graph_facts_with_metadata_inner::<COMMON_JS>(content, file_path)
-        .and_then(|extraction| serde_json::to_string(&extraction.facts).ok())
-}
-
 fn symbols(content: &str, path: &str) -> Value {
     let json = extract_js_symbols(content, path).expect("symbols expected");
     serde_json::from_str(&json).expect("valid json")
@@ -396,6 +388,21 @@ fn extracts_interface_enum_typealias_namespace() {
         .find(|s| s["name"] == "NS")
         .unwrap();
     assert!(names(&ns["children"]).contains(&"inner".to_string()));
+
+    // A type alias is a `type`, never an `interface`.
+    let facts: Value =
+        serde_json::from_str(&extract_graph_facts(src, "types.ts").unwrap()).unwrap();
+    let kind_of = |name: &str| {
+        facts["declarations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["name"] == name)
+            .map(|d| d["kind"].clone())
+            .unwrap()
+    };
+    assert_eq!(kind_of("Id"), "type");
+    assert_eq!(kind_of("User"), "interface");
 }
 
 #[test]

@@ -120,11 +120,15 @@ fn validate_schema_with_ref_depth(
         // Every reference in a chain can carry constraints of its own.
         validate_schema_with_ref_depth(root, target, value, path, ref_depth + 1, mode)?;
     }
+
+    // Preserve successful branch defaults, but retain enclosing field errors
+    // after a failed refinement so its discriminator remains diagnostic.
+    let mut union_issues = Vec::new();
     for (keyword, exclusive) in [("oneOf", true), ("anyOf", false)] {
-        if let Some(branches) = schema.get(keyword).and_then(Value::as_array) {
-            // A matching branch does not waive the enclosing object's fields,
-            // required properties, or any other sibling constraints.
-            union::validate(root, branches, exclusive, value, path, mode)?;
+        if let Some(branches) = schema.get(keyword).and_then(Value::as_array)
+            && let Err(error) = union::validate(root, branches, exclusive, value, path, mode)
+        {
+            union_issues.extend(error.issues);
         }
     }
 
@@ -147,21 +151,23 @@ fn validate_schema_with_ref_depth(
     if let Some(values) = schema.get("enum").and_then(Value::as_array)
         && !values.contains(value)
     {
-        // Name the allowed values so a wrong resultView/entryType/etc. is
-        // self-correcting instead of a generic rejection.
+        // Name the allowed values, and the one a near miss means, so a wrong
+        // resultView/entryType/etc. is self-correcting.
         let allowed = values
             .iter()
             .map(|v| v.as_str().map_or_else(|| v.to_string(), |s| s.to_owned()))
             .collect::<Vec<_>>()
             .join(", ");
-        let boolean_hint = boolean_enum_hint(values, value);
+        // A speculative probe reads only pass/fail: no hint.
+        let hint = if union::speculative() {
+            String::new()
+        } else {
+            super::enum_value::enum_hint(values, value, path)
+        };
         return Err(schema_issue(
             "schema.enum",
             path.clone(),
-            format!(
-                "Value is outside the allowed enum; allowed: {allowed}{}",
-                boolean_hint.unwrap_or_default()
-            ),
+            format!("Value is outside the allowed enum; allowed: {allowed}{hint}"),
             schema,
             value,
         ));
@@ -203,7 +209,7 @@ fn validate_schema_with_ref_depth(
         // Keywords such as `required` and `minimum` also apply without `type`.
         None => Some(value_type(value)),
     };
-    match kind {
+    let own = match kind {
         Some("object") => validate_object(root, schema, value, path, mode),
         Some("array") => validate_array(root, schema, value, path, mode),
         Some("string") => validate_string(schema, value, path),
@@ -234,6 +240,13 @@ fn validate_schema_with_ref_depth(
             path.clone(),
             format!("Unsupported schema type: {other}"),
         )),
+    };
+    let mut issues = own.err().map_or_else(Vec::new, |error| error.issues);
+    issues.extend(union_issues);
+    if issues.is_empty() {
+        Ok(())
+    } else {
+        Err(ContractValidationError { issues })
     }
 }
 
@@ -255,9 +268,6 @@ fn value_type(value: &Value) -> &'static str {
     }
 }
 
-/// The known fields whose `enum` or `const` lists `value` (a string): an
-/// unknown field carrying one of those values most likely meant one of them
-/// (`{"type":"match"}` for `operation`).
 /// The known field that takes line spans (`["95-105"]`: an array of
 /// `start-end` strings), which a `start…`/`end…` pair of numbers spells.
 fn span_field(root: &Value, properties: &serde_json::Map<String, Value>) -> Option<String> {
@@ -286,6 +296,11 @@ fn span_field(root: &Value, properties: &serde_json::Map<String, Value>) -> Opti
         .map(|(name, _)| name.clone())
 }
 
+/// The known fields whose `enum` or `const` lists `value` (a string): an
+/// unknown field carrying one of those values most likely meant one of them
+/// (`{"type":"match"}` for `operation`), and an unknown field set to `true`
+/// whose name one of them lists meant that value (`merged:true` for
+/// `state:"merged"`).
 pub(super) fn fields_listing(
     root: &Value,
     properties: &serde_json::Map<String, Value>,
@@ -317,6 +332,26 @@ pub(super) fn fields_listing(
         .iter()
         .filter(|(_, schema)| lists(schema))
         .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// The known fields whose `x-valueKinds` (core metadata: the kinds of value
+/// the field takes) lists `name`: an unknown field named for a kind of value
+/// (`branch:"main"` for `ref`) most likely meant that field.
+pub(super) fn fields_of_kind(
+    root: &Value,
+    properties: &serde_json::Map<String, Value>,
+    name: &str,
+) -> Vec<String> {
+    properties
+        .iter()
+        .filter(|(_, schema)| {
+            super::super::resolve_ref(schema, &root["$defs"])
+                .get("x-valueKinds")
+                .and_then(Value::as_array)
+                .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Some(name)))
+        })
+        .map(|(field, _)| field.clone())
         .collect()
 }
 
@@ -366,13 +401,22 @@ fn validate_object(
     }
     if schema.get("additionalProperties") == Some(&Value::Bool(false)) {
         // Built on the first unknown field only; a speculative probe skips it.
-        let known_fields = |value: &Value| -> Value {
+        let known_fields = |key: &str, value: &Value| -> Value {
             let known: Vec<Value> = properties
                 .map(|p| p.keys().map(|k| serde_json::json!(k)).collect())
                 .unwrap_or_default();
+            let listing = |value: &Value| {
+                properties
+                    .map(|p| fields_listing(root, p, value))
+                    .unwrap_or_default()
+            };
             serde_json::json!({
                 "knownFields": known,
-                "valueFields": properties.map(|p| fields_listing(root, p, value)).unwrap_or_default(),
+                "valueFields": listing(value),
+                "nameFields": if value == &Value::Bool(true) { listing(&Value::from(key)) } else { Vec::new() },
+                "kindFields": properties
+                    .map(|p| fields_of_kind(root, p, key))
+                    .unwrap_or_default(),
                 "spanField": properties.and_then(|p| span_field(root, p)),
             })
         };
@@ -385,7 +429,7 @@ fn validate_object(
                     path: field_path,
                     message: format!("Unknown field: {key}"),
                     // Embed known fields so format_input_error can suggest alternatives.
-                    schema: (!speculative).then(|| known_fields(field)),
+                    schema: (!speculative).then(|| known_fields(key, field)),
                     received: None,
                 });
             }
@@ -463,6 +507,11 @@ fn validate_object(
             }
         }
     }
+    if mode == ValidationMode::Input
+        && let Some(properties) = properties
+    {
+        super::repository::settle(root, properties, object, path, &mut issues);
+    }
     if issues.is_empty() {
         Ok(())
     } else {
@@ -534,10 +583,12 @@ fn validate_string(
         schema.get("pattern").and_then(Value::as_str) == Some(shape::LINE_RANGE_PATTERN);
     let string = value.as_str().ok_or_else(|| {
         if line_range {
-            return issue(
+            return schema_issue(
                 "schema.type",
                 path.to_vec(),
                 line_range_message(value, path),
+                schema,
+                value,
             );
         }
         // A list for a row field that takes one string: each value is its
@@ -567,7 +618,15 @@ fn validate_string(
             } else {
                 pattern_message(string, path, pattern, &regex, schema)
             };
-            return Err(issue("schema.pattern", path.to_vec(), message));
+            // The schema and value let the repair read the intended value
+            // (a line-range typo, a joined `owner/repo` pair).
+            return Err(schema_issue(
+                "schema.pattern",
+                path.to_vec(),
+                message,
+                schema,
+                value,
+            ));
         }
     }
     if schema.get("format").and_then(Value::as_str) == Some("uri") && Url::parse(string).is_err() {
@@ -600,10 +659,13 @@ fn compiled_pattern(pattern: &str) -> Result<std::sync::Arc<Regex>, String> {
     compiled
 }
 
+/// The longest pattern an error quotes as the expected form.
+const READABLE_PATTERN_CHARS: usize = 40;
+
 /// A blank value fails the non-blank patterns (`\S`) paths and names use
 /// (a blank brief is dropped before validation), a search `qualifiers`
-/// string fails on one term, and any other value fails against the form its
-/// field note shows: name the fix instead of the regex.
+/// string fails on one term, and any other value names its field and the
+/// pattern it must match (a long pattern gives the field's note instead).
 fn pattern_message(
     value: &str,
     path: &[String],
@@ -628,15 +690,28 @@ fn pattern_message(
     }
     if !value.trim().is_empty() {
         let shown: String = value.chars().take(80).collect();
-        return match schema.get("description").and_then(Value::as_str) {
-            Some(note) => format!("\"{shown}\" does not match the expected form: {note}"),
-            None => format!("\"{shown}\" does not match {}", pattern),
+        let field = path
+            .iter()
+            .rev()
+            .find(|segment| segment.parse::<usize>().is_err());
+        // A short pattern is the expected form; a pattern too long to read
+        // falls back to the field's own note, when it has one. A
+        // description of a field with a short pattern is usage prose.
+        return match (field, schema.get("description").and_then(Value::as_str)) {
+            (_, Some(note)) if pattern.chars().count() > READABLE_PATTERN_CHARS => {
+                format!("\"{shown}\" does not match the expected form: {note}")
+            }
+            (Some(field), _) => {
+                format!("\"{shown}\" is not a valid {field}: it must match {pattern}")
+            }
+            (None, _) => format!("\"{shown}\" does not match {pattern}"),
         };
     }
     "is empty; give non-blank text.".into()
 }
 
-/// A rejected line-range item: the value as sent, then the shape once
+/// A rejected line-range item: the value as sent, the span it spells when
+/// it spells one (`did you mean "3-6"?`), then the shape once
 /// (`ranges: ["299-342"] (strings "start-end")`), named by its field.
 fn line_range_message(value: &Value, path: &[String]) -> String {
     let field = path
@@ -656,7 +731,10 @@ fn line_range_message(value: &Value, path: &[String]) -> String {
         Value::String(text) => serde_json::to_string(&clip(text)).unwrap_or_default(),
         other => clip(&other.to_string()),
     };
-    format!("{sent} is not a line range; {field}: [\"299-342\"] (strings \"start-end\")")
+    let reading = shape::line_range_reading(value)
+        .map(|span| format!(" (did you mean \"{span}\"?)"))
+        .unwrap_or_default();
+    format!("{sent} is not a line range{reading}; {field}: [\"299-342\"] (strings \"start-end\")")
 }
 
 /// The allowed keys a `qualifiers` field declares (`x-qualifierKeys`, a
@@ -785,6 +863,19 @@ pub(super) fn boolean_enum_value<'a>(values: &'a [Value], received: &Value) -> O
 mod tests {
     use super::validate_schema;
     use serde_json::{Value, json};
+
+    #[test]
+    fn nested_refinement_does_not_hide_the_question_discriminator() {
+        let schema = serde_json::json!({"anyOf":[
+            {"type":"object","properties":{"type":{"const":"noul"}},
+             "anyOf":[{"required":["instructions"]},{"required":["criteria"]}]},
+            {"type":"object","properties":{"type":{"const":"choice"}},"required":["criteria"]}
+        ]});
+        let mut value = serde_json::json!({"type":"choice"});
+        let error = validate_schema(&schema, &schema, &mut value, &mut vec![]).unwrap_err();
+        assert_eq!(error.issues.len(), 1, "{error:?}");
+        assert_eq!(error.issues[0].path, vec!["criteria"]);
+    }
 
     #[test]
     fn union_guards_preserve_enclosing_required_fields_and_property_validation() {

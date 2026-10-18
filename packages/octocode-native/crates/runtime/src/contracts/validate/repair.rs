@@ -2,22 +2,39 @@
 //! validation error. It is derived from the issues alone, so no tool or field
 //! name appears here. Exact fixes keep what the caller asked:
 //!
+//! - an issue whose schema carries its fix (`setFields`: row fields to set
+//!   or remove) gets exactly that: a joined `owner/repo` pair split, a
+//!   repository web URL's parts, a `.git` suffix dropped (see
+//!   `super::repository`), the omitted selector of the one form a field
+//!   belongs to (`nameRegex` → `operation:"files"`);
 //! - an array value the schema's enum does not list is dropped (the field
 //!   goes with its last value);
-//! - a scalar that differs from one listed enum value only by case or edge
-//!   whitespace becomes that value, and a boolean for an on/off enum the
-//!   value it means (`regex:true` → `"rust"`);
+//! - a scalar the enum does not list becomes the one listed value it means
+//!   (`super::enum_value`: case, separators, an on/off word, an
+//!   abbreviation, a near spelling; `entryType:"file"` → `"f"`,
+//!   `regex:true` → `"rust"`);
+//! - an unknown field set to `true` whose name one row field's enum lists
+//!   becomes that value (`merged:true` → `state:"merged"`);
+//! - an unknown field named for a kind of value one row field takes
+//!   (`x-valueKinds`: `branch:"main"` → `ref:"main"`) becomes that field with
+//!   its value, unless the row already sets it;
 //! - a number outside its bounds is clamped to the nearest bound, except a
-//!   size or count of zero or less (a field whose minimum is positive): it is
-//!   dropped, so the field's default applies (lossy, named), and clamped
-//!   only when the row cannot go without it;
-//! - a typed value sent as JSON text becomes that value, after validation;
+//!   size or count of zero or less (a field whose minimum is positive). When
+//!   the field's default is that minimum it is set to it (exact); else it is
+//!   dropped, so the default applies (lossy, named). A field the row requires
+//!   names what to read, so a value below its minimum gets no lead: any
+//!   bound would be a guess, and the message names the allowed range;
+//! - a typed value sent as JSON text becomes that value, after validation,
+//!   and a whole number or boolean sent to a text field its text (`3` →
+//!   `"3"`);
 //! - a literal string becomes a single-item array only when that array
 //!   satisfies the field schema;
+//! - a line-range item spelled another way becomes its `start-end` span
+//!   (`"3:6"`, `[3,6]` → `"3-6"`);
 //! - a list sent to a row field that takes one value, every item of which
 //!   that field accepts, becomes one row per item (the row's other fields
 //!   copied into each);
-//! - a field that applies only with a sibling the row lacks is dropped (it
+//! - a field that applies only with a sibling the row lacks is removed (it
 //!   had no effect);
 //! - a `start…`/`end…` pair of line numbers becomes the one span of the
 //!   row's span field (`startLine:5, endLine:9` → `ranges:["5-9"]`);
@@ -28,20 +45,22 @@
 //!   `queries` and its other fields into each of its rows.
 //!
 //! The issues those edits reveal (the lifted rows are validated for the
-//! first time) are repaired in a further pass, so one lead fixes all.
+//! first time) are repaired in a further pass, so one lead fixes all. An
+//! issue at a path another edit of the same pass sets (a missing `repo`
+//! the `owner:"a/b"` split fills) needs no fix of its own.
 //!
-//! Dropping any other unknown field, or a scalar the enum does not list,
-//! loses a constraint the caller set, so that repair is lossy: it names the
-//! dropped fields and the lead must say so. An unknown field whose name, or
-//! an unlisted scalar that is a near miss of a listed one, is never dropped
-//! (the caller may have meant that one). Any other issue (a missing field,
-//! such as a required field whose unlisted value was dropped) needs a value
-//! only the caller knows, so the call has no lead and the issue's message
-//! names the fix. The
-//! repaired input must also pass the caller's admission, so a lead never
-//! names a call that is rejected again.
+//! Dropping any other unknown field, or a field of another form when the
+//! row's own selector picks its form, loses a constraint the caller set, so
+//! that repair is lossy: it names the dropped fields and the lead must say
+//! so. A fix that reads a value approximately (a URL's ref, which may hold
+//! `/`) names those fields too. An unknown field whose name is a near miss
+//! of a known one is never dropped (the caller may have meant that one).
+//! Any other issue (a missing field, an unlisted scalar no rule maps) needs
+//! a value only the caller knows, so the call has no lead and the issue's
+//! message names the fix. The repaired input must also pass the caller's
+//! admission, so a lead never names a call that is rejected again.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::ValidationIssue;
 
@@ -67,25 +86,51 @@ enum Edit {
         index: usize,
         field: String,
     },
-    /// A size or count below a positive minimum: dropped (lossy) so its
-    /// default applies, else (the field is required) set to `bound`.
-    Unsized(Vec<String>, Value),
     /// A field removed and the field that says it set beside it.
     Respell {
         remove: Vec<String>,
         set: Vec<String>,
         value: Value,
     },
+    /// Fields of the object at `parent` set together (`None`: removed);
+    /// `approximate` names those whose value is a best reading.
+    Fields {
+        parent: Vec<String>,
+        fields: Vec<(String, Option<Value>)>,
+        approximate: Vec<String>,
+    },
+}
+
+impl Edit {
+    /// The paths this edit gives a value (or removes as part of a fix).
+    fn sets(&self) -> Vec<Vec<String>> {
+        let child = |parent: &[String], field: &str| {
+            let mut path = parent.to_vec();
+            path.push(field.to_owned());
+            path
+        };
+        match self {
+            Edit::Set(path, _) => vec![path.clone()],
+            Edit::Respell { set, .. } => vec![set.clone()],
+            Edit::Fields { parent, fields, .. } => fields
+                .iter()
+                .map(|(field, _)| child(parent, field))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Further passes for issues a pass's edits reveal.
 const PASSES: usize = 3;
 
-/// A repaired input and the caller's fields it dropped (empty: exact).
+/// A repaired input, the caller's fields it dropped, and the fields it set
+/// to a best reading (both empty: exact).
 #[derive(Debug, PartialEq)]
 pub(crate) struct Repair {
     pub input: Value,
     pub dropped: Vec<String>,
+    pub approximate: Vec<String>,
 }
 
 /// `input` with every issue fixed, or `None` when any issue has no fix or
@@ -93,8 +138,7 @@ pub(crate) struct Repair {
 /// the issues of a candidate (empty: refused for a reason no edit fixes);
 /// the issues a pass reveals are fixed by the next. A relocation the rows
 /// do not accept falls back to dropping the field (lossy, named at the
-/// caller's envelope path), and an unsized field the row requires to
-/// clamping it.
+/// caller's envelope path).
 pub(crate) fn repair_input(
     input: &Value,
     issues: &[ValidationIssue],
@@ -112,10 +156,28 @@ fn repair_pass(
     if issues.is_empty() || passes == 0 {
         return None;
     }
-    let edits = issues
+    let fixes = issues
         .iter()
         .map(|issue| fix(input, issue))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Vec<_>>();
+    // An issue with no fix of its own is settled when another edit of this
+    // pass sets its path (the missing `repo` an `owner:"a/b"` split sets).
+    let set = fixes
+        .iter()
+        .flatten()
+        .flat_map(Edit::sets)
+        .collect::<Vec<_>>();
+    let edits = issues
+        .iter()
+        .zip(fixes)
+        .map(|(issue, fix)| match fix {
+            Some(edit) => Some(Some(edit)),
+            None => set.contains(&issue.path).then_some(None),
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     let relocated: Vec<&str> = edits
         .iter()
         .filter_map(|edit| match edit {
@@ -123,16 +185,20 @@ fn repair_pass(
             _ => None,
         })
         .collect();
-    let unsized_fields = edits.iter().any(|edit| matches!(edit, Edit::Unsized(..)));
     let attempt = |preference: Preference| {
         let repair = apply(input, &edits, preference)?;
         match check(&repair.input) {
             Ok(()) => Some(repair),
             Err(revealed) => {
                 let mut rest = repair_pass(&repair.input, &revealed, check, passes - 1)?;
-                rest.dropped.extend(repair.dropped);
-                rest.dropped.sort();
-                rest.dropped.dedup();
+                for (named, earlier) in [
+                    (&mut rest.dropped, repair.dropped),
+                    (&mut rest.approximate, repair.approximate),
+                ] {
+                    named.extend(earlier);
+                    named.sort();
+                    named.dedup();
+                }
                 Some(rest)
             }
         }
@@ -145,47 +211,37 @@ fn repair_pass(
             matches!(path.as_slice(), ["queries", _, field] if relocated.contains(field))
         })
     };
-    // The preferred form first, then each fallback the edits have.
-    let forms = |has_fallback: bool| {
-        if has_fallback {
-            vec![true, false]
-        } else {
-            vec![true]
-        }
-    };
+    // The preferred form first, then the fallback of the edits that have one.
     let mut refused = None;
-    for drop_unsized in forms(unsized_fields) {
-        for relocate in forms(!relocated.is_empty()) {
-            let preference = Preference {
-                relocate,
-                drop_unsized,
-            };
-            let Some(repair) = attempt(preference) else {
-                continue;
-            };
-            if relocate && rejected_relocation(&repair) {
-                refused.get_or_insert(repair);
-                continue;
-            }
-            return Some(repair);
+    for relocate in if relocated.is_empty() {
+        vec![true]
+    } else {
+        vec![true, false]
+    } {
+        let Some(repair) = attempt(Preference { relocate }) else {
+            continue;
+        };
+        if relocate && rejected_relocation(&repair) {
+            refused.get_or_insert(repair);
+            continue;
         }
+        return Some(repair);
     }
     refused
 }
 
 /// Which form of the edits that have a fallback a pass applies: preferred,
-/// an envelope field relocates into the rows (else it is dropped) and an
-/// unsized field is dropped (else clamped).
+/// an envelope field relocates into the rows (else it is dropped).
 #[derive(Clone, Copy)]
 struct Preference {
     relocate: bool,
-    drop_unsized: bool,
 }
 
 fn apply(input: &Value, edits: &[Edit], preference: Preference) -> Option<Repair> {
     let mut repaired = input.clone();
     let mut removals = Vec::new();
     let mut dropped = Vec::new();
+    let mut approximate = Vec::new();
     // Shape edits stand alone: they change the row indices other edits name,
     // so a pass with one has only shape edits (later rows first).
     if edits.iter().any(|edit| matches!(edit, Edit::Wrap)) {
@@ -210,11 +266,6 @@ fn apply(input: &Value, edits: &[Edit], preference: Preference) -> Option<Repair
                 dropped.push(path.join("."));
                 removals.push(path.clone());
             }
-            Edit::Unsized(path, _) if preference.drop_unsized => {
-                dropped.push(path.join("."));
-                removals.push(path.clone());
-            }
-            Edit::Unsized(path, bound) => *pointer_mut(&mut repaired, path)? = bound.clone(),
             Edit::IntoRows(field) if preference.relocate => {
                 let value = repaired.get(field)?.clone();
                 for row in repaired.get_mut("queries")?.as_array_mut()? {
@@ -236,6 +287,30 @@ fn apply(input: &Value, edits: &[Edit], preference: Preference) -> Option<Repair
                     .insert(field.clone(), value.clone());
                 removals.push(remove.clone());
             }
+            Edit::Fields {
+                parent,
+                fields,
+                approximate: guessed,
+            } => {
+                let object = pointer_mut(&mut repaired, parent)?.as_object_mut()?;
+                for (field, value) in fields {
+                    match value {
+                        Some(value) => {
+                            object.insert(field.clone(), value.clone());
+                        }
+                        None => {
+                            let mut path = parent.clone();
+                            path.push(field.clone());
+                            removals.push(path);
+                        }
+                    }
+                }
+                approximate.extend(guessed.iter().map(|field| {
+                    let mut path = parent.clone();
+                    path.push(field.clone());
+                    path.join(".")
+                }));
+            }
             Edit::Wrap | Edit::Flatten { .. } | Edit::Split { .. } => {}
         }
     }
@@ -256,11 +331,14 @@ fn apply(input: &Value, edits: &[Edit], preference: Preference) -> Option<Repair
     for (index, field) in splits {
         split(&mut repaired, index, field)?;
     }
-    dropped.sort();
-    dropped.dedup();
+    for named in [&mut dropped, &mut approximate] {
+        named.sort();
+        named.dedup();
+    }
     Some(Repair {
         input: repaired,
         dropped,
+        approximate,
     })
 }
 
@@ -352,6 +430,31 @@ fn fix(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
     {
         return Some(Edit::Remove(path));
     }
+    // Validation read the fix from the row itself (`super::repository`, an
+    // omitted selector): set exactly those fields.
+    if let Some(fields) = super::repository::set_fields(issue) {
+        let approximate = issue
+            .schema
+            .as_ref()
+            .and_then(|schema| schema.get("approximateFields")?.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        let (_, parent) = path.split_last()?;
+        return Some(Edit::Fields {
+            parent: parent.to_vec(),
+            fields: fields
+                .iter()
+                .map(|(field, value)| (field.clone(), (!value.is_null()).then(|| value.clone())))
+                .collect(),
+            approximate,
+        });
+    }
+    if let Some(edit) = line_range(issue) {
+        return Some(edit);
+    }
     match issue.rule_id.as_str() {
         super::super::ENVELOPE_ARRAY => input.is_array().then_some(Edit::Wrap),
         super::super::ENVELOPE_NESTED => {
@@ -384,13 +487,25 @@ fn fix(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
                 .map(|fields| fields.iter().filter_map(Value::as_str).collect::<Vec<_>>())
                 .unwrap_or_default();
             let field = path.last()?;
-            if let Some(edit) = span_respelling(input, issue) {
+            if let Some(edit) = span_respelling(input, issue)
+                .or_else(|| name_respelling(input, issue))
+                .or_else(|| kind_respelling(input, issue))
+            {
                 return Some(edit);
             }
-            // A field another form of the row declares had no effect here:
-            // removing it is exact, whatever spelling it resembles.
+            // A field another form of the row declares had no effect here.
+            // When the row's own selector picks its form, removing it drops
+            // what the caller set (lossy, named); else (a sibling only the
+            // caller can fill is missing) removing it is exact.
             if super::sibling_requirement(issue).is_some() {
-                return Some(Edit::Remove(path));
+                let conflict = issue.schema.as_ref().is_some_and(|schema| {
+                    schema.get("siblingConflict") == Some(&Value::Bool(true))
+                });
+                return Some(if conflict {
+                    Edit::Drop(path)
+                } else {
+                    Edit::Remove(path)
+                });
             }
             if super::suggest_field(field, &known).is_some() {
                 return None;
@@ -404,39 +519,14 @@ fn fix(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
         }
         "schema.enum" => {
             let allowed = issue.schema.as_ref()?.get("enum")?.as_array()?;
-            let (_, parent) = path.split_last()?;
+            let (field, parent) = path.split_last()?;
             if pointer(input, parent)?.is_array() {
                 return Some(Edit::Remove(path));
             }
-            // A boolean for an on/off enum means the value the error names.
-            if let Some(value) = issue
-                .received
-                .as_ref()
-                .and_then(|received| super::schema::boolean_enum_value(allowed, received))
-            {
-                return Some(Edit::Set(path, Value::from(value)));
-            }
-            let received = issue.received.as_ref()?.as_str()?.trim();
-            let mut matches = allowed.iter().filter(|value| {
-                value
-                    .as_str()
-                    .is_some_and(|v| v.eq_ignore_ascii_case(received))
-            });
-            if let Some(only) = matches.next() {
-                return matches
-                    .next()
-                    .is_none()
-                    .then(|| Edit::Set(path, only.clone()));
-            }
-            // A near miss of a listed value names what the caller meant, which
-            // only the caller can confirm. Any other unlisted value is
-            // dropped like an unknown field (lossy, named): the field's
-            // default applies, and a field the row requires is revealed and
-            // refused by the next pass.
-            let listed = allowed.iter().filter_map(Value::as_str).collect::<Vec<_>>();
-            super::suggest_field(received, &listed)
-                .is_none()
-                .then_some(Edit::Drop(path))
+            // The one listed value the scalar means; with none (or several)
+            // only the caller knows, and dropping it would widen the call.
+            let value = super::enum_value::enum_value(allowed, issue.received.as_ref()?, field)?;
+            Some(Edit::Set(path, Value::from(value)))
         }
         "schema.range" => {
             let schema = issue.schema.as_ref()?;
@@ -451,13 +541,29 @@ fn fix(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
             };
             // Zero or less of a positive size or count asks for no usable
             // amount: clamping it to the minimum serves one unit (a page of
-            // one char), so the default applies instead.
-            if number <= 0.0 && bound > 0.0 {
-                return Some(Edit::Unsized(path, bound_value(bound)));
+            // one char), so it is dropped (lossy) and the default applies.
+            // When the default is that minimum, setting it says the same,
+            // exactly. A required field has no default: the dropped row
+            // fails `required`, which has no fix, so the call has no lead.
+            if number <= 0.0
+                && bound > 0.0
+                && schema.get("default").and_then(Value::as_f64) != Some(bound)
+            {
+                return Some(Edit::Drop(path));
             }
             Some(Edit::Set(path, bound_value(bound)))
         }
         "schema.type" if issue.received.as_ref().is_some_and(Value::is_array) => split_list(issue),
+        // A whole number or a boolean for a text field: its text is exact
+        // (a fraction is not: `1.10` already arrived as `1.1`).
+        "schema.type" if issue.schema.as_ref()?.get("type")? == "string" => {
+            let text = match issue.received.as_ref()? {
+                Value::Bool(flag) => flag.to_string(),
+                Value::Number(number) if number.is_i64() || number.is_u64() => number.to_string(),
+                _ => return None,
+            };
+            Some(Edit::Set(path, Value::String(text)))
+        }
         "schema.type" => {
             let text = issue.received.as_ref()?.as_str()?.trim();
             let value = match issue.schema.as_ref()?.get("type")?.as_str()? {
@@ -522,7 +628,7 @@ fn span_respelling(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
             })
     };
     let (is_start, stem) = side(field)?;
-    let (other, other_value) = row.iter().find(|(name, _)| {
+    let (_, other_value) = row.iter().find(|(name, _)| {
         name.as_str() != field.as_str()
             && side(name).is_some_and(|(start, other)| start != is_start && other == stem)
     })?;
@@ -535,7 +641,6 @@ fn span_respelling(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
     if start > end {
         return None;
     }
-    let _ = other;
     Some(if is_start {
         let mut set = parent.to_vec();
         set.push(span.to_owned());
@@ -547,6 +652,72 @@ fn span_respelling(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
     } else {
         Edit::Remove(issue.path.clone())
     })
+}
+
+/// An unknown field set to `true` whose name the enum of one row field lists
+/// (`nameFields`): that field set to the name (`merged:true` →
+/// `state:"merged"`). `None` when the row already sets that field.
+fn name_respelling(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
+    let schema = issue.schema.as_ref()?;
+    let [target] = schema.get("nameFields")?.as_array()?.as_slice() else {
+        return None;
+    };
+    let (field, parent) = issue.path.split_last()?;
+    let row = pointer(input, parent)?.as_object()?;
+    let target = target.as_str()?;
+    if row.get(field) != Some(&Value::Bool(true)) || row.contains_key(target) {
+        return None;
+    }
+    let mut set = parent.to_vec();
+    set.push(target.to_owned());
+    Some(Edit::Respell {
+        remove: issue.path.clone(),
+        set,
+        value: Value::from(field.as_str()),
+    })
+}
+
+/// An unknown field named for a kind of value one row field takes
+/// (`kindFields`, from the field's `x-valueKinds`): that field set to the
+/// value (`branch:"main"` → `ref:"main"`). `None` when the row already sets
+/// that field, so a conflicting value is never overwritten.
+fn kind_respelling(input: &Value, issue: &ValidationIssue) -> Option<Edit> {
+    let schema = issue.schema.as_ref()?;
+    let [target] = schema.get("kindFields")?.as_array()?.as_slice() else {
+        return None;
+    };
+    let (field, parent) = issue.path.split_last()?;
+    let row = pointer(input, parent)?.as_object()?;
+    let target = target.as_str()?;
+    if row.contains_key(target) {
+        return None;
+    }
+    let mut set = parent.to_vec();
+    set.push(target.to_owned());
+    Some(Edit::Respell {
+        remove: issue.path.clone(),
+        set,
+        value: row.get(field)?.clone(),
+    })
+}
+
+/// A line-range item (`ranges.N`, whose schema is the line-range pattern)
+/// spelled another way, or one such scalar sent for the whole list: its
+/// `start-end` span (`"3:6"` → `"3-6"`, `ranges:"3:6"` → `["3-6"]`).
+fn line_range(issue: &ValidationIssue) -> Option<Edit> {
+    if !matches!(issue.rule_id.as_str(), "schema.pattern" | "schema.type") {
+        return None;
+    }
+    let schema = issue.schema.as_ref()?;
+    let received = issue.received.as_ref()?;
+    let is_range =
+        |schema: &Value| schema.get("pattern") == Some(&json!(super::shape::LINE_RANGE_PATTERN));
+    let span = super::shape::line_range_reading(received)?;
+    if is_range(schema) {
+        return Some(Edit::Set(issue.path.clone(), json!(span)));
+    }
+    (is_range(schema.get("items")?) && !received.is_array())
+        .then(|| Edit::Set(issue.path.clone(), json!([span])))
 }
 
 /// A bound as the number the schema wrote: integral bounds stay integers.
@@ -748,34 +919,15 @@ mod tests {
 
     #[test]
     fn a_fix_that_needs_the_caller_has_no_lead() {
-        let input = json!({"queries":[{"view":"file"}]});
-        let allowed = json!({"enum":["files","paths"]});
-        let near_miss = issue(
-            "schema.enum",
-            &["queries", "0", "view"],
-            Some(allowed.clone()),
-            Some(json!("file")),
-        );
-        assert!(repair_input(&input, &[near_miss], always).is_none());
-        // An unlisted value of a required field: dropping it reveals the
-        // missing field, which no edit fixes.
+        // An unlisted value no rule maps to one listed value.
         let input = json!({"queries":[{"view":"none"}]});
         let unlisted = issue(
             "schema.enum",
             &["queries", "0", "view"],
-            Some(allowed),
+            Some(json!({"enum":["files","paths"]})),
             Some(json!("none")),
         );
-        let required = |candidate: &Value| match candidate.pointer("/queries/0/view") {
-            Some(_) => Ok(()),
-            None => Err(vec![issue(
-                "schema.required",
-                &["queries", "0", "view"],
-                None,
-                None,
-            )]),
-        };
-        assert!(repair_input(&input, &[unlisted], required).is_none());
+        assert!(repair_input(&input, &[unlisted], always).is_none());
         let missing = issue("schema.required", &["queries", "0", "path"], None, None);
         let unknown = issue(
             "schema.unknown-field",
@@ -787,20 +939,169 @@ mod tests {
         assert!(repair_input(&input, &[], always).is_none());
     }
 
-    /// An unlisted value of an optional field is dropped, named as lossy:
-    /// the field's default applies.
+    /// An unlisted scalar becomes the one listed value it means; one no rule
+    /// maps is never dropped (its default would widen the call): no lead.
     #[test]
-    fn an_unlisted_optional_value_drops_and_is_named_as_lossy() {
-        let input = json!({"queries":[{"path":"a.ts","minify":"none"}]});
-        let unlisted = issue(
-            "schema.enum",
-            &["queries", "0", "minify"],
-            Some(json!({"enum":["standard","symbols"]})),
-            Some(json!("none")),
+    fn an_unlisted_scalar_maps_to_its_one_value_or_has_no_lead() {
+        let lead = |allowed: Value, field: &str, received: Value| {
+            let input = json!({"queries":[{"path":"a.ts", field: received.clone()}]});
+            let unlisted = issue(
+                "schema.enum",
+                &["queries", "0", field],
+                Some(json!({ "enum": allowed })),
+                Some(received),
+            );
+            repair_input(&input, &[unlisted], always).map(|repaired| {
+                assert!(repaired.dropped.is_empty(), "{repaired:?}");
+                repaired.input["queries"][0][field].clone()
+            })
+        };
+        assert_eq!(
+            lead(json!(["f", "d"]), "entryType", json!("file")),
+            Some(json!("f"))
         );
-        let repaired = repair_input(&input, &[unlisted], always).expect("lossy repair");
-        assert_eq!(repaired.input, json!({"queries":[{"path":"a.ts"}]}));
-        assert_eq!(repaired.dropped, ["queries.0.minify"]);
+        assert_eq!(
+            lead(json!(["literal", "rust", "pcre2"]), "regex", json!("regex")),
+            Some(json!("rust"))
+        );
+        assert_eq!(
+            lead(
+                json!(["pullRequest", "issue", "commit"]),
+                "operation",
+                json!("pr")
+            ),
+            Some(json!("pullRequest"))
+        );
+        assert_eq!(
+            lead(json!(["standard", "symbols"]), "minify", json!("none")),
+            None
+        );
+        assert_eq!(
+            lead(
+                json!(["smart", "sensitive", "insensitive"]),
+                "caseMode",
+                json!("ignore")
+            ),
+            None
+        );
+    }
+
+    /// An unknown field set to `true` whose name one row field lists becomes
+    /// that field's value, exactly; `false`, or a row already setting that
+    /// field, keeps the unknown field (dropped, named).
+    #[test]
+    fn a_true_field_named_by_an_enum_value_becomes_that_value() {
+        let named = |row: Value| {
+            let input = json!({ "queries": [row] });
+            let unknown = issue(
+                "schema.unknown-field",
+                &["queries", "0", "merged"],
+                Some(json!({"knownFields":["state","owner"],"nameFields":["state"]})),
+                None,
+            );
+            repair_input(&input, &[unknown], always).expect("a lead")
+        };
+        let exact = named(json!({"owner":"o","merged":true}));
+        assert_eq!(
+            exact.input,
+            json!({"queries":[{"owner":"o","state":"merged"}]})
+        );
+        assert!(exact.dropped.is_empty());
+        for row in [
+            json!({"merged":false}),
+            json!({"merged":true,"state":"open"}),
+        ] {
+            assert_eq!(named(row).dropped, ["queries.0.merged"]);
+        }
+    }
+
+    /// A whole number or boolean sent to a text field becomes its text; a
+    /// fraction (whose text JSON already lost) has no lead.
+    #[test]
+    fn a_number_or_boolean_for_a_text_field_becomes_its_text() {
+        let text = |received: Value| {
+            let input = json!({"queries":[{"version": received.clone()}]});
+            let typed = issue(
+                "schema.type",
+                &["queries", "0", "version"],
+                Some(json!({"type":"string","minLength":1})),
+                Some(received),
+            );
+            repair_input(&input, &[typed], always).map(|repaired| repaired.input)
+        };
+        assert_eq!(text(json!(3)), Some(json!({"queries":[{"version":"3"}]})));
+        assert_eq!(
+            text(json!(true)),
+            Some(json!({"queries":[{"version":"true"}]}))
+        );
+        assert_eq!(text(json!(1.1)), None);
+    }
+
+    /// A line-range item spelled another way becomes its span; one sent
+    /// for the whole list becomes the one-span list.
+    #[test]
+    fn a_line_range_typo_becomes_its_span() {
+        let item = json!({"type":"string","pattern":crate::contracts::validate::shape::LINE_RANGE_PATTERN});
+        let list = json!({"type":"array","items": item.clone()});
+        let input = json!({"queries":[{"ranges":["3:6",[8,9],"5:2"]}]});
+        let at = |index: &str, received: Value, rule: &str| {
+            issue(
+                rule,
+                &["queries", "0", "ranges", index],
+                Some(item.clone()),
+                Some(received),
+            )
+        };
+        let fixed = repair_input(
+            &input,
+            &[
+                at("0", json!("3:6"), "schema.pattern"),
+                at("1", json!([8, 9]), "schema.type"),
+            ],
+            always,
+        )
+        .expect("exact");
+        assert_eq!(
+            fixed.input["queries"][0]["ranges"],
+            json!(["3-6", "8-9", "5:2"])
+        );
+        assert!(repair_input(&input, &[at("2", json!("5:2"), "schema.pattern")], always).is_none());
+        let scalar = json!({"queries":[{"ranges":"3..6"}]});
+        let whole = issue(
+            "schema.type",
+            &["queries", "0", "ranges"],
+            Some(list),
+            Some(json!("3..6")),
+        );
+        let fixed = repair_input(&scalar, &[whole], always).expect("exact");
+        assert_eq!(fixed.input, json!({"queries":[{"ranges":["3-6"]}]}));
+    }
+
+    /// An issue with no fix of its own is settled by another edit of the
+    /// same pass that sets its path; a fix's approximate fields are named.
+    #[test]
+    fn an_issue_another_edit_sets_needs_no_fix_and_approximations_are_named() {
+        let input = json!({"queries":[{"path":"https://github.com/o/r/blob/main/a.rs"}]});
+        let url = issue(
+            "schema.repository-url",
+            &["queries", "0", "path"],
+            Some(
+                json!({"setFields":{"owner":"o","repo":"r","ref":"main","path":"a.rs"},
+                "approximateFields":["ref","path"]}),
+            ),
+            None,
+        );
+        let missing = issue("schema.required", &["queries", "0", "repo"], None, None);
+        let unrelated = issue("schema.required", &["queries", "0", "token"], None, None);
+        let repaired =
+            repair_input(&input, &[url.clone(), missing.clone()], always).expect("settled");
+        assert_eq!(
+            repaired.input,
+            json!({"queries":[{"path":"a.rs","owner":"o","repo":"r","ref":"main"}]})
+        );
+        assert!(repaired.dropped.is_empty());
+        assert_eq!(repaired.approximate, ["queries.0.path", "queries.0.ref"]);
+        assert!(repair_input(&input, &[url, missing, unrelated], always).is_none());
     }
 
     #[test]
@@ -817,17 +1118,53 @@ mod tests {
         assert_eq!(repaired.dropped, ["queries.0.glob"]);
     }
 
+    /// A field inert without a sibling only the caller can fill is removed
+    /// exactly; one whose form the row's own selector excludes is dropped,
+    /// named.
     #[test]
-    fn a_field_inert_without_its_sibling_drops_exactly() {
+    fn a_field_inert_without_its_sibling_is_removed_or_dropped() {
         let input = json!({"queries":[{"path":"a","contextLines":2}]});
-        let inert = issue(
+        let inert = |extra: Value| {
+            let mut schema = json!({"knownFields":["path"],"siblingRequires":["matchString"]});
+            schema
+                .as_object_mut()
+                .expect("object")
+                .extend(extra.as_object().cloned().unwrap_or_default());
+            issue(
+                "schema.unknown-field",
+                &["queries", "0", "contextLines"],
+                Some(schema),
+                None,
+            )
+        };
+        let removed = repair_input(&input, &[inert(json!({}))], always).expect("exact repair");
+        assert_eq!(removed.input, json!({"queries":[{"path":"a"}]}));
+        assert!(removed.dropped.is_empty());
+        let conflict = inert(json!({"siblingConflict": true}));
+        let dropped = repair_input(&input, &[conflict], always).expect("lossy repair");
+        assert_eq!(dropped.input, json!({"queries":[{"path":"a"}]}));
+        assert_eq!(dropped.dropped, ["queries.0.contextLines"]);
+    }
+
+    /// A field of a form whose omitted selector is one literal sets it.
+    #[test]
+    fn a_field_of_one_unselected_branch_sets_its_selector() {
+        let input = json!({"queries":[{"path":".","nameRegex":"x"}]});
+        let field = issue(
             "schema.unknown-field",
-            &["queries", "0", "contextLines"],
-            Some(json!({"knownFields":["path"],"siblingRequires":["matchString"]})),
+            &["queries", "0", "nameRegex"],
+            Some(
+                json!({"knownFields":["path"],"siblingRequires":["operation:\"files\""],
+                "setFields":{"operation":"files"}}),
+            ),
             None,
         );
-        let repaired = repair_input(&input, &[inert], always).expect("exact repair");
-        assert!(repaired.dropped.is_empty());
+        let repaired = repair_input(&input, &[field], always).expect("exact");
+        assert_eq!(
+            repaired.input,
+            json!({"queries":[{"path":".","nameRegex":"x","operation":"files"}]})
+        );
+        assert!(repaired.dropped.is_empty() && repaired.approximate.is_empty());
     }
 
     #[test]
@@ -855,23 +1192,24 @@ mod tests {
 
     /// Zero of a positive size (`responseLength: 0`) is dropped so the
     /// default applies, named as lossy, instead of becoming one-char pages;
-    /// a field the row requires is clamped to its minimum instead.
+    /// when the field's default is that minimum, setting it is exact. A
+    /// field the row requires names what to read, so a value below its
+    /// minimum gets no lead.
     #[test]
     fn an_unsized_field_drops_to_its_default_unless_required() {
         let input = json!({"responseLength":0,"queries":[{"path":"a","line":-2}]});
-        let unsized_issue = |path: &[&str], received| {
-            issue(
-                "schema.range",
-                path,
-                Some(json!({"minimum":1,"maximum":50000})),
-                Some(json!(received)),
-            )
+        let unsized_issue = |path: &[&str], schema: Value, received| {
+            issue("schema.range", path, Some(schema), Some(json!(received)))
         };
-        let length = unsized_issue(&["responseLength"], 0);
+        let length = unsized_issue(&["responseLength"], json!({"minimum":1,"maximum":50000}), 0);
         let repaired = repair_input(&input, std::slice::from_ref(&length), always).expect("drop");
         assert_eq!(repaired.input, json!({"queries":[{"path":"a","line":-2}]}));
         assert_eq!(repaired.dropped, ["responseLength"]);
-        let line = unsized_issue(&["queries", "0", "line"], -2);
+        let line = unsized_issue(
+            &["queries", "0", "line"],
+            json!({"minimum":1,"maximum":50000}),
+            -2,
+        );
         let requires_line = |candidate: &Value| match candidate.pointer("/queries/0/line") {
             Some(_) => Ok(()),
             None => Err(vec![issue(
@@ -881,9 +1219,76 @@ mod tests {
                 None,
             )]),
         };
-        let repaired = repair_input(&input, &[line], requires_line).expect("clamp");
-        assert_eq!(repaired.input["queries"][0]["line"], 1);
-        assert!(repaired.dropped.is_empty());
+        assert_eq!(repair_input(&input, &[line], requires_line), None);
+        // Above the maximum a required field still clamps: that bound is
+        // the nearest value the caller can have meant.
+        let large = unsized_issue(
+            &["queries", "0", "line"],
+            json!({"minimum":1,"maximum":50000}),
+            90_000,
+        );
+        let repaired = repair_input(&input, &[large], requires_line).expect("clamp");
+        assert_eq!(repaired.input["queries"][0]["line"], 50_000);
+    }
+
+    /// A size whose default is its minimum (`historyDepth: 0`, default 1)
+    /// is set to it: the same call as dropping it, exact, nothing lost.
+    #[test]
+    fn an_unsized_field_whose_default_is_its_minimum_is_set_exactly() {
+        let input = json!({"queries":[{"historyDepth":0}]});
+        let depth = issue(
+            "schema.range",
+            &["queries", "0", "historyDepth"],
+            Some(json!({"minimum":1,"maximum":50,"default":1})),
+            Some(json!(0)),
+        );
+        let repaired = repair_input(&input, &[depth], always).expect("exact");
+        assert_eq!(repaired.input, json!({"queries":[{"historyDepth":1}]}));
+        assert!(repaired.dropped.is_empty() && repaired.approximate.is_empty());
+    }
+
+    /// An unknown field named for a kind of value one row field takes
+    /// becomes that field, exactly; a row already setting it keeps today's
+    /// handling (the unknown field is dropped, named).
+    #[test]
+    fn a_field_named_for_a_kind_of_value_becomes_the_field_that_takes_it() {
+        let unknown = |path: &[&str], kinds: Value| {
+            issue(
+                "schema.unknown-field",
+                path,
+                Some(json!({"knownFields":["ref","path"],"kindFields":kinds})),
+                None,
+            )
+        };
+        let input = json!({"queries":[{"branch":"main","path":"a"}]});
+        let repaired = repair_input(
+            &input,
+            &[unknown(&["queries", "0", "branch"], json!(["ref"]))],
+            always,
+        )
+        .expect("exact");
+        assert_eq!(
+            repaired.input,
+            json!({"queries":[{"ref":"main","path":"a"}]})
+        );
+        assert!(repaired.dropped.is_empty() && repaired.approximate.is_empty());
+        let both = json!({"queries":[{"branch":"main","ref":"v1"}]});
+        let repaired = repair_input(
+            &both,
+            &[unknown(&["queries", "0", "branch"], json!(["ref"]))],
+            always,
+        )
+        .expect("lossy");
+        assert_eq!(repaired.dropped, ["queries.0.branch"]);
+        assert_eq!(repaired.input, json!({"queries":[{"ref":"v1"}]}));
+        // Several fields take that kind: only the caller knows which.
+        let repaired = repair_input(
+            &input,
+            &[unknown(&["queries", "0", "branch"], json!(["ref", "path"]))],
+            always,
+        )
+        .expect("lossy");
+        assert_eq!(repaired.dropped, ["queries.0.branch"]);
     }
 
     /// An unknown envelope field the rows refuse is named where the caller

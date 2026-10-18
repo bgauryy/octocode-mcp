@@ -30,7 +30,7 @@ describe('chrome', () => {
     await fake.emit('session_start', { reason: 'startup' }, ctx);
     expect(typeof ctx.ui.header).toBe('function');
     expect(ctx.ui.footer).toBeDefined();
-    expect((ctx.ui as never as { indicator: { frames: string[]; intervalMs: number } }).indicator.frames).toHaveLength(10);
+    expect((ctx.ui as never as { indicator: { frames: string[] } }).indicator.frames).toHaveLength(10);
     expect((ctx.ui as never as { thinkingLabel: string }).thinkingLabel).toContain('Thinking');
     const requestRender = vi.fn();
     const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { render(width: number): string[]; dispose(): void })({ requestRender }, theme);

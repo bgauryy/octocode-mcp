@@ -3,7 +3,8 @@ pub use crate::contracts::tool_types::AstSearchQuerySymbols;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::{FileProbe, Globs, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
-use crate::tools::num::u32_of;
+use crate::tools::num::{u32_of, usize_of};
+use crate::tools::paging::clamp_page_size;
 use crate::tools::result::ToolError;
 use crate::tools::symbol_outline::{declaration_rows, top_level_spans};
 use crate::{
@@ -38,8 +39,7 @@ impl AstSearchQuerySymbols {
     }
     /// Leading files (walk order) an earlier window outlined.
     pub(crate) fn scan_offset(&self) -> u32 {
-        self.scan_offset
-            .map_or(0, |offset| u32::try_from(offset.get()).unwrap_or(u32::MAX))
+        self.scan_offset.map_or(0, |offset| u32_of(offset.get()))
     }
     pub(crate) fn page(&self) -> u32 {
         u32_of(self.page)
@@ -47,11 +47,8 @@ impl AstSearchQuerySymbols {
     /// The caller's symbols per page, at most the contract's `pageSize`
     /// maximum (the type keeps it non-zero); unset fills the response window.
     pub(crate) fn page_size(&self) -> Option<usize> {
-        use crate::tools::id::query_limits::ast_search::symbols::PAGE_SIZE_MAXIMUM;
-        self.page_size.map(|size| {
-            usize::try_from(size.get())
-                .map_or(PAGE_SIZE_MAXIMUM, |size| size.min(PAGE_SIZE_MAXIMUM))
-        })
+        self.page_size
+            .map(|size| clamp_page_size(ToolId::AstSearch, Some("symbols"), usize_of(size.get())))
     }
     pub(crate) fn snapshot(&self) -> Option<&str> {
         self.snapshot.as_deref().map(String::as_str)
@@ -294,7 +291,7 @@ fn note_skipped(
     else {
         return;
     };
-    let mut base = serde_json::to_value(q).unwrap_or_default();
+    let mut base = crate::tools::result::query_value(q);
     if let Some(map) = base.as_object_mut() {
         map.retain(|key, value| {
             !matches!(key.as_str(), "snapshot" | "page" | "scanOffset") && !value.is_null()
@@ -750,9 +747,7 @@ fn directory_memo_key(
 ///
 /// [`SourceStamp::SETTLE`]: octocode_engine::graph::SourceStamp::SETTLE
 fn directory_fingerprint(walk: &DirectoryWalk) -> (String, bool) {
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0.0, |elapsed| elapsed.as_millis() as f64);
+    let now_ms = crate::civil_date::unix_millis() as f64;
     let settle_ms = octocode_engine::graph::SourceStamp::SETTLE.as_millis() as f64;
     let mut stats = walk
         .files
@@ -1186,7 +1181,7 @@ impl SymbolPage {
         let page = q.page().max(1) as usize;
         let budget = crate::tools::page_windows::page_budget(
             response_window,
-            &serde_json::to_value(q).unwrap_or_default(),
+            &crate::tools::result::query_value(q),
         );
         let paging = crate::tools::page_windows::Paging::of(q.page_size(), budget);
         // Pages count top-level rows; each carries its members.

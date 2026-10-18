@@ -97,9 +97,7 @@ async fn unreadable_in_policy_files_stay_authorized_and_keep_their_locations() {
 async fn bounded_source_reads_refuse_fifos_without_blocking() {
     let (_dir, root, paths) = temp_workspace();
     let fifo = root.join("pipe.ts");
-    let path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).expect("c path");
-    // SAFETY: `path` is a valid NUL-terminated C string for the call.
-    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+    crate::tools::test_support::make_fifo(&fifo);
     assert!(matches!(
         read_bounded_source(&fifo),
         Err(SourceReadError::Unreadable(_))

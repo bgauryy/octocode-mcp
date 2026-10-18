@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
 //! Search and fetch never hand off to public clasify: relevance runs inside
 //! retrieval (`classifiers`), so no response offers a second relevance pass,
 //! and none makes a provider request without classifiers.

@@ -99,7 +99,9 @@ where
     )
     .await
     {
-        Ok(result) => return Ok(file_read(result, query)),
+        Ok(result) => {
+            return file_read(result, query).map_err(|error| errors::failure(error, query, None));
+        }
         Err(error) => error,
     };
     if error.reason == Some(octocode_github::ProviderErrorReason::Submodule) {
@@ -159,7 +161,15 @@ where
     } else {
         None
     };
-    Err(errors::failure(error, query, found))
+    let failure = errors::failure(error, query, found);
+    Err(crate::tools::gh_shared::with_default_branch(
+        provider,
+        failure,
+        crate::tools::id::ToolId::GhGetFileContent,
+        query,
+        request_context,
+    )
+    .await)
 }
 
 /// The query with its `path` as the repository names it
@@ -192,26 +202,34 @@ fn resolved_at(
 
 /// The row of a read: its status from the file, and the resolved commit
 /// unless the caller already named that full SHA.
-fn file_read(result: GhGetFileContentResult, query: &GhGetFileContentQuery) -> FileRead {
+fn file_read(
+    result: GhGetFileContentResult,
+    query: &GhGetFileContentQuery,
+) -> Result<FileRead, ProviderError> {
     let status = match result.file.content.status.as_str() {
         "error" => Some("error"),
         "empty" => Some("empty"),
         _ => None,
     };
     let cache = result.file.from_cache;
-    let mut data = serde_json::to_value(&result).unwrap_or_default();
+    let mut data = serde_json::to_value(&result).map_err(|error| {
+        ProviderError::new(
+            octocode_github::ProviderErrorKind::Decode,
+            error.to_string(),
+        )
+    })?;
     if data["commitSha"].as_str() == query.ref_.as_ref().map(|value| value.as_str())
         && let Some(map) = data.as_object_mut()
     {
         map.remove("commitSha");
     }
-    FileRead {
+    Ok(FileRead {
         output: ToolData {
             status,
             ..ToolData::from(data)
         },
         cache,
-    }
+    })
 }
 
 pub async fn execute<C>(
@@ -408,7 +426,8 @@ fn shape(
 }
 
 /// The read's status: a missed selection is an empty read that says why
-/// ([`no_match`]), a read with text a success, anything else empty. Returns
+/// ([`no_match`]), a read with text (or of a 0-byte file) a success,
+/// anything else empty. Returns
 /// whether the selection missed; an offset inside a code point fails.
 fn settle_status(
     content: &mut crate::tools::local_fetch::LocalFetchResult,
@@ -433,7 +452,8 @@ fn settle_status(
             // Same as localFetch: no selected line is an empty read, which
             // keeps the recovery hint visible under the hint policy.
             "empty"
-        } else if content.content.as_ref().is_some_and(|s| !s.is_empty()) {
+        } else if content.content.as_ref().is_some_and(|s| !s.is_empty()) || bytes.is_empty() {
+            // A 0-byte file read whole is its whole content, not a miss.
             "success"
         } else {
             "empty"
@@ -1481,11 +1501,15 @@ mod tests {
                 .is_some_and(|text| !text.is_empty())
         );
         assert_eq!(file.content.is_partial, Some(true));
-        assert!(
-            file.next
-                .as_ref()
-                .is_some_and(|next| next.get("continueWindow").is_some())
-        );
+        // The continuation resumes exactly where the page ends: no line of
+        // the file falls between the two.
+        let window = &file.next.as_ref().expect("next")["continueWindow"]["query"]["queries"][0];
+        // Line pages: the offset is the first unread line.
+        let line = "line of text\n".len();
+        let offset = window["offset"].as_u64().expect("offset") as usize;
+        assert!(offset > 0 && offset < 6000, "{window}");
+        assert_eq!(file.content.returned_bytes, Some(offset * line), "{window}");
+        assert_eq!(window["ref"], sha, "{window}");
     }
 
     /// The row's response window sizes a ranged read's page: a smaller
@@ -1562,6 +1586,31 @@ mod tests {
             None,
         )
         .await
+    }
+
+    /// A 0-byte file read whole is a successful read of all of it, not an
+    /// empty read that sends the caller to re-check the coordinates.
+    #[tokio::test]
+    async fn a_zero_byte_file_is_a_successful_read() {
+        let server = MockServer::builder().start().await;
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        mount_json(
+            &server,
+            "/api/v3/repos/a/b/contents/py.typed".to_owned(),
+            200,
+            serde_json::json!({"type":"file","encoding":"base64","content":"","size":0}),
+        )
+        .await;
+        let provider = mock_provider(&server, RetryPolicy::default());
+        let read = run_default(
+            &provider,
+            serde_json::json!({"owner":"a","repo":"b","path":"py.typed","ref":sha}),
+        )
+        .await
+        .unwrap_or_else(|failure| panic!("{}", failure.message));
+        assert_eq!(read.output.status, None, "{}", read.output.data);
+        assert_eq!(read.output.data["content"], "", "{}", read.output.data);
+        assert_eq!(read.output.data["sourceBytes"], 0, "{}", read.output.data);
     }
 
     /// ghGetFileContent reads a path by the one repository-path rule

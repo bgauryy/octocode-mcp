@@ -2,10 +2,10 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import type { Subcommands } from '../shared/commands.js';
 import { backlogCommand } from './command.js';
 import { openBacklog, type BacklogOptions } from './context.js';
+import { STATUS } from '../shared/status.js';
 import { countsText } from './format.js';
 import { registerBacklogTool } from './tool.js';
 
-const BACKLOG_STATUS_KEY = 'octocode-backlog';
 interface RegisterBacklogOptions extends BacklogOptions {
   commands: Subcommands;
   /** Opens the HTML page (`/backlog html`); the system's default application unless replaced. */
@@ -24,10 +24,10 @@ export function registerBacklog(pi: ExtensionAPI, options: RegisterBacklogOption
     try {
       const backlog = openBacklog(ctx, backlogOptions);
       const text = countsText(backlog.store.counts());
-      ctx.ui.setStatus(BACKLOG_STATUS_KEY, text || undefined);
+      ctx.ui.setStatus(STATUS.backlog, text || undefined);
     } catch {
       // An unreadable agent database (a foreign file) hides the counts; the tool and command report why.
-      ctx.ui.setStatus(BACKLOG_STATUS_KEY, undefined);
+      ctx.ui.setStatus(STATUS.backlog, undefined);
     }
   };
 

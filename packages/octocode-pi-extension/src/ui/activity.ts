@@ -1,7 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { visibleWidth } from '@earendil-works/pi-tui';
 import { formatDuration } from '../shared/format.js';
 import { dialogsWaiting, onDialogsChange, promptTitle } from '../shared/locks.js';
-import { clip, queryTarget } from '../shared/render.js';
+import { clipColumns, queryTarget } from '../shared/render.js';
 import { redactSecrets } from '../shared/sanitize.js';
 import { Thought } from '../shared/thought.js';
 import { firstLine, isRecord, toolHint } from '../shared/util.js';
@@ -53,11 +54,11 @@ export function callTarget(name: string, args: unknown): { hint: string; more: n
   return { hint: toolHint(args), more: 0 };
 }
 
-/** `head` then `detail` clipped to the room LINE_MAX leaves, then `tail`; `sep` joins head and a non-empty detail. */
+/** `head` then `detail` clipped to the columns LINE_MAX leaves, then `tail`; `sep` joins head and a non-empty detail. */
 function fit(head: string, sep: string, detail: string, tail: string): string {
   if (!detail) return `${head}${tail}`;
-  const room = LINE_MAX - head.length - sep.length - Math.max(tail.length, TAIL_ROOM);
-  return `${head}${sep}${clip(detail, Math.max(room, 12))}${tail}`;
+  const room = LINE_MAX - visibleWidth(head) - visibleWidth(sep) - Math.max(visibleWidth(tail), TAIL_ROOM);
+  return `${head}${sep}${clipColumns(detail, Math.max(room, 12))}${tail}`;
 }
 
 /**

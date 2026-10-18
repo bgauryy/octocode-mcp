@@ -1,13 +1,16 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import path from 'node:path';
+import { archiveSearch, LIBRARY_FILE } from '../shared/archive.js';
 import { envInt } from '../shared/env.js';
 import { shortPath } from '../shared/format.js';
+import { sessionFolderNames } from '../shared/home.js';
 import { errorMessage } from '../shared/util.js';
 import type { Team } from '../team/session.js';
 import { currentCatalog } from './catalog.js';
 import { routeModel, type ModelRoute } from './model.js';
 import type { Identity } from './process.js';
 import { GENERAL_PROFILE, type AgentProfile } from './profiles.js';
-import { agentScratch, dropEmptyScratch, type ReadReports, type ReportQueue } from './handoff.js';
+import { agentScratch, dropEmptyScratch, scratchNames, type ReadReports, type ReportQueue } from './handoff.js';
 import type { Background } from './command.js';
 
 /** Starting a subagent: who it is (name, role, goal), its slot under the limit, and the task text it receives. */
@@ -20,14 +23,15 @@ export function teamTask(task: string, parentId: string, others: Array<[string, 
 
 /**
  * The facts only this child has. They ride in its task, not its system prompt, so every child of one profile shares a
- * cached prompt prefix.
+ * cached prompt prefix. `archive` is the library of the parent's compacted history (`shared/archive.ts`), given only
+ * when the parent has one; the child reads it with the `archive` tool, nothing may change it.
  */
-export function withIdentity(task: string, identity: Pick<Identity, 'id' | 'role' | 'goal' | 'parentId' | 'scratch'>): string {
+export function withIdentity(task: string, identity: Pick<Identity, 'id' | 'role' | 'goal' | 'parentId' | 'scratch'>, archive?: { library: string }): string {
   const parent = identity.parentId ? `\`${identity.parentId}\`` : 'another agent';
   const scratch = identity.scratch ? `\`${shortPath(identity.scratch)}\`` : '`.octocode/tmp/` in the repository';
   const role = identity.role ? ` (${identity.role})` : '';
   const goal = identity.goal ? ` Your goal: ${identity.goal}.` : '';
-  return `${task}\n\n## You\nYour name is \`${identity.id}\`${role}.${goal} You work for ${parent}. Your scratch folder, for handoff files and a long report, is ${scratch}.`;
+  return `${task}\n\n## You\nYour name is \`${identity.id}\`${role}.${goal} You work for ${parent}. Your scratch folder, for handoff files and a long report, is ${scratch}.${archive ? `\nEarlier history of your parent session, compacted out of its context, is archived in ${path.dirname(archive.library)} (read-only; ${LIBRARY_FILE} indexes it; the repository shows today's state, the archive what was said and found then). ${archiveSearch()}` : ''}`;
 }
 
 export const MAX_SUBAGENTS_ENV = 'OCTOCODE_MAX_SUBAGENTS';
@@ -137,10 +141,21 @@ export interface Run {
 /** What a call asks for, checked before anything waits, asks or starts: its profile and the model it routes to. */
 type RunPlan = Pick<Run, 'profile' | 'route'>;
 
-/** Checks the profile and routes the model; throws the refusal (unknown profile, unavailable model). */
-export function planRun(profiles: Map<string, AgentProfile>, params: Pick<AgentParams, 'profile' | 'model'>, ctx: Pick<ExtensionContext, 'modelRegistry' | 'model'>): RunPlan {
+/**
+ * Checks the profile and routes the model; throws the refusal (unknown profile, unavailable model). `refused` holds why
+ * each profile file was refused when the profiles loaded, by file name: an unknown name that is one of them says why.
+ */
+export function planRun(
+  profiles: Map<string, AgentProfile>,
+  params: Pick<AgentParams, 'profile' | 'model'>,
+  ctx: Pick<ExtensionContext, 'modelRegistry' | 'model'>,
+  refused: ReadonlyMap<string, string> = new Map(),
+): RunPlan {
   const profile = params.profile ? profiles.get(params.profile) : undefined;
-  if (params.profile && !profile) throw new Error(`Unknown profile "${params.profile}". Available: ${[...profiles.keys()].join(', ')}`);
+  if (params.profile && !profile) {
+    const why = refused.get(params.profile);
+    throw new Error(`Unknown profile "${params.profile}". Available: ${[...profiles.keys()].join(', ')}${why ? `\n"${params.profile}" was refused when profiles loaded: ${why}` : ''}`);
+  }
   // An explicit model is strict; a profile's is a preference that falls back to this session's model.
   const route = routeModel({ explicit: params.model, preferred: profile?.model, available: ctx.modelRegistry?.getAvailable() ?? [], parent: ctx.model, catalog: currentCatalog() });
   if ('error' in route) throw new Error(route.error);
@@ -149,7 +164,9 @@ export function planRun(profiles: Map<string, AgentProfile>, params: Pick<AgentP
 
 /**
  * Names the run and claims it, in the slot the caller already took (`runs.slots`); `release` gives the slot back.
- * `avoid`: names to skip besides the team's (existing refs of isolated runs).
+ * `avoid`: names to skip besides the team's, those of existing scratch folders and those of existing session folders
+ * (a child's session id is its name, and its archive is global and outlives scratch), e.g. existing refs of isolated runs. A
+ * resumed run keeps its own name, and with it its saved conversation; a new one never gets a name with a saved one.
  */
 export function claimRun(runs: AgentRuns, plan: RunPlan, params: Pick<AgentParams, 'goal' | 'collaborate'>, ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>, avoid: Iterable<string> = [], resumed?: Run['identity']): Run {
   const { cwd } = ctx;
@@ -165,7 +182,7 @@ export function claimRun(runs: AgentRuns, plan: RunPlan, params: Pick<AgentParam
   const collaborate = parentId !== undefined && params.collaborate === true;
   // A resumed run continues as the same agent: name, role, goal, scratch folder and permission.
   const identity: Run['identity'] = resumed ?? {
-    id: runs.team.newName([...runs.running.keys(), ...avoid]),
+    id: runs.team.newName([...runs.running.keys(), ...scratchNames(cwd), ...sessionFolderNames(), ...avoid]),
     role: profile?.name ?? GENERAL_PROFILE,
     goal: params.goal,
     parentSession: ctx.sessionManager.getSessionId(),

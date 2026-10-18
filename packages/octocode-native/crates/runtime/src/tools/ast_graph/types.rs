@@ -1,4 +1,6 @@
-use crate::tools::num::u32_of;
+use crate::tools::id::ToolId;
+use crate::tools::num::{u32_of, usize_of};
+use crate::tools::paging::clamp_page_size;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -166,7 +168,9 @@ impl AstTopologyQuery {
         every_analysis!(self, page => u32_of(*page))
     }
     pub(crate) fn page_size(&self) -> Option<usize> {
-        every_analysis!(self, page_size => page_size.map(crate::tools::num::usize_of))
+        every_analysis!(self, page_size => page_size.map(|size| {
+            clamp_page_size(ToolId::AstTopology, None, usize_of(size))
+        }))
     }
     pub(crate) fn diagnostic_page(&self) -> u32 {
         every_analysis!(self, diagnostic_page => diagnostic_page.map_or(1, u32_of))

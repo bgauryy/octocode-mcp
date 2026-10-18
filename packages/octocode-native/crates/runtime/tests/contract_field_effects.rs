@@ -1,6 +1,3 @@
-// Integration test crate — malformed audit fixtures should fail loudly.
-#![allow(clippy::expect_used, clippy::panic)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use octocode_native::contracts::contract_json;

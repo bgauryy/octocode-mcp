@@ -2,7 +2,7 @@
 //! recovery from an empty search.
 use super::rows::{is_completed, is_merged, item_number, item_repo, read_target};
 use super::{GhSearchHistoryQuery, HistorySearch};
-use crate::tools::gh_shared::{broaden_lead, drop_each_keyword, without};
+use crate::tools::gh_shared::{Broaden, broaden};
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, query_row};
 use serde_json::{Value, json};
@@ -176,24 +176,18 @@ pub(super) fn next_page(q: &GhSearchHistoryQuery, page: usize, page_size: usize)
 /// Broadened variants at most: one call's batch.
 const BROADEN_VARIANTS: usize = 5;
 
-/// An empty search, broadened: one variant per narrowing filter, run as one
-/// batch, so the variant that returns rows names the filter that emptied
-/// the search. Several keywords drop one at a time (the last first: the
-/// first usually names the subject); a repository-scoped search drops a
-/// lone keyword; `qualifiers` and the `since`/`until` window drop whole.
+/// An empty search, broadened ([`broaden`]): `qualifiers` and the
+/// `since`/`until` window drop whole, then the keywords one at a time.
 pub(super) fn broaden_search(q: &GhSearchHistoryQuery) -> Option<Value> {
-    let base = same_query(q);
-    let mut variants = drop_each_keyword(&base);
-    if q.keywords().len() == 1 && q.owner().is_some() && q.repo().is_some() {
-        variants.push(without(&base, &["keywords"]));
-    }
-    if q.qualifiers().is_some() {
-        variants.push(without(&base, &["qualifiers"]));
-    }
-    if q.since().is_some() || q.until().is_some() {
-        variants.push(without(&base, &["since", "until"]));
-    }
-    broaden_lead(ToolId::GhSearchHistory, variants, BROADEN_VARIANTS)
+    broaden(
+        ToolId::GhSearchHistory,
+        &query_row(q, &[]),
+        &Broaden {
+            strip: &[],
+            groups: &[&["qualifiers"], &["since", "until"]],
+        },
+        BROADEN_VARIANTS,
+    )
 }
 
 /// A capped search's narrowing (`narrowScope`), one call. Rows in a date

@@ -97,6 +97,30 @@ describe('request too large (HTTP 413)', () => {
     }
   });
 
+  it('names every saved image and which could not be saved when only some of a message\'s images were', () => {
+    const message = {
+      role: 'toolResult',
+      toolName: 'read',
+      toolCallId: 'c0',
+      content: [
+        { type: 'text', text: 'two shots' },
+        { type: 'image', data: SHOT, mimeType: 'image/png' },
+        { type: 'image', data: undefined, mimeType: 'image/png' },
+        { type: 'image', data: SHOT.slice(0, 1_000), mimeType: 'image/png' },
+      ],
+    };
+    const edits = planTooLargeRecovery([{ id: 'r0', message }], undefined, 0)!;
+    const content = (edits[0]!.replacement as { content: Array<{ text: string }> }).content;
+    const note = content[1]!.text;
+    const saved = [...note.matchAll(/(\S+\.png) \(sha256 [0-9a-f]{16}, \d+ bytes\)/g)].map((match) => match[1]!);
+    expect(saved).toHaveLength(2);
+    expect(note).toMatch(/^\[image from an earlier tool call omitted; saved at .*; image 2 of 3 could not be saved; read /);
+    for (const shown of saved) expect(fs.existsSync(shown.startsWith('~') ? path.join(os.homedir(), shown.slice(2)) : shown)).toBe(true);
+    // Nothing saved keeps the plain note.
+    const none = planTooLargeRecovery([{ id: 'r1', message: { ...message, content: [{ type: 'image', data: undefined, mimeType: 'image/png' }] } }], undefined, 0)!;
+    expect((none[0]!.replacement as { content: Array<{ text: string }> }).content[0]!.text).toBe('[image from an earlier tool call omitted; it could not be saved]');
+  });
+
   it('strips images the user attached too, oldest first with the tool results, keeping the newest', () => {
     const pasted = { id: 'u0', message: { role: 'user', content: [{ type: 'text', text: 'see this' }, { type: 'image', data: SHOT, mimeType: 'image/png' }] } };
     const entries = [pasted, ...history(2), { id: 'fail', message: failed() }];

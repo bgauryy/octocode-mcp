@@ -8,6 +8,7 @@ use super::{cursor::*, leads::*, rows::*};
 use crate::policy::path::PathPolicy;
 use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::Continuation;
 use serde_json::{Value, json};
 
@@ -100,7 +101,7 @@ impl Layout {
         let matches_per = query
             .match_page_size()
             .unwrap_or(if show_all {
-                u32::try_from(hits_total).unwrap_or(u32::MAX)
+                u32_of_usize(hits_total)
             } else {
                 DEFAULT_MAX_MATCHES_PER_FILE
             })
@@ -201,7 +202,7 @@ impl Layout {
                 read: &|row| costs.read(row),
             },
         );
-        let total_pages = u32::try_from(pages.len()).unwrap_or(u32::MAX).max(1);
+        let total_pages = u32_of_usize(pages.len()).max(1);
         let page = query.page().max(1) as usize;
         let shown = if page <= pages.len() {
             pages.swap_remove(page - 1)
@@ -209,12 +210,7 @@ impl Layout {
             Vec::new()
         };
         let rows: usize = files.iter().map(|file| file.matches.len()).sum();
-        (
-            shown,
-            total_pages,
-            None,
-            u32::try_from(rows).unwrap_or(u32::MAX),
-        )
+        (shown, total_pages, None, u32_of_usize(rows))
     }
 
     fn list_stream(
@@ -247,9 +243,9 @@ impl Layout {
             .unwrap_or_default();
         (
             shown,
-            u32::try_from(pages.len()).unwrap_or(u32::MAX).max(1),
+            u32_of_usize(pages.len()).max(1),
             None,
-            u32::try_from(files.len()).unwrap_or(u32::MAX),
+            u32_of_usize(files.len()),
         )
     }
 
@@ -270,7 +266,7 @@ impl Layout {
         let shown = window
             .map(|index| (index, skip..skip.saturating_add(matches_per as usize)))
             .collect::<PageRows>();
-        let total_files = u32::try_from(file_count).unwrap_or(u32::MAX);
+        let total_files = u32_of_usize(file_count);
         (
             shown,
             crate::tools::page_windows::count_pages(file_count, page_size as usize) as u32,
@@ -574,7 +570,7 @@ pub(super) fn pagination_chars(file: &octocode_engine::types::TextSearchFile) ->
     let empty = ItemPagination {
         current_page: None,
         total_pages: None,
-        total_matches: u32::try_from(total).unwrap_or(u32::MAX),
+        total_matches: u32_of_usize(total),
         has_more: true,
         more_lines: Some(Vec::new()),
         more_lines_unlisted: None,

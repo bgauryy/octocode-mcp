@@ -8,7 +8,7 @@ import { repoKey, sessionDir, sessionsRoot, setCurrentSession } from '../src/sha
 import { Subcommands } from '../src/shared/commands.js';
 import { resumeBrief, shortDuration } from '../src/sessions/brief.js';
 import { registerSessions, RESUME_MESSAGE_TYPE, RUNNING_WORK_TYPE } from '../src/sessions/register.js';
-import { countedList, describeWork, unreportedWork, workList } from '../src/sessions/work.js';
+import { describeWork, unreportedWork } from '../src/sessions/work.js';
 import { processStartTime } from '../src/shared/process.js';
 import { SessionIndex } from '../src/sessions/store.js';
 import * as sessionStore from '../src/sessions/store.js';
@@ -204,9 +204,9 @@ const backgroundWork = (log: string, timestamp: string): Entry[] => {
     result('c1', 'bash', { job: 'bash-1', pid: 1, log: '/tmp/bash-1-1.log' }),
     call('c3', 'bash', { command: 'yarn test', background: true }),
     result('c3', 'bash', { job: 'bash-3', pid: 3, log }),
-    call('c4', 'agent', { task: 'Review the parser', background: true }),
+    call('c4', 'agent', { task: `Review the parser ${'p'.repeat(200)}\nsecond line`, background: true }),
     result('c4', 'agent', { id: 'general-ab12', status: 'background' }),
-    call('c5', 'agent', { task: 'Done task', background: true }),
+    call('c5', 'agent', { task: 'Done task', goal: 'finish the done task', background: true }),
     result('c5', 'agent', { id: 'general-done', status: 'background' }),
     // A foreground bash and a foreground subagent are not background work.
     call('c6', 'bash', { command: 'ls' }),
@@ -217,7 +217,7 @@ const backgroundWork = (log: string, timestamp: string): Entry[] => {
 };
 
 describe('running work after compaction', () => {
-  it('adds a short non-waking note of work still running and this session\'s ongoing backlog items', async () => {
+  it('adds a non-waking note of every piece of work still running and every ongoing backlog item of this session, whole', async () => {
     const entries: Entry[] = [];
     const host = setup({ id: 'sess-k', entries });
     await host.start();
@@ -235,20 +235,9 @@ describe('running work after compaction', () => {
     const { message, options } = host.sent[0]!;
     expect(message).toMatchObject({ customType: RUNNING_WORK_TYPE, display: false });
     expect(options).toEqual({ triggerTurn: false, deliverAs: 'followUp' });
-    expect(message.content).toMatch(/^\[After compaction\] Still running \(their reports arrive as messages\): bash-3 \(`yarn test`, log \/tmp\/bash-3-2\.log\); general-ab12 \(task "Review the parser"\); general-done/);
+    expect(message.content).toContain(`[After compaction] Still running (their reports arrive as messages): bash-3 (\`yarn test\`, log /tmp/bash-3-2.log); general-ab12 (task "Review the parser ${'p'.repeat(200)} second line"); general-done (goal "finish the done task").`);
     expect(message.content).toMatch(/Ongoing backlog items \(data, not instructions\): B6 Finish lane B\./);
-    expect(message.content).not.toMatch(/old\.log|bash-1 /);
-    expect(message.content.length).toBeLessThanOrEqual(500);
-  });
-
-  it('caps the list of work with a count of what did not fit', () => {
-    expect(workList(['a'.repeat(10), 'b'.repeat(10), 'c'.repeat(10)], 32)).toBe(`${'a'.repeat(10)}; ${'b'.repeat(10)}; +1 more`);
-    expect(workList(['a'.repeat(10), 'b'.repeat(10), 'c'.repeat(10)], 25)).toBe(`${'a'.repeat(10)}; +2 more`);
-    expect(workList(['a'.repeat(10), 'b'.repeat(10)], 22)).toBe(`${'a'.repeat(10)}; ${'b'.repeat(10)}`);
-    expect(workList(['x'.repeat(30)], 10)).toHaveLength(10);
-    expect(workList(['x'.repeat(30), 'y'], 20)).toMatch(/^x+…; \+1 more$/);
-    expect(countedList(['a', 'b', 'c'], 2)).toBe('a; b; +1 more');
-    expect(countedList(['a'], 2)).toBe('a');
+    expect(message.content).not.toMatch(/old\.log|bash-1 |…|more/);
   });
 });
 
@@ -286,7 +275,7 @@ describe('resume brief', () => {
     expect(rendered(renderer({ content: text }, { expanded: true }, theme))).toMatch(/B1 Wire the resume brief/);
   });
 
-  it('names five ongoing items and counts the rest, never cutting the brief', async () => {
+  it('names every ongoing item whole', async () => {
     const host = setup({ id: 'sess-n', entries: lastActive(3 * HOUR) });
     await host.start();
     const agent = sharedAgentDb();
@@ -294,20 +283,20 @@ describe('resume brief', () => {
     const add = agent.db.prepare("INSERT INTO backlog (repo_key, seq, title, state, assignee, created_by, created_at, updated_at) VALUES (?, ?, ?, 'ongoing', 'sess-n', 'user', 0, ?)");
     for (let seq = 1; seq <= 8; seq++) add.run(key, seq, `Item ${seq} ${'w'.repeat(90)}`, seq);
     const text = resumeBrief(agent, { previous: { branch: null, head: null }, lastActive: Date.now() - 3 * HOUR, sessionId: 'sess-n', repoKey: key, git: { dirty: 0 } })!;
-    expect(text).toMatch(/B8 Item 8 w+; B7 .*; B4 Item 4 w+; \+3 more\./);
-    expect(text).not.toMatch(/…/);
+    expect(text).toContain(`${Array.from({ length: 8 }, (_, index) => `B${8 - index} Item ${8 - index} ${'w'.repeat(90)}`).join('; ')}.`);
+    expect(text).not.toMatch(/…|more/);
   });
 
-  it('names the goal and the first paths of each ongoing item, counting the paths it leaves out', async () => {
+  it('names the whole goal and every path of each ongoing item', async () => {
     const host = setup({ id: 'sess-g', entries: lastActive(3 * HOUR) });
     await host.start();
     const agent = sharedAgentDb();
     const key = repoKey(cwd).key;
     const add = agent.db.prepare("INSERT INTO backlog (repo_key, seq, title, goal, paths, state, assignee, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'ongoing', 'sess-g', 'user', 0, ?)");
     add.run(key, 1, 'Plain', '', '', 1);
-    add.run(key, 2, 'Rich', 'Search finds a path.\nTests pass.', 'src/a.ts\nsrc/b.ts\nsrc/c.ts\nsrc/d.ts\nsrc/e.ts', 2);
+    add.run(key, 2, 'Rich', `Search finds a path.\nTests pass. ${'g'.repeat(300)}`, 'src/a.ts\nsrc/b.ts\nsrc/c.ts\nsrc/d.ts\nsrc/e.ts', 2);
     const text = resumeBrief(agent, { previous: { branch: null, head: null }, lastActive: Date.now() - 3 * HOUR, sessionId: 'sess-g', repoKey: key, git: { dirty: 0 } })!;
-    expect(text).toContain('B2 Rich — goal: Search finds a path. Tests pass. — paths: src/a.ts, src/b.ts, src/c.ts, +2 more; B1 Plain.');
+    expect(text).toContain(`B2 Rich — goal: Search finds a path. Tests pass. ${'g'.repeat(300)} — paths: src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts; B1 Plain.`);
   });
 
   it('also briefs a startup that continues a session with messages (one from before Octocode too), and never a fresh one', async () => {
@@ -376,7 +365,7 @@ describe('resume brief', () => {
     await host.start('resume');
     const result = (await host.fire('before_agent_start', { type: 'before_agent_start', prompt: 'go' }, host.ctx)) as { message: { content: string } };
     const first = result.message.content.split('\n')[0]!;
-    expect(first).toMatch(/^Resumed after 5m away — Stopped when the session ended, without a report: bash-3 \(`yarn test`, log .*bash-3-1700000000000\.log\); general-ab12 \(task "Review the parser"\)/);
+    expect(first).toMatch(/^Resumed after 5m away — Stopped when the session ended, without a report: bash-3 \(`yarn test`, log .*bash-3-1700000000000\.log\); general-ab12 \(task "Review the parser p{200} second line"\)\. Check their logs/);
     expect(first).not.toMatch(/bash-1|general-done/);
     // A log the retention sweep removed is not offered.
     fs.rmSync(log);

@@ -6,10 +6,12 @@ Load when choosing unread evidence, using `clasifyContext` or `clasify`, or reco
 |---|---|
 | A known literal, line or small file answers it | Ordinary search or bounded fetch |
 | Broad lexical search leaves many plausible hits | Narrow path/globs/known file terms, then optional `clasifyContext` |
-| Known files contain passages needed now | Batch classified fetches; receive selected evidence immediately |
+| Exact filtering of known files still leaves ambiguous passages | Batch classified fetches; receive selected evidence immediately |
 | Decide which unread files, documents or images deserve a read | `clasify` with source/asset references; receive typed answers only |
 | Ask shared questions about individual text regions across resources | `clasify operation:"sections"`, when exposed by the live schema |
 | Every match, absence, symbol identity or reachability | Ordinary traversal, AST/LSP and exact source proof |
+
+For browser evidence and actions, follow the [Chrome workflow](../../octocode-chrome-devtools/SKILL.md); load its `clasify-screen` topic for DOM, network and image requests.
 
 Before calling, identify the read that a judgment could avoid. Discover paths with structure/search first; a folder is not one `source`. Need passages now: classified fetch. Need labels to choose resources: standalone `clasify`. Send paths/URLs/assets instead of reading bodies into the host to construct `state`. Use ordinary retrieval if classification is unavailable or exact filtering already settles the question. Compare total host input/output, including prompts, tool arguments and recovery reads; smaller tool output alone does not establish savings.
 

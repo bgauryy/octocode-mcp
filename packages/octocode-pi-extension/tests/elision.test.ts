@@ -39,6 +39,19 @@ describe('elision markers', () => {
     expect(elisionMarkers('[Output trimmed] and [… 3 lines]')).toEqual([]);
   });
 
+  it('names the exact lines a spilled preview leaves out and the read that shows them', () => {
+    const page = Array.from({ length: 3_000 }, (_, i) => `row ${i + 1}`).join('\n');
+    const preview = capOutputToFile(page, { label: 'web', maxBytes: 4_096 });
+    const gap = /^\[… (\d+) lines omitted …\] \(lines (\d+)–(\d+) of 3000; read them from the full output with offset \2 and limit \1\)$/m.exec(preview);
+    expect(gap).not.toBeNull();
+    const [, count, first, last] = gap!.map(Number);
+    expect(last! - first! + 1).toBe(count);
+    const lines = preview.split('\n');
+    const at = lines.findIndex((line) => line.startsWith('[…'));
+    expect(lines[at - 2]).toBe(`row ${first! - 1}`);
+    expect(lines[at + 2]).toBe(`row ${last! + 1}`);
+  });
+
   it('refuses writing a spilled preview (a web page fetched over 50 KB) as if it were the content', () => {
     const page = Array.from({ length: 3_000 }, (_, i) => `row ${i}`).join('\n');
     const preview = capOutputToFile(page, { label: 'web', maxBytes: 4_096 });

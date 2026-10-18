@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use tree_sitter::{Language, Node, Tree};
 
+use super::error::CompileError;
 use super::line_index_support::to_structural_match_with_index;
 use super::matching::{
     CandidatePlan, CaptureEnv, ExecutionError, Found, children, named_children, node_text,
@@ -59,7 +60,7 @@ enum SpecialPattern {
 }
 
 impl CompiledPattern {
-    pub(super) fn new(lang: &AgLanguage, pattern: &str) -> Result<Self, String> {
+    pub(super) fn new(lang: &AgLanguage, pattern: &str) -> Result<Self, CompileError> {
         // Special shapes are gated on the grammar actually having the target
         // node kinds; elsewhere the text compiles as an ordinary pattern.
         let language = lang.tree_sitter_language();
@@ -95,10 +96,12 @@ impl CompiledPattern {
         }
 
         if pattern.len() > 64_000 {
-            return Err("structural pattern exceeds 64000 byte limit".to_owned());
+            return Err(CompileError::grammar(
+                "structural pattern exceeds 64000 byte limit",
+            ));
         }
         let mut source = lang.preprocess_pattern(pattern).into_owned();
-        let mut tree = parse_tree(&language, &source).map_err(|err| err.to_string())?;
+        let mut tree = parse_tree(&language, &source)?;
         // The C# class wrap gives member patterns (methods, properties) real
         // body context, but an expression or statement (`Helper($A)`,
         // `Log($A);`) is not a class member and fails there. Fall back to the
@@ -106,12 +109,11 @@ impl CompiledPattern {
         // `effective_pattern_root` unwraps.
         if lang.class_wraps() {
             let mut plain = lang.preprocess_rewrite_pattern(pattern).into_owned();
-            let mut plain_tree = parse_tree(&language, &plain).map_err(|err| err.to_string())?;
+            let mut plain_tree = parse_tree(&language, &plain)?;
             if !plain.trim_end().ends_with([';', '}']) {
                 // A bare call needs a terminator to be a statement.
                 let terminated = format!("{plain};");
-                let terminated_tree =
-                    parse_tree(&language, &terminated).map_err(|err| err.to_string())?;
+                let terminated_tree = parse_tree(&language, &terminated)?;
                 if !effective_pattern_root(terminated_tree.root_node(), &terminated).has_error() {
                     plain = terminated;
                     plain_tree = terminated_tree;
@@ -138,8 +140,7 @@ impl CompiledPattern {
             && !source.trim_end().ends_with([';', '}'])
         {
             let contextual_source = format!("{source};");
-            let contextual_tree =
-                parse_tree(&language, &contextual_source).map_err(|err| err.to_string())?;
+            let contextual_tree = parse_tree(&language, &contextual_source)?;
             let contextual_root =
                 effective_pattern_root(contextual_tree.root_node(), &contextual_source);
             let plain_fails = effective_pattern_root(tree.root_node(), &source).has_error();
@@ -155,8 +156,7 @@ impl CompiledPattern {
         ) {
             let mut contextual_source = source.clone();
             contextual_source.insert(offset, ';');
-            let contextual_tree =
-                parse_tree(&language, &contextual_source).map_err(|err| err.to_string())?;
+            let contextual_tree = parse_tree(&language, &contextual_source)?;
             if effective_pattern_root(contextual_tree.root_node(), &contextual_source).kind()
                 == "function_definition"
             {
@@ -166,9 +166,9 @@ impl CompiledPattern {
         }
         let root = effective_pattern_root(tree.root_node(), &source);
         if root.is_error() {
-            return Err(
-                "invalid structural pattern: pattern parsed with syntax errors".to_string(),
-            );
+            return Err(CompileError::grammar(
+                "invalid structural pattern: pattern parsed with syntax errors",
+            ));
         }
         // Several top-level nodes (`a(); b()`) have no single node to match;
         // compiled as a whole file they would silently match only a file
@@ -178,9 +178,9 @@ impl CompiledPattern {
             .filter(|node| !node.is_extra())
             .count();
         if is_pattern_wrapper(root.kind()) && top_level > 1 {
-            return Err(format!(
+            return Err(CompileError::grammar(format!(
                 "invalid structural pattern: it has {top_level} top-level nodes, but a pattern matches one node. Search for one statement, or use a rule with `has`/`inside` to relate them."
-            ));
+            )));
         }
         let candidate_plan = if meta_from_node(root, &source, lang.expando()).is_some() {
             CandidatePlan::Any

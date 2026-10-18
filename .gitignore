@@ -47,6 +47,9 @@ target/
 # publish time, never committed (mirrors the *.node policy above).
 packages/*/npm/*/octocode
 packages/*/npm/*/octocode.exe
+# cargo-mutants run output (current and previous run)
+mutants.out/
+mutants.out.old/
 # Benchmark results (local timing data, machine-specific)
 **/bench/results/
 out

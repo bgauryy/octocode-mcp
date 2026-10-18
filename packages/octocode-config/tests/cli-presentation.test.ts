@@ -224,7 +224,12 @@ describe('CLI presentation embedded by the native binary', () => {
         ]!.querySchema as Json
       ).properties as Json;
     const hover = selected('lspSearch', 'hover');
-    for (const field of ['graphDepth', 'groupByFile', 'includeDeclaration', 'contextLines'])
+    for (const field of [
+      'graphDepth',
+      'groupByFile',
+      'includeDeclaration',
+      'contextLines',
+    ])
       expect(hover, `hover.${field}`).not.toHaveProperty(field);
     expect((hover.operation as Json).enum).toEqual(['hover']);
     expect(selected('lspSearch', 'callers')).toHaveProperty('graphDepth');
@@ -357,5 +362,11 @@ describe('toolHelpSection', () => {
     expect(help).toContain('Required fields, by operation:');
     expect(help).toMatch(/pullRequest\s+.*number/);
     expect(help).toMatch(/compare\s+.*base, head/);
+  });
+
+  it('labels continuation forms with their executable operation', () => {
+    const help = toolHelpSection('clasify');
+    expect(help).not.toContain('sectionsResume');
+    expect(help).toMatch(/sections\s+operation, assessment/);
   });
 });

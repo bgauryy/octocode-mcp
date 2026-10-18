@@ -48,6 +48,12 @@ pub const NETWORK_ENV: &[&str] = &[
     "SSL_CERT_DIR",
 ];
 
+/// Whether `policy` bypasses every proxy. A pinned name always connects
+/// directly: a proxy would resolve it again and silently bypass the pin.
+fn connects_directly(policy: &ClientPolicy) -> bool {
+    policy.proxy == Proxy::Direct || policy.resolve.is_some()
+}
+
 /// Build a client for `policy`. Errors are reqwest's; callers map them to
 /// their own error type.
 pub fn client(policy: &ClientPolicy) -> reqwest::Result<reqwest::Client> {
@@ -66,9 +72,7 @@ pub fn client(policy: &ClientPolicy) -> reqwest::Result<reqwest::Client> {
     if let Some(agent) = policy.user_agent {
         builder = builder.user_agent(agent);
     }
-    // A pinned name always connects directly: a proxy would resolve it again
-    // and silently bypass the pin.
-    if policy.proxy == Proxy::Direct || policy.resolve.is_some() {
+    if connects_directly(policy) {
         builder = builder.no_proxy();
     }
     if let Some((host, addresses)) = &policy.resolve {
@@ -102,6 +106,23 @@ mod tests {
             .enable_all()
             .build()
             .expect("runtime")
+    }
+
+    #[test]
+    fn only_direct_or_pinned_policies_bypass_the_proxy() {
+        let pinned = Some(("pinned.invalid".to_owned(), Vec::new()));
+        let policy = |proxy, resolve| ClientPolicy {
+            proxy,
+            resolve,
+            ..ClientPolicy::default()
+        };
+        assert!(!connects_directly(&policy(Proxy::System, None)));
+        assert!(connects_directly(&policy(Proxy::Direct, None)));
+        assert!(
+            connects_directly(&policy(Proxy::System, pinned.clone())),
+            "a pinned name must not be re-resolved by a proxy"
+        );
+        assert!(connects_directly(&policy(Proxy::Direct, pinned)));
     }
 
     #[test]

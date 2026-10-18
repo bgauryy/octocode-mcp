@@ -70,7 +70,10 @@ pub(super) fn take_reshaped_paths(rows: Option<&mut Value>, debug: bool) -> Vec<
 
 /// Paths one selected-patch read names: the contract's pull-request
 /// `include` `maxItems`.
-#[allow(clippy::panic)]
+#[expect(
+    clippy::panic,
+    reason = "a missing bound is a contract defect caught by the contract tests, never a request-time failure"
+)]
 pub(super) fn selected_patch_files() -> usize {
     crate::contracts::query_schema_number(
         ToolId::GhGetHistoryItem,
@@ -134,17 +137,21 @@ pub(super) struct DiffCursors {
 }
 
 impl DiffCursors {
-    /// The cursors of a file page: its `nextPage` and the patch-stream
-    /// cursor of its unfinished patch window. The cursor is internal state
-    /// for `next.continuePatch`, never an output field.
+    /// The cursors of a file page: its `nextPage`, read out of the block
+    /// (a cursor rides the `next` continuation, never the block), and the
+    /// patch-stream cursor of its unfinished patch window. The cursor is
+    /// internal state for `next.continuePatch`, never an output field.
     pub(super) fn of_file_page(
-        files_page: &Value,
+        files_page: &mut Value,
         patch_offset: Option<usize>,
         files_listed: bool,
     ) -> Self {
         Self {
             commit_page: None,
-            file_page: files_page.get("nextPage").and_then(Value::as_u64),
+            file_page: files_page
+                .as_object_mut()
+                .and_then(|page| page.remove("nextPage"))
+                .and_then(|page| page.as_u64()),
             patch_offset,
             files_listed,
         }

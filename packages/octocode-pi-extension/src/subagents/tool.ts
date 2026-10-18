@@ -1,8 +1,11 @@
 import type { Usage } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import path from 'node:path';
 import { Type } from 'typebox';
+import { existingLibrary } from '../shared/archive.js';
 import { formatCost, formatDuration, shortPath, toolCallCount } from '../shared/format.js';
 import { addReply, emptyTotals, errorMessage, firstLine, modelLookup, settleWithin, unpricedModel, type ModelLookup } from '../shared/util.js';
+import { asksNote, UserQuestions, type Ask } from '../team/asks.js';
 import { AgentsView } from '../team/panel.js';
 import { checkGoal, GOAL_DESCRIPTION } from '../team/identity.js';
 import type { Team } from '../team/session.js';
@@ -12,12 +15,12 @@ import { timedTool } from '../shared/render.js';
 import { fenceUntrusted, headerText } from '../shared/fence.js';
 import { projectTrustNow } from '../shared/trust.js';
 import type { Permission } from '../permission/ask.js';
-import { capitalize, deniedLabel, doneSummary, renderAgentCall, renderAgentMessage, renderAgentResult, type RunDetails } from './render.js';
-import { claimRun, joinTeam, maxSubagents, planRun, Slots, withIdentity, type AgentRuns, type Run } from './claim.js';
+import { archiveNote, capitalize, compactionLabel, compactionNote, deniedLabel, doneSummary, noticeLines, renderAgentCall, renderAgentMessage, renderAgentResult, sessionNote, type ResultDetails, type RunDetails } from './render.js';
+import { claimRun, joinTeam, lingerSeconds, maxSubagents, planRun, Slots, withIdentity, type AgentRuns, type Run } from './claim.js';
 import type { ChildProgress } from './events.js';
 import { LateReports } from './late.js';
-import { Lingering, savedSession } from './linger.js';
-import { buildAgentArgs, runSubagent, SUBAGENT_STOP_GRACE_MS, USER_STOP, type Identity } from './process.js';
+import { Lingering } from './linger.js';
+import { buildAgentArgs, childSession, childSessionFile, runSubagent, type ChildSession, SUBAGENT_STOP_GRACE_MS, USER_STOP, type Identity } from './process.js';
 import { askSpawn, GENERAL_PROFILE, type AgentProfile } from './profiles.js';
 import { pendingReportsDir, ReadReports, ReportQueue, RESULT_TYPE, savePendingReport, scratchRoot, sweepScratch, type Report } from './handoff.js';
 import { reportStatus } from './report.js';
@@ -85,14 +88,26 @@ const ACTIVITY_KEPT = 8;
 /** The row's line while a child waits for the user's answer to one of its dialogs. */
 const WAITING_TEXT = 'waiting for your approval';
 
+/** The row's line while a child compacts its context. */
+const COMPACTING_TEXT = 'compacting its context';
+
 /** A run's total usage so far (Pi's `Usage`, kept up to date by the child's event stream), by its details. */
 const spent = new WeakMap<RunDetails, Usage>();
 
-/** What a background report carries of the run's spend, so the parent's footer and session index count it. */
-const reportSpend = (details: RunDetails): { usage?: Usage; unpriced?: boolean } => {
+/** What a background report carries of the run besides its text: its spend (the parent's footer and session index count it), its compactions and notices, its saved conversation, its questions to the parent. */
+const reportFacts = (details: RunDetails): Pick<ResultDetails, 'usage' | 'unpriced' | 'compactions' | 'notices' | 'session' | 'asks'> => {
   const usage = spent.get(details);
-  return usage ? { usage, unpriced: details.unpriced } : {};
+  return {
+    ...(usage ? { usage, unpriced: details.unpriced } : {}),
+    ...(details.compactions ? { compactions: details.compactions } : {}),
+    ...(details.notices ? { notices: details.notices } : {}),
+    ...(details.session ? { session: details.session } : {}),
+    ...(details.asks ? { asks: details.asks } : {}),
+  };
 };
+
+/** The run's trusted footer lines: its compactions, its questions to the parent, and where its conversation is saved when it failed. */
+const runFooter = (details: RunDetails, failed: boolean): string[] => [compactionNote(details), archiveNote(details), asksNote(details.asks), failed ? sessionNote(details) : ''];
 
 /**
  * Progress of a run into `details` (tool lines, usage, the latest screenshot), mirrored to `onUpdate`. A reply from a model
@@ -102,11 +117,17 @@ function tracker(identity: Identity, details: RunDetails, find: ModelLookup) {
   const dir = shotsDir();
   let shots = 0;
   let latest: Shot | undefined;
-  return (onUpdate: AgentUpdate | undefined) => ({ activity: line, step, thinking, usage, reply, image, denied, waiting }: ChildProgress) => {
+  return (onUpdate: AgentUpdate | undefined) => ({ activity: line, step, thinking, usage, reply, image, denied, waiting, compacting, compactions, notices }: ChildProgress) => {
     if (waiting !== undefined) {
       if (waiting) details.waiting = true;
       else delete details.waiting;
     }
+    if (compacting !== undefined) {
+      if (compacting) details.compacting = true;
+      else delete details.compacting;
+    }
+    if (compactions) details.compactions = compactions;
+    if (notices) details.notices = notices;
     if (denied) details.denied = (details.denied ?? 0) + 1;
     if (line) details.toolCalls += 1;
     const entry = line ?? step;
@@ -125,10 +146,24 @@ function tracker(identity: Identity, details: RunDetails, find: ModelLookup) {
     spent.set(details, usage);
     Object.assign(details, emptyTotals());
     addReply(details, usage, unpriced);
-    const text = { type: 'text' as const, text: details.waiting ? WAITING_TEXT : line ?? details.activity.at(-1) ?? 'working' };
+    const text = { type: 'text' as const, text: details.waiting ? WAITING_TEXT : details.compacting ? COMPACTING_TEXT : line ?? details.activity.at(-1) ?? 'working' };
     // Partial results only reach the user's screen, so the latest screenshot is drawn there but never enters the model's context.
     onUpdate?.({ content: image && latest?.data ? [text, { type: 'image', data: latest.data, mimeType: latest.mimeType }] : [text], details: { ...details } });
   };
+}
+
+/**
+ * Once the child's run ends (however), the run's details name its transcript file (Pi chose the file's name) and list
+ * its questions to the parent with their answers (`asks`: read from the team's messages, so no one has to report them).
+ */
+function recordRun<T>(details: RunDetails, session: ChildSession, asks: () => Ask[], run: Promise<T>): Promise<T> {
+  return run.finally(() => {
+    const file = childSessionFile(session);
+    const archive = existingLibrary(session.id);
+    if (file || archive) details.session = { id: session.id, ...(file ? { file } : {}), ...(archive ? { archive: path.dirname(archive) } : {}) };
+    const questions = asks();
+    if (questions.length > 0) details.asks = questions;
+  });
 }
 
 /** The row of a call waiting for a slot: who it will be, and how many run before it. */
@@ -143,7 +178,7 @@ const startDetails = (fields: Pick<RunDetails, 'id' | 'profile' | 'goal' | 'stat
 /** A run's details as it starts. */
 function runDetails(run: Run): RunDetails {
   const { model, fallback } = run.route;
-  return { ...startDetails({ id: run.identity.id, profile: run.identity.role, goal: run.identity.goal, status: 'running' }), ...(model ? { model } : {}), ...(fallback ? { fallback } : {}) };
+  return { ...startDetails({ id: run.identity.id, profile: run.identity.role, goal: run.identity.goal, status: 'running' }), session: { id: run.identity.id }, ...(model ? { model } : {}), ...(fallback ? { fallback } : {}) };
 }
 
 const withShot = (details: RunDetails, text: string) => (details.shot ? `${text}\n\n(Last screenshot: ${shortPath(details.shot)})` : text);
@@ -174,17 +209,20 @@ function startBackground(
       // The outcome word the report starts with; a crashed run is failed whatever it said, and a report without the word is unknown.
       const reported = outcome.error ? 'failed' : reportStatus(outcome.text);
       if (reported) details.outcome = reported;
-      const stats = [formatDuration(Date.now() - details.startedAt), toolCallCount(details.toolCalls), deniedLabel(details), formatCost(details)].filter(Boolean).join(' · ');
+      const stats = [formatDuration(Date.now() - details.startedAt), toolCallCount(details.toolCalls), deniedLabel(details), compactionLabel(details), formatCost(details)].filter(Boolean).join(' · ');
       const head = outcome.error ? `Background subagent ${who} failed` : `Background subagent ${who} ${reported ? `reported ${reported}` : 'finished'} (${stats})`;
       const durationMs = Date.now() - details.startedAt;
       const summary = outcome.error ? `Failed: ${firstLine(outcome.error)}` : doneSummary(details, durationMs);
       const alreadyRead = read.consume(identity.id);
       const next = outcome.error ? `${FAILED_NEXT}${outcome.text ? PARTIAL_UNVERIFIED : ''}` : '';
+      const notices = noticeLines(details).join('\n');
       // A successful run that lingers stays reachable: the report says for how long and how to use or end it.
       const reachable = outcome.error ? '' : (linger?.() ?? '');
-      const body = outcome.error ? `Error: ${outcome.error}\n${outcome.text || '(no text)'}` : outcome.text || '(no text)';
+      // The child's own notices sit with its words, inside the fence: only the parent's counts ride in the footer.
+      const text = [outcome.text || '(no text)', notices].filter(Boolean).join('\n\n');
+      const body = outcome.error ? `Error: ${outcome.error}\n${text}` : text;
       const shot = details.shot ? `(Last screenshot: ${shortPath(details.shot)})` : '';
-      reports.add({ content: reportMessage(head, body, [next, shot, note, reachable]), details: { id: identity.id, status: outcome.error ? 'failed' : 'done', ...(reported ? { outcome: reported } : {}), summary, durationMs, ...shown, ...reportSpend(details) }, wake: !alreadyRead });
+      reports.add({ content: reportMessage(head, body, [next, ...runFooter(details, Boolean(outcome.error)), shot, note, reachable]), details: { id: identity.id, status: outcome.error ? 'failed' : 'done', ...(reported ? { outcome: reported } : {}), summary, durationMs, ...shown, ...reportFacts(details) }, wake: !alreadyRead });
     } catch (error) {
       const note = await finish();
       read.consume(identity.id);
@@ -193,8 +231,8 @@ function startBackground(
       const reachable = by === PERMISSION_STOP ? (linger?.() ?? '') : '';
       reports.add({
         // A stop someone asked for is the parent's own word; any other cause (a crash, a stall) quotes the child's output.
-        content: by ? `Background subagent ${who} ${reason}${note}${reachable}` : reportMessage(`Background subagent ${who} stopped`, errorMessage(error), [note, reachable]),
-        details: { id: identity.id, status: 'stopped', ...(by ? { requested: true } : { outcome: 'failed' as const }), summary: capitalize(reason), durationMs: Date.now() - details.startedAt, ...shown, ...reportSpend(details) },
+        content: by ? `Background subagent ${who} ${reason}${note}${reachable}` : reportMessage(`Background subagent ${who} stopped`, [errorMessage(error), ...noticeLines(details)].join('\n\n'), [...runFooter(details, true), note, reachable]),
+        details: { id: identity.id, status: 'stopped', ...(by ? { requested: true } : { outcome: 'failed' as const }), summary: capitalize(reason), durationMs: Date.now() - details.startedAt, ...shown, ...reportFacts(details) },
         wake: !by,
       });
     } finally {
@@ -213,6 +251,12 @@ function reportMessage(header: string, body: string, footer: string[] = []): str
   const tail = footer.map((part) => part.trim()).filter(Boolean).join('\n\n');
   return fenceUntrusted(headerText(header, 400), body, tail ? { footer: tail } : {});
 }
+
+/** A foreground result's lines about the child itself (no fence there): its notices, its compactions, and where its conversation is saved when it failed. */
+const foregroundExtras = (details: RunDetails, failed: boolean): string => {
+  const lines = [...noticeLines(details), ...runFooter(details, failed)].filter(Boolean);
+  return lines.length > 0 ? `\n\n${lines.join('\n')}` : '';
+};
 
 /** What the parent does after a failed subagent; its partial answer, if any, was never checked. */
 const FAILED_NEXT = 'Retry with a narrower task or do the work yourself.';
@@ -245,14 +289,14 @@ async function runForeground(
   try {
     outcome = await launch(controller.signal);
   } catch (error) {
-    const note = await finish();
+    const note = `${await finish()}${entry.stoppedBy ? '' : foregroundExtras(details, true)}`;
     const reason = entry.stoppedBy ? stoppedError(identity.id, entry.stoppedBy) : error;
     throw note ? new Error(`${errorMessage(reason)}${note}`) : reason;
   } finally {
     signal?.removeEventListener('abort', abort);
     runs.foreground.delete(identity.id);
   }
-  const note = `${await finish()}${warning}`;
+  const note = `${await finish()}${warning}${foregroundExtras(details, Boolean(outcome.error))}`;
   if (outcome.error) {
     // An error result rather than a throw, so the child's spent tokens still reach this session's totals.
     details.status = 'failed';
@@ -266,7 +310,7 @@ async function runForeground(
   return { content: [{ type: 'text' as const, text: `${withShot(details, outcome.text || '(subagent returned no text)')}${note}` }], details, usage: outcome.usage };
 }
 
-export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<string, AgentProfile>, team: Team, permission: Permission): AgentControl {
+export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<string, AgentProfile>, team: Team, permission: Permission, getRefused?: () => ReadonlyMap<string, string>): AgentControl {
   pi.registerMessageRenderer(RESULT_TYPE, renderAgentMessage);
   // Per registration, not per module: a replaced session starts clean.
   const panel = new AgentsView(team);
@@ -276,6 +320,13 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   };
   const { background } = runs;
   pi.on('tool_result', async (event, ctx) => void (!event.isError && background.size > 0 && runs.read.observe(event.toolName, event.input, ctx.cwd)));
+  // When this session asked the user: an answer the parent gives right after one may be the user's.
+  const questions = new UserQuestions();
+  pi.on('tool_execution_start', async (event) => void (event.toolName === 'askUser' && questions.begin(event.toolCallId)));
+  pi.on('tool_execution_end', async (event) => void (event.toolName === 'askUser' && questions.end(event.toolCallId)));
+  /** Runs `work` and, once it ends, records the run's session file and its questions to this session's agent. */
+  const record = <T>(run: Run, details: RunDetails, session: ChildSession, work: Promise<T>): Promise<T> =>
+    recordRun(details, session, () => (run.identity.parentId ? questions.mark(team.asks(run.identity.id, run.identity.parentId, details.startedAt)) : []), work);
   let launching = new AbortController();
   const cancelLaunches = () => {
     launching.abort();
@@ -287,9 +338,10 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   const lingering = new Lingering(runs, permission, withLaunch, (run, ctx, { text, message }) => {
     const details = runDetails(run);
     const track = tracker(run.identity, details, modelLookup(ctx));
-    const args = buildAgentArgs(run.profile, run.route.model, undefined, undefined, savedSession(run, true));
+    const session = childSession(run.identity);
+    const args = buildAgentArgs(run.profile, run.route.model, undefined, undefined, session);
     const host = relayHost(ctx);
-    const launch = (signal: AbortSignal) => runSubagent(message, args, ctx.cwd, run.profile, run.identity, signal, track(undefined), undefined, undefined, host);
+    const launch = (signal: AbortSignal) => record(run, details, session, runSubagent(message, args, ctx.cwd, run.profile, run.identity, signal, track(undefined), undefined, undefined, host));
     startBackground(runs, run, details, text, launch, () => Promise.resolve('').finally(run.release), ctx.sessionManager.getSessionId(), lingering.window(run, ctx));
   });
   const late = new LateReports(runs);
@@ -363,7 +415,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       const goal = checkGoal(params.goal);
       // Refusals first (unknown profile, unavailable model), then a slot, then the spawn ask: the user is never asked
       // for a run that cannot start, and a denied spawn claims and starts nothing.
-      const plan = planRun(getProfiles(), params, ctx);
+      const plan = planRun(getProfiles(), params, ctx, getRefused?.());
       await runs.slots.take(launchSignal, (running) => onUpdate?.(waitingUpdate(params.profile, goal, running)));
       let claimed: Run | undefined;
       let grants: Awaited<ReturnType<typeof askSpawn>>;
@@ -393,20 +445,23 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
         const worktree = isolation.worktree;
         const warning = `${worktree?.warning ? `\n\n${worktree.warning}` : ''}${run.teamNote}`;
         const onSpawn = worktree ? (pid: number) => recordWorktreePid(worktree, pid) : undefined;
-        const own = withIdentity(params.task, run.identity);
+        const library = existingLibrary();
+        const own = withIdentity(params.task, run.identity, library ? { library } : undefined);
         const task = run.identity.collaborate ? joinTeam(runs, run, own) : own;
         const details = runDetails(run);
         const track = tracker(run.identity, details, modelLookup(ctx));
-        const session = savedSession(run, params.background === true && !params.isolate);
+        const session = childSession(run.identity);
+        // Only a background run that is not isolated (its worktree is gone) can stay reachable for a follow-up.
+        const lingers = params.background === true && !params.isolate && lingerSeconds() > 0;
         const args = buildAgentArgs(run.profile, run.route.model, undefined, undefined, session);
         const launch = (runSignal: AbortSignal | undefined, update: AgentUpdate | undefined) =>
-          runSubagent(task, args, cwd, run.profile, run.identity, runSignal, track(update), onSpawn, undefined, host);
+          record(run, details, session, runSubagent(task, args, cwd, run.profile, run.identity, runSignal, track(update), onSpawn, undefined, host));
         const stopping = () => {
           details.stopping = true;
           onUpdate?.({ content: [{ type: 'text', text: 'stopping…' }], details: { ...details } });
         };
         if (!params.background) return await runForeground(runs, run, details, (runSignal) => launch(runSignal, onUpdate), finish, warning, launchSignal, stopping);
-        startBackground(runs, run, details, params.task, (runSignal) => launch(runSignal, undefined), finish, ctx.sessionManager.getSessionId(), session ? lingering.window(run, ctx) : undefined);
+        startBackground(runs, run, details, params.task, (runSignal) => launch(runSignal, undefined), finish, ctx.sessionManager.getSessionId(), lingers ? lingering.window(run, ctx) : undefined);
         handedOff = true;
         details.status = 'background';
         return { content: [{ type: 'text', text: `Started ${run.identity.id} (${run.identity.role}: ${goal}) in the background; its report arrives as a message.${warning}` }], details };
@@ -426,6 +481,6 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     settle: () => Promise.all([...background.values()].map((entry) => entry.done)).then(() => runs.reports.flush()),
     background: () => background.size,
     stopAll,
-    command: agentsCommand(team, background, runs.foreground),
+    command: agentsCommand(team, background, runs.foreground, questions),
   };
 }

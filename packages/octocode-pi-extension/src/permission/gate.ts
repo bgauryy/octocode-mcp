@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { ExtensionContext, ToolAnnotations, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
-import { canonicalPath, isWithin, octocodeHome, resolveToolPath, workspaceRoot } from '../shared/home.js';
+import { readableHistory, readableSessionFolder } from '../shared/history.js';
+import { canonicalPath, isWithin, octocodeHome, resolveToolPath, sessionsRoot, workspaceRoot } from '../shared/home.js';
 import type { Permission } from './ask.js';
 import type { PermissionRequest } from './request.js';
 import type { AskReason } from './mode.js';
@@ -66,6 +67,8 @@ export async function powershellDestructive(command: string, classifier: (comman
 }
 
 const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+/** The paths an MCP call names: its `path` and each of its `queries[].path`. */
+const mcpPaths = (input: Record<string, unknown>): string[] => [input, ...(Array.isArray(input['queries']) ? input['queries'] : [])].flatMap((query) => (query && typeof query === 'object' && typeof (query as Record<string, unknown>)['path'] === 'string' ? [(query as Record<string, string>)['path']!] : []));
 /** The call's arguments, whole: the user approves exactly what is shown. */
 const args = (input: Record<string, unknown>): string => JSON.stringify(input);
 
@@ -105,7 +108,9 @@ function classOf(tool: string, input: Record<string, unknown>, cwd: string, anno
   }
   if (READ_TOOLS.has(tool)) {
     const { file, inside } = inRepo(text(input['path']) ?? cwd);
-    return inside ? undefined : { action: 'read.outside', title: 'Read outside the workspace?', what: [`${tool} ${file}`], grant: dirGrant(file, 'reads') };
+    // History the session may read (its own, its forks' sources, its parent's, its repository's) is read like the workspace (`shared/history.ts`).
+    if (inside || readableHistory(file, cwd)) return undefined;
+    return { action: 'read.outside', title: 'Read outside the workspace?', what: [`${tool} ${file}`], grant: dirGrant(file, 'reads') };
   }
   if (tool === 'web') {
     // A URL is checked by the web tool, which resolves its host: public is `web`, private is `net.private`.
@@ -121,7 +126,12 @@ function classOf(tool: string, input: Record<string, unknown>, cwd: string, anno
   }
   if (isMcpTool(tool)) {
     const hint = annotations(tool);
-    if (readOnlyMcp(hint)) return undefined;
+    if (readOnlyMcp(hint)) {
+      // Octocode MCP may read the Octocode home; a session folder there that is not this session's or its repository's
+      // (another repository's, or all of them) asks like Pi's read.
+      const foreign = mcpPaths(input).map((raw) => canonicalPath(resolveToolPath(cwd, raw))).find((file) => isWithin(file, canonicalPath(sessionsRoot())) && !readableSessionFolder(file, cwd));
+      return foreign ? { action: 'read.outside', title: 'Read another repository\'s session history?', what: [tool, args(input)], grant: dirGrant(foreign, 'reads') } : undefined;
+    }
     // Only an explicit `destructiveHint: true` is destructive (asks each time, in workspace too). MCP's own default calls an
     // unannotated tool destructive; treating it so would ask on every call with no session grant (FEATURES: known limits).
     const marked = hint?.destructiveHint === true;

@@ -1,47 +1,106 @@
 # Configuration
 
-Where Octocode reads config and writes state, what it trusts, and every environment variable. See the [README](../README.md) for an overview and [FEATURES.md](FEATURES.md) for behavior.
+File locations, trust, hooks, profiles, MCP, retention and every environment variable. Overview: [README](../README.md); behavior: [FEATURES.md](FEATURES.md).
 
 ## Where files go
 
-`.octocode` is the one place Octocode reads its own config and saves things, at two levels: the Octocode home (`OCTOCODE_HOME`, default `~/.octocode`: `skills/`, `agents/`, `hooks.json`, runtime state) and the workspace `<repo root>/.octocode` (`skills/`, `agents/`, `hooks.json`, trusted projects only; `tmp/` scratch for agent hand-offs). Workspace paths resolve from the repository root, so a session started in a subfolder reads the same files. Everything the extension writes at runtime lives under one of the two. Per-session state lives in the home's `agent/pi/`: the agent database `octocode.db` (session index, backlog, memories, team tables; `OCTOCODE_AGENT_DB` moves it) and one folder per session, `sessions/<session id>/`, holding the full text of oversized `web`, `browser` and bash results, browser console logs and downloads (`output/`, downloads in `output/downloads/`; readable by the Octocode MCP tools even when `OCTOCODE_HOME` is outside the home directory), bash job logs and truncated bash output (`bash/`), and edit checkpoints (`checkpoints/`); output written before a session id is known goes to `sessions/_pid-<pid>/`. Pi also reads, and never writes, the octocode-agents-communication database `<Octocode home>/agents-communication/communication.sqlite` to refuse edits to paths other tools' agents hold (see [Team](FEATURES.md#team)); the package takes no environment override for it. A package process started with `--database <file>` lists that file in `<Octocode home>/agents-communication/active-databases/<pid>.json` (the package owns the format), and Pi reads every live entry's database the same way. The rest: browser profiles (`pi-browser/` temporary, `pi-browser-profile/` for `webLive`), subagent screenshots (`pi-team/shots/`), worktrees (`pi-worktrees/`), and API records (`pi-api/`); `/octocode backlog export` writes `<repo>/.octocode/backlog.md` and `/octocode backlog html` writes `<repo>/.octocode/backlog.html`. The one exception is an API Unix socket whose path under the home would exceed the OS limit of about 100 bytes: it moves to a private folder in the temp directory (`octocode-<uid>-XXXXXX/<id>.sock`, mode `0700`).
+`.octocode` is the one place Octocode reads its config and saves things, at two levels; workspace paths resolve from the repository root, so a subfolder session reads the same files. The extension reads the process environment only (no `.env`, no `@octocodeai/config`; it repeats that package's `OCTOCODE_HOME` rule). The Octocode MCP server loads its own settings ([Octocode configuration](../../../docs/CONFIGURATION.md)).
+
+```mermaid
+flowchart TD
+  H{"OCTOCODE_HOME set?"} -- yes --> HY["Home = that path"]
+  H -- no --> HN["Home = ~/.octocode"]
+  HY --> D{"OCTOCODE_AGENT_DB set?"}
+  HN --> D
+  D -- yes --> DY["Database = that file"]
+  D -- no --> DN["Database = home/agent/pi/octocode.db"]
+  W["cwd"] --> G["Git toplevel = repo root"] --> P["repo root/.octocode"]
+  P --> T{"Project trusted?"}
+  T -- yes --> L["skills, agents, hooks.json load"]
+  T -- no --> S["Skipped; tmp/ still used"]
+```
+
+| Path | Holds |
+|---|---|
+| `<home>/` (`OCTOCODE_HOME`, default `~/.octocode`) | `skills/`, `agents/`, `hooks.json` (user config) and all state below |
+| `<repo root>/.octocode/` | `skills/`, `agents/`, `hooks.json` (trusted projects only); `tmp/` scratch (ignores itself); `backlog.md`, `backlog.html` from `/octocode backlog export` and `html` |
+| `<repo root>/.octocode/tmp/agents/<name>/` | A subagent's scratch: hand-off files, `session/` (its conversation), an owner record |
+| `agent/pi/octocode.db` | Session index, backlog, memories, team tables |
+| `agent/pi/sessions/<session id>/` | `output/` (full text of oversized `web`, `browser`, bash and MCP results, console logs, `downloads/`), `bash/` (job logs), `checkpoints/`, `archive/` ([COMPACTION.md](COMPACTION.md#archive-of-compacted-history)) |
+| `agent/pi/sessions/_pid-<pid>/` | The same folders for output written before a session id is known |
+| `agent/pi/models-dev.json`, `pi-trust.json` | Cached models.dev catalog; [trust](#trust) decisions |
+| `pi-browser/`, `pi-browser-profile/`, `pi-team/shots/`, `pi-worktrees/` | Temporary Chrome profiles and the persistent one `webLive` uses; subagent screenshots; isolated worktrees |
+| `pi-api/`, `agents-communication/` | [API](API.md) instance records and socket; `communication.sqlite` and `active-databases/<pid>.json` of `octocode-agents-communication` |
+
+Session folders are private (`0700`, files `0600`) and readable by the Octocode MCP tools, even when `OCTOCODE_HOME` is outside the home directory. Pi only reads the agents-communication files, to refuse edits to paths other agents hold ([Team](FEATURES.md#team)); `communication.sqlite` takes no environment override. An API socket path over about 100 bytes moves to `$TMPDIR` (else `/tmp`): `octocode-<uid>-XXXXXX/<id>.sock`, mode `0700`.
 
 ## Environment variables
 
-| Variable | Effect |
-|----------|--------|
-| `OCTOCODE_HOME` | The Octocode home (default `~/.octocode`): user config (`skills/`, `agents/`, `hooks.json`) and everything the extension writes at runtime |
-| `OCTOCODE_AGENT_DB` | Agent database path: session extras, backlog, memories and team tables (default `<Octocode home>/agent/pi/octocode.db`) |
-| `PI_CACHE_RETENTION` | Pi's prompt-cache retention. Unset, Octocode sets `long` (1-hour Anthropic cache entries) for an interactive session and `short` (5 minutes) for headless runs and subagents, at session start. A value you export always wins, in subagents too. A 1-hour write costs 2× input instead of 1.25×; measured sessions spent 55% of their cache-write cost on entries that expired after 5 to 60 minutes idle. See [Prompt cache](CONTEXT-AND-COST.md#prompt-cache) |
-| `OCTOCODE_CLEANUP_DAYS` | Days spilled output, bash logs, idle checkpoints, subagent screenshots and the folders of sessions Pi no longer lists are kept (default 30); `0` turns the session sweep off |
-| `OCTOCODE_MODELS_DEV=0` | No requests to models.dev: subagent purposes (`small`, `medium`) and `/octocode models` use Pi's model entries only. Otherwise its catalog (`https://models.dev/api.json`, a public GET with no user data) is fetched at most once a day, kept as `<Octocode home>/agent/pi/models-dev.json`, used stale when offline, and retried an hour after a failure |
-| `OCTOCODE_MEMORY_AUTO=0` | Do not inject memories before prompts in this process (`/octocode memory auto off` turns it off everywhere) |
-| `OCTOCODE_EXTRA_SKILLS=0` | Skip the extra skill directories (`~/.claude/skills` without its claude.ai `synced/` folder, `~/.codex/skills`, `<Octocode home>/skills`, project `.claude/skills` and `.octocode/skills`) |
-| `TAVILY_API_KEY` / `SERPER_API_KEY` / `EXA_API_KEY` / `BRAVE_API_KEY` | Web search providers, tried in this order before the keyless pages (DuckDuckGo, then Bing, then DuckDuckGo lite); every provider passes to the next when it fails or finds nothing |
-| `OCTOCODE_CHROME_PORT` | Opt in to sharing an open Chrome: the browser tool opens (and later closes) its own tab on this remote-debugging port. Unset, it never attaches on its own; a headless Chrome is launched when nothing listens. A value that is not a TCP port is refused with an error, not guessed at |
-| `OCTOCODE_API` | `1` serves the [External API](API.md) on a Unix socket (off) |
-| `OCTOCODE_API_HTTP` | Also serve the API over loopback HTTP on this port (`0` = any free port). A value that is not a port leaves the API off, with a warning saying why |
-| `OCTOCODE_MCP=0` | Do not start the Octocode server (set for profiles with `mcp: false`) |
-| `OCTOCODE_SUBAGENT_LINGER_SECONDS` | Seconds a finished background subagent stays reachable (default `0`: off). While it lingers, its conversation is saved in its scratch folder (`session/`), and a `sendMessage` from its parent (or `/agents tell` from you) resumes that conversation as a new background run under the same name and goal, reporting again; `coordinate stop <name>` ends the window. Not for isolated runs (their worktree is gone) |
-| `OCTOCODE_MAX_SUBAGENTS` | Subagents allowed to run at once, foreground and background together (default `3`); further calls wait for a slot |
-| `OCTOCODE_HOOKS` | `1` runs Claude Code / Codex command hooks (off) |
-| `OCTOCODE_PERMISSION` | The [permission mode](FEATURES.md#permissions) a session starts in: `manual`, `workspace` or `full` (default: `full`, no routine asks). An invalid value starts in `manual` with a warning. Without a UI every ask is denied, so this is how a print or CI run allows what it needs. A run with no UI in `full` prints a banner and, at the end, a summary of what it ran, on stderr. In a subagent the parent sets it from its own current mode |
-| `OCTOCODE_NOTIFY` | When to signal a finished answer or an open dialog: `unfocused` (default: only while the terminal is in the background), `always` or `off` |
-| `OCTOCODE_NOTIFY_METHOD` | `osc9`, `osc777`, `osc99` or `bel` (default: picked from the terminal: OSC 99 for Kitty, OSC 9 for iTerm2, OSC 777 for Ghostty and WezTerm, else the bell; wrapped for tmux) |
+Switches read `1`, `true`, `on`, `yes` as on and `0`, `false`, `off`, `no` as off (any case); anything else keeps the default.
 
-`web` asks for pages in the system's language (`LANG` / `LC_ALL`), then English; a Chrome that `browser` launches follows the system's language and time zone. Sites that price by IP address still answer for the machine's location.
+| Variable | Default | Effect |
+|---|---|---|
+| `OCTOCODE_HOME` | `~/.octocode` | The Octocode home |
+| `OCTOCODE_AGENT_DB` | `<home>/agent/pi/octocode.db` | Agent database path |
+| `PI_CACHE_RETENTION` | `long` interactive; `short` headless and subagents | Pi's prompt-cache retention; an exported value wins, in subagents too ([Retention](CONTEXT-AND-COST.md#retention)) |
+| `OCTOCODE_CLEANUP_DAYS` | `30` | Days swept session state is kept; `0` turns the sweep off ([Retention](#retention)) |
+| `OCTOCODE_MODELS_DEV` | on | `0`: no models.dev requests; purposes and `/octocode models` use Pi's models only. On: the public catalog `https://models.dev/api.json` is fetched at most daily, used stale offline, retried an hour after a failure |
+| `OCTOCODE_MEMORY_AUTO` | on | `0`: no memory injection in this process (`/octocode memory auto off` turns it off everywhere) |
+| `OCTOCODE_EXTRA_SKILLS` | on | `0`: skip the extra skill directories ([Skills](FEATURES.md#skills)) |
+| `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `BRAVE_API_KEY` | unset | Web search providers, tried in this order; each passes to the next on failure or no results, keyless pages last ([`web`](FEATURES.md#web)) |
+| `OCTOCODE_CHROME_PORT` | unset | `browser` uses its own tab in an open Chrome on this remote-debugging port. Unset: it never attaches and launches headless Chrome. A non-port value (1–65535) is an error |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (or lowercase) | unset | The browser's filtering proxy chains to an `http://` upstream (HTTPS requests use `HTTPS_PROXY`, else `HTTP_PROXY`); another scheme or a malformed value is an error, never a direct connection. `NO_PROXY` takes `*` or hosts and domain suffixes, each with an optional port |
+| `OCTOCODE_API` | off | `1` serves the [External API](API.md) on a Unix socket (loopback HTTP on Windows) |
+| `OCTOCODE_API_HTTP` | unset | Serve the API over loopback HTTP on this port (`0` = any free), with or without `OCTOCODE_API`. A non-port value (0–65535) leaves the API off and says why |
+| `OCTOCODE_MCP` | on | `0`: do not start the Octocode MCP server (set for profiles with `mcp: false`) |
+| `OCTOCODE_SUBAGENT_LINGER_SECONDS` | `0` (off) | Seconds a finished background subagent stays reachable and resumes on a message ([Lingering](FEATURES.md#background-subagents)) |
+| `OCTOCODE_MAX_SUBAGENTS` | `3` | Subagents running at once, foreground and background (positive integer) |
+| `OCTOCODE_HOOKS` | off | `1` runs Claude Code / Codex command hooks ([Hooks](#hooks)) |
+| `OCTOCODE_PERMISSION` | `full` | Start [permission mode](FEATURES.md#permissions): `manual`, `workspace`, `full`. Set it for print and CI runs, where an ask is denied |
+| `OCTOCODE_NOTIFY` | `unfocused` | When to signal a finished answer or open dialog: `unfocused` (terminal in the background), `always`, `off` |
+| `OCTOCODE_NOTIFY_METHOD` | from the terminal | `osc9`, `osc777`, `osc99` or `bel`. Unset: OSC 99 for Kitty, OSC 9 for iTerm2, OSC 777 for Ghostty and WezTerm, else the bell; wrapped for tmux |
 
-Set by Octocode (not for users): in a subagent the parent sets `OCTOCODE_SUBAGENT`, `OCTOCODE_PARENT_PID` / `_ID` / `_SESSION`, `OCTOCODE_AGENT_ID` / `_ROLE` / `_GOAL` / `_SCRATCH` / `_COLLABORATE`, `OCTOCODE_PERMISSION_GRANTS` (the grants the user gave the parent, see [Permissions](FEATURES.md#permissions)), `OCTOCODE_PERMISSION_RELAY` (`1` when the parent can ask a person and relays the child's dialogs to it), `OCTOCODE_PERMISSION_NONCE_FILE` (internal: the path of an owner-only (`0600`) file in the session's `output/` folder that holds a random per-child secret, which authenticates the child's relayed headers and audit entries and the user's signed messages; the child reads the file once and deletes it, and the parent removes it when the run ends. The secret itself is never in an environment variable, see [Permissions in subagents](FEATURES.md#permissions-in-subagents)), `OCTOCODE_TRUST_ROOT` (an isolated child's parent repository, see [Trust](#trust)), `OCTOCODE_TEAM_WORKSPACE` (an isolated child's team scope) and `OCTOCODE_BROWSER_VISIBLE` (a `visibleBrowser` profile).
+Pi's compaction settings are in [COMPACTION.md](COMPACTION.md#settings). `web` asks for pages in the system language (`LANG`, `LC_ALL`), then English; Chrome launched by `browser` follows the system language and time zone. Pi's `PI_CODING_AGENT_DIR` moves `~/.pi/agent` (Pi's `mcp.json` and profiles). `bash` commands get `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL` and `PI_REASONING_LEVEL` for the current session, as in Pi's own bash; they are never inherited from the parent.
+
+Octocode sets these itself; do not set them. The parent sets, for a subagent:
+
+| Variable | Value |
+|---|---|
+| `OCTOCODE_SUBAGENT` | `1`: the child cannot spawn subagents and skips the extra skills |
+| `OCTOCODE_AGENT_ID`, `_ROLE`, `_GOAL`, `_SCRATCH`, `_COLLABORATE` | The child's identity and scratch folder |
+| `OCTOCODE_PARENT_PID`, `_ID`, `_SESSION` | The parent's pid and start time (the child exits when it is gone), agent id and session id |
+| `OCTOCODE_TEAM_WORKSPACE`, `OCTOCODE_TRUST_ROOT` | An isolated child's team scope and parent repository ([Trust](#trust)) |
+| `OCTOCODE_PERMISSION_GRANTS`, `OCTOCODE_PERMISSION_RELAY` | The grants the user gave the parent; `1` when the parent can ask a person and relays the child's dialogs ([Permissions in subagents](FEATURES.md#permissions-in-subagents)) |
+| `OCTOCODE_PERMISSION_NONCE_FILE` | Owner-only file in the session's `output/` holding the child's relay secret |
+| `OCTOCODE_BROWSER_VISIBLE` | `1` for a `visibleBrowser` profile |
 
 ## Trust
 
-Project hooks (`.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, `.octocode/hooks.json`), subagent profiles (`.pi/agents`, `.octocode/agents`) and skills (`.claude/skills`, `.octocode/skills`) can start commands or steer the agent, so they need an explicit trust decision. Project MCP files are Pi's (`.pi/mcp.json`) and gated by Pi's own trust. Pi's own trust is not enough on its own: Pi only asks when a project holds Pi resources (`.pi/settings.json`, `.pi/extensions`, `.agents/skills`, …) and otherwise reports it trusted. So these files load only after `/octocode trust`, which lists exactly what would run (every hook command, never cut; agent and skill files, the skill files being every file Pi's skill loader reads: root `.md` files, a root `SKILL.md` and `SKILL.md` at any depth), asks, and reloads. The listing is fingerprinted before the dialog; if the files change while it is open, it asks again about the new content. When Pi itself resolved trust for such a project (or a saved `/trust` applies) and Octocode has no decision yet, the gated files present at that point (possibly none) are recorded as trusted without a dialog, except hook files that hold commands: those wait for `/octocode trust`, which shows them. Either way the decision is stored in `<Octocode home>/pi-trust.json` (`0600`), one per repository root (so it holds in any subfolder and through symlinked paths), with a SHA-256 of those files, so any change to them (such as a later-pulled hook file) needs `/octocode trust` again, in a Pi-trusted project too; `/octocode trust off` withdraws it, also in a Pi-trusted project. The fingerprint covers the gated config files themselves (hook JSON, agent `.md` files, skill files), not the scripts or binaries their commands run: a later change to, say, `./scripts/hook.sh` is not re-prompted, so trust a project only when you trust what its commands point at. Until then startup skips them with one notice (startup never opens a dialog; print and JSON runs just skip). Subagents follow the parent session's decision; an isolated (worktree) subagent, whose checkout is a different root, follows the decision stored for the parent's repository (passed as `OCTOCODE_TRUST_ROOT`), and only while its gated files are byte-for-byte the ones that decision covered; otherwise they stay off, since no one can be asked in a subagent. A project Pi was told not to trust (`--no-approve`, a declined prompt) never loads them.
+Project hooks (`.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, `.octocode/hooks.json`), subagent profiles (`.pi/agents`, `.octocode/agents`) and skills (`.claude/skills`, `.octocode/skills`) can start commands or steer the agent, so they load only after an explicit trust decision. Project MCP files (`.pi/mcp.json`) are gated by Pi's own trust.
 
-Trust does not set the [permission mode](FEATURES.md#permissions) (sessions start in `full` unless `OCTOCODE_PERMISSION` is exported). Trust decides what project config loads at startup; the permission mode decides which agent actions run without asking. Neither is a sandbox.
+Pi's trust is not enough: it asks only for projects with Pi resources (`.pi/settings.json`, `.pi/extensions`, `.agents/skills`, …). `/octocode trust` lists exactly what would run (every hook command in full; agent and skill files), asks, and reloads; it asks again if the files change meanwhile.
+
+```mermaid
+flowchart TD
+  A{"Gated files exist and Pi does not trust the project?"} -- yes --> S["Skip all"]
+  A -- no --> B{"Stored decision with the same SHA-256?"}
+  B -- yes --> F["Follow it: trusted or off"]
+  B -- no --> C{"No stored decision, Pi decided, no hook starts commands?"}
+  C -- yes --> R["Record trusted, load"]
+  C -- no --> E{"Any gated files?"}
+  E -- no --> L["Load"]
+  E -- yes --> N["Skip, one notice: run /octocode trust"]
+```
+
+- **Storage.** One decision per repository root (any subfolder, through symlinks) in `<home>/pi-trust.json` (`0600`), with a SHA-256 of the gated files (not of the scripts their commands run). Any change, such as a pulled hook file, needs `/octocode trust` again, also in a Pi-trusted project. `/octocode trust off` withdraws it.
+- **Not trusted.** Startup skips the files with one notice and no dialog. A project Pi was told not to trust (`--no-approve`, a declined prompt) never loads them.
+- **Subagents.** They follow the parent's decision. An isolated (worktree) subagent follows the one for the parent's repository (`OCTOCODE_TRUST_ROOT`) only while its gated files are byte-for-byte those it covered; otherwise they stay off.
+
+Trust decides what project config loads; the [permission mode](FEATURES.md#permissions) decides which actions run unasked. Neither is a sandbox.
 
 ## Hooks
 
-**Quick start.** Hooks are off by default because they run arbitrary commands. Start Pi with `OCTOCODE_HOOKS=1 pi`, then put Claude Code / Codex-style hooks in `~/.claude/settings.json` or `~/.codex/hooks.json` or `~/.octocode/hooks.json` (all projects), or `<repo>/.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json` or `.octocode/hooks.json` (this repository, trusted projects only). All use the same `{ "hooks": { "PreToolUse": [...] } }` format. Existing Claude Code hooks work as they are. Type `/hooks` to see whether hooks are on, what loaded, and which files exist (✓). Files are read at session start, so run `/reload` after editing.
+Off by default: hooks run arbitrary commands. Start Pi with `OCTOCODE_HOOKS=1`, then put Claude Code / Codex-style hooks in `~/.claude/settings.json`, `~/.codex/hooks.json` or `~/.octocode/hooks.json` (all projects), or the same project files listed under [Trust](#trust) (trusted projects only). One format; existing Claude Code hooks work unchanged. `/hooks` shows what loaded and which files exist (✓); `/reload` after editing. Events: [Hooks in FEATURES.md](FEATURES.md#hooks-opt-in).
 
 ```json
 {
@@ -52,14 +111,28 @@ Trust does not set the [permission mode](FEATURES.md#permissions) (sessions star
 }
 ```
 
-Only `type: "command"` hooks for `PreToolUse`, `PostToolUse`, `SessionStart`, `PreCompact`, `Stop`, `Notification`, `PreMessageSend` and `PostMessageReceive` are used; other events are ignored. As in Claude Code, all matching hooks run in parallel and a command listed in several files runs once. `timeout` is in seconds (default 60, at most 600). A `PreToolUse` or `PreMessageSend` hook that times out, crashes or prints invalid JSON gives no answer, so hooks fail open: the call goes ahead, you get a warning naming the hook, and the audit log records it. Add `"failClosed": true` to a hook (next to `command`) to deny the call instead; `/hooks` marks it `[failClosed]`. A hook's deliberate block, exit 2 or a `deny` decision, always blocks. The hook gets the event as JSON on stdin and `CLAUDE_PROJECT_DIR` set to the repository root. See [Hooks in FEATURES.md](FEATURES.md#hooks-opt-in) for how each event maps to Pi.
-
-Message hooks receive the standard `session_id`, `transcript_path`, `cwd` and `hook_event_name` fields plus `message: {channel, direction, from, to, text, id?, replyTo?}`. Match `internal`, `external`, or a direction such as `external.outbound`; an empty matcher matches all. `PreMessageSend` applies `block`/`deny`, exit 2 and `permissionDecision: "ask"` before sending; `failClosed` also applies. `PostMessageReceive` is an observer: verdict text, context additions and reply instructions are ignored. It runs once per delivered identity, skips restored history and stops with the old session. These two events are Octocode messaging events, not claims that Claude or Codex expose equivalent native events. For gates, use the event name in `hookSpecificOutput.hookEventName` and the usual `permissionDecision` / `permissionDecisionReason` fields.
-
+- **Entry.** Only `type: "command"` runs. The hook gets the event as JSON on stdin and `CLAUDE_PROJECT_DIR` (the repository root). `timeout` is in seconds (default 60, at most 600).
+- **`failClosed`.** A `PreToolUse` or `PreMessageSend` hook that fails (timeout, crash, invalid JSON) lets the call go ahead; `"failClosed": true` next to `command` denies it (`/hooks` marks it `[failClosed]`).
+- **Message hooks** get `session_id`, `transcript_path`, `cwd`, `hook_event_name` and `message: {channel, direction, from, to, text, id?, replyTo?}`. A matcher is `internal`, `external` or a direction such as `external.outbound`; empty matches all. Gates name the event in `hookSpecificOutput.hookEventName` and use `permissionDecision` and `permissionDecisionReason`. Where they fire: [API.md](API.md#message-hooks). Claude Code and Codex have no equivalent events.
 
 ## Subagent profiles
 
-Profiles are Markdown files with frontmatter. Bundled profiles live in `subagents/`; add your own in `~/.pi/agent/agents/`, `~/.octocode/agents/`, `<repo root>/.pi/agents/` or `<repo root>/.octocode/agents/` (the last two in trusted projects only). Later directories override earlier ones by name, in that order, after the bundled ones.
+Markdown files with frontmatter. Bundled ones live in `subagents/`; add yours in the directories in the diagram (project ones in trusted projects only). A malformed profile is skipped with a warning; the rest load.
+
+```mermaid
+flowchart TD
+  B["Bundled subagents/"] --> U1["~/.pi/agent/agents/"] --> U2["~/.octocode/agents/"]
+  U2 --> T{"Project trusted?"}
+  T -- yes --> P1["repo root/.pi/agents/"] --> P2["repo root/.octocode/agents/"] --> F
+  T -- no --> F["Each file, in that order"]
+  F --> X{"excludeTools or -name hits read, sendMessage, coordinate or archive?"}
+  X -- yes --> K["File skipped, warning names it"]
+  X -- no --> A{"tools is an absolute allowlist?"}
+  A -- yes --> C["Add missing core tools"]
+  A -- "no (absent or +/- changes)" --> D["Keep Pi's default tools"]
+  C --> V["Replaces an earlier profile with the same name"]
+  D --> V
+```
 
 ```markdown
 ---
@@ -68,59 +141,84 @@ description: Applies a database migration and verifies it
 tools: read,edit,write,bash
 model: medium
 ---
+
 Instructions for the subagent…
 ```
 
-`tools` follows Pi's `--tools`: a comma-separated allowlist of names or `*` patterns, or ordered `+name` / `-name` changes to the configured default tools. These forms cannot be mixed, and relative changes require exact names. Relative changes do not exclude direct extension tools: use `excludeTools` to forbid a tool. `excludeTools` accepts names and `*` patterns and overrides the selection; any pattern excluding `file` also excludes native `edit` and `write`. Invalid selections cause the profile to be skipped before a spawn can ask for permission.
+| Field | Meaning |
+|---|---|
+| `name`, `description` | `name` defaults to the file name |
+| `tools` | Pi's `--tools`: a comma-separated allowlist of names or `*` patterns, or ordered `+name` / `-name` changes to the default tools; not mixable. `+`/`-` entries take exact names (patterns: `excludeTools`) and keep every tool they don't name; an allowlist replaces the whole selection, extension tools included, so it also gets the core tools |
+| `excludeTools` | Names and `*` patterns the child must not have; overrides `tools`. Excluding `file` also excludes native `edit` and `write` |
+| `model` | A model or a purpose: see **Model** |
+| `permissions` | Classes needed beyond the workspace ones (list or comma-separated); only `browser.control`, `net.private` and `upload.outside` can be declared (`webHeadless`, `webLive` declare `browser.control`). Others are ignored and reported on load. What starting such a profile asks: [Profile grants](FEATURES.md#permissions-in-subagents) |
+| `visibleBrowser` | `true`: visible Chrome on the persistent profile (sets `OCTOCODE_BROWSER_VISIBLE=1`, as `webLive` does) |
+| `mcp` | `false`: no Pi built-in MCP and no `octocode` server (sets `OCTOCODE_MCP=0`), so no MCP schemas are paid for |
+| `hooks` | `true`: the child runs the user's command [hooks](FEATURES.md#hooks-opt-in); otherwise none |
 
-`permissions:` (a list or comma-separated names, for example `permissions: [browser.control]`) declares the permission classes the profile needs beyond the workspace ones; only `browser.control`, `net.private` and `upload.outside` can be declared (the bundled `webHeadless` and `webLive` declare `browser.control`, for `evaluate`). Other names are ignored, and a note reports them when the profiles load. In `manual` and `workspace` starting such a profile asks once, listing each declared class and why it asks; an allow hands the child those grants, and in `full` nothing asks. See [Permissions in subagents](FEATURES.md#permissions-in-subagents).
+`mcp`, `visibleBrowser` and `hooks` take YAML booleans only (`mcp: false`, not `"false"` or `no`); anything else makes the profile malformed.
 
-`visibleBrowser: true` gives the child a visible Chrome on the persistent profile (it sets `OCTOCODE_BROWSER_VISIBLE=1`, as `webLive` does). A profile whose tools leave out `file`, `edit` and `write` gets the "investigate and report" prompt rule: no repository edits, and writes only to the scratch folder and the output path its task names (see [Prompt](FEATURES.md#prompt)). The bundled `researcher` and `reviewer` set `excludeTools: file,browser` (subagents never get `askUser`), `implementer` excludes `browser`, and `webHeadless` / `webLive` exclude `file,bash` and set `mcp: false`. `mcp: false` starts the child without Pi's built-in MCP and without the `octocode` server (it sets `OCTOCODE_MCP=0`), so a profile that never researches code pays for no MCP tool schemas. The switches `mcp`, `visibleBrowser` and `hooks` take YAML booleans only (`mcp: false`, not `"false"` or `no`): any other value makes the profile malformed, so it is skipped and the rest still load.
+**Core tools.** Every subagent keeps `read`, `sendMessage` and `coordinate`, its way to the parent, and `archive`, its way to the parent's history (read-only). Pi drops extension tools a `--tools` allowlist does not name, so `tools: edit,bash` runs as `edit,bash,read,sendMessage,coordinate,archive`. An `excludeTools` pattern that matches a core tool (`*` or `send*` count) or `-read` in `tools` skips the file. `sendMessage` writes only to the agent database, so a profile without `file`, `edit`, `write` and `bash` stays read-only. Bundled profiles and prompt rule: [Profiles](FEATURES.md#profiles), [Prompt](FEATURES.md#prompt).
 
-`model` is the profile's preferred model: `provider/id` or a bare id, optionally with Pi's `:<thinking>` suffix (`claude-sonnet-5-5:high`). A bare id resolves against the models the parent can use, preferring the parent's provider, then any provider that has it; the child gets the resolved `--model provider/id`. `model` may instead name a purpose, resolved among your own models so no profile hard-codes a vendor: `small` (the cheapest capable model) or `medium` (the dearest capable model at 15–80% of the parent's price, the next tier down: Sonnet under Opus, never Haiku under Sonnet; otherwise the parent's). Capable means it calls tools, holds 100k tokens, takes images when the parent does, is not deprecated, costs less than the parent, and is its family's newest release (a router lists every generation; the parent counts, so an older sibling of the parent's model is skipped). Models released within 18 months of the parent come first, then the parent's lab, then its provider. Prices compare three input tokens to one output token; a missing price is filled from models.dev only for a provider it lists (a local model priced 0 never borrows a cloud price). A purpose keeps a `:<thinking>` suffix (`small:high`), and the `agent` call's `model` may name one too. Prices are list prices per token: a subscription's own accounting (GitHub Copilot's premium-request multipliers, a Claude or ChatGPT plan) is not modelled, so there a purpose still picks the cheaper tier by list price. Any list works: with one model, or none cheaper, everything runs on the parent's model. Prices and abilities come from Pi's model entries, completed from [models.dev](https://models.dev) (see `OCTOCODE_MODELS_DEV`). The bundled profiles use purposes: `implementer` and `reviewer` run `medium`; `researcher`, `webHeadless` and `webLive` run `small`. `/octocode models` shows what each resolves to. When a profile's model is not available, the run does not fail: the child is pinned to the parent's current model (as is a run whose profile names no model), and the `agent` row and the result details (`fallback`) say which preference was skipped. Override a bundled profile by name in `~/.octocode/agents/` to change its model, or drop `model` to always run on the parent's model. The `agent` tool's own `model` parameter beats the profile and is strict: an unavailable model is refused with the closest available ids.
+**Model.** `provider/id` or a bare id (resolved among the parent's usable models, its provider first), with Pi's optional `:<thinking>` suffix (`claude-sonnet-5-5:high`); or a purpose, `small` or `medium` (`small:high`), resolved among your own models so no profile hard-codes a vendor ([Model routing](FEATURES.md#model-routing)). Override a bundled profile by name in `~/.octocode/agents/`; drop `model` to use the parent's.
 
-Subagents run as `pi --mode rpc` with this extension only (`--no-session` unless they linger), and cannot spawn further subagents. They do not run the user's command hooks unless their profile sets `hooks: true` (a hook meant for the main session would otherwise fire once per subagent). Each child receives a fresh run identity and profile-specific browser visibility; user settings such as MCP opt-out remain inherited. Their model usage is added to the parent session's totals, and a subagent whose model call fails is reported as a failed tool call.
+A subagent is a `pi --mode rpc` process ([Subagents](FEATURES.md#subagents)) with a fresh run identity; other user settings stay inherited. Its scratch folder is kept 7 days ([Retention](#retention)).
 
 ## MCP
 
-Octocode runs on this extension's own MCP client, built on `@earendil-works/pi-mcp` (`McpClient`, `StdioTransport`), not on Pi's built-in MCP. On `session_start` it starts one stdio server, `octocode` (the `octocode-mcp` installed with the extension, or `npx -y` of the same version range when it is not installed next to it. The range is the `octocode-mcp` dependency in the extension's `package.json`, the one source for both; in this monorepo `dev setup` resolves it to the workspace build `packages/octocode-mcp`), with `cwd` and `WORKSPACE_ROOT` set to the session's folder and `ALLOWED_PATHS` to that folder and the Octocode home. GitHub tokens (`GITHUB_TOKEN`, …) reach it through the process environment. `OCTOCODE_MCP=0` starts nothing. A stderr tail (the last 2,000 characters) is kept to explain a failure; it is untrusted text that reaches the terminal and the model, so it follows the [sanitizing policy](#sanitizing-policy).
+Octocode runs on this extension's own MCP client (`McpClient`, `StdioTransport` from `@earendil-works/pi-mcp`), not Pi's built-in one ([why](ARCHITECTURE.md#mcp-client)). `session_start` starts one stdio server, `octocode`.
 
-The extension registers every tool the server lists with `pi.registerTool`, named `mcp__octocode__<tool>`. Names, descriptions, annotations and input schemas come from the server's `tools/list`; none is hardcoded, so the server's tool list is the source (the set depends on the server's version and settings, for example `clasify` only with beta and a classification key). Each tool is `direct`, so the model has all of them from the first request, with no `tool_search` step, and sits in the namespace `mcp__octocode` that carries the server's instructions. Rows render compactly like the extension's other tools: a one-line call, a short preview, full output on ctrl+o. The `file` guard counts only Pi's `read`, so read a file with `read` before changing it.
+- **Server.** The installed `octocode-mcp`, or `npx -y` of the `octocode-mcp` range in `package.json` (in this monorepo `dev setup` resolves it to `packages/octocode-mcp`). `cwd` and `WORKSPACE_ROOT` are the working directory; `ALLOWED_PATHS` is that directory plus the Octocode home. GitHub tokens (`GITHUB_TOKEN`, …) pass through the process environment. `OCTOCODE_MCP=0` starts nothing. A failure shows the server's stderr ([sanitized](#sanitizing-policy)): whole up to 2,000 characters; a longer stderr shows its last 2,000 under a `[server stderr: last 2000 of N characters; whole: <file>]` line, and the whole is saved to `output/mcp-stderr-*.txt`.
+- **Tools.** Each listed tool registers as `mcp__octocode__<tool>` with its name, description and schema from `tools/list`, so the set follows the server's version and settings (`clasify` only with beta and a classification key). All are `direct`: present from the first request, no `tool_search` step. The `file` guard counts only Pi's `read`.
+- **Results.** `tools/call` times out at 60 s and aborts with the turn. `structuredContent` is kept when the tool declares an `outputSchema`; `isError` becomes an error result. A text part or message over its budget, or an oversized image, is saved whole to the session's `output/`; the model gets a preview plus the path ([budgets](CONTEXT-AND-COST.md#spilled-outputs)).
+- **Startup.** `before_agent_start` waits at most 10 s for the connection (no setting); a failure ends it at once. The server's `initialize` instructions join the `octocode` prompt section whole, under `# Octocode MCP server instructions`, and stay for the session. If the server cannot start, one warning shows (with a UI), the prompt carries no Octocode routing, and the next prompt retries once. A slow server's tools join when it is up.
+- **Lifecycle.** The server closes, process tree included, on `session_shutdown` and when the working directory changes (the new one gets its own). If it dies, the next tool call restarts it once; then calls error with the cause until `/octocode mcp restart`. `notifications/tools/list_changed` re-lists: new tools register, withdrawn ones hide. `/octocode mcp` shows state, name, version, tool count and pid.
+- **Overrides.** A server named `octocode` in Pi's `mcp.json` takes precedence (the way to override or disable it): the extension starts no client and registers no tools. A trusted project's entry with a transport replaces the global one; without `command`, `url` or `type` it overrides only `enabled`, `exposure` and `toolExposure` of an existing global server, never its environment or credentials.
 
-The extension calls `tools/call` itself (60 s timeout, aborted with the turn) and hands the model the server's content: text as text, images as images, other blocks through `toLlmContent`. Octocode already pages each result and puts every row's `next.*` continuation inside it, so text is passed whole within a per-part and per-message budget; a longer part, or an oversized image, is saved whole to the session's `output/` folder and the model gets a preview or a fitted image plus the file's path. The budgets are in [Spilled outputs](CONTEXT-AND-COST.md#spilled-outputs). The server's `structuredContent` is kept on the result when the tool declares an `outputSchema`. A result with `isError` is an error result carrying the server's text. Text and structured content follow the [sanitizing policy](#sanitizing-policy) below: nothing the server returned disappears, and nothing raw reaches the terminal.
-
-The prompt waits for the real connect. Before the first agent run, `before_agent_start` awaits the connection, at most 10 s (a bound on the connect, not a poll; there is no setting). A server that connects in time costs only the connect; a failure ends the wait at once. Once connected, the server's own `initialize` instructions (how its tools chain, page with `next.*` and count as evidence) are added whole to the `octocode` prompt section under `# Octocode MCP server instructions`, together with the research routing. If the server cannot start, the session shows one warning (when there is a UI) and the prompt carries no Octocode routing, since the model has no Octocode tools; the next prompt retries once. A server that is only slow keeps connecting, and its tools join the session when it is up. Once Octocode is on in the prompt it stays on for the session so the cached prompt does not change.
-
-Lifecycle. The server closes, process tree included, on `session_shutdown` and when the session's folder changes (the new folder gets its own server). If the process dies, the next tool call starts it once more; if that fails, calls return an error that names the cause until `/octocode mcp restart`. A `notifications/tools/list_changed` makes the extension list the tools again: new ones are registered and withdrawn ones are hidden from the model.
-
-`/octocode mcp` shows the state (connected, connecting, failed or stopped, with the error), the server's name and version, the tool count and the process id; `/octocode mcp restart` starts a fresh process.
-
-A server named `octocode` in Pi's `mcp.json` takes precedence, which is how to override or disable it: the extension then starts no client and registers no tools, and the prompt's research guidance follows the Octocode tools Pi registers for it. A trusted project's entry with a transport replaces the global entry. Without `command`, `url` or `type`, a project entry overrides only `enabled`, `exposure` and `toolExposure` of an existing global server; omitted settings remain inherited. Such an override needs a global server, and cannot change its environment or credentials. Pi owns that server, including how it handles its results.
-
-Every other server is configured with Pi's MCP: `~/.pi/agent/mcp.json`, `.pi/mcp.json`, `pi mcp add`, `/mcp` (status, reconnect, sign-in) and Pi's OAuth. See [Pi's MCP docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/mcp.md). `pi --no-extensions` also turns off Pi's built-in MCP; add `-e builtin:mcp -e builtin:tool-search` to keep it and the tool search that loads a user's deferred MCP servers (for example `pi --no-extensions -e packages/octocode-pi-extension/dist/pi-entry.cjs -e builtin:mcp -e builtin:tool-search`).
+Other servers use Pi's MCP (`~/.pi/agent/mcp.json`, `.pi/mcp.json`, `pi mcp add`, `/mcp`; [Pi's MCP docs](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/mcp.md)). `pi --no-extensions` also turns off Pi's MCP; add `-e builtin:mcp -e builtin:tool-search` to keep it.
 
 ### Sanitizing policy
 
-This is the one place the policy is stated (source: `src/shared/sanitize.ts`); other pages link here. Text from anyone but the user is untrusted: an escape sequence in it could retitle the terminal, write a clickable link, move the cursor or reorder text with bidi overrides, and an invisible character could hide an instruction. Two functions cover the two readers:
+The one statement of the policy (`src/shared/sanitize.ts`); other pages link here. Text from anyone but the user is untrusted: escape sequences could retitle the terminal, write links, move the cursor or reorder text, and invisible characters could hide an instruction.
 
-- **Text the model reads** (MCP results and structured content and server instructions, `browser` and `web` results and errors, local API and team messages, `coordinate` and `backlog` results, fenced bodies, subagent reports and errors, hook output, background job reports, permission denials, and every other untrusted text that reaches a model call) goes through `visibleControls`. A background job report first drops color and style sequences (`ESC[…m`), as Pi's own `bash` does; its log file keeps them. It never drops evidence: each control character, bidi formatting character, invisible character and line or paragraph separator becomes a visible escape such as `\u{200d}`, and a lone CR becomes `\r`. It is safe to draw in a terminal too. A CRLF pair passes unchanged, so a CRLF file keeps its exact text. Tabs, newlines and a ZWJ that joins two emoji stay.
-- **Text only a terminal or UI draws** (dialogs, panel rows, labels) goes through `sanitizeTerminalText`, which removes the sequences and characters and turns CR and CRLF into LF.
+- **Text the model reads** (MCP, `browser`, `web`, API, team, `coordinate`, `backlog`, subagent, hook and job output, permission denials, any other untrusted text) goes through `visibleControls`. Nothing is dropped: each control, bidi, invisible, line or paragraph separator character becomes a visible escape such as `\u{200d}`, and a lone CR becomes `\r`. CRLF, tabs, newlines and a ZWJ joining two emoji pass unchanged. A job report first drops color sequences (`ESC[…m`); its log keeps them.
+- **Text only a terminal or UI draws** (dialogs, panel rows, labels) goes through `sanitizeTerminalText`: sequences and characters are removed, CR and CRLF become LF.
 
-The invisible characters covered are Unicode tags (U+E0000–E007F), the zero-width space and non-joiner, the word joiner and invisible operators (U+2060–2064), the soft hyphen, the combining grapheme joiner (U+034F), the Khmer inherent vowels (U+17B4–17B5), the Mongolian variation selectors and vowel separator (U+180B–180E), the braille blank (U+2800), the Hangul fillers (U+3164, U+FFA0), the BOM, a ZWJ that joins no emoji, and a variation selector unless it follows a character it modifies (an emoji, a Han ideograph, a digit, `#`, `*` or a skin-tone modifier).
-
-`visibleControls` is not injective: a literal `\u{200d}` typed in the source reads the same as an escaped ZWJ. That is accepted: the escape tells a reader that something was there, it does not round-trip the text.
+Bidi formatting characters (U+061C, U+200E–200F, U+202A–202E, U+2066–206F) and these invisible ones (`INVISIBLE` in the source) are covered: Unicode tags, zero-width space and non-joiner, word joiner and invisible operators, soft hyphen, combining grapheme joiner, Khmer inherent vowels, Mongolian free variation selectors and vowel separator, braille blank, Hangul fillers, BOM, a ZWJ joining no emoji, and a variation selector unless it follows a character it modifies. `visibleControls` is not injective: a literal `\u{200d}` reads like an escaped ZWJ.
 
 ## Retention
 
-A sweep runs at most every 6 hours across all sessions, off the session start path; it never touches the current session or Pi's own session files. "Pi lists the session" covers Pi's default sessions dir and every custom session dir (`--session-dir`) a session ran from, recorded at session start. When any of those listings fails, including a recorded dir that can no longer be read, the sweep removes nothing.
+A sweep runs at most every 6 hours, off the start path, and never touches the current session or Pi's own session files. `OCTOCODE_CLEANUP_DAYS` (default 30; `0` turns the sweep off) is N below. "Pi lists the session" covers Pi's default sessions dir and every `--session-dir` a session ran from; if any listing fails, nothing is removed.
+
+```mermaid
+flowchart TD
+  A["Each folder in sessions/"] --> C{"Current session?"}
+  C -- yes --> K["Keep"]
+  C -- no --> P{"_pid-N folder?"}
+  P -- yes --> G{"Process gone?"}
+  G -- no --> K
+  G -- yes --> I
+  P -- no --> L{"Pi lists the session?"}
+  L -- yes --> K
+  L -- no --> R{"Its process running?"}
+  R -- yes --> K
+  R -- no --> I{"No writes for N days?"}
+  I -- yes --> D["Delete folder incl. archive, and extras row"]
+  I -- no --> K
+  K --> O["Kept: old output/ and bash/ files go; idle checkpoints go whole"]
+```
 
 | What | Removed when |
 |---|---|
-| A session's folder and extras row, when Pi no longer lists the session (deleted, ephemeral, a `--no-session` subagent's, whose spilled files its parent's report may cite) | `OCTOCODE_CLEANUP_DAYS` days after the folder was last written, unless its process is running |
-| A `_pid-<pid>` folder (output written before a session id was known) | `OCTOCODE_CLEANUP_DAYS` days after it was last written, once that process is gone |
-| Spilled `output/` and `bash/` logs inside a kept session | `OCTOCODE_CLEANUP_DAYS` days after they were written (default 30; `0` turns the whole sweep off) |
-| A kept session's `checkpoints/` | `OCTOCODE_CLEANUP_DAYS` days after its journal or blobs were last written, whole (a rewind then finds nothing); never the current session's or one whose process is running. Otherwise with the session's folder (and the 256-entry / 128 MiB cap per session) |
-| Subagent screenshots in `pi-team/shots/` | `OCTOCODE_CLEANUP_DAYS` days after they were written (also the newest 30 are kept) |
-| Backlog items, notes and memories | Never automatically: they stay until deleted (items on `/backlog`; memories on `/memory` or with the `memory` tool's `delete`) |
+| A session's folder (archive included) and extras row, when Pi no longer lists the session (deleted, ephemeral, a subagent's) | N days after last write, unless its process runs |
+| A `_pid-<pid>` folder | N days after last write, once that process is gone |
+| `output/` and `bash/` files in a kept session | N days after written; a running job's record and log stay |
+| A kept session's `archive/` | With the session's folder; a compaction counts as a write |
+| A kept session's `checkpoints/` | Whole, N days after the last write (a rewind then finds nothing); never the current session's or one whose process runs |
+| Subagent screenshots, `pi-team/shots/` | N days after written; saving keeps the newest 30 |
+| A subagent's scratch `<repo root>/.octocode/tmp/agents/<name>/` | 7 days after last write, at the next session start in that repository, unless the Pi process that started it runs. Not governed by `OCTOCODE_CLEANUP_DAYS` |
+| Git snapshot refs (`refs/octocode/snapshots/*`, [Snapshots](FEATURES.md#snapshots)) | 7 days after taken, at the next session start |
+| Resolved team messages | 1 day; unread messages and open questions stay until resolved |
+| Backlog items, notes and memories | Never automatically; delete on `/backlog`, `/memory` or the `memory` tool's `delete` |
 
-`/sessions` → Forget Octocode data removes one session's folder and extras row at once. It refuses an id that does not name a session folder (`Refusing to forget "<title>": its id does not name a session folder.`), so a malformed id can never reach another path.
+`/sessions` → Forget Octocode data removes one session's folder and extras row at once. It refuses the current session, a session open in another Pi process, and an id that does not name a session folder (`Refusing to forget "<title>": its id does not name a session folder.`).

@@ -283,13 +283,27 @@ describe('subagent dialogs relayed to the parent', () => {
 
   it('pauses the child\'s stall watchdog while a dialog is open, and shows the wait', async () => {
     const seen: boolean[] = [];
-    const dialogs = ui(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 1_600));
-      return ALLOW_ONCE;
-    });
-    // Without the pause a 300 ms idle limit stops the child long before the user answers.
-    const { answers } = await relay([shell('d1')], { permission: parent('manual').permission, ui: dialogs }, { limits: { idleMs: 300, busyMs: 600 }, onProgress: (update) => update.waiting !== undefined && seen.push(update.waiting) });
-    expect(answers).toEqual([{ type: 'extension_ui_response', id: 'd1', value: ALLOW_ONCE }]);
+    let opened!: () => void;
+    const dialogOpen = new Promise<void>((resolve) => void (opened = resolve));
+    let answer!: () => void;
+    const dialogs = ui(() => new Promise((resolve) => {
+      answer = () => resolve(ALLOW_ONCE);
+      opened();
+    }));
+    // The watchdog runs on a fake clock (its interval and `Date`; the child and its pipes stay real): its idle limit
+    // counts from spawn, so on a real clock a child that takes longer than `idleMs` to start (a loaded machine) is
+    // stopped as idle before it asks anything. Without the pause, the 300 ms limit stops it long before the user answers.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      const run = relay([shell('d1')], { permission: parent('manual').permission, ui: dialogs }, { limits: { idleMs: 300, busyMs: 600 }, onProgress: (update) => update.waiting !== undefined && seen.push(update.waiting) });
+      await dialogOpen;
+      await vi.advanceTimersByTimeAsync(1_600);
+      answer();
+      vi.useRealTimers();
+      expect((await run).answers).toEqual([{ type: 'extension_ui_response', id: 'd1', value: ALLOW_ONCE }]);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(seen).toEqual([true, false]);
   }, 20_000);
 

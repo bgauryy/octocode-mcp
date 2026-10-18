@@ -1,12 +1,27 @@
 //! Fixtures shared by the engine's unit tests.
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A fresh temporary directory, removed (with everything under it) on drop.
-/// `.0` is its path.
+/// `.0` is its path; it also derefs to a [`Path`].
+#[derive(Debug)]
 pub(crate) struct TmpDir(
     pub PathBuf,
     #[expect(dead_code, reason = "held only to remove the directory on drop")] tempfile::TempDir,
 );
+
+impl std::ops::Deref for TmpDir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for TmpDir {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
 
 impl TmpDir {
     pub(crate) fn new() -> Self {

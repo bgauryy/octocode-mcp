@@ -1,7 +1,7 @@
 [package]
 name = "octocode-cli"
 version.workspace = true
-publish = false
+publish.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -29,9 +29,10 @@ base64 = { workspace = true }
 bytes = { workspace = true }
 getrandom = { workspace = true }
 serde = { workspace = true }
+# Skill installs stage a replacement in a temporary directory beside it.
 tempfile = { workspace = true }
 toml = { workspace = true }
-serde_yaml_ng = { workspace = true }
+serde-saphyr = { workspace = true }
 futures-util = { workspace = true }
 tokio-util = { workspace = true }
 url = { workspace = true }

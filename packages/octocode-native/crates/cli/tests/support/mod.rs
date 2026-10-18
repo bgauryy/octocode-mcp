@@ -27,6 +27,12 @@ impl Workspace {
             .env("OCTOCODE_ENABLE_STATS", "false")
             .env("OCTOCODE_STORAGE_MODE", "memory")
             .env("GITHUB_API_URL", UNMOCKED_GITHUB_API_URL);
+        // Coverage runs (`coverage:rust`) profile the CLI through this variable.
+        // Without it the instrumented binary writes `default_*.profraw` into the
+        // workspace, where later tool calls find it, and its coverage is lost.
+        if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+            command.env("LLVM_PROFILE_FILE", profile);
+        }
         command
     }
 }

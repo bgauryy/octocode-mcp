@@ -1,5 +1,4 @@
 //! Standalone skill commands run without any launchers on PATH.
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use crate::support::Workspace;
 use serde_json::Value;

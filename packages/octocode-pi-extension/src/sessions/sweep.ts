@@ -16,9 +16,11 @@ import type { SessionIndex } from './store.js';
 const SWEEP_EVERY_MS = 6 * HOUR_MS;
 /**
  * Spilled output, bash logs, idle checkpoints of a kept session, subagent screenshots, and the folders of sessions Pi
- * no longer lists (deleted, a pid folder, a `--no-session` subagent's, whose spilled files its parent's report may
+ * no longer lists (deleted, a pid folder, a subagent's (its conversation is in its scratch folder), whose spilled files its parent's report may
  * still cite), are removed this many days after they were last written (`OCTOCODE_CLEANUP_DAYS`): one retention, so
- * a path in a kept transcript stays readable as long as the session's own output does.
+ * a path in a kept transcript stays readable as long as the session's own output does. The `archive` folder (compacted
+ * history, `shared/archive.ts`) is the searchable twin of the transcript: a kept session keeps it, and it goes with the
+ * session's folder, whose age counts its writes.
  */
 const OUTPUT_DAYS = 30;
 
@@ -44,9 +46,9 @@ async function newestWrite(files: readonly string[]): Promise<number> {
   return Math.max(0, ...times);
 }
 
-/** Newest write in a session folder: the folder, its kind folders and the checkpoint journal. 0 when it is missing. */
+/** Newest write in a session folder: the folder, its kind folders (the archive's included: a compaction is activity) and the checkpoint journal. 0 when it is missing. */
 const lastWrite = (dir: string): Promise<number> =>
-  newestWrite([dir, path.join(dir, 'output'), path.join(dir, 'bash'), path.join(dir, 'checkpoints'), path.join(dir, 'checkpoints', 'journal.jsonl')]);
+  newestWrite([dir, path.join(dir, 'output'), path.join(dir, 'bash'), path.join(dir, 'archive'), path.join(dir, 'checkpoints'), path.join(dir, 'checkpoints', 'journal.jsonl')]);
 
 /** Whether a session's checkpoints (journal, blobs) were last written more than `maxAgeMs` ago; false when there are none. */
 async function checkpointsIdle(dir: string, maxAgeMs: number, now: number): Promise<boolean> {

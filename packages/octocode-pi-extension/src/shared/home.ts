@@ -178,6 +178,18 @@ export const sessionsRoot = (env: NodeJS.ProcessEnv = process.env): string => pa
 /** `<agentState>/sessions/<sanitized id>`. Nothing is created. */
 export const sessionDir = (id: string, env: NodeJS.ProcessEnv = process.env): string => path.join(sessionsRoot(env), sessionDirName(id));
 
+/**
+ * The folder names under `sessionsRoot` (each a session's sanitized id): a subagent's session id is its name, so a new
+ * subagent avoids these to never inherit another run's archive or output, from any repository.
+ */
+export function sessionFolderNames(env: NodeJS.ProcessEnv = process.env): string[] {
+  try {
+    return fs.readdirSync(sessionsRoot(env));
+  } catch {
+    return [];
+  }
+}
+
 let currentSession: string | undefined;
 
 /** Sets the process-wide current session (the first `session_start` handler does, before anything writes output). */
@@ -191,15 +203,33 @@ export const currentSessionId = (): string | undefined => currentSession;
 /** Folder name for a process with no session yet (unit tests, before `session_start`); swept once the process is gone. */
 export const PID_SESSION_PREFIX = '_pid-';
 
+/** Session folders already created and tightened by `sessionOutputDir`: later calls only check they still exist. */
+const preparedOutputDirs = new Set<string>();
+
+/** The folders a session keeps under its own: spilled output, bash logs, checkpoint blobs and the archive of compacted history. */
+export type SessionFolder = 'output' | 'bash' | 'checkpoints' | 'archive';
+
 /**
- * The current session's private `output`, `bash` or `checkpoints` folder, created on use. With no session set it is
- * `<agentState>/sessions/_pid-<pid>/<kind>`.
+ * A session's `output`, `bash`, `checkpoints` or `archive` folder (the current session's, without `id`), by path only:
+ * nothing is created. With no session set it is `<agentState>/sessions/_pid-<pid>/<kind>`.
  */
-export function sessionOutputDir(kind: 'output' | 'bash' | 'checkpoints', env: NodeJS.ProcessEnv = process.env): string {
-  const dir = currentSession ? sessionDir(currentSession, env) : path.join(sessionsRoot(env), `${PID_SESSION_PREFIX}${process.pid}`);
+export function sessionFolder(kind: SessionFolder, id: string | undefined = currentSession, env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(id ? sessionDir(id, env) : path.join(sessionsRoot(env), `${PID_SESSION_PREFIX}${process.pid}`), kind);
+}
+
+/**
+ * The current session's private `output`, `bash`, `checkpoints` or `archive` folder, created on use. The folder and its
+ * parents are made private once; a folder removed since (a sweep, a test) is made again.
+ */
+export function sessionOutputDir(kind: SessionFolder, env: NodeJS.ProcessEnv = process.env): string {
+  const folder = sessionFolder(kind, currentSession, env);
+  const dir = path.dirname(folder);
+  if (preparedOutputDirs.has(folder) && fs.existsSync(folder)) return folder;
   privateDir(path.dirname(dir));
   privateDir(dir);
-  return privateDir(path.join(dir, kind));
+  privateDir(folder);
+  preparedOutputDirs.add(folder);
+  return folder;
 }
 
 /** Pi's agent directory: `<home>/.pi/agent` for an explicit home (tests), else Pi's own (honors its env override). */

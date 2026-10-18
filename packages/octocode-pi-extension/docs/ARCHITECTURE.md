@@ -9,51 +9,137 @@ yarn workspace @octocodeai/pi-extension lint
 pi --no-extensions -e packages/octocode-pi-extension/dist/pi-entry.cjs -e builtin:mcp -e builtin:tool-search
 ```
 
-Pi loads `dist/pi-entry.cjs`. Pi evaluates an extension's entry once per process and calls its factory again on every
-`/reload`, and Node caches ES modules by URL, so loading `dist/index.js` directly kept running the first build until a
-restart. The build bundles `dist/index.js` into `dist/pi/octocode-<content hash>.js` (dependencies external) and the
-entry's factory imports whichever bundle `dist/pi/current` names: after `yarn build`, `/reload` runs the new code
-(`tests/reload-entry.test.ts`). The new and the previous bundle stay in `dist/pi/`, so a process that read the old pointer just before the swap can still import it. Subagents start fresh processes and load `dist/index.js`.
+Pi loads `dist/pi-entry.cjs`. Pi evaluates an entry once per process but calls its factory on every `/reload`, and Node caches ES modules by URL, so loading `dist/index.js` directly kept running the first build. The build bundles `dist/index.js` into `dist/pi/octocode-<content hash>.js` (dependencies external); the entry's factory imports the bundle `dist/pi/current` names, so `/reload` runs new code (`tests/reload-entry.test.ts`). In a development checkout (`src/` beside `dist/`), `session_start` warns once when a `src/**/*.ts` file is newer than the current bundle (`src/shared/stale-bundle.ts`); an installed package skips the check. The previous bundle stays for a process that read the old pointer. Subagents start fresh processes and load `dist/index.js`.
 
-Source map: `src/index.ts` composes the features (each registers its own tools, hooks and commands), `src/turn.ts` settles the starting tools and adds each turn's prompt section, and `src/prompt.ts` is the prompt text. Each folder is one domain with permitted dependencies declared in `tests/architecture.test.ts`. Those checks require new domains to declare their dependencies, enforce dependency direction and shared ownership, and reject import cycles and imports from domains into root modules. File names, counts and lengths can change within those boundaries; split modules by responsibility.
+## Layering
 
-| Folder | Owns |
+`src/index.ts` composes the features (each registers its own tools, hooks and commands), `src/turn.ts` settles starting tools and each turn's prompt section, `src/prompt.ts` is the prompt text. `tests/architecture.test.ts` enforces:
+
+- Each domain imports only the domains it declares; `shared/` is the leaf and every domain may import it.
+- Root modules may import any domain; no domain imports `index.ts` or a root module.
+- No import cycles.
+- One owner per helper: process signals in `shared/process`, error messages in `shared/util`, SHA-256 in `shared/atomic`, environment switches in `shared/env`, abort reasons in `browser/abort`.
+- Only `shared/home` names `.octocode`.
+- Only declared packages are imported: Pi is a peer dependency, `@octocodeai/config` is never imported, and no other package imports Pi.
+
+```mermaid
+flowchart LR
+  external --> api
+  files --> permission
+  web --> permission
+  browser --> web
+  browser --> permission
+  compaction --> files
+  compaction --> permission
+  ui --> permission
+  subagents --> mcp
+  subagents --> team
+  subagents --> permission
+  team --> agentdb
+  sessions --> agentdb
+  sessions --> files
+  sessions --> subagents
+  backlog --> agentdb
+  memory --> agentdb
+  memory --> permission
+```
+
+An arrow means "may import". Every domain may also import `shared`; a domain with no outgoing arrow imports only `shared`. File names can change within these boundaries; split modules by responsibility.
+
+| Folder | Role |
 |---|---|
-| `shared/` | Leaf helpers, one owner each: `util` (errors, caps, JSON parsing, content text and text parts, usage sums, time constants, abort waits, signalable pids), `env` (flag and number parsing), `atomic` (crash-safe writes, SHA-256 and its short hash), `process` (liveness, process identity by pid and start time, process-tree kill; on Windows a Job Object), `winpath` (absolute System32 paths for the Windows programs Pi spawns, never a bare name that the current folder could answer), `winhelper`, `winhelper-script` and `winclassify` (the Windows helper: one `pwsh` per Pi process that owns the Job Objects and parses PowerShell, and the platform-independent rules that decide which PowerShell commands are destructive), `claims` (a process takes a file by renaming it to carry its pid and start time), `fence` (the one way text from anyone but the user reaches the model: a fenced body under a header the receiver builds), `interactive` (whether a person can be asked: `hasUI` is also true for a subagent's RPC session), `tokens` (`CHARS_PER_TOKEN`, the one estimate where there is no tokenizer), `home` (Octocode home and workspace paths, owner-only runtime folders, Pi's tool-path rule, repository root, the agent-state and per-session folders), `sweep` (removing aged output entries and a dead process's leftovers, and moving a file across file systems), `spill` (oversized results and images saved whole to the session's `output/` folder, named by content hash, and the one image-extension table), `trust` (project-config trust), `package` (manifests, package root), `commands` (the `/octocode` subcommand router and `say`, command output that also reaches print and JSON modes; each subcommand holds the dialog lock), `locks` (the re-entrant per-tool lock, the one dialog queue every interaction holds so Pi never draws two dialogs at once, and the time a call spent in `tool_call` checks), `format`, `render` (shared tool presentation), `sanitize` (terminal escape and invisible-character stripping for text a person reads; `storedSecret`, the secret screen the backlog and memory stores refuse with; `visibleControls` turns them into `\u{…}` escapes for text the model reads, so nothing is dropped; the policy is in [CONFIGURATION.md](CONFIGURATION.md#sanitizing-policy)), `visible-error` (escapes the message of an error that carries page text, for the `browser` and `web` tools), `rotating-log` (the size-capped log one process writes, shared by bash job logs and the browser console log), `octocode-tools` (the `mcp__` and `mcp__octocode__` tool prefixes), `net` (the loopback host-name check), `vision` (the default image limit), `thought` (the gist of a thinking block) and `messages` (team and external message envelopes). |
-| `files/` | The `file` tool (`tool`; its crash-safe writes are `shared/atomic`; the reads a session's context shows, restored on resume, reload, branch moves and compaction, are `reads`, and which lines they covered `coverage`), repeated-read notes (`dedupe`), edit checkpoints and `/octocode rewind` (`checkpoint`, with the on-disk journal and fork inheritance in `checkpoint-store` and the session wiring, rewind command and restore offer in `checkpoint-command`; retention is the sessions sweep), the change review that is `manual` mode's `file.workspace` dialog (`review`), the `bash` override with its deadline and background jobs (`bash`, `bash-run`, `bash-jobs`), and how the `bash` and `file` calls and results are drawn (`render`). |
-| `permission/` | Permission modes (`mode`: the one action-class × mode table, the ask reasons that tighten an action, the start mode from `OCTOCODE_PERMISSION` (else `full`), which classes a session grant or a profile may cover, the footer chip), what an ask shows (`request`, with the effect card in `effect`), the one ask helper every confirmation goes through (`ask`: `Permission.check` with session grants, the default dialog, headless and subagent denial, the relay of a child's prompts and audit entries, snapshots before `shell.destructive` (taken by `snapshot`, the git restore point), and mode-change notes), the hook and permission gate for commands the user runs with `!` (`user-bash`), the audit log and its summary (`audit`), tool-call classification and the permission step of the `tool_call` pipeline (`gate`), the shell parser and its flag for common destructive commands (`shell`), the provenance tripwire (`provenance`), the first line a child's prompt carries so a parent whose mode allows the call answers without a dialog (`header`), the editor-scoped Shift+Tab override (`editor`), and `/octocode permission` (`command`). The [integrity invariants](FEATURES.md#permissions) (the state folder, stale reads, team reservations, the DevTools URL, page requests, untrusted-project memory) refuse in every mode and run before it; the matrix decides everything else. Nothing here is a sandbox. |
-| `agentdb/` | The local agent database `octocode.db` (`db`: open, owner-only files, one shared connection per process, repository keys, the secret screen; `liveness`: whether a Pi session's recorded process still runs; `rows`: the row type and numeric column reading every store shares; `author`: the author name the backlog and memory stores record for the user) and its one schema, brought up to date on open by additions only (`schema`: `sessions`, `backlog` (with `goal`, `paths`, `why`, `evidence`, `plan` and `body`, and `from_item`, the item it came from), `backlog_notes` (agent notes and store-written change entries), `memories`, `memories_fts`, `meta`, and the team tables `agents`, `messages`, `deliveries` (with `proof`, the signature of a user message to a subagent), `leases`, `edits`). |
-| `sessions/` | The session extras (`store`), its Pi wiring (`register`: extras rows, stats, resume brief), the `/sessions` picker (`command`), the resume brief (`brief`) with its list of unreported background work (`work`) and retention of session folders (`sweep`). |
-| `backlog/` | The backlog store (`store`) and database-row mapping (`row`), the `backlog` tool (`tool`), `/octocode backlog` (`command`) and its TUI board (`board`), text and Markdown export (`format`), who is acting (`context`), and the footer status wiring (`index`). |
-| `memory/` | The memory store with FTS5 / `LIKE` search and duplicate checks (`store`, `query`), the `memory` tool (`tool`), automatic injection (`inject`, wired in `register`) and `/octocode memory` (`command`). |
-| `ask/` | The `askUser` tool (`tool`) and its dialog (`dialog`). |
-| `mcp/` | The Octocode MCP client: `client.ts` runs one stdio server (connect, retry, reconnect, `list_changed`, process-tree close), `tools.ts` turns its tools and results into Pi tools (control and invisible characters shown as visible escapes; oversized text and images spilled to files), `octocode.ts` owns launch config, ownership (`mcp.json`, `OCTOCODE_MCP`) and the session hooks, `command.ts` is `/octocode mcp`. |
-| `web/` | The `web` tool (`web`) with URL fetching and caching (`fetch`), HTML-to-text (`html`, over the single-pass scanning primitives in `scan`), web search (`search`), the note that names tools for a saved page (`leads`) and the one guarded fetch every outbound request uses (`guard`: `publicFetch`, which checks the host and every redirect hop and connects only to the addresses it checked; web search goes through it too, as a POST with `redirect: 'error'` and a 5 MiB cap). |
-| `browser/` | The DevTools `browser` tool (`tool`, with its call and result rendering in `render`), the page snapshot and what changed since the last one (`snapshot`), screenshots retaken until they fit the image budget (`screenshot`), mouse, keyboard, forms and waits (`input`), tabs and popups (`tabs`), dialog/upload/download (`actions`), per-page download setup (`emulation`), what a page may reach (`network`: the policy every paused page request is checked against; `policy`: its contract; `page-network`: where the verdicts are enforced on paused requests, auto-attached targets and rebinding), the local filtering proxy a launched Chrome runs behind (`proxy`), Chrome launch and profiles (`launch`) its protocol client (`cdp`: one browser-level connection with a session per page, auto-attach for popups, frames in other processes and workers, and the session state they share), opening and switching a session (`session`), the abort error the browser files share (`abort`), and the session's console log (`console-log`). |
-| `api/` | The external API (`bridge`): JSON-RPC 2.0 over a private Unix socket and optional loopback HTTP + SSE (`protocol`, `server`), instance discovery (`registry`), event replay (`events`), the send-receipt state machine behind `message.send` retries (`receipts`), a client (`client`) and its command line (`cli`, with its argument parsing in `args`), and the Pi wiring with `/octocode api` (`register`). |
-| `team/` | The team store on the agent database's team tables (`store`; `list` and `send` judge a member by pid plus start time, with the `ps` comparison cached for 30 s) and its record shapes (`model`), the recent-edits log (`edits`), this agent's own reservations and their idle lapse (`held`), the reservation key rules (`lease-key`: per-component Unicode full case folding, tree and file overlap, and the check that one `lock` call does not overlap itself; its folding table `casefold-table` is generated by `scripts/generate-casefold.mjs` from the agents-communication package's frozen table, and `test-utils/agent-coordination/contract.json` pins both implementations), the read-only check of the agents-communication package's leases before a guarded write (`peer-leases`: the default database plus every database the package's registry of `--database` sessions lists, `peer-registry`), routing and text (`routing`), signing and verifying a user message to a subagent with its spawn secret (`proof`), the content-addressed file a long message is saved to, named by its SHA-256 so the signature covers the whole text (`spill`), agent names and goals, and a member's first record (`identity`), this process's membership (`session`), paced, batched delivery recorded when a model call includes it (`inbox`), the receive side that runs each tick: handing mail to Pi, recording it once the model saw it, and reporting a wake Pi never started (`delivery`), injecting team mail and notices into Pi, holding an interrupt until the stopped run settles, and finding the mail in a model call's context (`mail`), the `coordinate` and `sendMessage` tools (`tools`), the one shared 1-second ticker that beats delivery and refreshes the watchers' view (`ticker`), and the agents panel (`panel`). |
-| `subagents/` | Profile loading (`profiles`), model routing (`model`: a profile's or the call's model, or a purpose (`small`, `medium`), resolved against the parent's available models; `catalog`: the models.dev index; `models-command`: `/octocode models`), child process spawning (`pi --mode rpc`, the task a `prompt` command on stdin) and bounded process lifecycle (`process`) over a pure reducer of its event stream (`events`), a child's dialogs and audit entries answered by its parent (`relay`), incremental report storage with a bounded preview (`report`), handoff folders and batched background-report delivery (`handoff`), claiming a run slot, the child's identity and its task header (`claim`), the `agent` tool with background mode (`tool`), finished runs that stay reachable and resume on a message (`linger`) and reports saved for a replaced session (`late`), `/octocode agents` (`command`), how the `agent` call, its live progress and background reports are drawn (`render`), worktree isolation (`worktree`) and screenshot saving (`screenshots`). |
-| `external/` | Outgoing session ownership: shared public contract (`protocol`), connection lifecycle and message-policy ports (`manager`), SDK ACP client (`acp`), guarded native Pi client (`pi`), the dialog that answers an external agent's permission request (`permission-dialog`), tool and command (`register`). Depends on `api/` and `shared/`; `index.ts` supplies permission and hook policy. |
-| `hooks/` | Optional Claude Code / Codex hooks: configuration (`config`), command runner (`runner`) and Pi event mapping (`register`). |
-| `compaction/` | Wiring (`register`), cold-cache clearing (`clearing`), files read back after a compaction (`restore`), the thrash breaker and downshift compaction (`pacing`), Octocode's compaction summary through Pi's `compact()` with handoff sections, a transcript pointer and carried file lists (`summary`), the summary request that reuses the session's prompt cache, with the standalone request as its reported fallback (`shared-summary`), the files saved from summarized results, listed in the summary (`saved-results`), prompt-cache lifetimes for models that declare none, the registry supply and idle-warming decisions (`cache`), images and request size (`images`), and the staged `413` recovery (`recovery`). Behaviour: [CONTEXT-AND-COST.md](CONTEXT-AND-COST.md). |
-| `ui/` | The banner header, spinner, thinking label and `tok/s` status (`chrome`, `banner`), the two-line footer (`footer`), the working line and team activity (`activity`), the queued-message ledger installed on `pi.sendMessage` that survives Esc (`delivery`), and the answer-ready / waiting-for-you terminal notifications with focus reports and the title marker (`notify`). |
-| root | `prompt.ts` (the system prompt section), `turn.ts` (active tools and prompt per turn) and `skills.ts` (extra skill directories). |
+| `shared/` | Leaf helpers, one owner each. `util` errors, caps, time constants; `env` `OCTOCODE_*` names and parsing; `atomic` crash-safe writes, SHA-256; `process` liveness, process-tree kill; `winpath`, `winhelper*`, `winclassify` Windows helper and PowerShell rules; `claims` rename claims; `fence` the one way non-user text reaches the model; `interactive` whether a person can be asked (`hasUI` is also true for a subagent's RPC session); `tokens` the one token estimate; `home` Octocode and workspace paths, owner-only folders, repository root; `sweep` aged-output removal; `spill` oversized results saved whole to `output/`; `trust` project-config trust; `package` manifests; `commands` the `/octocode` router and `say`; `locks` per-tool lock and the one dialog queue; `format`, `render`, `visible-error`; `sanitize` ([policy](CONFIGURATION.md#sanitizing-policy), `storedSecret`); `rotating-log`; `octocode-tools` MCP name prefixes; `net` loopback check; `vision` image limits; `thought`, `open`, `status`, `messages`; `archive` the [archive of compacted history](COMPACTION.md#archive-of-compacted-history) and the session record, here because `compaction/` writes it, `subagents/` names it and `sessions/` sweeps it; `history` which history a session reads without asking, and its search and read paging, shared by the `archive` tool and the permission gate. |
+| `files/` | `file` tool, read tracking (`reads`, `coverage`), repeated-read notes (`dedupe`), checkpoints and `/octocode rewind`, the `manual`-mode change `review`, the `bash` override with deadline and jobs, and their rendering. |
+| `permission/` | Modes and the action-class table (`mode`), ask dialogs and effect cards (`request`, `effect`, `ask`), the `tool_call` permission step (`gate`), shell parser (`shell`), provenance tripwire, audit log, git snapshots, the `!` command gate, Shift+Tab override, `/octocode permission`. Nothing here is a sandbox; [integrity invariants](FEATURES.md#permissions) run first. |
+| `agentdb/` | `octocode.db`: one connection per process, owner-only files, additive schema (`sessions`, `backlog`, `backlog_notes`, `memories`, `memories_fts`, `meta`, team tables), session liveness. |
+| `sessions/` | Session extras, resume brief, `/sessions` picker, unreported background work, retention `sweep`. |
+| `backlog/` | Store, `backlog` tool, `/backlog` board, text, Markdown and HTML export. |
+| `memory/` | Store with FTS5 / `LIKE` search, `memory` tool, automatic injection, `/memory`. |
+| `ask/` | `askUser` tool and dialog. |
+| `mcp/` | Octocode MCP client: connect, retry, `list_changed`, tree close (`client`); tools as Pi tools (`tools`); launch and ownership (`octocode`); `/octocode mcp`. |
+| `web/` | `web` tool: fetch and cache, HTML to text, search, saved-page leads, and `guard`, the one outbound fetch (checks the host and every redirect hop). Keyed search APIs use it as a POST with `redirect: 'error'`; every body read stops at the shared 5 MiB cap. |
+| `browser/` | DevTools `browser` tool: snapshots, screenshots, input, tabs, dialogs, page-request policy (`network`, `policy`, `page-network`), filtering proxy, Chrome launch, CDP client, console log. |
+| `api/` | External API: JSON-RPC over a Unix socket and loopback HTTP + SSE, instance registry, event replay, send receipts, client and CLI. |
+| `external/` | Outgoing sessions: protocol, connection manager, ACP and native Pi backends, permission dialog. Depends on `api/` and `shared/`. |
+| `team/` | Team store, edit log, reservations (`held`, `lease-key`), agents-communication lease check (`peer-leases`), message signing and spill, inbox and delivery, `coordinate` and `sendMessage`, the 1 s ticker, agents panel. |
+| `subagents/` | Profile loading, model routing and the models.dev catalog, `pi --mode rpc` child lifecycle, event reducer, relay of a child's dialogs, reports, handoff, lingering runs, the `agent` tool, worktree isolation, screenshots. |
+| `hooks/` | Optional Claude Code / Codex hooks: config, runner, Pi event mapping. |
+| `compaction/` | Summary, cold-cache clearing, stale thinking left out of requests, file restore, thrash stop, archive writer and `archive` tool, session record, fork lineage, cache lifetimes, `413` recovery. Behavior: [COMPACTION.md](COMPACTION.md), [CONTEXT-AND-COST.md](CONTEXT-AND-COST.md). |
+| `ui/` | Banner, footer, working line, queued-message ledger, terminal notifications. |
+| root | `prompt.ts` prompt section, `turn.ts` active tools and prompt per turn, `skills.ts` extra skill directories. |
 
-The extension runs its own MCP client instead of Pi's built-in MCP because Pi's client can publish an older `tools/list` response after a newer one and discard a refresh received during initial discovery; the stdio fixture `tests/fixtures/relist-mcp.mjs` exercises both cases, and our client guards refresh revisions and connection identity. Revisit this when Pi's client passes the same refresh-ordering and evidence checks.
+## Start-up wiring
+
+Pi runs an event's handlers in registration order, so the order in `src/index.ts` is behavior. The factory registers everything, then `/octocode` last so its description names every subcommand. A subagent (`OCTOCODE_SUBAGENT=1`) skips the main-session-only parts.
+
+```mermaid
+flowchart TD
+  F["Factory runs"] --> D["Delivery.install: first, so all sendMessage calls pass it"]
+  D --> R["Register tools, commands, hooks, compaction"]
+  R --> M["Main session only: permission, trust, askUser, agent, external, API, notify"]
+  M --> H["Handlers: tool_call, user_bash, agent_before_settle, session_shutdown"]
+  H --> C["/octocode registered last"]
+  C --> S1["session_start 1: set session, apply start mode, prune snapshots, Pi version check"]
+  S1 --> S2["session_start 2: reset turn and external, restore reads, load profiles, settle tools, start API, warm catalog"]
+```
+
+A headless run (print, JSON, subagent) holds `agent_before_settle` until bash jobs and background subagents report. Before a session switch or fork, `confirmLeave` asks to stop running work.
+
+Every `tool_call` passes three gates, cheapest and most certain first; the first block wins and is audited. A hook's `ask` goes on to the permission gate, so you are never asked about a call a hook would deny.
+
+```mermaid
+flowchart LR
+  T["tool_call"] --> A{"Reservation gate"}
+  A -- held by a peer --> X["Refused, audited"]
+  A -- ok --> B{"PreToolUse hooks"}
+  B -- block --> X
+  B -- ok or ask --> C{"Permission gate"}
+  C -- deny --> X
+  C -- allow --> E["Tool runs"]
+```
+
+## MCP client
+
+The extension runs its own MCP client because Pi's can publish an older `tools/list` response after a newer one and discard a refresh received during initial discovery. `tests/fixtures/relist-mcp.mjs` exercises both cases; our client guards refresh revisions and connection identity. Revisit when Pi's client passes the same checks.
 
 ## Liveness: who is still running
 
-Every "is it alive" question is answered by `processAlive` (`shared/process`, the only implementation) over a pid someone recorded. Where that pid lives depends on who must be able to read it and when. Each source below stays for the reason given; none duplicates another.
+Every "is it alive" question is answered in `shared/process`: `processAlive` for a pid, `sameProcess` for a pid plus start time, so a recycled pid never counts. `sameProcess` is lenient: an owner that cannot be judged keeps what it owns. Before signalling a process, `processMatch` is used instead, where `unknown` is no match.
 
-| Source | Answers | Why it is separate |
-|---|---|---|
-| `agents` table (`team/store`: a heartbeat older than 60 s is *stale*, hidden but kept with its mail; `sweep` retires a member only when `sameProcess` says its pid and start time are gone) | Is this team member, or the owner of a lease, running? | The team's own state, kept fresh by the 5 s heartbeat. Silence and absence are different: a stalled process keeps its row and mail, and a recycled pid never keeps a row alive. |
-| `sessions.pid` (`agentdb/liveness`: `runningPid`) | Is this Pi session open in a process? Backlog claims, `/octocode sessions` and the sweep ask it. | A session has an `agents` row only after it joins the team, and most never do (joining is opt-in; it makes the session addressable and shows it in the panel). Backlog ownership and resume warnings need an answer for every session. |
-| `OCTOCODE_PARENT_PID` (`team/session`) | Is my parent process alive, so should this subagent exit? | Passed in the environment as `<pid> <start time>` and checked every second on its own timer; the parent may never have joined the team, and the check must not need the database. A change of `process.ppid` since load also counts as gone (the child was reparented), and through a launcher the start time tells a reused parent pid from the parent. |
-| API instance files (`api/registry`) | Which Octocode APIs are running on this machine? | The CLI discovers instances without SQLite, and `api/` depends only on `shared/`. |
-| Worktree owner files (`subagents/worktree`: each owner's pid and start time) | May this isolated worktree be pruned? | Recovery has to work when the database is unusable. |
-| Bash job owner records (`files/bash-jobs`: `<id>-<ts>.job.json` next to the job's log) | Did a Pi that died leave this background job running? Reaped at the next start. | A job outlives the Pi that started it; the record (job pid and start time, owner pid and start time) is all a later Pi has. |
-| Claim names (`shared/claims`: `<file>.claim-<pid>-<start time>`, used for pending subagent reports) | Did the process that took this file die before finishing with it? | A claim is a rename, so only one process can hold it; its owner is in the name, and a claim whose owner is gone is released. |
-| Scratch owner files (`subagents/handoff`) | May this handoff folder be removed? | Keyed by a child id whose `agents` row has already disappeared. |
-| `_pid-<n>` session folders (`sessions/sweep`) | Is the session-less process that made this folder gone? | Such a process has no session row and no team row; the folder name is its only record. |
-| Chrome `SingletonLock` (`browser/launch`) | Does another Chrome own this profile? | Chrome's own record, not ours. |
+```mermaid
+flowchart TD
+  Q["sameProcess(pid, started)"] --> A{"kill -0 pid"}
+  A -- "no (EPERM counts as alive)" --> G["Gone"]
+  A -- yes --> S{"Start time recorded?"}
+  S -- no --> L["Alive, unknown"]
+  S -- yes --> P{"ps lstart in UTC, as epoch seconds"}
+  P -- unreadable --> L
+  P -- equal --> Y["Same process"]
+  P -- differs --> G
+```
+
+`sameProcess` is true for Same and Alive-unknown. The team store caches a live pid's start-time comparison for 30 s (a dead pid needs no `ps`). A claim is a rename, so only one process holds a file, and its owner is in the name:
+
+```mermaid
+flowchart LR
+  T["Take: rename file to file+marker+pid-start"] --> W["Owner works"]
+  W --> D["Owner finishes with the file"]
+  W -. owner dies .-> R{"Scan: sameProcess(owner)?"}
+  R -- yes --> K["Leave claimed"]
+  R -- no --> U["Rename back; next take claims it"]
+```
+
+Each record lives where its readers can reach it; none duplicates another.
+
+| Source | Answers |
+|---|---|
+| `agents` table (`team/store`) | Is this team member or lease owner running? Heartbeat every 5 s; silent for 60 s means *stale* (hidden, row and mail kept); retired only when `sameProcess` is false. |
+| `sessions.pid` (`agentdb/liveness`) | Is this Pi session open? Backlog claims, `/sessions` and the sweep ask; most sessions never join the team. |
+| `OCTOCODE_PARENT_PID` (`team/session`) | Should this subagent exit? Value `<pid> <start time>`, checked every second without the database; a changed `process.ppid` also counts, and every 15th check compares the start time (a `ps`). |
+| API instance files (`api/registry`) | Which APIs run here? Works without SQLite. |
+| Worktree owner files (`subagents/worktree`) | May this worktree be pruned? Works when the database is unusable. |
+| Bash job records (`files/bash-jobs`, `<id>-<ts>.job.json`) | Did a dead Pi leave this job running? Reaped at the next start. |
+| Claim names (`shared/claims`) | Did the claimer die? Markers `.claim-` (pending subagent reports), `.reaping-` (bash job records), `.pruning-` (worktrees). |
+| Scratch owner files (`subagents/handoff`) | May this handoff folder go? Its `agents` row is already gone. |
+| `_pid-<n>` session folders (`sessions/sweep`) | Is the session-less process gone? The folder name is its only record. |
+| Chrome `SingletonLock` (`browser/launch`) | Does another Chrome own this profile? Chrome's own record. |

@@ -6,7 +6,7 @@ use base64::Engine as _;
 use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
-use super::row_pages::paginate_rows;
+use super::row_pages::paginate_rows_reserving;
 
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,17 +57,26 @@ impl ResponsePageOptions {
         self.response_scope.as_deref() == Some("rows") && self.response_length.is_some()
     }
 
-    /// The caller windows the response: `responseLength` is set. An offset or
-    /// snapshot alone continues on the automatic window, so it never lifts
-    /// the automatic page (nor the read share sized from it).
+    /// The caller sized the response page: `responseLength` is set. An
+    /// offset or snapshot alone continues on the automatic page, so it never
+    /// lifts it (nor the read share sized from it).
     pub(crate) fn explicit(&self) -> bool {
         self.response_length.is_some()
     }
 
-    /// Apply the runtime's automatic page budget (`auto_page_chars`) when
-    /// the caller did not page explicitly. Implicit pages are whole rows so
-    /// both text and structuredContent carry the page: MCP clients that read
-    /// only structuredContent would otherwise see an emptied `results`.
+    /// The caller chose what the page windows: `responseLength` with a
+    /// `responseScope`. A length alone sizes whole-row pages
+    /// ([`Self::auto_paginate`]); only `responseScope:"text"` windows the
+    /// rendered text.
+    pub(crate) fn scoped(&self) -> bool {
+        self.explicit() && self.response_scope.is_some()
+    }
+
+    /// Page whole rows at the caller's `responseLength`, else at the
+    /// runtime's automatic page `auto_page` (0: never), unless the caller
+    /// chose a scope ([`Self::scoped`]). Rows keep both text and
+    /// structuredContent carrying the page: MCP clients that read only
+    /// structuredContent would otherwise see an emptied `results`.
     /// The envelope is sized first: one past the budget pages without
     /// drawing its text; otherwise `render` draws it, and a text past the
     /// budget pages too. Returns the text the response still needs (none for
@@ -75,12 +84,13 @@ impl ResponsePageOptions {
     pub fn auto_paginate(
         &mut self,
         structured: &Value,
-        budget: usize,
+        auto_page: usize,
         render: impl FnOnce() -> Option<String>,
     ) -> Option<String> {
-        if self.explicit() || budget == 0 {
+        if self.scoped() || auto_page == 0 {
             return render();
         }
+        let budget = self.response_length.unwrap_or(auto_page);
         if crate::tools::stream_page::json_chars(structured) > budget {
             self.page_rows(budget);
             return None;
@@ -93,6 +103,8 @@ impl ResponsePageOptions {
             self.page_rows(budget);
             return None;
         }
+        // One page holds the response: nothing windows it.
+        self.response_length = None;
         text
     }
 
@@ -256,13 +268,14 @@ impl ResponsePager {
         // Same bytes as the Value form, without cloning the envelope first.
         // Every page is bounded by its budget, so any envelope size pages.
         let full = serde_json::to_string(&structured).map_err(|_| ResponseError::Unserializable)?;
-        let (mut envelope, mut pagination) = paginate_rows(
+        let (mut envelope, mut pagination) = paginate_rows_reserving(
             structured,
             &full,
             &input.options,
             volatile,
             &input.remaining,
             crate::tools::id::ToolId::from_name(&input.tool),
+            &|pagination| pagination_block_chars(input, pagination),
         );
         if cancelled.is_cancelled() {
             return Err(ResponseError::Cancelled);
@@ -398,6 +411,28 @@ fn text_response(text: String, structured: Map<String, Value>, is_error: bool) -
         structured_content: Value::Object(structured),
         is_error,
     }
+}
+
+/// Chars the `responsePagination` entry adds to a page of `pagination`
+/// ([`ResponsePager::prepare_rows`] attaches it with its continuation); 0
+/// when the page carries none. Every page of one plan must get the same
+/// answer, whichever request builds it, so a saved read is measured as the
+/// replay it becomes (a first request and its copies differ only in
+/// `replayed`'s value).
+fn pagination_block_chars(input: &ResponseInput, pagination: &ResponsePagination) -> usize {
+    let mut options = input.options.clone();
+    if let Some(saved) = options.saved.as_mut() {
+        saved.replayed = true;
+    }
+    let mut page = pagination.clone();
+    page.next = build_continuation(&input.tool, &input.query, &options, &page);
+    if !(page.should_emit() || is_saved_replay(&options)) {
+        return 0;
+    }
+    pagination_value(&page, &options).map_or(0, |value| {
+        // `,"responsePagination":` around the value.
+        crate::tools::stream_page::json_chars(&value) + "responsePagination".len() + 4
+    })
 }
 
 /// The executable next-page call of `input` for `pagination`.
@@ -745,15 +780,27 @@ mod tests {
             assert!(options.rows_scope());
             assert_eq!(options.response_length, Some(1_000));
         }
-        let mut windowed = options(3_000);
-        assert!(windowed.explicit());
-        let text = windowed.auto_paginate(&structured, 1_000, || Some("drawn".into()));
-        assert_eq!(
-            text.as_deref(),
-            Some("drawn"),
-            "an explicit window keeps its own length"
-        );
-        assert_eq!(windowed.response_length, Some(3_000));
+        // A length alone pages whole rows at that length, not the automatic
+        // page; only a scoped window draws and windows as asked.
+        let mut sized = options(3_000);
+        assert!(sized.explicit() && !sized.scoped());
+        assert!(sized.auto_paginate(&structured, 1_000, || None).is_none());
+        assert!(sized.rows_scope());
+        assert_eq!(sized.response_length, Some(3_000));
+        let mut text = ResponsePageOptions {
+            response_scope: Some("text".into()),
+            ..options(3_000)
+        };
+        assert!(text.scoped());
+        let drawn = text.auto_paginate(&structured, 1_000, || Some("drawn".into()));
+        assert_eq!(drawn.as_deref(), Some("drawn"), "a text window stays text");
+        assert!(!text.rows_scope());
+        assert_eq!(text.response_length, Some(3_000));
+        // A response that fits the length is not windowed at all.
+        let mut fits = options(50_000);
+        let drawn = fits.auto_paginate(&structured, 1_000, || Some("drawn".into()));
+        assert_eq!(drawn.as_deref(), Some("drawn"));
+        assert_eq!(fits.response_length, None);
     }
 
     #[test]
@@ -949,6 +996,210 @@ mod tests {
             out["responseWindow"], "",
             "restart pages carry no envelope bytes"
         );
+    }
+
+    /// Pages one response in `scope` at `length`, following each page's own
+    /// `nextOffset` and `snapshot` exactly as a caller copies them, and returns
+    /// every page's `(structuredContent, text)`.
+    fn walk_pages(
+        structured: &Value,
+        rendered_text: Option<&str>,
+        scope: &str,
+        length: usize,
+    ) -> Vec<(Value, String)> {
+        let pager = ResponsePager::new(ResponsePagerConfig::default());
+        let mut options = ResponsePageOptions {
+            response_scope: Some(scope.into()),
+            ..options(length)
+        };
+        let mut pages = Vec::new();
+        loop {
+            let prepared = pager
+                .prepare(
+                    ResponseInput {
+                        remaining: Vec::new(),
+                        tool: "localSearch".into(),
+                        query: json!({"path":"a","matchString":"m"}),
+                        structured: structured.clone(),
+                        rendered_text: rendered_text.map(str::to_owned),
+                        is_error: false,
+                        options: options.clone(),
+                    },
+                    &CancellationToken::new(),
+                )
+                .expect("page");
+            let pagination = prepared.structured_content["responsePagination"].clone();
+            pages.push((
+                prepared.structured_content,
+                prepared.content[0].text.clone(),
+            ));
+            if pagination["hasMore"] != true {
+                break;
+            }
+            assert!(
+                pages.len() <= 20_000,
+                "{scope} length {length}: the walk must terminate"
+            );
+            options.response_offset = pagination["nextOffset"].as_u64().map(|v| v as usize);
+            options.response_snapshot = pagination["snapshot"].as_str().map(str::to_owned);
+        }
+        pages
+    }
+
+    /// Whole-response paging delivers every byte or row exactly once at every
+    /// page size, including sizes smaller than one code point or one row.
+    /// `text` and `structured` windows concatenate to the exact source;
+    /// `rows` pages are complete JSON envelopes that together carry each match
+    /// once. A page's body stays inside its length unless it is one
+    /// indivisible code point (`text`, `structured`) or fragment (`rows`).
+    #[test]
+    fn every_scope_delivers_each_byte_and_row_exactly_once_at_small_sizes() {
+        let text = "a😀b\n🧪研究c\\n😀 tail\nlast line é";
+        let envelope = json!({"results":[
+            {"index":0,"data":{"content":"alpha 😀 beta\ngamma 研究 delta"}},
+            {"index":1,"data":{"content":"zeta é eta"}}
+        ]});
+        let serialized = envelope.to_string();
+        for length in (1..=40).chain([64, 100, 257]) {
+            let pages = walk_pages(&envelope, Some(text), "text", length);
+            let joined: String = pages
+                .iter()
+                .map(|(_, page)| page.split_once('\n').expect("page header").1)
+                .collect();
+            assert_eq!(joined, text, "text length {length}");
+            for (structured, page) in &pages {
+                // One page that covers everything keeps its rows and adds no window.
+                if pages.len() > 1 {
+                    let window = structured["responseWindow"].as_str().expect("window");
+                    assert_eq!(window, page, "text length {length}: both channels");
+                }
+                // The last page finishes the response and carries no pagination.
+                if let Some(width) = structured["responsePagination"]["length"].as_u64() {
+                    assert!(
+                        width as usize <= length.max(2),
+                        "text length {length}: {width} units"
+                    );
+                }
+            }
+
+            let pages = walk_pages(&envelope, None, "structured", length);
+            let joined: String = pages
+                .iter()
+                .map(|(structured, _)| structured["responseWindow"].as_str().expect("window"))
+                .collect();
+            assert_eq!(joined, serialized, "structured length {length}");
+            for (structured, page) in &pages {
+                assert_eq!(structured["responseWindow"], json!(page));
+            }
+        }
+
+        const MATCHES: u64 = 12;
+        let matches = |file: &str| {
+            (0..MATCHES)
+                .map(|line| json!({"line": line, "value": format!("{file} item {line} 😀 é")}))
+                .collect::<Vec<_>>()
+        };
+        let rows = json!({"root":"/repo","results":[
+            {"index":0,"data":{"files":[{"path":"a.rs","matches":matches("a")}]}},
+            {"index":1,"data":{"content":"small"}},
+            {"index":2,"data":{"files":[{"path":"c.rs","matches":matches("c")}]}}
+        ]});
+        let mut expected: Vec<(u64, String, u64)> = (0..MATCHES)
+            .flat_map(|line| [(0, "a.rs".to_owned(), line), (2, "c.rs".to_owned(), line)])
+            .collect();
+        expected.sort();
+        for length in [1, 26, 64, 100, 257, 1_000, 50_000] {
+            let pages = walk_pages(&rows, None, "rows", length);
+            let mut seen = Vec::new();
+            let mut small = 0;
+            for (structured, text) in &pages {
+                let page: Value = serde_json::from_str(text).expect("a page is complete JSON");
+                assert_eq!(&page, structured, "rows length {length}: both channels");
+                let pagination = &structured["responsePagination"];
+                // The whole rendered page, pagination block included, fits.
+                let rendered = text.encode_utf16().count();
+                assert!(
+                    rendered <= length || pagination["oversized"] == true,
+                    "rows length {length}: {rendered} chars unflagged"
+                );
+                for row in structured["results"].as_array().expect("rows") {
+                    small += usize::from(row["data"]["content"] == "small");
+                    let index = row["index"].as_u64().expect("index");
+                    for file in row["data"]["files"].as_array().into_iter().flatten() {
+                        for item in file["matches"].as_array().expect("matches") {
+                            seen.push((
+                                index,
+                                file["path"].as_str().expect("path").to_owned(),
+                                item["line"].as_u64().expect("line"),
+                            ));
+                        }
+                    }
+                }
+            }
+            seen.sort();
+            assert_eq!(seen, expected, "rows length {length}");
+            assert_eq!(small, 1, "rows length {length}: the small row appears once");
+        }
+    }
+
+    /// A row page plus its `responsePagination` block is at most the
+    /// requested `responseLength`, at the lengths callers use, for a response
+    /// of many rows and for one broad row split into parts; pages still
+    /// deliver every match exactly once.
+    #[test]
+    fn a_row_page_with_its_pagination_block_fits_the_requested_length() {
+        let matches = |file: &str, count: u64| {
+            (0..count)
+                .map(|line| json!({"line": line, "value": format!("{file} item {line} 😀 é")}))
+                .collect::<Vec<_>>()
+        };
+        let responses = [
+            // Many small rows.
+            json!({"root":"/repo","results":(0..1_500).map(|index| json!({
+                "index": index,
+                "data": {"files":[{"path":format!("f{index}.rs"),"matches":matches("m", 3)}]}
+            })).collect::<Vec<_>>()}),
+            // One broad row.
+            json!({"root":"/repo","results":[
+                {"index":0,"data":{"files":[{"path":"a.rs","matches":matches("a", 3_000)}]}}
+            ]}),
+        ];
+        for (shape, response) in responses.iter().enumerate() {
+            let rendered = response.to_string().encode_utf16().count();
+            for length in [4_000, 20_000, 50_000] {
+                let pages = walk_pages(response, None, "rows", length);
+                assert_eq!(
+                    pages.len() > 1,
+                    rendered > length,
+                    "shape {shape} length {length}"
+                );
+                let mut seen = 0;
+                for (structured, text) in &pages {
+                    let page = text.encode_utf16().count();
+                    assert!(
+                        page <= length || structured["responsePagination"]["oversized"] == true,
+                        "shape {shape} length {length}: a {page}-char page"
+                    );
+                    for row in structured["results"].as_array().expect("rows") {
+                        for file in row["data"]["files"].as_array().expect("files") {
+                            seen += file["matches"].as_array().expect("matches").len();
+                        }
+                    }
+                }
+                let expected: usize = response["results"]
+                    .as_array()
+                    .expect("rows")
+                    .iter()
+                    .map(|row| {
+                        row["data"]["files"][0]["matches"]
+                            .as_array()
+                            .expect("m")
+                            .len()
+                    })
+                    .sum();
+                assert_eq!(seen, expected, "shape {shape} length {length}");
+            }
+        }
     }
 
     #[test]

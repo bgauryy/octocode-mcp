@@ -1,6 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
-
 //! Throttled and failed GitHub rows: what they tell the caller to do next
 //! (`next.retry`, the provider's delay, the SSO authorization URL) and how
 //! the batch exits.

@@ -4,6 +4,7 @@
 //! lines are listed as `"<line>\t<text>"` (the numbered-line form), the way
 //! `grep -n` would: with several keywords, the lines holding all of them.
 use crate::security::scan::ContentScan;
+use crate::tools::num::u32_of_usize;
 use octocode_engine::graph::{GraphFactDeclaration, GraphFactsDocument};
 use octocode_github::{GitHubProvider, ProviderError, ProviderErrorKind, RequestContext};
 use std::path::Path;
@@ -390,7 +391,7 @@ struct Hit {
 impl Hit {
     /// Its 1-based line number.
     fn number(&self) -> u32 {
-        u32::try_from(self.index + 1).unwrap_or(u32::MAX)
+        u32_of_usize(self.index + 1)
     }
 }
 

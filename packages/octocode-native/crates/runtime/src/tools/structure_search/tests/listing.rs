@@ -1001,3 +1001,54 @@ fn files_hide_dot_entries_unless_include_hidden() {
     assert_eq!(default["summary"]["hidden"], 1, "{default}");
     assert_eq!(listed(&query(true)).len(), 2);
 }
+
+/// A directory's own length (its entry table) is no content: `sort:size`
+/// ranks it after every file and names no size for it, and a size filter
+/// lists no directory.
+#[test]
+fn directories_carry_no_size_to_rank_or_filter_by() {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join("crowded")).expect("dir");
+    for index in 0..64 {
+        std::fs::write(
+            root.0
+                .join(format!("crowded/entry-with-a-long-name-{index:03}")),
+            "",
+        )
+        .expect("entry");
+    }
+    std::fs::write(root.0.join("a.txt"), "hello").expect("file");
+    assert!(
+        std::fs::metadata(root.0.join("crowded"))
+            .expect("dir")
+            .len()
+            > 5
+    );
+
+    let out = run(
+        &root.0,
+        json!({"operation":"files","path":root.0,"maxDepth":1,"sort":"size"}),
+    )
+    .expect("listing");
+    let rows = listed(&out);
+    assert_eq!(rows.len(), 2, "{out}");
+    assert!(
+        rows[0]["path"].as_str().expect("path").ends_with("a.txt"),
+        "{out}"
+    );
+    assert_eq!(rows[0]["size"], 5, "{out}");
+    assert_eq!(rows[1]["type"], "directory", "{out}");
+    assert!(rows[1].get("size").is_none(), "{out}");
+
+    let out = run(
+        &root.0,
+        json!({"operation":"files","path":root.0,"maxDepth":1,"size":{"greater":"1"}}),
+    )
+    .expect("sized listing");
+    let rows = listed(&out);
+    assert_eq!(rows.len(), 1, "{out}");
+    assert!(
+        rows[0]["path"].as_str().expect("path").ends_with("a.txt"),
+        "{out}"
+    );
+}

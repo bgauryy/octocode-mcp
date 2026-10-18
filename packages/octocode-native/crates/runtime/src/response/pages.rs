@@ -18,7 +18,8 @@
 use serde_json::{Map, Value, json};
 
 use crate::tools::id::ToolId;
-use crate::tools::id::continuation_channels::PAGES_KEY;
+use crate::tools::id::continuation_channels::{HINTS_KEY, PAGES_KEY};
+use crate::tools::result::is_call;
 
 const WARNINGS: &str = "warnings";
 
@@ -345,13 +346,11 @@ pub(super) fn restart_stale(tool: ToolId, query: &Value, data: &mut Value) {
     };
     object.insert("error".into(), json!(STALE_SNAPSHOT_ERROR));
     object.remove("isPartial");
-    for (key, value) in object.iter_mut() {
-        for block in page_blocks_mut(key, value) {
-            if let Some(block) = block.as_object_mut()
-                && block.contains_key("hasMore")
-            {
-                block.insert("hasMore".into(), json!(false));
-            }
+    for block in page_blocks_deep_mut(object) {
+        if let Some(block) = block.as_object_mut()
+            && block.contains_key("hasMore")
+        {
+            block.insert("hasMore".into(), json!(false));
         }
     }
     if let Some(next) = object.get_mut("next").and_then(Value::as_object_mut) {
@@ -417,21 +416,10 @@ pub(super) fn settle_out_of_range(tool: ToolId, query: &Value, data: &mut Value)
 /// of a resource item the row holds (`pullRequests[0].contentPagination.files`),
 /// since the page cursor is the row's either way.
 fn out_of_range_block(object: &Map<String, Value>) -> Option<Value> {
-    let flagged = |object: &Map<String, Value>| {
-        object
-            .iter()
-            .flat_map(|(key, value)| page_blocks(key, value))
-            .find(|block| block["outOfRange"] == true)
-            .cloned()
-    };
-    flagged(object).or_else(|| {
-        object
-            .values()
-            .filter_map(Value::as_array)
-            .flatten()
-            .filter_map(Value::as_object)
-            .find_map(flagged)
-    })
+    page_blocks_deep(object)
+        .into_iter()
+        .find(|block| block["outOfRange"] == true)
+        .cloned()
 }
 
 /// One page's facts. Every tool builds its `pagination` block from these
@@ -682,7 +670,7 @@ const SECTION_PAGINATION: &str = "contentPagination";
 
 /// The page blocks of the pagination field `key`: one block, or each section
 /// block of `contentPagination`.
-pub(super) fn page_blocks<'a>(key: &str, value: &'a Value) -> Vec<&'a Value> {
+fn page_blocks<'a>(key: &str, value: &'a Value) -> Vec<&'a Value> {
     match (is_pagination_key(key), key == SECTION_PAGINATION) {
         (false, _) => Vec::new(),
         (true, true) => value
@@ -694,7 +682,7 @@ pub(super) fn page_blocks<'a>(key: &str, value: &'a Value) -> Vec<&'a Value> {
 }
 
 /// [`page_blocks`], mutably.
-pub(super) fn page_blocks_mut<'a>(key: &str, value: &'a mut Value) -> Vec<&'a mut Value> {
+fn page_blocks_mut<'a>(key: &str, value: &'a mut Value) -> Vec<&'a mut Value> {
     match (is_pagination_key(key), key == SECTION_PAGINATION) {
         (false, _) => Vec::new(),
         (true, true) => value
@@ -703,6 +691,64 @@ pub(super) fn page_blocks_mut<'a>(key: &str, value: &'a mut Value) -> Vec<&'a mu
             .unwrap_or_default(),
         (true, false) => vec![value],
     }
+}
+
+/// Every page block of a row's `data` at any depth: the [`page_blocks`] of
+/// its own pagination fields and of its nested items' (a pull request's
+/// `contentPagination`, a file's match `pagination`). `next`/`hints` and
+/// calls are never entered; the walk stops at
+/// [`crate::tools::result::NESTING_DEPTH`].
+pub(super) fn page_blocks_deep(data: &Map<String, Value>) -> Vec<&Value> {
+    fn object<'a>(fields: &'a Map<String, Value>, out: &mut Vec<&'a Value>, depth: usize) {
+        for (key, child) in fields {
+            if is_pagination_key(key) {
+                out.extend(page_blocks(key, child));
+            } else if key != PAGES_KEY && key != HINTS_KEY {
+                value(child, out, depth + 1);
+            }
+        }
+    }
+    fn value<'a>(child: &'a Value, out: &mut Vec<&'a Value>, depth: usize) {
+        if depth > crate::tools::result::NESTING_DEPTH || is_call(child) {
+            return;
+        }
+        match child {
+            Value::Object(fields) => object(fields, out, depth),
+            Value::Array(items) => items.iter().for_each(|item| value(item, out, depth + 1)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    object(data, &mut out, 0);
+    out
+}
+
+/// [`page_blocks_deep`], mutably.
+pub(super) fn page_blocks_deep_mut(data: &mut Map<String, Value>) -> Vec<&mut Value> {
+    fn object<'a>(fields: &'a mut Map<String, Value>, out: &mut Vec<&'a mut Value>, depth: usize) {
+        for (key, child) in fields.iter_mut() {
+            if is_pagination_key(key) {
+                out.extend(page_blocks_mut(key, child));
+            } else if key != PAGES_KEY && key != HINTS_KEY {
+                value(child, out, depth + 1);
+            }
+        }
+    }
+    fn value<'a>(child: &'a mut Value, out: &mut Vec<&'a mut Value>, depth: usize) {
+        if depth > crate::tools::result::NESTING_DEPTH || is_call(child) {
+            return;
+        }
+        match child {
+            Value::Object(fields) => object(fields, out, depth),
+            Value::Array(items) => items
+                .iter_mut()
+                .for_each(|item| value(item, out, depth + 1)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    object(data, &mut out, 0);
+    out
 }
 
 /// Keep only the page blocks of a pagination field that pass `keep`; a
@@ -749,12 +795,11 @@ pub fn has_remaining_page(tool: ToolId, value: &Value) -> bool {
 fn has_call(value: &Value, name_matches: &impl Fn(&str) -> bool) -> bool {
     match value {
         Value::Object(map) => {
-            if super::rows::has_executable_call(value) {
+            if is_call(value) {
                 return false;
             }
             map.iter().any(|(key, child)| {
-                (name_matches(key) && super::rows::has_executable_call(child))
-                    || has_call(child, name_matches)
+                (name_matches(key) && is_call(child)) || has_call(child, name_matches)
             })
         }
         Value::Array(array) => array.iter().any(|v| has_call(v, name_matches)),
@@ -825,9 +870,9 @@ fn clipped_value_unreached(data: &Value) -> bool {
         match value {
             Value::Object(map) => {
                 for (key, child) in map {
-                    if let Some(query) =
-                        crate::tools::result::continuation_row(child).and_then(Value::as_object)
-                        && child.get("tool").is_some_and(Value::is_string)
+                    if is_call(child)
+                        && let Some(query) =
+                            crate::tools::result::continuation_row(child).and_then(Value::as_object)
                         && !crate::tools::id::resumes_after_shown(key)
                     {
                         *widened |= query.contains_key("matchContentLength");

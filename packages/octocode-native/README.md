@@ -47,6 +47,7 @@ npm installs only the matching platform package through `optionalDependencies`
 | `@octocodeai/octocode-native-linux-x64-musl` | Linux x64 musl (Alpine) |
 | `@octocodeai/octocode-native-linux-arm64-gnu` | Linux ARM64 (glibc) |
 | `@octocodeai/octocode-native-win32-x64-msvc` | Windows x64 |
+| `@octocodeai/octocode-native-win32-arm64-msvc` | Windows ARM64 |
 
 On Linux x64 the launcher picks `linux-x64-musl` when `/usr/bin/ldd` names musl,
 or when Node reports no glibc runtime and `ldd --version` names musl. musl on
@@ -96,7 +97,7 @@ packages/octocode-native/
 ├─ crates/{engine,io,github,runtime,cli,runtime-napi}/
 ├─ js/          runtime loader (`.` and `./runtime`)
 ├─ bin/         platform-selecting launcher (`octocode-native` bin)
-├─ npm/<p>/     six platform packages: the `octocode` binary and `octocode-native.<p>.node`
+├─ npm/<p>/     one package per platform: the `octocode` binary and `octocode-native.<p>.node`
 └─ scripts/     build-native.cjs (build + atomic staging), native-addon-utils.cjs
 ```
 
@@ -132,7 +133,7 @@ Field reference: [OCTOCODE_TOOLS.md](../../docs/OCTOCODE_TOOLS.md).
 
 Tool commands take one JSON query (positional, `--input <file>`, or `--input -`).
 On a terminal they print the text MCP clients read; on a pipe, one line of JSON
-(`--json` forces it). `octocode --help` lists the tools available under the
+(`--json` forces JSON, indented on a terminal). `octocode --help` lists the tools available under the
 current configuration: by default the 12 MCP tools plus the CLI-only
 `ghCloneRepo`. Beta tools (`astTopology`, and `clasify` with a classification
 key) appear with `OCTOCODE_BETA=true`; `astRewrite` is parked in this build and
@@ -207,9 +208,9 @@ Native owns the interactive `install` picker, skill commands, and `config view`.
 ## Test
 
 ```sh
-yarn workspace @octocodeai/octocode-native test:rust   # every crate, including the N-API adapter
+yarn workspace @octocodeai/octocode-native test:rust   # every crate with cargo-nextest, including the N-API adapter
 yarn workspace @octocodeai/octocode-native test        # script checks, Node tests, then test:rust
-yarn workspace @octocodeai/octocode-native verify      # fmt, clippy, cargo deny, tsc, tests, contract freshness
+yarn workspace @octocodeai/octocode-native verify      # fmt, clippy, cargo deny, cargo shear, tsc, tests, contract freshness
 ```
 
 ## Constraints

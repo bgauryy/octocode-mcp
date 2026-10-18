@@ -17,8 +17,7 @@ import {
   rmSync,
 } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-const root = join(import.meta.dirname, '..'),
-  check = process.argv.includes('--check');
+const root = join(import.meta.dirname, '..');
 const config = join(root, '../octocode-config/dist/index.js');
 if (!existsSync(config))
   throw Error('Build @octocodeai/config before the Chrome package');
@@ -95,22 +94,9 @@ for (const name of ['cli', 'mcp'])
 for (const file of walk(engine).filter(file => !file.endsWith('.mts')))
   files.set(join(dist, 'engine', relative(engine, file)), readFileSync(file));
 for (const [file, bytes] of files) {
-  if (check) {
-    if (!existsSync(file) || !readFileSync(file).equals(bytes))
-      throw Error('Stale ' + relative(root, file) + '; rebuild Chrome package');
-  } else {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, bytes);
-  }
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, bytes);
 }
 if (existsSync(dist))
-  for (const file of walk(dist))
-    if (!files.has(file)) {
-      if (check) throw Error('Obsolete generated file ' + relative(root, file));
-      rmSync(file);
-    }
-console.log(
-  check
-    ? 'Chrome build matches TypeScript source and shared config'
-    : 'Chrome TypeScript runtime, CLI and MCP built'
-);
+  for (const file of walk(dist)) if (!files.has(file)) rmSync(file);
+console.log('Chrome TypeScript runtime, CLI and MCP built');

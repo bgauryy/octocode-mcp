@@ -22,7 +22,7 @@ yarn workspace @octocodeai/codex-plugin verify
 yarn workspace @octocodeai/codex-plugin test:smoke
 ```
 
-For a focused rebuild after prerequisites are built, use `yarn workspace @octocodeai/codex-plugin build:dev`.
+For a focused rebuild after prerequisites are built, use `yarn workspace @octocodeai/codex-plugin build`.
 
 The package tests validate the upstream Agent Plugins schemas, release pins, skill coverage, local script imports, and an extracted npm archive. The smoke check uses an isolated Codex home and temporary marketplace to install the built package. Its MCP check explicitly uses the local built server, since the registry pin may not be published yet. It tests project isolation and synthetic GitHub CLI authentication against a loopback fixture; it does not read real credentials or prove registry installation or other operating systems.
 

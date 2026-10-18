@@ -175,7 +175,7 @@ pub(super) fn resolve_file(
 ) -> Result<(ValidatedRead, fs::File, fs::Metadata), Box<LocalFetchResult>> {
     let validated = paths
         .validate_read(Path::new(q.path.as_str()))
-        .map_err(|failure| Box::new(path_failure(q, failure)))?;
+        .map_err(|failure| Box::new(path_failure(q, *failure)))?;
     // Open first, then stat the handle: a path swapped for a FIFO or a
     // directory after the policy check is refused, never blocked on. A failed
     // open is named by a plain stat of the path.
@@ -222,7 +222,7 @@ fn fetch_streamed(
     if q.clasify_context.is_some() {
         return unsupported_selection(
             q,
-            "Context selection requires an in-memory raw source view; narrow the source or use the unfiltered read.",
+            "Streamed files cannot use inline selection, even with ranges. Read the unfiltered window, then use clasify with bounded state or source ranges.",
             None,
         );
     }
@@ -324,19 +324,20 @@ fn path_failure(q: &LocalFetchQuery, failure: PathFailure) -> LocalFetchResult {
     result.resource_missing = failure.resource_missing;
     if failure.resource_missing {
         // The parent's tree shows a mistyped name's siblings; the listing
-        // finds a file moved elsewhere or under another extension.
+        // finds a file moved elsewhere or under another extension; the read
+        // of the one close sibling fixes a mistyped name in one call.
         let next = NextCalls {
-            view_tree: failure.nearest_dir.as_deref().map(|dir| {
-                crate::tools::result::Continuation::new(
-                    ToolId::StructureSearch,
-                    serde_json::json!({"operation": "tree", "path": dir}),
-                )
-                .build()
-            }),
+            view_tree: failure.view_tree,
             find_file: failure
                 .search_root
                 .as_deref()
                 .and_then(|root| crate::tools::leads::find_file::find_file(root, q.path.as_str())),
+            read: failure
+                .corrected
+                .and_then(|path| path.parse().ok())
+                .map(|path| FetchCall {
+                    query: LocalFetchQuery { path, ..q.clone() },
+                }),
             ..NextCalls::default()
         };
         result.next = Some(next).filter(|next| !next.is_empty());
@@ -494,7 +495,7 @@ pub(crate) fn process_fetched_content_selected(
     let classified_facts;
     let facts = match &selection_outcome {
         Some(chosen) if facts.window.is_some() || facts.first_page_bytes.is_some() => {
-            let beside = chosen.row_chars(&serde_json::to_value(q).unwrap_or_default());
+            let beside = chosen.row_chars(&crate::tools::result::query_value(q));
             classified_facts = SourceFacts {
                 window: facts
                     .window
@@ -557,7 +558,7 @@ fn select_no_match(input: &SelectionInput, mut result: LocalFetchResult) -> Loca
             result
         };
     }
-    let query_json = serde_json::to_value(q).unwrap_or_default();
+    let query_json = crate::tools::result::query_value(q);
     match crate::tools::selection::select(
         input.runtime,
         &query_json,
@@ -625,7 +626,7 @@ fn select_view_chunks(
         q.selection.as_ref().map(|token| token.as_str()),
         unsupported,
     );
-    let query_json = serde_json::to_value(q).unwrap_or_default();
+    let query_json = crate::tools::result::query_value(q);
     let (outcome, provider) =
         crate::tools::selection::unless_transient(crate::tools::selection::select(
             input.runtime,
@@ -857,7 +858,7 @@ fn attach_unfiltered(
     q: &LocalFetchQuery,
     chosen: &super::selection::Chosen,
 ) {
-    let query = serde_json::to_value(q).unwrap_or_default();
+    let query = crate::tools::result::query_value(q);
     let mut reads = chosen.unknown_reads(&query).into_iter();
     let first = reads
         .next()
@@ -1866,8 +1867,7 @@ fn reversed_range_warnings(q: &LocalFetchQuery) -> Vec<String> {
     q.ranges
         .iter()
         .filter_map(|range| {
-            let (start, end) = range.split_once('-')?;
-            let (start, end) = (start.parse::<u64>().ok()?, end.parse::<u64>().ok()?);
+            let (start, end) = crate::tools::line_spans::parse_span_raw::<u64>(range)?;
             (end < start)
                 .then(|| format!("Range \"{range}\" is reversed: read as lines {end}-{start}."))
         })
@@ -3170,9 +3170,7 @@ mod open_tests {
     fn a_fifo_is_refused_without_blocking_and_a_file_opens() {
         let root = tempfile::tempdir().expect("root");
         let fifo = root.path().join("pipe.txt");
-        let c_path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).expect("c path");
-        // SAFETY: `c_path` is a valid NUL-terminated C string for the call.
-        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        crate::tools::test_support::make_fifo(&fifo);
         std::fs::write(root.path().join("a.txt"), "x\n").expect("file");
         let (paths, _) = crate::tools::test_support::simple_policy(root.path());
         let query = |path: &std::path::Path| LocalFetchQuery {
@@ -3192,9 +3190,7 @@ mod open_tests {
     fn a_fifo_is_not_a_file_named_by_its_path_with_nothing_to_retry() {
         let root = tempfile::tempdir().expect("root");
         let fifo = root.path().join("pipe1");
-        let c_path = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).expect("c path");
-        // SAFETY: `c_path` is a valid NUL-terminated C string for the call.
-        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        crate::tools::test_support::make_fifo(&fifo);
         let paths = crate::policy::path::PathPolicy::new(crate::policy::path::PathPolicyConfig {
             workspace_root: Some(root.path().to_path_buf()),
             ..Default::default()

@@ -27,7 +27,6 @@ use super::{LspSearchQuery, Op, cancellable};
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
 use futures_util::StreamExt;
-use octocode_engine::error::Error as EngineError;
 use octocode_engine::lsp::client::{NativeLspClient, SnippetReadPolicy};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -71,19 +70,21 @@ impl Expansion {
 }
 
 /// The language-server requests a hierarchy walk issues; a seam so the walk
-/// is testable over a fake graph.
+/// is testable over a fake graph. A failure keeps its typed kind, so the
+/// row retries only what asking again can change.
 pub(super) trait HierarchySource {
-    async fn expand(&self, expansion: Expansion, item: Value) -> Result<Value, EngineError>;
+    async fn expand(&self, expansion: Expansion, item: Value) -> Result<Value, LspFailure>;
 }
 
 impl HierarchySource for NativeLspClient {
-    async fn expand(&self, expansion: Expansion, item: Value) -> Result<Value, EngineError> {
+    async fn expand(&self, expansion: Expansion, item: Value) -> Result<Value, LspFailure> {
         match expansion {
             Expansion::IncomingCalls => self.incoming_calls(item).await,
             Expansion::OutgoingCalls => self.outgoing_calls(item).await,
             Expansion::Supertypes => self.type_hierarchy_supertypes(item).await,
             Expansion::Subtypes => self.type_hierarchy_subtypes(item).await,
         }
+        .map_err(LspFailure::from)
     }
 }
 
@@ -110,7 +111,7 @@ pub(super) struct Resume {
 #[derive(Debug, Default)]
 pub(super) struct HierarchyWalk {
     pub(super) edges: Vec<HierarchyEdge>,
-    pub(super) failures: Vec<EngineError>,
+    pub(super) failures: Vec<LspFailure>,
     /// Edges to new nodes dropped by [`MAX_HIERARCHY_NODES`].
     pub(super) dropped_edges: usize,
     /// Every parent whose new children the node cap dropped, in walk order
@@ -1172,20 +1173,23 @@ fn call_row(
 /// failure after some results is a partial answer the caller must mark.
 pub(super) fn expansion_outcome(
     items: Vec<Value>,
-    failures: Vec<EngineError>,
-) -> Result<(Vec<Value>, Vec<EngineError>), LspFailure> {
+    failures: Vec<LspFailure>,
+) -> Result<(Vec<Value>, Vec<LspFailure>), LspFailure> {
     if items.is_empty()
         && let Some(first) = failures.first()
     {
-        return Err(LspFailure::from_engine(first));
+        return Err(first.clone());
     }
     Ok((items, failures))
 }
 
+/// Flag a walk that lost expansions partial, disclosing its failures. Only
+/// a transient failure (timeout, crashed or not-ready server) offers
+/// `next.retry`: an unresolved or ambiguous relation answers the same again.
 pub(super) fn mark_partial_expansion(
     row: &mut Value,
     query: &LspSearchQuery,
-    failures: &[EngineError],
+    failures: &[LspFailure],
 ) {
     if failures.is_empty() {
         return;
@@ -1198,7 +1202,7 @@ pub(super) fn mark_partial_expansion(
     // Every distinct failure, once, with how many items it hit.
     let mut distinct: Vec<(String, usize)> = Vec::new();
     for failure in failures {
-        let message = failure.to_string();
+        let message = failure.message.clone();
         match distinct.iter_mut().find(|(seen, _)| *seen == message) {
             Some((_, count)) => *count += 1,
             None => distinct.push((message, 1)),
@@ -1224,7 +1228,11 @@ pub(super) fn mark_partial_expansion(
             )
         }
     };
-    partial_with_retry(row, query, reason, &[warning]);
+    if failures.iter().any(|failure| failure.retryable) {
+        partial_with_retry(row, query, reason, &[warning]);
+    } else {
+        crate::tools::paging::mark_partial(row, reason, &[warning]);
+    }
     if let Some(object) = row.as_object_mut() {
         object.insert(
             "expansionFailures".into(),

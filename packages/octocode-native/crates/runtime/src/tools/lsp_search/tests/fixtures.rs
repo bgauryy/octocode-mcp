@@ -27,6 +27,11 @@ pub(super) fn engine_error(message: &str) -> octocode_engine::error::Error {
     octocode_engine::error::Error::new(message)
 }
 
+/// A server request failure as a hierarchy walk records it.
+pub(super) fn expansion_error(message: &str) -> LspFailure {
+    LspFailure::from(engine_error(message))
+}
+
 /// A fake call graph: `callers[name]` lists the names calling `name`. Each
 /// node's selection line is derived from its name, so nodes differ by key.
 pub(super) struct FakeGraph {
@@ -64,11 +69,11 @@ impl HierarchySource for FakeGraph {
         &self,
         _: Expansion,
         item: serde_json::Value,
-    ) -> Result<serde_json::Value, octocode_engine::error::Error> {
+    ) -> Result<serde_json::Value, LspFailure> {
         self.requests.set(self.requests.get() + 1);
         let name = item["name"].as_str().unwrap_or_default();
         if name == "broken" {
-            return Err(engine_error("expansion failed"));
+            return Err(expansion_error("expansion failed"));
         }
         // Yield once so a level's requests genuinely interleave.
         tokio::task::yield_now().await;

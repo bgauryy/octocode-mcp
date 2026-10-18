@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import { tildePath } from '../shared/home.js';
-import { clipText, isRecord } from '../shared/util.js';
+import { isRecord } from '../shared/util.js';
 import { JOB_TYPE } from '../files/bash-jobs.js';
 import { RESULT_TYPE } from '../subagents/handoff.js';
-import { shownLine } from './store.js';
+import { flatLine } from './store.js';
 
 /**
  * Background work recorded in a session's entries: `bash` calls with `background: true` (result `details.job` and
@@ -14,14 +14,13 @@ import { shownLine } from './store.js';
 interface BackgroundWork {
   kind: 'bash' | 'agent';
   id: string;
-  /** The bash command or the subagent task, on one line. */
+  /** The bash command, or the subagent's goal (else its task), whole on one line. */
   label: string;
+  /** The label is the subagent's goal, not its task. */
+  goal?: boolean;
   /** A bash job's log file. */
   log?: string;
 }
-
-/** Longest command or task shown for one item. */
-const LABEL_CHARS = 60;
 
 /** Bash job ids restart with each extension instance; the log path (id plus start time) is unique. */
 const jobKey = (id: string, log: string | undefined) => (log ? `log:${log}` : `id:${id}`);
@@ -55,41 +54,21 @@ export function unreportedWork(entries: readonly unknown[], since?: number): Bac
     const input = args.get(String(message['toolCallId'])) ?? {};
     if (message['toolName'] === 'bash' && typeof details['job'] === 'string') {
       const log = typeof details['log'] === 'string' ? details['log'] : undefined;
-      started.set(jobKey(details['job'], log), { kind: 'bash', id: details['job'], label: shownLine(String(input['command'] ?? ''), LABEL_CHARS), ...(log ? { log } : {}) });
+      started.set(jobKey(details['job'], log), { kind: 'bash', id: details['job'], label: flatLine(String(input['command'] ?? '')), ...(log ? { log } : {}) });
     } else if (message['toolName'] === 'agent' && details['status'] === 'background' && typeof details['id'] === 'string') {
-      started.set(`agent:${details['id']}`, { kind: 'agent', id: details['id'], label: shownLine(String(input['task'] ?? ''), LABEL_CHARS) });
+      const goal = typeof input['goal'] === 'string' ? flatLine(input['goal']) : '';
+      started.set(`agent:${details['id']}`, { kind: 'agent', id: details['id'], ...(goal ? { label: goal, goal: true } : { label: flatLine(String(input['task'] ?? '')) }) });
     }
   }
   return [...started].filter(([key]) => !reported.has(key)).map(([, work]) => work);
 }
 
 /**
- * One item per line part: `bash-3 (`yarn test`, log ~/…/bash-3-….log)` or `general-ab12 (task "…")`. A log that is
- * gone (the retention sweep removed it) is not offered.
+ * One item per line part: `bash-3 (`yarn test`, log ~/…/bash-3-….log)`, `general-ab12 (goal "…")` or, without a goal,
+ * `(task "…")`. A log that is gone (the retention sweep removed it) is not offered.
  */
 export function describeWork(work: BackgroundWork, checkLog = true): string {
-  if (work.kind === 'agent') return `${work.id} (task "${work.label}")`;
+  if (work.kind === 'agent') return `${work.id} (${work.goal ? 'goal' : 'task'} "${work.label}")`;
   const log = work.log ? (!checkLog || fs.existsSync(work.log) ? `, log ${tildePath(work.log)}` : ', log deleted') : '';
   return `${work.id} (\`${work.label}\`${log})`;
-}
-
-/**
- * `items` joined with `; ` within `max` characters, ending with `+N more` when some did not fit (the count, never a bare
- * cut). A first item longer than the budget alone is clipped.
- */
-export function workList(items: readonly string[], max: number): string {
-  let text = '';
-  for (const [index, item] of items.entries()) {
-    const next = text ? `${text}; ${item}` : item;
-    const rest = items.length - index - 1;
-    const more = rest > 0 ? `; +${rest} more` : '';
-    if (next.length + more.length > max) return text ? `${text}; +${rest + 1} more` : `${clipText(item, max - more.length)}${more}`;
-    text = next;
-  }
-  return text;
-}
-
-/** The first `max` of `items` joined with `; `, then `; +N more` for the rest. */
-export function countedList(items: readonly string[], max: number): string {
-  return `${items.slice(0, max).join('; ')}${items.length > max ? `; +${items.length - max} more` : ''}`;
 }

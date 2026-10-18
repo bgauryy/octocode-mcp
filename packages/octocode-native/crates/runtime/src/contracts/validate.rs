@@ -1,6 +1,8 @@
 mod artifact;
 mod ast_rewrite;
 mod content;
+mod depth_range;
+mod enum_value;
 mod github_search;
 mod history;
 mod local_search;
@@ -13,6 +15,7 @@ mod numeric_tests;
 mod pattern_tests;
 mod qualifiers;
 mod repair;
+mod repository;
 mod shape;
 pub(crate) use qualifiers::qualifier_terms;
 pub(crate) use repair::repair_input;
@@ -117,11 +120,9 @@ pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> V
                 .collect();
             let msg = match (
                 sibling_requirement(issue),
-                value_field(issue).or_else(|| suggest_field(field, &known)),
+                field_guess(issue, field, &known),
             ) {
-                (Some(requires), _) => {
-                    format!("Remove '{field}' from {query}: it applies only with {requires}.")
-                }
+                (Some(requires), _) => sibling_message(issue, field, &query, &requires),
                 _ if is_root_brief(tool_name, &issue.path) => root_brief_message(field),
                 (None, Some(s)) => {
                     format!("Remove unknown field '{field}' from {query} (did you mean '{s}'?)")
@@ -160,10 +161,7 @@ pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> V
                     .collect();
                 match sibling_requirement(issue) {
                     Some(requires) => {
-                        return format!(
-                            "Remove '{field}' from {}: it applies only with {requires}.",
-                            query_label(&issue.path)
-                        );
+                        return sibling_message(issue, field, &query_label(&issue.path), &requires);
                     }
                     None if is_root_brief(tool_name, &issue.path) => {
                         return root_brief_message(field);
@@ -175,7 +173,7 @@ pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> V
                 } else {
                     format!("{path}: {}", issue.message)
                 };
-                return match value_field(issue).or_else(|| suggest_field(field, &known)) {
+                return match field_guess(issue, field, &known) {
                     Some(s) => format!("{base} (did you mean '{s}'?)"),
                     None => base,
                 };
@@ -257,8 +255,9 @@ fn routing_details(tool_name: &str, issues: &[ValidationIssue]) -> Vec<String> {
                     .collect::<Vec<_>>();
                 // A field another form of this tool declares is fixed in
                 // place (`it applies only with …`), never rerouted.
-                let in_tool =
-                    suggest_field(field, &known).is_some() || sibling_requirement(issue).is_some();
+                let in_tool = suggest_field(field, &known).is_some()
+                    || name_field(issue).is_some()
+                    || sibling_requirement(issue).is_some();
                 let entry = (field.as_str(), in_tool);
                 match rows.iter_mut().find(|(row, _)| *row == label) {
                     Some((_, fields)) => fields.push(entry),
@@ -883,6 +882,7 @@ fn apply_validation_rules(rules: &Value, input: &Value) -> Result<(), ContractVa
                 &rule["args"],
             ),
             Some("ast_rewrite_rule") => validate_ast_rewrite_rules(input),
+            Some("depth_range") => depth_range::validate(input),
             Some(opcode) => {
                 return Err(issue(
                     "contract.unsupported-validator",
@@ -955,6 +955,45 @@ fn value_field(issue: &ValidationIssue) -> Option<&str> {
     match issue.schema.as_ref()?["valueFields"].as_array()?.as_slice() {
         [only] => only.as_str(),
         _ => None,
+    }
+}
+
+/// The one known field that takes the kind of value the unknown field is
+/// named for (`branch:"main"` meant `ref`).
+fn kind_field(issue: &ValidationIssue) -> Option<String> {
+    match issue.schema.as_ref()?["kindFields"].as_array()?.as_slice() {
+        [only] => Some(only.as_str()?.to_owned()),
+        _ => None,
+    }
+}
+
+/// The value an unknown `true` field names (`merged:true` →
+/// `state:"merged"`): the one known field whose enum lists its name.
+fn name_field(issue: &ValidationIssue) -> Option<String> {
+    match issue.schema.as_ref()?["nameFields"].as_array()?.as_slice() {
+        [only] => Some(format!("{}:\"{}\"", only.as_str()?, issue.path.last()?)),
+        _ => None,
+    }
+}
+
+/// What an unknown field most likely meant: the field its value names, the
+/// field its name is a kind of value of, the value its name names, else the
+/// nearest known spelling.
+fn field_guess(issue: &ValidationIssue, field: &str, known: &[&str]) -> Option<String> {
+    value_field(issue)
+        .map(str::to_owned)
+        .or_else(|| kind_field(issue))
+        .or_else(|| name_field(issue))
+        .or_else(|| suggest_field(field, known).map(str::to_owned))
+}
+
+/// A field another form of the row declares: when the fix sets that form's
+/// omitted selector (`setFields`), either fix is the caller's to choose.
+fn sibling_message(issue: &ValidationIssue, field: &str, query: &str, requires: &str) -> String {
+    if repository::set_fields(issue).is_some() {
+        format!("'{field}' in {query} applies only with {requires}: set it, or remove '{field}'.")
+    } else {
+        format!("Remove '{field}' from {query}: it applies only with {requires}.")
     }
 }
 
@@ -1169,6 +1208,16 @@ mod tests {
         assert_eq!(
             format_input_error("localFetch", &range),
             json!({"error":"queries.0.ranges.0: \"5:2\" is not a line range; ranges: [\"299-342\"] (strings \"start-end\")"})
+        );
+        // A span spelled another way is named as the span it spells.
+        let typo = validate(
+            "localFetch",
+            json!({"queries":[{"path":"/tmp/a","ranges":["3:6"]}]}),
+        )
+        .expect_err("range typo");
+        assert_eq!(
+            format_input_error("localFetch", &typo),
+            json!({"error":"queries.0.ranges.0: \"3:6\" is not a line range (did you mean \"3-6\"?); ranges: [\"299-342\"] (strings \"start-end\")"})
         );
         // A blank brief carries nothing: it is dropped, not rejected.
         let blank = validate(

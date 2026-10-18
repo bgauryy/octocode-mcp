@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { shortPath } from '../src/shared/format.js';
 import { CLEAR_AT_LEAST_TOKENS, KEEP_RECENT_RESULTS } from '../src/compaction/clearing.js';
 import { registerCompaction } from '../src/compaction/register.js';
 import { contextReads, CLEARED_RESULTS_TYPE } from '../src/files/reads.js';
@@ -75,9 +76,10 @@ function setup(messages: unknown[], options: { cwd?: string; withModel?: boolean
     ...fake,
     ctx,
     guard,
+    /** A model request made at `at`: the `context` handler decides the clearing before every request, in a run or at its start. */
     start: (at: number) => {
       vi.spyOn(Date, 'now').mockReturnValue(at);
-      return fake.fire('before_agent_start', { type: 'before_agent_start', messageType: 'user', prompt: 'next' }, ctx);
+      return fake.fire('context', { type: 'context', messages: structuredClone(messages) }, ctx);
     },
     context: async (list: unknown[] = messages) => ((await fake.fire('context', { type: 'context', messages: structuredClone(list) }, ctx)) as { messages?: any[] } | undefined)?.messages ?? list,
   };
@@ -237,5 +239,73 @@ describe('clearing old tool results once the prompt cache is cold', () => {
     await s.start(T0 + 100 + HOUR + 1_000);
     const forgotten = guard.forget.mock.calls.map(([file]) => path.basename(String(file))).sort();
     expect(forgotten).toEqual(['f0.ts', 'f1.ts', 'f2.ts', 'f3.ts', 'f4.ts', 'f5.ts', 'f6.ts']);
+  });
+
+  it('keeps a file known to the guard when a newer read of it is still in context, as a resume would', async () => {
+    const guard = { restore: vi.fn(), forget: vi.fn() };
+    const items = reads(12);
+    // f0.ts is read again last: that read is among the newest five and stays whole.
+    const again = exchange('read', { path: 'f0.ts' }, textOf(BIG, 'z'));
+    const s = setup(idleMessages([...items, again]), { guard });
+    await s.start(T0 + 100 + HOUR + 1_000);
+    expect(s.entries).toHaveLength(1);
+    const forgotten = guard.forget.mock.calls.map(([file]) => path.basename(String(file)));
+    expect(forgotten).not.toContain('f0.ts');
+    expect(forgotten.length).toBeGreaterThan(0);
+    // What a resume rebuilds the guard from shows it too.
+    expect(contextReads(s.ctx).map((read) => path.basename(read.file))).toContain('f0.ts');
+  });
+  it('clears from the context handler alone, also inside a run after a gap longer than the cache lifetime (a long tool), once', async () => {
+    const s = setup(idleMessages(reads(12)));
+    // Warm: the last reply was a moment ago, so this request clears nothing and the prompt is what it was.
+    await s.start(T0 + 100 + 5_000);
+    expect(s.entries).toEqual([]);
+    expect(s.handlers.get('before_agent_start')?.length).toBe(1);
+    // The next request of the same run comes after a tool that ran longer than the lifetime: no new prompt, only `context`.
+    const out = resultTexts(await s.start(T0 + 100 + HOUR + 1_000).then(() => s.context()));
+    expect(s.entries).toHaveLength(1);
+    expect(out.slice(0, 7).every(cleared)).toBe(true);
+    // The request after that finds the decision made: nothing more is cleared and the bytes do not change.
+    const first = JSON.stringify(await s.context());
+    await s.start(T0 + 100 + HOUR + 2_000);
+    expect(s.entries).toHaveLength(1);
+    expect(JSON.stringify(await s.context())).toBe(first);
+  });
+
+  describe('bash results spilled to a file', () => {
+    const spill = (name: string) => {
+      const file = path.join(tmp(), name);
+      fs.writeFileSync(file, 'whole output');
+      return file;
+    };
+    const bash = (command: string, spilled: string | undefined) => exchange('bash', { command }, textOf(BIG, 'b'), spilled === undefined ? {} : { details: { fullOutputPath: spilled } });
+
+    it('clears an old read-only command to the file Pi saved, and never one that writes, has no saved file, or whose file is gone', async () => {
+      const spilled = Array.from({ length: 8 }, (_, index) => ({ item: bash(`cat src/a${index}.ts | head -50`, spill(`pi-bash-${index}.log`)), file: '' }));
+      const writes = bash('npm install > install.log', spill('pi-bash-w.log'));
+      const unsaved = bash('git status', undefined);
+      const gone = bash('ls -la', path.join(tmp(), 'pi-bash-missing.log'));
+      const items = [writes, unsaved, gone, ...spilled.map(({ item }) => item)];
+      const s = setup([{ role: 'user', content: 'go', timestamp: T0 }, ...flat(items), ...flat(reads(KEEP_RECENT_RESULTS)), reply(T0 + 100)]);
+      await s.start(T0 + 100 + HOUR + 1_000);
+      expect(s.entries).toHaveLength(1);
+      const out = (await s.context()).filter((message) => message.role === 'toolResult');
+      const byId = new Map(out.map((message) => [message.toolCallId, message.content[0].text as string]));
+      for (const kept of [writes, unsaved, gone]) expect(byId.get(kept.id)).toHaveLength(BIG);
+      spilled.forEach(({ item }) => {
+        const file = (item.messages[1] as any).details.fullOutputPath as string;
+        // The placeholder names Pi's own spill file; no second copy is written.
+        expect(byId.get(item.id)).toContain(`Full output: ${shortPath(file)}.`);
+      });
+      const saved = (s.entries[0]!.data as { results: Array<{ saved: string }> }).results.map((result) => result.saved);
+      expect(saved).toEqual(spilled.map(({ item }) => shortPath((item.messages[1] as any).details.fullOutputPath)));
+    });
+
+    it('leaves them alone while the cache is warm', async () => {
+      const items = Array.from({ length: 12 }, (_, index) => bash(`cat a${index}.ts`, spill(`pi-bash-${index}.log`)));
+      const s = setup([{ role: 'user', content: 'go', timestamp: T0 }, ...flat(items), reply(T0 + 100)]);
+      await s.start(T0 + 100 + HOUR - 1_000);
+      expect(s.entries).toEqual([]);
+    });
   });
 });

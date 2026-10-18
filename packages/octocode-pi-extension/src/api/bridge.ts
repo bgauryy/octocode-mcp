@@ -7,7 +7,7 @@ import { ApiServer, type Connection } from './server.js';
 import { clampedParam, DEFAULT_EVENT_TYPES, ERR, MAX_FRAME_BYTES, MESSAGE_KEY_MAX, numberParam, PROTOCOL_VERSION, RpcError, stringParam, WAIT_MS } from './protocol.js';
 import { apiClientLabel, fencedBody, fenceUntrusted, headerText, messageHeader } from '../shared/fence.js';
 import { redactData, redactSecrets, visibleControls } from '../shared/sanitize.js';
-import { saveFullOutput } from '../shared/spill.js';
+import { saveContentCopy, saveFullOutput } from '../shared/spill.js';
 import { envFlag } from '../shared/env.js';
 import { formatClock } from '../shared/format.js';
 import { clip, resultBlock } from '../shared/render.js';
@@ -35,12 +35,9 @@ const HISTORY_MAX_PAGE = 100;
 function boundedText(text: string): string {
   const safe = redactSecrets(text);
   if (safe.length <= RESULT_MAX_CHARS) return safe;
-  // The same answer reaches `message`, `agent.end` and the history: one file for it, not one per channel.
-  if (lastSpilled?.text === safe) return lastSpilled.shown;
-  const file = saveFullOutput(safe, 'api message');
-  const shown = capChars(safe, RESULT_MAX_CHARS, file ? `the whole text is in ${file}` : 'the whole text could not be saved');
-  lastSpilled = { text: safe, shown };
-  return shown;
+  // The same answer reaches `message`, `agent.end` and the history: the file is named by its content, so that is one file, not one per channel.
+  const copy = saveContentCopy(safe, 'api message');
+  return capChars(safe, RESULT_MAX_CHARS, copy ? `the whole text is in ${copy}` : 'the whole text could not be saved');
 }
 function boundedExternal(value: unknown): unknown {
   const safe = redactData(value);
@@ -51,7 +48,6 @@ function boundedExternal(value: unknown): unknown {
   if (!file) throw new RpcError(ERR.unavailable, 'Complete external evidence could not be saved; execution may already have completed', { execution: 'uncertain', bytes });
   return { fullOutput: { path: file, bytes, format: 'json' }, notice: 'Complete redacted result saved on the Pi host; read this file before acting on the result.' };
 }
-let lastSpilled: { text: string; shown: string } | undefined;
 
 /** What the API needs from the team (kept as an interface so the API domain stays independent of it). */
 export interface AgentDirectory {

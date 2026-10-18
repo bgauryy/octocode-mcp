@@ -1,6 +1,8 @@
 //! Pieces every GitHub tool shares: the failure a tool states, search paging,
-//! and the missing-path recovery of ghStructure and ghGetFileContent.
+//! an empty search's broadening, a renamed repository's rescope, and the
+//! missing-path recovery of ghStructure and ghGetFileContent.
 pub(crate) mod commit;
+mod default_branch;
 pub(crate) mod query;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -10,6 +12,10 @@ mod tests;
 use crate::tools::id::ToolId;
 use crate::tools::paging::push_warnings;
 use crate::tools::result::{Continuation, query_row};
+pub(crate) use default_branch::{
+    DefaultBranchRetry, default_branch, default_branch_retry, repo_key, unresolved_refs,
+    with_default_branch,
+};
 use octocode_github::{
     ConditionalCache, GitHubProvider, ProviderError, ProviderErrorKind, ProviderErrorReason,
     RequestContext,
@@ -277,7 +283,7 @@ pub(crate) async fn canonical_repo<C: ConditionalCache>(
 }
 
 /// What [`canonical_scope`] learned of a repository's name.
-pub(crate) enum CanonicalScope {
+enum CanonicalScope {
     /// The name stands (case aside), or it cannot be checked.
     Stands,
     /// GitHub serves it under this `(owner, repo)`.
@@ -290,7 +296,7 @@ pub(crate) enum CanonicalScope {
 /// [`canonical_repo`], telling a missing repository apart. The memo answers
 /// first; past it, `check` decides whether one (memoized) metadata read is
 /// spent. Only a cancelled or timed-out read fails.
-pub(crate) async fn canonical_scope<C: ConditionalCache>(
+async fn canonical_scope<C: ConditionalCache>(
     provider: &GitHubProvider<C>,
     owner: &str,
     repo: &str,
@@ -339,6 +345,59 @@ pub(crate) async fn canonical_scope<C: ConditionalCache>(
     };
     remember_canonical(provider, owner, repo, &full_name, context).await;
     Ok(renamed_to(owner, repo, &full_name).map_or(CanonicalScope::Stands, CanonicalScope::Renamed))
+}
+
+/// Whether a search scoped to one repository answered what a rename could
+/// explain: no rows on any page (`empty`), or GitHub's typed "cannot be
+/// searched" for a repository it could not find. Rows on another page
+/// mean the scope exists.
+pub(crate) fn search_may_be_renamed<T>(
+    answer: &Result<T, ProviderError>,
+    empty: impl FnOnce(&T) -> bool,
+) -> bool {
+    match answer {
+        Ok(page) => empty(page),
+        Err(error) => repository_not_found(error),
+    }
+}
+
+/// What a scoped search learned of its repository's name
+/// ([`rescope_on_rename`]).
+pub(crate) enum Rescope {
+    /// GitHub serves the repository as `owner/repo`; `warning` states the
+    /// rename once.
+    Renamed {
+        owner: String,
+        repo: String,
+        warning: String,
+    },
+    /// The repository does not exist: the search's not-found failure.
+    Missing(ProviderError),
+    /// The name stands, or cannot be checked.
+    Stands,
+}
+
+/// The rescope of a search scoped to `owner/repo` whose answer
+/// [`search_may_be_renamed`] could explain. GitHub search never follows a
+/// rename, so one (memoized) metadata read names the canonical repository
+/// the search reruns against. Only a cancelled or timed-out read fails.
+pub(crate) async fn rescope_on_rename<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    owner: &str,
+    repo: &str,
+    context: &RequestContext,
+) -> Result<Rescope, ProviderError> {
+    Ok(
+        match canonical_scope(provider, owner, repo, context, RenameCheck::Metadata).await? {
+            CanonicalScope::Renamed((to_owner, to_repo)) => Rescope::Renamed {
+                warning: renamed_warning(owner, repo, &(to_owner.clone(), to_repo.clone())),
+                owner: to_owner,
+                repo: to_repo,
+            },
+            CanonicalScope::Missing(error) => Rescope::Missing(error),
+            CanonicalScope::Stands => Rescope::Stands,
+        },
+    )
 }
 
 /// The commit a failed read or listing resolved before it failed (the ref
@@ -599,43 +658,66 @@ fn page_replay(tool: ToolId, query: &impl serde::Serialize, page: usize) -> Valu
     Continuation::new(tool, row).confidence("exact").build()
 }
 
-/// `row` without `keys`.
-pub(crate) fn without(row: &Value, keys: &[&str]) -> Value {
-    let mut variant = row.clone();
-    if let Some(object) = variant.as_object_mut() {
-        for key in keys {
+/// Keys no broadened variant copies: where the walk stands, the output
+/// options and the brief. A variant is a fresh search from its first page.
+const BROADEN_STRIP: &[&str] = &["page", "pageSize", "extras", "mainGoal", "reasoning"];
+
+/// What one empty search can drop to broaden: the tool's own keys a
+/// variant never copies (beside [`BROADEN_STRIP`]), and its narrowing
+/// filters, each group dropped whole (`since` and `until` are one window).
+pub(crate) struct Broaden<'a> {
+    pub(crate) strip: &'a [&'a str],
+    pub(crate) groups: &'a [&'a [&'a str]],
+}
+
+/// An empty search's broader variants as one low-confidence batch lead, so
+/// the variant that returns rows names what emptied the search: `row` (the
+/// search as a wire row) once per filter group it sets, then once per
+/// dropped keyword, the last first (the first usually names the subject); a
+/// lone keyword drops whole. A variant the tool's contract rejects (nothing
+/// left to search by) is skipped, and at most `limit` are kept.
+pub(crate) fn broaden(
+    tool: ToolId,
+    row: &Value,
+    drop: &Broaden<'_>,
+    limit: usize,
+) -> Option<Value> {
+    let mut base = row.clone();
+    if let Some(object) = base.as_object_mut() {
+        for key in BROADEN_STRIP.iter().chain(drop.strip) {
             object.remove(*key);
         }
     }
-    variant
-}
-
-/// `row` once per keyword with that keyword dropped, the last first (the
-/// first usually names the subject); none for fewer than two keywords.
-pub(crate) fn drop_each_keyword(row: &Value) -> Vec<Value> {
-    let keywords = row["keywords"].as_array().map_or(&[][..], Vec::as_slice);
-    if keywords.len() < 2 {
-        return Vec::new();
-    }
-    (0..keywords.len())
-        .rev()
-        .map(|dropped| {
-            let mut variant = row.clone();
-            variant["keywords"] = keywords
+    let without = |keys: &[&str]| {
+        let mut variant = base.clone();
+        if let Some(object) = variant.as_object_mut() {
+            for key in keys {
+                object.remove(*key);
+            }
+        }
+        variant
+    };
+    let mut variants = drop
+        .groups
+        .iter()
+        .filter(|group| group.iter().any(|key| base.get(*key).is_some()))
+        .map(|group| without(group))
+        .collect::<Vec<_>>();
+    let keywords = base["keywords"].as_array().map_or(&[][..], Vec::as_slice);
+    match keywords {
+        [] => {}
+        [_] => variants.push(without(&["keywords"])),
+        many => variants.extend((0..many.len()).rev().map(|dropped| {
+            let mut variant = base.clone();
+            variant["keywords"] = many
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| *index != dropped)
                 .map(|(_, keyword)| keyword.clone())
                 .collect();
             variant
-        })
-        .collect()
-}
-
-/// An empty search's broader `variants` as one low-confidence batch lead,
-/// so the variant that returns rows names what emptied the search. A
-/// variant the tool would reject is skipped, and at most `limit` are kept.
-pub(crate) fn broaden_lead(tool: ToolId, variants: Vec<Value>, limit: usize) -> Option<Value> {
+        })),
+    }
     let variants = variants
         .into_iter()
         .filter(|variant| {
@@ -895,82 +977,6 @@ pub(crate) fn tree_recovery(at: &RepoPath<'_>, max_depth: Option<i64>, confidenc
     Continuation::new(ToolId::GhStructure, tree_query)
         .confidence(confidence)
         .build()
-}
-
-/// What a `fields` pick always keeps of a code row: its identity (path, and
-/// repository on owner-wide pages) and the facts that qualify its lines
-/// (where else the same evidence sits, how many hits exist, whether the
-/// lines were read at the ref, and the commit they were read at).
-pub(crate) const CODE_ROW_ID: &[&str] = &[
-    "owner",
-    "repo",
-    "path",
-    "alsoAt",
-    "matchCount",
-    "atRef",
-    "lineResolved",
-    "commitSha",
-];
-
-/// Finish a classified provider page after shared sanitization and selection.
-/// Read leads may only name selected evidence; `unfiltered` remains the explicit
-/// route to the original page. Output fields never change the judged evidence.
-pub(crate) fn finish_code_selection(value: &mut Value, query: &Value) {
-    let mut selected = std::collections::HashSet::new();
-    for file in value["files"].as_array().into_iter().flatten() {
-        let identity = |key: &str| {
-            file[key]
-                .as_str()
-                .or_else(|| value[key].as_str())
-                .or_else(|| query[key].as_str())
-                .unwrap_or_default()
-                .to_owned()
-        };
-        let (owner, repo) = (identity("owner"), identity("repo"));
-        for path in file["path"].as_str().into_iter().chain(
-            file["alsoAt"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str),
-        ) {
-            selected.insert((owner.clone(), repo.clone(), path.to_owned()));
-        }
-    }
-    for group in ["next", "hints"] {
-        if let Some(leads) = value.get_mut(group).and_then(Value::as_object_mut) {
-            leads.retain(|_, lead| {
-                if lead["tool"] != ToolId::GhGetFileContent.as_str() {
-                    return true;
-                }
-                let Some(rows) = lead
-                    .pointer_mut("/query/queries")
-                    .and_then(Value::as_array_mut)
-                else {
-                    return false;
-                };
-                rows.retain(|read| {
-                    let (Some(owner), Some(repo), Some(path)) = (
-                        read["owner"].as_str(),
-                        read["repo"].as_str(),
-                        read["path"].as_str(),
-                    ) else {
-                        return false;
-                    };
-                    selected.contains(&(owner.to_owned(), repo.to_owned(), path.to_owned()))
-                });
-                !rows.is_empty()
-            });
-        }
-    }
-    let fields = query["fields"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    pick_rows(value, "files", CODE_ROW_ID, &fields);
 }
 
 /// `fields` row pick (gh `--json a,b`): the row's `id` keys, then the

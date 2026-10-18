@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 mod capture;
 
@@ -636,10 +636,7 @@ fn emit(session: &mut Session, usage: &ClassificationUsage, terminal: Option<&st
 fn new_id(input: &Value) -> String {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let serial = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::ZERO)
-        .as_nanos();
+    let now = crate::civil_date::unix_nanos();
     crate::digest::json_sha256(
         &json!({"input":input,"time":now.to_string(),"process":std::process::id(),"serial":serial}),
     )

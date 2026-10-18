@@ -181,17 +181,21 @@ fn row_dates_are_utc() {
 }
 
 /// An empty search offers one runnable batch: the same search once without
-/// each narrowing filter (keywords, qualifiers, the date window; commits,
-/// pull requests and issues all take `since`/`until`).
+/// each narrowing filter (qualifiers, the date window, then keywords;
+/// commits, pull requests and issues all take `since`/`until`).
 #[test]
 fn empty_searches_offer_a_broader_search() {
     let broadened = |row: Value| {
         let query: GhSearchHistoryQuery = serde_json::from_value(row).expect("query");
         super::leads::broaden_search(&query).map(|lead| lead["query"]["queries"][0].clone())
     };
-    let keywords = broadened(json!({"operation":"pullRequest","owner":"o","repo":"r",
-        "keywords":["fix"],"qualifiers":"author:x","page":2}))
-    .expect("keywords dropped");
+    let scoped: GhSearchHistoryQuery = serde_json::from_value(json!({"operation":"pullRequest",
+        "owner":"o","repo":"r","keywords":["fix"],"qualifiers":"author:x","page":2}))
+    .expect("query");
+    let scoped = super::leads::broaden_search(&scoped).expect("lead")["query"]["queries"].clone();
+    assert_eq!(scoped.as_array().map(Vec::len), Some(2), "{scoped}");
+    assert!(scoped[0].get("qualifiers").is_none(), "{scoped}");
+    let keywords = &scoped[1];
     assert!(keywords.get("keywords").is_none(), "{keywords}");
     assert!(keywords.get("page").is_none(), "{keywords}");
     assert_eq!(keywords["qualifiers"], "author:x", "{keywords}");
@@ -203,7 +207,7 @@ fn empty_searches_offer_a_broader_search() {
     let both = super::leads::broaden_search(&both).expect("lead")["query"]["queries"].clone();
     assert_eq!(both.as_array().map(Vec::len), Some(2), "{both}");
     assert!(
-        both[1].get("since").is_none() && both[1]["keywords"] == json!(["fix"]),
+        both[0].get("since").is_none() && both[0]["keywords"] == json!(["fix"]),
         "{both}"
     );
     let qualifiers = broadened(json!({"operation":"issue","owner":"o","repo":"r",
@@ -288,12 +292,13 @@ fn empty_multi_keyword_search_broadens_one_keyword_at_a_time() {
         kept,
         vec![json!(["a", "b"]), json!(["a", "c"]), json!(["b", "c"])]
     );
+    // A variant is a fresh search from its first page.
     assert!(
         three
             .as_array()
             .expect("queries")
             .iter()
-            .all(|row| row["pageSize"] == 7)
+            .all(|row| row.get("pageSize").is_none())
     );
     let one = variants(json!(["a"]));
     assert_eq!(one.as_array().map(Vec::len), Some(1), "{one}");

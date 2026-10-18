@@ -43,7 +43,7 @@ pub use types::{
 
 use crate::signatures::languages;
 use language::AgLanguage;
-use octo::{ExecutionError, all_matches, compile_matcher};
+use octo::{all_matches, compile_matcher};
 use query::{StructuralQuery, invalid_query_explanation};
 
 /// Defense-in-depth cap on content handed to the single-content structural
@@ -77,7 +77,7 @@ pub(crate) fn search(
         format!("[structural.language.unsupported] structural search does not support .{ext} files")
     })?;
     let lang = AgLanguage::new(ext, entry);
-    let run = compile_matcher(&lang, &query)?;
+    let run = compile_matcher(&lang, &query).map_err(|error| error.to_string())?;
     // The non-detailed API returns bare StructuralMatch; node_kind is only
     // surfaced by the detailed shape.
     Ok(all_matches(&run, content)
@@ -177,17 +177,17 @@ pub fn search_detailed(
     let lang = AgLanguage::new(ext, entry);
     let run = match compile_matcher(&lang, &query) {
         Ok(run) => run,
-        Err(message) => {
-            if let Some(error) = ExecutionError::from_compile_message(&message) {
+        Err(error) => {
+            if let Some(interruption) = error.interruption() {
                 return no_matches(
                     file_path,
                     "truncated",
                     entry.language_id.map(str::to_owned),
                     query_explanation,
-                    error.diagnostic(file_path),
+                    interruption.diagnostic(file_path),
                 );
             }
-            let diagnostic = octo::compile_diagnostic(&message).with_path(file_path);
+            let diagnostic = error.diagnostic().with_path(file_path);
             return no_matches(
                 file_path,
                 "parserFailed",

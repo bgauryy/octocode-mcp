@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 //! A fresh CLI process parses only the called tool's slice of the embedded
 //! contract. Each slice must load: a slice that does not match the embedded
 //! text failed every call with a JSON parse error as the only detail.

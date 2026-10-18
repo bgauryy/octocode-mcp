@@ -14,6 +14,9 @@ use crate::structural::types::{
 use super::line_index_support::to_structural_match_with_index;
 use crate::text::utf8_offsets::LineIndex;
 
+/// The code of a parse cut short by its deadline or cancellation.
+pub(super) const PARSE_INTERRUPTED: &str = "structural.parse.interrupted";
+
 #[derive(Debug, Clone)]
 pub(in crate::structural) struct ExecutionError {
     pub(in crate::structural) code: &'static str,
@@ -21,10 +24,6 @@ pub(in crate::structural) struct ExecutionError {
     pub(in crate::structural) message: String,
 }
 impl ExecutionError {
-    pub(in crate::structural) fn from_compile_message(message: &str) -> Option<Self> {
-        let detail = message.strip_prefix("[structural.parse.interrupted] ")?;
-        Some(Self::limit("structural.parse.interrupted", "parse", detail))
-    }
     pub(in crate::structural) fn check(deadline: Instant) -> Result<(), Self> {
         if Instant::now() >= deadline {
             Err(Self::limit(
@@ -170,7 +169,7 @@ pub(super) fn parse_tree(language: &Language, content: &str) -> Result<Tree, Exe
     #[cfg(test)]
     if INTERRUPT_NEXT_COMPILE_PARSE.with(|interrupt| interrupt.replace(false)) {
         return Err(ExecutionError::limit(
-            "structural.parse.interrupted",
+            PARSE_INTERRUPTED,
             "parse",
             "Injected compile parser interruption",
         ));
@@ -188,7 +187,7 @@ pub(in crate::structural) fn parse_tree_with_deadline(
             ExecutionError::limit("structural.parse.failed", "parse", message)
         }
         ParseFailure::Interrupted => ExecutionError::limit(
-            "structural.parse.interrupted",
+            PARSE_INTERRUPTED,
             "parse",
             "Structural parsing exceeded its execution deadline",
         ),

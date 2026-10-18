@@ -91,16 +91,13 @@ pub async fn auth_status(runtime: &ToolRuntime, json_out: bool) -> u8 {
     // Not authenticated is the documented auth exit (4), whatever the mode.
     let unauthenticated = super::exit_code(ExitClass::Failed(FailureKind::Authentication));
     if json_out {
-        let written = write_json(
-            &json!({
-                "authenticated": authenticated,
-                "verification": verification,
-                "username": username,
-                "hostname": hostname,
-                "tokenSource": source,
-            }),
-            true,
-        );
+        let written = write_json(&json!({
+            "authenticated": authenticated,
+            "verification": verification,
+            "username": username,
+            "hostname": hostname,
+            "tokenSource": source,
+        }));
         return match written {
             0 if authenticated => 0,
             0 => unauthenticated,
@@ -221,15 +218,12 @@ async fn refresh_login(
     if result.success {
         let host_label = result.hostname.as_deref().unwrap_or("github.com");
         if json_out {
-            return write_json(
-                &json!({
-                    "success": true,
-                    "action": "refresh",
-                    "hostname": host_label,
-                    "username": result.username,
-                }),
-                true,
-            );
+            return write_json(&json!({
+                "success": true,
+                "action": "refresh",
+                "hostname": host_label,
+                "username": result.username,
+            }));
         }
         eprintln!("Refreshed credentials for {host_label}");
         return 0;
@@ -248,16 +242,13 @@ fn already_authenticated(
     json_out: bool,
 ) -> u8 {
     if json_out {
-        return write_json(
-            &json!({
-                "success": true,
-                "action": "none",
-                "alreadyAuthenticated": true,
-                "hostname": host,
-                "username": existing.username,
-            }),
-            true,
-        );
+        return write_json(&json!({
+            "success": true,
+            "action": "none",
+            "alreadyAuthenticated": true,
+            "hostname": host,
+            "username": existing.username,
+        }));
     }
     let user = if existing.username.is_empty() {
         host
@@ -287,15 +278,12 @@ async fn device_login(
     {
         Ok(stored) => {
             if json_out {
-                return write_json(
-                    &json!({
-                        "success": true,
-                        "action": "login",
-                        "hostname": stored.hostname,
-                        "username": stored.username,
-                    }),
-                    true,
-                );
+                return write_json(&json!({
+                    "success": true,
+                    "action": "login",
+                    "hostname": stored.hostname,
+                    "username": stored.username,
+                }));
             }
             eprintln!(
                 "Authenticated as {} on {}",
@@ -327,10 +315,9 @@ fn logout_with(
     // identical credential-store host (api.github.com → github.com).
     let host = configured_github_host(runtime);
     match delete(&host) {
-        Ok(()) if json_out => write_json(
-            &json!({"loggedOut": true, "hostname": host, "home": view.home}),
-            true,
-        ),
+        Ok(()) if json_out => {
+            write_json(&json!({"loggedOut": true, "hostname": host, "home": view.home}))
+        }
         Ok(()) => {
             eprintln!(
                 "Removed Octocode credentials for {host} from {} and the OS store. Environment and gh credentials are unchanged.",
@@ -378,6 +365,89 @@ mod auth_tests {
     use octocode_github::{ProviderError, ProviderErrorKind};
     use octocode_native::runtime::HostOptions;
     use std::{collections::BTreeMap, sync::Mutex};
+
+    fn runtime_with(env: &[(&str, &str)]) -> (tempfile::TempDir, ToolRuntime) {
+        let dir = tempfile::tempdir().expect("fixture home");
+        let mut vars = BTreeMap::from([
+            (
+                "OCTOCODE_HOME".to_owned(),
+                dir.path().to_string_lossy().into_owned(),
+            ),
+            ("OCTOCODE_ENABLE_STATS".to_owned(), "false".to_owned()),
+        ]);
+        vars.extend(env.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())));
+        let runtime = ToolRuntime::from_host(HostOptions {
+            cwd: Some(dir.path().into()),
+            env: Some(vars),
+            ..HostOptions::default()
+        })
+        .expect("fixture runtime");
+        (dir, runtime)
+    }
+
+    #[test]
+    fn provider_failures_report_their_declared_error_code() {
+        for (kind, code) in [
+            (ProviderErrorKind::Authentication, "authentication"),
+            (ProviderErrorKind::Validation, "invalidInput"),
+            (ProviderErrorKind::Configuration, "configuration"),
+            (
+                ProviderErrorKind::CredentialStoreUnavailable,
+                "credentialStoreUnavailable",
+            ),
+        ] {
+            assert_eq!(provider_code(&ProviderError::new(kind, "fixture")), code);
+        }
+    }
+
+    #[test]
+    fn an_auth_failure_exits_by_its_code_class_in_either_output_mode() {
+        for json_out in [false, true] {
+            assert_eq!(
+                auth_failure("authentication", "m", Some("next"), json_out),
+                4
+            );
+            assert_eq!(auth_failure("invalidInput", "m", None, json_out), 2);
+            assert_eq!(auth_failure("missingConfiguration", "m", None, json_out), 5);
+            assert_eq!(
+                auth_failure("credentialStoreUnavailable", "m", None, json_out),
+                5
+            );
+        }
+    }
+
+    #[test]
+    fn the_credential_host_is_derived_from_the_api_url_with_a_public_default() {
+        for (api, host) in [
+            (None, "github.com"),
+            (Some("https://api.github.com"), "github.com"),
+            (Some("https://ghe.example/api/v3"), "ghe.example"),
+        ] {
+            let env = api.map(|api| [("GITHUB_API_URL", api)]);
+            let (_dir, runtime) = runtime_with(env.as_ref().map_or(&[], |env| env.as_slice()));
+            assert_eq!(configured_github_host(&runtime), host, "{api:?}");
+        }
+    }
+
+    #[test]
+    fn logout_in_json_mode_deletes_once_and_maps_a_failure_to_its_exit_class() {
+        let (_dir, runtime) = runtime_with(&[("GITHUB_API_URL", "https://ghe.example/api/v3")]);
+        let calls = Mutex::new(Vec::new());
+        let delete = |host: &str| {
+            calls.lock().expect("calls").push(host.to_owned());
+            Ok(())
+        };
+        assert_eq!(logout_with(&runtime, &delete, true), 0);
+        assert_eq!(*calls.lock().expect("calls"), ["ghe.example"]);
+        for (kind, exit) in [
+            (ProviderErrorKind::Authentication, 4),
+            (ProviderErrorKind::Validation, 2),
+            (ProviderErrorKind::CredentialStoreUnavailable, 5),
+        ] {
+            let failure = |_: &str| Err(ProviderError::new(kind, "fixture delete failed"));
+            assert_eq!(logout_with(&runtime, &failure, true), exit, "{kind:?}");
+        }
+    }
 
     #[test]
     fn logout_targets_configured_host_preserves_environment_and_reports_delete_failure() {

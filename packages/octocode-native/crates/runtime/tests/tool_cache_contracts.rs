@@ -1,5 +1,3 @@
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used)]
 //! Per-tool cache-contract integration tests.
 //!
 //! Every cacheable tool must have at least one test that proves a cache hit

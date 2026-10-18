@@ -4,7 +4,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatDimensionNote, formatSize, 
 import { shortHash } from './atomic.js';
 import { PRIVATE_FILE_MODE, sessionOutputDir } from './home.js';
 import { shortPath } from './format.js';
-import { capOutput, cutText } from './util.js';
+import { capOutput, cutText, trimmedCounts } from './util.js';
 import { imageLimits, type ImageLimits } from './vision.js';
 
 /** Bytes and lines kept back from the budget for the omission and pointer notes. */
@@ -87,25 +87,29 @@ export function capOutputToFile(text: string, options: { label: string; maxBytes
   const shownLines = Math.min(head.lines + tail.lines, whole.totalLines);
   const shownBytes = Buffer.byteLength(head.text) + Buffer.byteLength(tail.text);
   const omitted = Math.max(whole.totalLines - shownLines, 0);
-  const gap = omitted > 0 ? `[… ${omitted} line${omitted === 1 ? '' : 's'} omitted …]` : `[… ${formatSize(Math.max(whole.totalBytes - shownBytes, 0))} omitted …]`;
+  // A line shown only in part (one alone over the budget) counts as left out, so the read named shows it whole.
+  const first = head.whole ? head.lines + 1 : 1;
+  const last = tail.whole ? whole.totalLines - tail.lines : whole.totalLines;
+  const read = `(lines ${first}–${last} of ${whole.totalLines}; read them from the full output with offset ${first} and limit ${last - first + 1})`;
+  const gap = omitted > 0 ? `[… ${omitted} line${omitted === 1 ? '' : 's'} omitted …] ${read}` : `[… ${formatSize(Math.max(whole.totalBytes - shownBytes, 0))} omitted …]`;
   return (
     `${head.text}\n\n${gap}\n\n${tail.text}\n\n` +
-    `[Output trimmed: showing ${shownLines} of ${whole.totalLines} lines (${formatSize(shownBytes)} of ${formatSize(whole.totalBytes)}). Full output: ${shortPath(file)}; search it or read it by line range.]`
+    `[Output trimmed: showing ${trimmedCounts(shownLines, whole.totalLines, shownBytes, whole.totalBytes)}. Full output: ${shortPath(file)}; search it or read it by line range.]`
   );
 }
 
 /** Whole leading lines within the budget; the head of the first line when it alone is over the byte budget. */
-function headPreview(text: string, maxBytes: number, maxLines: number): { text: string; lines: number } {
+function headPreview(text: string, maxBytes: number, maxLines: number): { text: string; lines: number; whole: boolean } {
   const cut = truncateHead(text, { maxBytes, maxLines });
-  if (cut.content !== '') return { text: cut.content, lines: cut.outputLines };
-  return { text: cutText(text, maxBytes), lines: 1 };
+  if (cut.content !== '') return { text: cut.content, lines: cut.outputLines, whole: true };
+  return { text: cutText(text, maxBytes), lines: 1, whole: false };
 }
 
 /** Trailing lines within the budget; the end of the last line when it alone is over the byte budget. */
-function tailPreview(text: string, maxBytes: number, maxLines: number): { text: string; lines: number } {
+function tailPreview(text: string, maxBytes: number, maxLines: number): { text: string; lines: number; whole: boolean } {
   const cut = truncateTail(text, { maxBytes, maxLines });
-  if (cut.content !== '') return { text: cut.content, lines: cut.outputLines };
-  return { text: cutText(text, maxBytes, { tail: true }), lines: 1 };
+  if (cut.content !== '') return { text: cut.content, lines: cut.outputLines, whole: true };
+  return { text: cutText(text, maxBytes, { tail: true }), lines: 1, whole: false };
 }
 
 /**

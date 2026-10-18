@@ -29,6 +29,7 @@ use super::scope::{CODE_CHECK_MAX_BYTES, CODE_CHECK_MAX_FILES, IgnoredMentions, 
 use super::source::SourceCache;
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
+use crate::tools::num::u32_of_usize;
 use futures_util::stream::{self, StreamExt, TryStreamExt};
 use octocode_engine::lsp::client::{LocationRequest, NativeLspClient, SnippetReadPolicy};
 use serde_json::{Value, json};
@@ -152,7 +153,7 @@ impl Window {
             crate::digest::sha256(candidates.join("\u{0}").as_bytes())
         );
         let total = candidates.len();
-        let pages = u32::try_from(total.div_ceil(MAX_CANDIDATE_FILES).max(1)).unwrap_or(u32::MAX);
+        let pages = u32_of_usize(total.div_ceil(MAX_CANDIDATE_FILES).max(1));
         let page = request.page.max(1);
         if page > pages || request.expected.is_some_and(|expected| expected != digest) {
             return Cut::Stale;
@@ -219,7 +220,7 @@ impl Window {
         self.candidates
             .binary_search_by(|candidate| candidate.as_str().cmp(file))
             .map_or(self.page, |index| {
-                u32::try_from(index / MAX_CANDIDATE_FILES + 1).unwrap_or(u32::MAX)
+                u32_of_usize(index / MAX_CANDIDATE_FILES + 1)
             })
     }
 
@@ -394,20 +395,27 @@ impl Importers {
     /// rest unverified: its lead is over the scope, which holds the files it
     /// found and those it did not reach, and without evidence the row is
     /// partial and says the scan did not finish. Nested repositories the scan
-    /// did not enter are named, and the lead reaches into them too; they are
-    /// no evidence on their own, so they never make the row partial.
+    /// did not enter are counted, and the lead reaches into each of them (a
+    /// row with no name to search names them instead); they are no evidence
+    /// on their own, so they never make the row partial.
     fn disclose_ignored(&self, row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
         let ignored = &self.ignored;
         if !ignored.nested_repositories.is_empty() {
+            // The `includeSkipped` lead lists each one; without a name to
+            // search there is no lead, so the notice names them.
+            let listed = if query.symbol_name().is_some() {
+                String::new()
+            } else {
+                format!(": {}", ignored.nested_repositories.join(", "))
+            };
             crate::tools::paging::push_notice(
                 row,
                 format!(
-                    "The scan for gitignored files did not enter {} (directories with their own .git) under the scope root: {}.",
+                    "The scan for gitignored files did not enter {} (directories with their own .git) under the scope root{listed}.",
                     match ignored.nested_repositories.len() {
                         1 => "1 nested repository".to_owned(),
                         count => format!("{count} nested repositories"),
                     },
-                    ignored.nested_repositories.join(", ")
                 ),
             );
         }
@@ -1317,8 +1325,8 @@ mod tests {
         let quiet = annotate(IgnoredMentions::default());
         assert!(quiet.get("isPartial").is_none(), "{quiet}");
 
-        // Nested repositories the scan did not enter are named, whatever
-        // else it found.
+        // Nested repositories the scan did not enter are counted, whatever
+        // else it found; the lead names each one.
         let nested = annotate(IgnoredMentions {
             nested_repositories: vec!["repos/a".into(), "repos/b".into()],
             ..IgnoredMentions::default()
@@ -1326,7 +1334,7 @@ mod tests {
         assert_eq!(
             nested[crate::tools::paging::NOTICES],
             json!([
-                "The scan for gitignored files did not enter 2 nested repositories (directories with their own .git) under the scope root: repos/a, repos/b."
+                "The scan for gitignored files did not enter 2 nested repositories (directories with their own .git) under the scope root."
             ]),
             "{nested}"
         );

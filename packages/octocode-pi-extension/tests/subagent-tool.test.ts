@@ -6,11 +6,13 @@ import { exitReason, runSubagent, subagentProcessEnv, USER_STOP } from '../src/s
 import { ReadReports, ReportQueue } from '../src/subagents/handoff.js';
 import { processAlive, processStartTime } from '../src/shared/process.js';
 import { MAX_SUBAGENTS_ENV } from '../src/subagents/claim.js';
+import { archiveSearch, existingLibrary, writeSegment } from '../src/shared/archive.js';
 import { registerAgentTool } from '../src/subagents/tool.js';
 import type { AgentProfile } from '../src/subagents/profiles.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { createWorktree } from '../src/subagents/worktree.js';
 import { Team } from '../src/team/session.js';
+import { TeamStore } from '../src/team/store.js';
 import { registerCollab } from '../src/team/tools.js';
 import { fakeCtx, fakePi, rendered, theme, fakePermission } from './fake-pi.js';
 import { tmp } from './helpers.js';
@@ -54,10 +56,13 @@ const profiles = new Map<string, AgentProfile>([
   ['webLive', { name: 'webLive', description: 'browser', prompt: 'Drive the browser.', visibleBrowser: true }],
 ]);
 
+/** Why profile files were refused when the profiles loaded, by file name (as `index.ts` collects them from `onSkip`). */
+const refused = new Map<string, string>();
+
 function setup(cwd = tmp('octocode-agent-cwd-'), hasUI = true) {
   const f = fakePi();
   const team = new Team(f.pi);
-  const control = registerAgentTool(f.pi, () => profiles, team, fakePermission());
+  const control = registerAgentTool(f.pi, () => profiles, team, fakePermission(), () => refused);
   // As index.ts wires it: `/octocode agents`, with the `/agents` shortcut.
   const commands = new Subcommands();
   commands.add('agents', control.command);
@@ -131,7 +136,7 @@ describe('agent tool with a scripted pi child', () => {
     // It saved nothing there, so the folder is removed when the run ends.
     expect(fs.existsSync(facts.scratch)).toBe(false);
     expect(fs.readFileSync(path.join(s.cwd, '.octocode', 'tmp', '.gitignore'), 'utf8')).toBe('*\n');
-    expect(facts.args).toEqual(expect.arrayContaining(['--mode', 'rpc', '--no-session', '--model', 'faux/model', '--tools', 'read,bash', '--exclude-tools', 'file,edit,write']));
+    expect(facts.args).toEqual(expect.arrayContaining(['--mode', 'rpc', '--session-dir', path.join(facts.scratch, 'session'), '--session-id', facts.id, '--model', 'faux/model', '--tools', 'read,bash', '--exclude-tools', 'file,edit,write']));
     expect(text).toContain('(Last screenshot: ');
     expect(result.details).toMatchObject({ profile: 'researcher', toolCalls: 1, input: 100, cacheRead: 0, output: 20, cost: 0.01, unpriced: false, model: 'faux/model' });
     // The child's own facts ride in its task (after the task text), not in its system prompt.
@@ -194,6 +199,34 @@ describe('agent tool with a scripted pi child', () => {
     expect(silent.content[0].text).toBe('(subagent returned no text)');
   });
 
+  it("names the parent's archive library in the child's task, once the parent has one, and not before", async () => {
+    const savedHome = process.env['OCTOCODE_HOME'];
+    process.env['OCTOCODE_HOME'] = tmp();
+    try {
+      const s = setup();
+      const line = (task: string) => task.split('\n').filter((text) => text.startsWith('Earlier history of your parent session'));
+      const without = reportOf((await s.run({ task: 'report back' })).content[0].text as string);
+      expect(line(without.task)).toEqual([]);
+      writeSegment({ session: 'parent', entry: 'c1', tokensBefore: 1, method: 'pi-default', tldr: 'earlier work', topics: [], readFiles: [], modifiedFiles: [], messages: 1 }, 'body');
+      const library = existingLibrary()!;
+      const earlier = `Earlier history of your parent session, compacted out of its context, is archived in ${path.dirname(library)} (read-only; LIBRARY.md indexes it; the repository shows today's state, the archive what was said and found then). ${archiveSearch()}`;
+      const withLibrary = reportOf((await s.run({ task: 'report back' })).content[0].text as string);
+      // One line after the identity, in the task and not in the system prompt: the child's facts stay the same shape.
+      expect(line(withLibrary.task)).toEqual([earlier]);
+      expect(withLibrary.task.startsWith('report back\n\n## You\nYour name is')).toBe(true);
+      expect(withLibrary.task.endsWith(earlier)).toBe(true);
+      expect(withLibrary.args.join(' ')).not.toContain(library);
+      // Every child keeps the archive tool (a core tool), so a profile without MCP servers gets the same line.
+      profiles.set('offline', { name: 'offline', description: 'no MCP', prompt: 'No servers.', mcp: false });
+      const offline = reportOf((await s.run({ task: 'report back', profile: 'offline' })).content[0].text as string);
+      expect(line(offline.task)).toEqual([earlier]);
+    } finally {
+      profiles.delete('offline');
+      if (savedHome === undefined) delete process.env['OCTOCODE_HOME'];
+      else process.env['OCTOCODE_HOME'] = savedHome;
+    }
+  });
+
   it('still runs the child, alone, when the team database is unusable', async () => {
     const s = setup();
     vi.spyOn(s.team, 'join').mockImplementation(() => {
@@ -235,6 +268,17 @@ describe('agent tool with a scripted pi child', () => {
     // A short report is not written to disk.
     const short = await s.run({ task: 'report' });
     expect(fs.existsSync(path.join(s.cwd, '.octocode', 'tmp', 'agents', short.details.id, 'report.md'))).toBe(false);
+  });
+
+  it('names why a profile was refused at load when the unknown profile is that one', async () => {
+    refused.set('blind', 'Profile "blind" removes sendMessage with excludeTools. Remove it from the profile\'s excludeTools.');
+    try {
+      await expect(s.run({ task: 'x', profile: 'blind' })).rejects.toThrow(/Unknown profile "blind"\. Available: researcher, webLive\n"blind" was refused when profiles loaded: Profile "blind" removes sendMessage/);
+      // A name that was never a profile file gets no reason.
+      await expect(s.run({ task: 'x', profile: 'nope' })).rejects.not.toThrow(/refused/);
+    } finally {
+      refused.clear();
+    }
   });
 
   it('refuses unknown profiles and makes runs over the limit wait for a slot', async () => {
@@ -339,6 +383,79 @@ describe('agent tool with a scripted pi child', () => {
     // Shutdown returns only after the stopped child exited and its report was filed.
     expect(s.sent.at(-1)?.message.content).toBe(`Background subagent ${slow.details.id} (general: check things) stopped by session shutdown`);
     expect(s.sent.at(-1)!.options.triggerTurn).toBe(false);
+  });
+
+  /** The background reports sent to the parent (its team mail, the child's questions, is sent too). */
+  const reports = () => s.sent.filter((entry) => entry.message.customType === 'octocode-agent-result');
+
+  /** Acts as the gated child's team: joins it, asks its parent twice (one FYI too), and returns the store to answer with. */
+  async function askAsChild(id: string) {
+    const store = TeamStore.open(s.cwd, process.env['OCTOCODE_AGENT_DB']!);
+    const parentId = s.team.id!;
+    store.save({ id, role: 'general', parentId, pid: process.pid, status: 'working', joinedAt: Date.now(), updatedAt: Date.now(), toolCalls: 0, input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false });
+    const first = store.send(id, [parentId], 'Which database should the migration target?', { replyRequired: true }).id!;
+    store.send(id, [parentId], 'FYI: tests are slow', { replyRequired: false });
+    const second = store.send(id, [parentId], 'Rename the column too?', { replyRequired: true }).id!;
+    return { store, parentId, first, second };
+  }
+
+  it('records a child\'s questions to its parent in the run details, the report footer and /agents', async () => {
+    const gate = path.join(tmp(), 'gate');
+    process.env['OCTOCODE_FAKE_GATE'] = gate;
+    const started = await s.run({ task: 'gated background', background: true });
+    const id = started.details.id as string;
+    const { store, parentId, first, second } = await askAsChild(id);
+    try {
+      await vi.waitFor(() => expect(store.asks(id, parentId, 0)).toHaveLength(2));
+      // The parent answers the first question; the second stays open. /agents shows the live count.
+      store.send(parentId, [id], 'Postgres', { replyRequired: false, replyTo: first });
+      await s.commands.get('agents').handler('', s.ctx);
+      expect(s.ctx.ui.notes.at(-1)!.message).toMatch(/\n  2 asks \(1 answered in \d+s, 1 unanswered\) to its parent/);
+      fs.writeFileSync(gate, '');
+      await vi.waitFor(() => expect(reports()).toHaveLength(1), { timeout: 10_000 });
+    } finally {
+      store.close();
+      delete process.env['OCTOCODE_FAKE_GATE'];
+    }
+    const { message } = reports()[0]!;
+    expect(String(message.content)).toMatch(/\nAsks to its parent: 2 asks \(1 answered in \d+s, 1 unanswered\)\.$/);
+    expect(message.details.asks).toEqual([
+      { id: first, text: 'Which database should the migration target?', askedAt: expect.any(Number), answer: { id: expect.any(Number), at: expect.any(Number), by: parentId } },
+      { id: second, text: 'Rename the column too?', askedAt: expect.any(Number) },
+    ]);
+    expect(message.details.asks[0].answer.at).toBeGreaterThanOrEqual(message.details.asks[0].askedAt);
+  });
+
+  it('returns a foreground run\'s asks in its details and marks an answer that followed an askUser call', async () => {
+    const gate = path.join(tmp(), 'gate');
+    process.env['OCTOCODE_FAKE_GATE'] = gate;
+    let id: string | undefined;
+    const running = s.run({ task: 'gated foreground' }, undefined, (update) => (id ||= (update as { details: { id: string } }).details.id));
+    try {
+      await vi.waitFor(() => expect(id).toBeTruthy());
+      const { store, parentId, first } = await askAsChild(id!);
+      try {
+        // The parent asks the user, then answers: the answer is marked.
+        await s.emit('tool_execution_start', { toolCallId: 'ask-1', toolName: 'askUser' }, s.ctx);
+        await s.emit('tool_execution_end', { toolCallId: 'ask-1', toolName: 'askUser' }, s.ctx);
+        store.send(parentId, [id!], 'Postgres, the user said', { replyRequired: false, replyTo: first });
+      } finally {
+        store.close();
+      }
+      fs.writeFileSync(gate, '');
+      const result = await running;
+      expect(result.details.asks.map((ask: { id: number; answer?: { afterAskUser?: boolean } }) => [ask.id, ask.answer?.afterAskUser])).toEqual([[first, true], [first + 2, undefined]]);
+      expect(result.content[0].text).toMatch(/\nAsks to its parent: 2 asks \(1 answered in \d+s \(1 after askUser\), 1 unanswered\)\./);
+    } finally {
+      fs.writeFileSync(gate, '');
+      delete process.env['OCTOCODE_FAKE_GATE'];
+    }
+  });
+
+  it('omits asks from a run that asked nothing', async () => {
+    const result = await s.run({ task: 'report quickly' });
+    expect(result.details).not.toHaveProperty('asks');
+    expect(result.content[0].text).not.toContain('Asks to its parent');
   });
 
   it('tells parallel collaborating subagents about each other', async () => {
@@ -515,7 +632,7 @@ describe('runSubagent', () => {
   it('keeps the pointer to the saved partial report in a crash error, however long the narration was', async () => {
     const scratch = tmp();
     const error = await runSubagent('long narrate then crash', [], tmp(), undefined, { id: 'a-crash', scratch }, undefined, () => undefined).then(() => undefined, (e: Error) => e);
-    expect(error?.message).toMatch(/^Subagent exited with code 3: segfault\nLast progress: progress detail .*\[… \d+ more characters cut\]\nFull partial report: .*partial-report\.md/s);
+    expect(error?.message).toMatch(/^Subagent exited with code 3: segfault\nLast progress: progress detail .*\n\[Output trimmed: [^\]]+\]\nFull partial report: .*partial-report\.md/s);
     expect(fs.readFileSync(path.join(scratch, 'partial-report.md'), 'utf8')).toMatch(/the end$/);
   });
 
@@ -623,8 +740,23 @@ describe('subagent watchdog and exits', () => {
   });
 
   it('stops a busy child once a call runs past its own deadline (busyMs when it declares none)', async () => {
-    await expect(runSubagent('slow tool', [], tmp(), undefined, { id: 'a-slow-hung' }, undefined, () => undefined, undefined, { idleMs: 200, busyMs: 200 }))
-      .rejects.toThrow(/^Subagent stopped: → bash sleep 60 ran past its own deadline; last output .* ago\. Its process tree was killed\.$/);
+    // On the watchdog's fake clock, like runThenAbort: the idle limit counts from spawn, so on a real clock a child that
+    // takes longer than `idleMs` to start (a loaded machine) is stopped as idle before its tool call is ever seen.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      let busy!: () => void;
+      const started = new Promise<void>((resolve) => void (busy = resolve));
+      const run = runSubagent('slow tool', [], tmp(), undefined, { id: 'a-slow-hung' }, undefined, () => busy(), undefined, { idleMs: 200, busyMs: 200 });
+      const outcome = Promise.allSettled([run]);
+      await started;
+      await vi.advanceTimersByTimeAsync(1_000); // past the call's deadline (busyMs + idleMs) and a watchdog tick
+      vi.useRealTimers();
+      const settled = (await outcome)[0]!;
+      expect(settled.status).toBe('rejected');
+      expect((settled as PromiseRejectedResult).reason.message).toMatch(/^Subagent stopped: → bash sleep 60 ran past its own deadline; last output .* ago\. Its process tree was killed\.$/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.skipIf(process.platform === 'win32')('gives a stop the user asked for a short grace: a child ignoring SIGTERM is killed in about a second', async () => {

@@ -2,8 +2,9 @@
 //! lists, a file the index did not search at the requested ref).
 use super::GhSearchCodeQuery;
 use super::code_output::{Resolution, requested_ref, row_repo};
-use crate::tools::gh_shared::{broaden_lead, drop_each_keyword, without};
+use crate::tools::gh_shared::{Broaden, broaden};
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::{Continuation, continuation_row_mut, query_row};
 use serde_json::{Value, json};
 
@@ -219,7 +220,7 @@ pub(super) fn line_read(
     if anchor == first && last.saturating_sub(first) <= 40 {
         end = end.max(last.saturating_add(3));
     }
-    let end = end.min(u32::try_from(line_count).unwrap_or(u32::MAX).max(start));
+    let end = end.min(u32_of_usize(line_count).max(start));
     if !code_hit(path) {
         return None;
     }
@@ -269,35 +270,19 @@ pub(super) fn unsearched_ref_read(query: &GhSearchCodeQuery) -> Option<Value> {
 /// against a window of 10 per minute.
 const BROADEN_VARIANTS: usize = 2;
 
-/// An empty search's broader variants, one per narrowing it can drop: each
-/// set filter (`path`, `filename`, `extensions`), then each
-/// keyword of a multi-keyword search. A variant that returns rows names what
-/// emptied the search. Variants the tool would reject are skipped, and no
-/// more are offered than `window_room`, the code searches the window has left.
+/// An empty search's broader variants ([`broaden`]): one per set filter
+/// (`path`, `filename`, `extensions`), then one per dropped keyword. No more
+/// are offered than `window_room`, the code searches the window has left.
 pub(super) fn broaden_search(query: &GhSearchCodeQuery, window_room: usize) -> Option<Value> {
-    let base = query_row(
-        query,
-        // Code search indexes only the default branch: a `ref` adds nothing
-        // to a broader search.
-        &[
-            "page",
-            "pageSize",
-            "extras",
-            "fields",
-            "mainGoal",
-            "reasoning",
-            "ref",
-        ],
-    );
-    let mut variants = ["path", "filename", "extensions"]
-        .into_iter()
-        .filter(|filter| base.get(filter).is_some())
-        .map(|filter| without(&base, &[filter]))
-        .collect::<Vec<_>>();
-    variants.extend(drop_each_keyword(&base));
-    broaden_lead(
+    broaden(
         ToolId::GhSearchCode,
-        variants,
+        &query_row(query, &[]),
+        &Broaden {
+            // Code search indexes only the default branch: a `ref` adds
+            // nothing to a broader search.
+            strip: &["fields", "ref"],
+            groups: &[&["path"], &["filename"], &["extensions"]],
+        },
         window_room.min(BROADEN_VARIANTS),
     )
 }

@@ -7,6 +7,10 @@ use std::{collections::BTreeMap, ffi::OsString, process::Stdio, time::Duration};
 use tokio::io::AsyncReadExt;
 
 const MAX_TOKEN_BYTES: u64 = 8192;
+/// The variable gh (Go's `os.UserHomeDir`) reads its home from. Its login and
+/// state live there; without it gh has no login to return and writes its state
+/// (`.local/state/gh`) relative to the working directory.
+const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
 const COMMON_GH_PATHS: &[&str] = &[
     "/opt/homebrew/bin",
     "/usr/local/bin",
@@ -34,6 +38,9 @@ pub(super) async fn gh_token<'a>(
 ) -> Result<Option<SecretString>, ProviderError> {
     budget.check().map_err(resolution_stopped)?;
     let mut env: BTreeMap<_, _> = env.collect();
+    if env.get(HOME_VAR).is_none_or(|home| home.is_empty()) {
+        return Ok(None);
+    }
     // Environment selection already happened with host checks. gh must consult
     // its own host-scoped store, not reinterpret an off-host environment token.
     for key in crate::config::ENV_TOKEN_VARS {
@@ -144,6 +151,7 @@ mod tests {
         let path = dir.path().to_str().unwrap();
         let env = [
             ("PATH", path),
+            (HOME_VAR, path),
             ("GH_TOKEN", "off-host"),
             ("GITHUB_TOKEN", "off-host"),
             ("GH_ENTERPRISE_TOKEN", "off-host"),
@@ -154,6 +162,25 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(token.expose_secret(), "discovered");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discovery_without_a_home_never_runs_gh() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let ran = dir.path().join("ran");
+        let executable = dir.path().join("gh");
+        let script = format!("#!/bin/sh\ntouch '{}'\nprintf discovered\n", ran.display());
+        std::fs::write(&executable, script).unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = dir.path().to_str().unwrap();
+        let budget = RequestBudget::with_timeout(Duration::from_secs(30), 1);
+        for env in [vec![("PATH", path)], vec![("PATH", path), (HOME_VAR, "")]] {
+            let token = gh_token("github.com", env.into_iter(), &budget).await;
+            assert!(token.unwrap().is_none());
+        }
+        assert!(!ran.exists(), "gh ran without a home");
     }
 
     #[cfg(unix)]

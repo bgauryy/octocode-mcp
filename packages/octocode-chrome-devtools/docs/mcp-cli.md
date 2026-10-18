@@ -34,7 +34,7 @@ Package continuations are `{tool, query}`. Relative continuation and search path
 
 Calls serialize within one server. Separate servers must coordinate a shared tab. An MCP cancellation notification aborts active engine execution and rejects queued calls before they launch. Captured partial logs survive cancellation; an in-flight mutation remains uncertain. Explicit engine deadlines also bound calls. Inspect uncertain mutation outcomes before retrying.
 
-Maintainers use `yarn workspace @octocodeai/octocode-chrome-devtools build`, `check:build`, and `verify`. The build bundles `octocode-mcp-cli` once and refreshes shared config; the extracted archive needs no runtime dependencies. The protocol suite's `--transport legacy|mcp|typed-cli` runs the same real-browser assertions through all interfaces. Extracted-package tests check actual npm archive contents and stdio operation outside the repository.
+Maintainers use `yarn workspace @octocodeai/octocode-chrome-devtools build` and `verify`. The build bundles `octocode-mcp-cli` once and refreshes shared config; the extracted archive needs no runtime dependencies. The protocol suite's `--transport legacy|mcp|typed-cli` runs the same real-browser assertions through all interfaces. Extracted-package tests check actual npm archive contents and stdio operation outside the repository.
 
 Next: steps, event references and sessions → [browser execution](browser-execution.md); failed target/request → [recovery](recovery.md).
 

@@ -47,6 +47,59 @@ pub(super) fn looks_like_json_array(text: &str) -> bool {
         || rest.to_ascii_lowercase().starts_with("&#x22;")
 }
 
+/// The `start-end` span a rejected line-range item spells another way: two
+/// line numbers joined by other separators (`"3:6"`, `"3..6"`, `"L3-L6"`,
+/// `"3 to 6"`), a pair of numbers (`[3, 6]`), or one line (`"5"`, `5`) as
+/// its one-line span. `None` for anything else, and for line 0 or a
+/// descending pair (only the caller knows what those meant).
+pub(super) fn line_range_reading(value: &Value) -> Option<String> {
+    let line = |value: &Value| value.as_u64().filter(|line| *line > 0);
+    let (start, end) = match value {
+        Value::Number(_) => (line(value)?, line(value)?),
+        Value::Array(items) => match items.as_slice() {
+            [only] => (line(only)?, line(only)?),
+            [start, end] => (line(start)?, line(end)?),
+            _ => return None,
+        },
+        Value::String(text) => {
+            let text = text.trim();
+            // `-3` or `3-` is no span (a count from the end, an open end).
+            let bounded = text
+                .trim_start_matches(['L', 'l'])
+                .starts_with(|c: char| c.is_ascii_digit())
+                && text.ends_with(|c: char| c.is_ascii_digit());
+            if !bounded {
+                return None;
+            }
+            let numbers = text
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|part| !part.is_empty())
+                .map(|part| part.parse::<u64>().ok().filter(|line| *line > 0))
+                .collect::<Option<Vec<_>>>()?;
+            // Everything else is a separator or a line marker.
+            let words = text
+                .split(|c: char| c.is_ascii_digit() || c.is_whitespace())
+                .filter(|part| !part.is_empty())
+                .all(|part| {
+                    part.eq_ignore_ascii_case("to")
+                        || part
+                            .trim_matches(|c| matches!(c, 'L' | 'l'))
+                            .chars()
+                            .all(|c| {
+                                matches!(c, ':' | '.' | ',' | '~' | '-' | '\u{2013}' | '\u{2014}')
+                            })
+                });
+            match (numbers.as_slice(), words) {
+                ([only], true) => (*only, *only),
+                ([start, end], true) => (*start, *end),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    (start <= end).then(|| format!("{start}-{end}"))
+}
+
 /// Whether a flattened item schema's declared type admits `value`; an untyped
 /// schema admits anything.
 fn accepts(schema: &Value, value: &Value) -> bool {
@@ -132,6 +185,30 @@ mod tests {
         }
         for literal in ["[ab]*.ts", "*.go", "[", ""] {
             assert!(!looks_like_json_array(literal), "{literal}");
+        }
+    }
+
+    #[test]
+    fn a_line_range_typo_reads_as_its_span() {
+        for (value, span) in [
+            (json!("3:6"), Some("3-6")),
+            (json!("3..6"), Some("3-6")),
+            (json!(" L3-L6 "), Some("3-6")),
+            (json!("3 to 6"), Some("3-6")),
+            (json!("3\u{2013}6"), Some("3-6")),
+            (json!("7"), Some("7-7")),
+            (json!(7), Some("7-7")),
+            (json!([3, 6]), Some("3-6")),
+            (json!("5:2"), None),
+            (json!("0-3"), None),
+            (json!("-3"), None),
+            (json!("3-"), None),
+            (json!("3-6-9"), None),
+            (json!("lines 3 to 6"), None),
+            (json!([0, 3]), None),
+            (json!([1, 2, 3]), None),
+        ] {
+            assert_eq!(line_range_reading(&value).as_deref(), span, "{value}");
         }
     }
 

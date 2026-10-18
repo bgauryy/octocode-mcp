@@ -341,6 +341,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exported_declarations_keep_wrapper_syntax_and_exact_coverage() {
+        let source = "export async function first(){return '🙂';}\nexport default class Second {}\nexport interface Third { value: string }\n";
+        let path = Path::new("exports.ts");
+        let selected = 0..source.len();
+        let sections = plan(source, path, std::slice::from_ref(&selected), 200);
+        assert_eq!(sections.len(), 3);
+        assert_eq!(
+            sections
+                .iter()
+                .filter_map(|s| s.name.as_deref())
+                .collect::<Vec<_>>(),
+            vec!["first", "Second", "Third"]
+        );
+        assert!(
+            sections
+                .iter()
+                .all(|s| source[s.target.clone()].starts_with("export "))
+        );
+        for budget in 1..=200 {
+            let sections = plan(source, path, std::slice::from_ref(&selected), budget);
+            assert_eq!(
+                sections
+                    .iter()
+                    .flat_map(|s| s.target.clone())
+                    .collect::<Vec<_>>(),
+                (0..source.len()).collect::<Vec<_>>()
+            );
+            assert!(
+                sections
+                    .iter()
+                    .all(|s| source[s.target.clone()].chars().count() <= budget)
+            );
+        }
+    }
+
+    #[test]
     fn partitions_every_selected_byte_across_scripts_and_line_endings() {
         for text in [
             "αβγ🙂中文\r\nمرحبا\nשלום",

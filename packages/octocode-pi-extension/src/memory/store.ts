@@ -270,9 +270,18 @@ export class MemoryStore {
 /** `project, decision, pinned`: where a memory lives, what it is, and whether it is pinned. */
 export const memoryTags = (memory: Memory): string => [memory.scope, memory.kind, ...(memory.pinned ? ['pinned'] : [])].join(', ');
 
-/** `M3 (project, decision, pinned) Title — body`, one line, body clipped to `bodyChars`. */
-export function memoryLine(memory: Memory, bodyChars = 160): string {
+/** The call that reads memory `id` whole: where every model-facing line with a cut body ends. */
+export const memoryGetCall = (id: number): string => `memory get ${memoryLabel(id)}`;
+
+/** `M3 (project, decision, pinned) Title — body`, one line; the body whole unless `bodyChars` clips it (a one-line view for a person). */
+export function memoryLine(memory: Memory, bodyChars = Number.POSITIVE_INFINITY): string {
   const body = memory.body.replace(/\s+/g, ' ').trim();
   const clipped = clipText(body, bodyChars);
   return `${memoryLabel(memory.id)} (${memoryTags(memory)}) ${memory.title.replace(/\s+/g, ' ')}${clipped ? ` — ${clipped}` : ''}`;
+}
+
+/** `memoryLine` for the model: a body clipped to `bodyChars` ends the line with the call that reads it whole. */
+export function memoryToolLine(memory: Memory, bodyChars: number): string {
+  const cut = memory.body.replace(/\s+/g, ' ').trim().length > bodyChars;
+  return `${memoryLine(memory, bodyChars)}${cut ? ` (${memoryGetCall(memory.id)})` : ''}`;
 }

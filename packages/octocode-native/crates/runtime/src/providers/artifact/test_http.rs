@@ -31,13 +31,14 @@ struct Route {
     target: String,
     /// Answered only for this `Accept`, when set.
     accept: Option<&'static str>,
+    status: u16,
     body: Vec<u8>,
 }
 
-/// Answers by route with status 200: a request whose `path?query`, else
-/// whose path, names a route gets that route's body (a later route for the
-/// same target overrides an earlier one); any other request gets the
-/// `otherwise` body, else a 404. Records every request.
+/// Answers by route: a request whose `path?query`, else whose path, names a
+/// route gets that route's status (200 unless it names one) and body (a later
+/// route for the same target overrides an earlier one); any other request
+/// gets the `otherwise` body, else a 404. Records every request.
 #[derive(Default)]
 pub(crate) struct RouteHttp {
     routes: Vec<Route>,
@@ -77,6 +78,7 @@ impl RouteHttp {
         self.routes.push(Route {
             target: target.to_owned(),
             accept: Some(accept),
+            status: 200,
             body: serde_json::to_vec(&body).expect("test body"),
         });
         self
@@ -87,7 +89,19 @@ impl RouteHttp {
         self.routes.push(Route {
             target: target.to_owned(),
             accept: None,
+            status: 200,
             body: body.into(),
+        });
+        self
+    }
+
+    /// Answers `target` with HTTP `status` and the JSON `body`.
+    pub(crate) fn status(mut self, target: &str, status: u16, body: serde_json::Value) -> Self {
+        self.routes.push(Route {
+            target: target.to_owned(),
+            accept: None,
+            status,
+            body: serde_json::to_vec(&body).expect("test body"),
         });
         self
     }
@@ -131,17 +145,17 @@ impl ArtifactHttp for RouteHttp {
         let matches = |route: &&Route, wanted: &str| {
             route.target == wanted && route.accept.is_none_or(|accept| accept == req.accept)
         };
-        let body = self
+        let answer = self
             .routes
             .iter()
             .rev()
             .find(|route| matches(route, &target))
             .or_else(|| self.routes.iter().rev().find(|route| matches(route, &path)))
-            .map(|route| route.body.clone())
-            .or_else(|| self.otherwise.clone());
+            .map(|route| (route.status, route.body.clone()))
+            .or_else(|| self.otherwise.clone().map(|body| (200, body)));
         Box::pin(async move {
-            Ok(match body {
-                Some(body) => ArtifactHttpResponse { status: 200, body },
+            Ok(match answer {
+                Some((status, body)) => ArtifactHttpResponse { status, body },
                 None => ArtifactHttpResponse {
                     status: 404,
                     body: b"{}".to_vec(),

@@ -303,18 +303,8 @@ impl GitHubTransport {
         spec: &RequestSpec,
         context: &RequestContext,
     ) -> Result<(super::Partition, String), ProviderError> {
-        use sha2::{Digest, Sha256};
         let partition = self.cache_partition(context, None)?;
-        let mut digest = Sha256::new();
-        digest.update(spec.url.as_str().as_bytes());
-        digest.update([0]);
-        if let Some(accept) = spec.headers.get(reqwest::header::ACCEPT) {
-            digest.update(accept.as_bytes());
-        }
-        Ok((
-            partition,
-            format!("{namespace}:{}", hex::encode(digest.finalize())),
-        ))
+        Ok((partition, super::cache_key::request_key(namespace, spec)))
     }
 
     /// List an owner's repositories. `sort` is a list-API sort key

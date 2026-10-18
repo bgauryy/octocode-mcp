@@ -8,7 +8,6 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const LOG_DIR: &str = "logs";
 const LOG_FILE: &str = "evictions.jsonl";
@@ -31,10 +30,7 @@ fn try_log(home: &Path, reason: &str, path: &Path, bytes: u64) -> std::io::Resul
         let _ = fs::rename(&file, dir.join(format!("{LOG_FILE}.1")));
     }
     let line = serde_json::json!({
-        "at": SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64,
+        "at": crate::civil_date::unix_millis(),
         "reason": reason,
         "path": path.to_string_lossy(),
         "bytes": bytes,

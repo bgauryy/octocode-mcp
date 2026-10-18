@@ -1,6 +1,8 @@
 //! 1-based inclusive line spans: merging, run compression, the `a-b` range
 //! text, and the bounded `moreLines` list localSearch writes.
 
+use crate::tools::num::u32_of_usize;
+
 /// A line number type the span helpers accept.
 pub(crate) trait LineNumber: Copy + Ord + std::fmt::Display {
     /// The next line, saturating at the type's maximum.
@@ -45,11 +47,16 @@ pub(crate) fn runs<T: LineNumber>(lines: impl IntoIterator<Item = T>) -> Vec<(T,
     out
 }
 
+/// One `start-end` range text as numbers, in the order written.
+pub(crate) fn parse_span_raw<T: std::str::FromStr>(range: &str) -> Option<(T, T)> {
+    let (start, end) = range.split_once('-')?;
+    Some((start.parse().ok()?, end.parse().ok()?))
+}
+
 /// One `start-end` range text as numbers, low end first: a reversed
 /// range (`"80-40"`) names the same span.
 pub(crate) fn parse_span<T: std::str::FromStr + Ord>(range: &str) -> Option<(T, T)> {
-    let (start, end) = range.split_once('-')?;
-    let (start, end): (T, T) = (start.parse().ok()?, end.parse().ok()?);
+    let (start, end) = parse_span_raw::<T>(range)?;
     Some(if end < start {
         (end, start)
     } else {
@@ -66,10 +73,7 @@ pub(crate) fn more_lines(lines: &[u32], max_lines: usize) -> (Vec<u32>, Option<u
     distinct.dedup();
     let unlisted = distinct.len().saturating_sub(max_lines);
     distinct.truncate(max_lines);
-    (
-        distinct,
-        (unlisted > 0).then(|| u32::try_from(unlisted).unwrap_or(u32::MAX)),
-    )
+    (distinct, (unlisted > 0).then(|| u32_of_usize(unlisted)))
 }
 
 #[cfg(test)]
@@ -97,5 +101,7 @@ mod tests {
         assert_eq!(parse_span::<u64>("95-105"), Some((95, 105)));
         assert_eq!(parse_span::<u64>("105-95"), Some((95, 105)));
         assert_eq!(parse_span::<u64>("95"), None);
+        assert_eq!(parse_span_raw::<u64>("105-95"), Some((105, 95)));
+        assert_eq!(parse_span_raw::<u64>("a-95"), None);
     }
 }

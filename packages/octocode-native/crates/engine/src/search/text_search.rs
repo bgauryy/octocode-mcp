@@ -47,6 +47,9 @@ pub trait TextSearchPathFilter: Send + Sync {
     /// off (a skipped directory is not descended into), so the caller can
     /// count it. Called before [`Self::allows`], which never sees the entry.
     fn skipped_ignored(&self, _path: &Path, _is_dir: bool) {}
+    /// A symlink [`Self::allows`] admitted that the walk did not follow (it
+    /// searches regular files only), so the caller can count it.
+    fn skipped_symlink(&self, _path: &Path) {}
 }
 
 const DEFAULT_MAX_SNIPPET_CHARS: u32 = 500;
@@ -1030,11 +1033,10 @@ fn read_prefix(file: &std::fs::File, len: u64) -> std::io::Result<Vec<u8>> {
 const HEAD_BYTES: usize = relevance::GENERATED_HEADER_BYTES as usize;
 
 /// The searcher's read of one opened file. Every byte the search reads
-/// passes through here once, so the generated-header prefix and the content
-/// digest come from that read instead of a second one.
+/// passes through here once, so the generated-header prefix and the
+/// file-level terms' bytes come from that read instead of a second one.
 struct SourceTap<'f> {
     file: &'f std::fs::File,
-    hashed: Option<Hashed>,
     /// The first [`HEAD_BYTES`] bytes, when `keep_head` is set.
     head: [u8; HEAD_BYTES],
     head_len: usize,
@@ -1046,59 +1048,43 @@ struct SourceTap<'f> {
     eof: bool,
 }
 
-/// A digest in progress over a file's bytes from offset 0.
-struct Hashed {
-    hasher: Sha256,
-    /// Bytes hashed so far; the file position the next read continues from.
-    len: u64,
-    eof: bool,
-}
-
-impl Hashed {
-    fn new() -> Self {
-        Self {
-            hasher: Sha256::new(),
-            len: 0,
-            eof: false,
-        }
-    }
-
-    fn update(&mut self, bytes: &[u8]) {
-        self.hasher.update(bytes);
-        self.len += bytes.len() as u64;
-    }
-
-    /// Hash the rest of `file` after the bytes already hashed and prove the
-    /// hashed bytes are the opened file whole; `None` when its length moved.
-    fn finish(mut self, file: &std::fs::File, meta: &std::fs::Metadata) -> Option<SearchedSource> {
-        use std::io::{Read, Seek, SeekFrom};
-        let mut buf = [0u8; 16 * 1024];
-        let mut handle = file;
-        if !self.eof {
-            // Another read (a header sample) may have moved the position.
-            handle.seek(SeekFrom::Start(self.len)).ok()?;
-        }
-        while !self.eof {
-            match handle.read(&mut buf) {
-                Ok(0) => self.eof = true,
-                Ok(read) => self.update(&buf[..read]),
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => return None,
+/// The digest of a kept file, read whole from offset 0 after its search
+/// (only kept files are hashed: most files a walk searches are dropped),
+/// with the proof that the hashed bytes are the opened file whole: `None`
+/// when its length or modification time moved since `meta`.
+fn hashed_source(file: &std::fs::File, meta: &std::fs::Metadata) -> Option<SearchedSource> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut hasher = Sha256::new();
+    let mut len = 0u64;
+    let mut buf = [0u8; 64 * 1024];
+    let mut handle = file;
+    handle.seek(SeekFrom::Start(0)).ok()?;
+    loop {
+        match handle.read(&mut buf) {
+            Ok(0) => break,
+            Ok(read) => {
+                hasher.update(&buf[..read]);
+                len += read as u64;
             }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return None,
         }
-        (self.len == meta.len()).then(|| SearchedSource {
-            size: meta.len(),
-            modified: meta.modified().ok(),
-            digest: self.hasher.finalize().into(),
-        })
     }
+    let after = file.metadata().ok()?;
+    let modified = meta.modified().ok();
+    (len == meta.len() && after.len() == len && after.modified().ok() == modified).then(|| {
+        SearchedSource {
+            size: len,
+            modified,
+            digest: hasher.finalize().into(),
+        }
+    })
 }
 
 impl<'f> SourceTap<'f> {
-    fn new(file: &'f std::fs::File, hash: bool, keep_head: bool, copy: bool) -> Self {
+    fn new(file: &'f std::fs::File, keep_head: bool, copy: bool) -> Self {
         Self {
             file,
-            hashed: hash.then(Hashed::new),
             head: [0; HEAD_BYTES],
             head_len: 0,
             keep_head,
@@ -1121,16 +1107,10 @@ impl std::io::Read for SourceTap<'_> {
         if read == 0 {
             if !buf.is_empty() {
                 self.eof = true;
-                if let Some(hashed) = &mut self.hashed {
-                    hashed.eof = true;
-                }
             }
             return Ok(0);
         }
         let bytes = &buf[..read];
-        if let Some(hashed) = &mut self.hashed {
-            hashed.update(bytes);
-        }
         if self.keep_head && self.head_len < HEAD_BYTES {
             let take = (HEAD_BYTES - self.head_len).min(read);
             self.head[self.head_len..self.head_len + take].copy_from_slice(&bytes[..take]);
@@ -1354,8 +1334,6 @@ struct FileOutcome {
     line_weight: u32,
     declares: bool,
     covered: u32,
-    /// The digest of the bytes searched so far (see [`Hashed::finish`]).
-    hashed: Option<Hashed>,
     /// `relevance` only: the leading bytes declare a generated file; `None`
     /// when the read did not reach them.
     generated_header: Option<bool>,
@@ -1377,7 +1355,6 @@ impl<M: Matcher> From<CollectSink<'_, M>> for FileOutcome {
             line_weight: sink.line_weight,
             covered: sink.covered.count_ones(),
             declares: sink.declares,
-            hashed: None,
             generated_header: None,
             copied: None,
         }
@@ -1395,8 +1372,6 @@ struct FileSearcher<'a, M: Matcher> {
     work: MatchWork,
     deadline: Option<Instant>,
     stop: &'a AtomicBool,
-    /// Hash files of at most this many bytes while they are searched.
-    digest_max_bytes: Option<u64>,
     /// Keep the leading bytes for the generated-header check.
     keep_head: bool,
     /// Keep the read bytes for the file-level terms check.
@@ -1408,10 +1383,8 @@ impl<M: Matcher> FileSearcher<'_, M> {
     /// Search an opened file in one read through a [`SourceTap`]. When it
     /// is quit as binary, the searcher has dropped the whole buffer holding
     /// the NUL, so the NUL-free prefix is searched again from byte 0 and its
-    /// matches replace the first pass; the digest then covers that prefix
-    /// and the rest of the file.
-    fn search(&mut self, file: &std::fs::File, len: u64) -> std::io::Result<FileOutcome> {
-        let hash = self.digest_max_bytes.is_some_and(|max| len <= max);
+    /// matches replace the first pass.
+    fn search(&mut self, file: &std::fs::File) -> std::io::Result<FileOutcome> {
         let mut work = self.work;
         if work.deferred_snippet.is_some() {
             let prefix = read_prefix(file, 3)?;
@@ -1420,7 +1393,7 @@ impl<M: Matcher> FileSearcher<'_, M> {
             }
             std::io::Seek::seek(&mut &*file, std::io::SeekFrom::Start(0))?;
         }
-        let mut tap = SourceTap::new(file, hash, self.keep_head, self.copy);
+        let mut tap = SourceTap::new(file, self.keep_head, self.copy);
         let mut sink = CollectSink::new(self.matcher, work, self.deadline, self.stop, self.words);
         // `search_file` reads through this same reader path: memory maps are
         // never used, and multiline reads the whole file under the heap limit.
@@ -1438,7 +1411,6 @@ impl<M: Matcher> FileSearcher<'_, M> {
         let Some(offset) = offset else {
             let mut outcome = FileOutcome::from(sink);
             outcome.generated_header = header(outcome.matched_lines > 0);
-            outcome.hashed = tap.hashed;
             outcome.copied = tap.copy.map(|bytes| CopiedRead {
                 bytes,
                 eof: tap.eof,
@@ -1462,13 +1434,6 @@ impl<M: Matcher> FileSearcher<'_, M> {
         outcome.binary = true;
         outcome.opaque = is_leading_binary(&prefix, outcome.matched_lines > 0);
         outcome.generated_header = header(outcome.matched_lines > 0);
-        // The values come from this second read of the prefix: hash it, and
-        // the rest of the file from where it ended.
-        outcome.hashed = (hash && prefix.len() as u64 == offset).then(|| {
-            let mut hashed = Hashed::new();
-            hashed.update(&prefix);
-            hashed
-        });
         outcome.copied = tap.copy.map(|bytes| CopiedRead {
             bytes,
             eof: tap.eof,
@@ -1579,7 +1544,6 @@ fn collect<M: Matcher + Sync>(
             },
             deadline,
             stop: &state.stop,
-            digest_max_bytes: opts.digest_max_bytes,
             keep_head: ranks_by_relevance(opts),
             copy: scope.file_terms.is_some(),
             words: scope.words.as_ref(),
@@ -1639,7 +1603,7 @@ impl WalkScope<'_> {
             return WalkState::Continue;
         };
         let file_len = meta.len();
-        let Some(outcome) = self.search_file(files, &file, file_len, path) else {
+        let Some(outcome) = self.search_file(files, &file, path) else {
             return WalkState::Continue;
         };
         let relative = path
@@ -1699,10 +1663,11 @@ impl WalkScope<'_> {
         let demoted =
             generated || (ranks_by_relevance(opts) && relevance::is_demoted_path(&relative));
         // A stopped walk keeps what it found without reading further.
-        let source = outcome
-            .hashed
-            .filter(|_| !state.stopped())
-            .and_then(|hashed| hashed.finish(&file, &meta));
+        let source = opts
+            .digest_max_bytes
+            .is_some_and(|max| file_len <= max && !state.stopped())
+            .then(|| hashed_source(&file, &meta))
+            .flatten();
         drop(file);
         worker_recs.push(FileRec {
             path: dent.path().to_string_lossy().into_owned(),
@@ -1794,6 +1759,9 @@ impl WalkScope<'_> {
             state.depth_cut_dirs.fetch_add(1, Ordering::Relaxed);
         }
         if !dent.file_type().is_some_and(|t| t.is_file()) {
+            if dent.path_is_symlink() {
+                path_filter.skipped_symlink(dent.path());
+            }
             return Err(WalkState::Continue);
         }
         Ok(dent)
@@ -1849,10 +1817,9 @@ impl WalkScope<'_> {
         &self,
         files: &mut FileSearcher<'_, M>,
         file: &std::fs::File,
-        file_len: u64,
         path: &Path,
     ) -> Option<FileOutcome> {
-        match files.search(file, file_len) {
+        match files.search(file) {
             Ok(outcome) => Some(outcome),
             Err(error) => {
                 // The file opened; std never reports a read failure as

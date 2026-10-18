@@ -1,7 +1,5 @@
 //! artifactSearch through the runtime: registry lookups and the
 //! credentials the runtime env (never a workspace env) supplies.
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
 
 use crate::support;
 

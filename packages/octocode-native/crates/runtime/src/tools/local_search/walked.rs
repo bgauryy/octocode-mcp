@@ -214,6 +214,10 @@ impl TextSearchPathFilter for Recorder {
     fn skipped_ignored(&self, path: &Path, is_dir: bool) {
         self.walk.skipped_ignored(path, is_dir);
     }
+
+    fn skipped_symlink(&self, path: &Path) {
+        self.walk.skipped_symlink(path);
+    }
 }
 
 #[cfg(test)]

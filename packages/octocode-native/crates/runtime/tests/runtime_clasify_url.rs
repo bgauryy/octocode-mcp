@@ -1,36 +1,12 @@
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 //! clasify `source: {url}` through the real runtime: every refusal that
 //! must happen before any network work or provider call. Extraction,
 //! fragments, redirects, size limits and the capture's read lead are unit
 //! tests over an injected fetcher (`source_capture::url`).
 
-use crate::support::{PROVIDER_LIMITS, Run as _, Workspace};
+use crate::support::{Run as _, Workspace, capture_allowed, clasify_runtime};
 use octocode_native::runtime::ToolRuntime;
 use serde_json::{Value, json};
 use wiremock::MockServer;
-
-/// A runtime whose classification provider is `server`, plus `extra`.
-fn runtime(workspace: &Workspace, server: &MockServer, extra: &[(&str, String)]) -> ToolRuntime {
-    let mut env = vec![
-        ("OCTOCODE_BETA", "true".to_owned()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".to_owned()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-    ];
-    env.extend(extra.iter().cloned());
-    workspace.runtime_with(&env, PROVIDER_LIMITS)
-}
-
-/// The workspace plus the URL capture directory, as `ALLOWED_PATHS` grants.
-fn capture_allowed(workspace: &Workspace) -> (&'static str, String) {
-    (
-        "ALLOWED_PATHS",
-        format!(
-            "{},{}",
-            workspace.workspace.display(),
-            workspace.home.join("tmp/capture/url").display()
-        ),
-    )
-}
 
 fn url_row(id: &str, url: &str) -> Value {
     json!({
@@ -60,7 +36,7 @@ async fn provider_requests(server: &MockServer) -> usize {
 async fn memory_storage_refuses_a_url_source_before_any_work() {
     let server = MockServer::builder().start().await;
     let workspace = Workspace::new();
-    let runtime = runtime(
+    let runtime = clasify_runtime(
         &workspace,
         &server,
         &[
@@ -94,7 +70,7 @@ async fn memory_storage_refuses_a_url_source_before_any_work() {
 async fn a_non_https_url_is_rejected_at_validation() {
     let server = MockServer::builder().start().await;
     let workspace = Workspace::new();
-    let runtime = runtime(&workspace, &server, &[capture_allowed(&workspace)]);
+    let runtime = clasify_runtime(&workspace, &server, &[capture_allowed(&workspace)]);
     let error = runtime
         .run(
             "clasify-http".into(),
@@ -112,7 +88,7 @@ async fn a_non_https_url_is_rejected_at_validation() {
 async fn a_url_source_needs_local_fetch_to_read_its_capture_back() {
     let server = MockServer::builder().start().await;
     let workspace = Workspace::new();
-    let runtime = runtime(
+    let runtime = clasify_runtime(
         &workspace,
         &server,
         &[
@@ -145,7 +121,7 @@ async fn a_url_source_needs_local_fetch_to_read_its_capture_back() {
 async fn a_url_with_credentials_is_refused_before_any_work() {
     let server = MockServer::builder().start().await;
     let workspace = Workspace::new();
-    let runtime = runtime(&workspace, &server, &[capture_allowed(&workspace)]);
+    let runtime = clasify_runtime(&workspace, &server, &[capture_allowed(&workspace)]);
     // Input security refuses it at validation; the capture's own userinfo
     // check (unit-tested) also covers redirects.
     let error = runtime
@@ -166,7 +142,7 @@ async fn a_url_with_credentials_is_refused_before_any_work() {
 async fn internal_addresses_are_refused_per_row() {
     let server = MockServer::builder().start().await;
     let workspace = Workspace::new();
-    let runtime = runtime(&workspace, &server, &[capture_allowed(&workspace)]);
+    let runtime = clasify_runtime(&workspace, &server, &[capture_allowed(&workspace)]);
     // Nothing listens on port 9: a connection attempt would surface as
     // classificationContextFailed, never as a security refusal.
     let out = clasify(

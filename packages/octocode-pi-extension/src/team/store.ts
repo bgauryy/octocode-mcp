@@ -7,7 +7,8 @@ import { HOUR_MS } from '../shared/util.js';
 import { EditLog } from './edits.js';
 import { num, type Row } from '../agentdb/rows.js';
 import { ancestorKeys, leaseKey, overlappingRequests } from './lease-key.js';
-import { text, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic, WAKE } from './model.js';
+import type { Ask } from './asks.js';
+import { text, toAsk, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic, WAKE } from './model.js';
 
 /** Makes the `proof` of message `id` for `recipient` (see `userProof`); undefined for a recipient the caller cannot sign for. */
 type SignProof = (id: number, recipient: string) => string | undefined;
@@ -98,6 +99,9 @@ export function pathKey(workspace: string, file: string): string {
   return leaseKey(relative.split(path.sep));
 }
 
+/** SQLite's "database is locked" (`SQLITE_BUSY`, extended codes included). */
+const isBusy = (error: unknown): boolean => (Number((error as { errcode?: unknown }).errcode) & 0xff) === 5;
+
 /** Busy wait for a background write (heartbeat, delivery): a locked database is retried on the next tick instead. */
 const QUICK_BUSY_MS = 100;
 /** Busy wait for a write an agent asked for (a lock, a message). */
@@ -126,7 +130,7 @@ export class TeamStore {
     const agent = openAgentDb(file, env);
     try {
       const store = new TeamStore(agent, teamWorkspace(cwd, env), true);
-      store.prune();
+      store.housekeep();
       return store;
     } catch (error) {
       agent.close();
@@ -137,7 +141,7 @@ export class TeamStore {
   /** The team over the process's one agent database connection (`sharedAgentDb`), which sessions, memory and backlog use too. */
   static shared(cwd: string, env: NodeJS.ProcessEnv = process.env): TeamStore {
     const store = new TeamStore(sharedAgentDb(env), teamWorkspace(cwd, env), false);
-    store.prune();
+    store.housekeep();
     return store;
   }
 
@@ -157,6 +161,18 @@ export class TeamStore {
       return work();
     } finally {
       if (--this.quickDepth === 0) this.db.exec(`PRAGMA busy_timeout=${BUSY_MS}`);
+    }
+  }
+
+  /**
+   * The prune when a store opens: housekeeping, so it never makes the open fail or wait. While another process holds
+   * the write lock (many Pi processes starting at once) it is skipped, and the next heartbeat's prune does it.
+   */
+  private housekeep(): void {
+    try {
+      this.quick(() => this.prune());
+    } catch (error) {
+      if (!isBusy(error)) throw error;
     }
   }
 
@@ -367,6 +383,22 @@ export class TeamStore {
   replyTarget(id: number): { from: string; replyRequired: boolean } | undefined {
     const row = this.db.prepare('SELECT sender, reply_required FROM messages WHERE id = ? AND workspace = ?').get(id, this.workspace) as Row | undefined;
     return row ? { from: String(row['sender']), replyRequired: row['reply_required'] === 1 } : undefined;
+  }
+
+  /**
+   * The questions `child` sent `parent` (messages with `replyRequired`) since `since`, oldest first, each with the
+   * parent's first reply to it (a message with `replyTo` that id). Read from the existing tables: nothing is stored for it.
+   */
+  asks(child: string, parent: string, since: number): Ask[] {
+    const rows = this.db
+      .prepare(
+        `SELECT m.id, m.body, m.created_at, r.id AS reply_id, r.created_at AS reply_at, r.sender AS reply_by
+         FROM messages m JOIN deliveries d ON d.message = m.id AND d.recipient = ?
+         LEFT JOIN messages r ON r.id = (SELECT min(id) FROM messages WHERE reply_to = m.id AND sender = d.recipient)
+         WHERE m.workspace = ? AND m.sender = ? AND m.reply_required = 1 AND m.created_at >= ? ORDER BY m.id`,
+      )
+      .all(parent, this.workspace, child, since) as Row[];
+    return rows.map(toAsk);
   }
 
   /** Messages `sender` sent whose recipients left before reading them, not yet reported to it (oldest first). */

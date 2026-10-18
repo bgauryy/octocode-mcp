@@ -186,20 +186,61 @@ for (const [label, query] of [
   check(`structureSearch tree TypeScript repo depth 4: ${pages.length} pages`, !tree.isError && pages.length >= 1, `entries≈${entries.length} ${tree.ms}ms`);
 }
 
-// ── whole-response pagination: reassemble a big bulk response exactly ──────
+// ── whole-response pagination: every byte or row exactly once, at any page size ──
+// `responseLength` alone pages whole rows: each page is a complete JSON envelope
+// (its own metadata included), so pages never concatenate into the full text and
+// even the largest page (50,000) is one of several. Exact reassembly belongs to
+// `responseScope:"text"` (windows of the rendered text) and `"structured"`
+// (windows of the serialized envelope); rows deliver each symbol once, in order.
 {
-  const args = { queries: [{ operation: 'symbols', path: manyFns, pageSize: 1000 }] };
-  const full = await raw('astSearch', { ...args, responseLength: 50000 }, 'response full');
-  const firstPage = await raw('astSearch', { ...args, responseLength: 4000 }, 'response page 1');
-  let text = firstPage.text.replace(/^# Response page[^\n]*\n/, '');
-  let current = firstPage;
-  let pages = 1;
-  while (current.sc?.responsePagination?.next && pages < 500) {
-    const n = current.sc.responsePagination.next;
-    current = await raw(n.tool, n.query, `bulk page ${++pages}`);
-    text += current.text.replace(/^# Response page[^\n]*\n/, '');
+  const query = { operation: 'symbols', path: manyFns, pageSize: 1000 };
+  const strip = text => text.replace(/^# Response page[^\n]*\n/, '');
+  async function pages(scope, length) {
+    const out = [];
+    let current = await raw('astSearch', { queries: [query], responseLength: length, responseScope: scope }, `response ${scope} ${length} page 1`);
+    out.push(current);
+    while (current.sc?.responsePagination?.next && out.length < 500) {
+      const n = current.sc.responsePagination.next;
+      current = await raw(n.tool, n.query, `response ${scope} ${length} page ${out.length + 1}`);
+      out.push(current);
+    }
+    return out;
   }
-  check(`response pagination: ${pages} char pages reassemble the full response`, !full.isError && !full.rowErrors && !firstPage.isError && !firstPage.rowErrors && !current.isError && !current.rowErrors && pages > 1 && !current.sc?.responsePagination?.next && text.trim() === full.text.replace(/^# Response page[^\n]*\n/, '').trim(), `full=${full.text.length} rebuilt=${text.length}`);
+  const clean = ps => ps.every(p => !p.isError && !p.rowErrors) && !ps.at(-1).sc?.responsePagination?.next;
+  const symbolsOf = ps => ps.flatMap(p => JSON.parse(p.text).results.flatMap(row => row.data?.symbols ?? []));
+  const keyOf = symbol => `${symbol.symbolName}@${symbol.line}`;
+
+  for (const scope of ['text', 'structured']) {
+    const small = await pages(scope, 4000);
+    const large = await pages(scope, 50000);
+    const join = ps => ps.map(p => (scope === 'text' ? strip(p.text) : p.sc.responseWindow)).join('');
+    const rebuilt = join(small);
+    const whole = join(large);
+    const total = small[0].sc?.responsePagination?.totalChars;
+    check(`response pagination (${scope}): ${small.length} pages of 4000 reassemble exactly what ${large.length} pages of 50000 do`,
+      clean(small) && clean(large) && small.length > large.length && rebuilt === whole && rebuilt.length === total,
+      `rebuilt=${rebuilt.length} whole=${whole.length} totalChars=${total}`);
+    if (scope === 'structured') {
+      let envelope;
+      try { envelope = JSON.parse(rebuilt); } catch { /* reported below */ }
+      check('response pagination (structured): the windows are the exact envelope JSON', envelope?.results?.[0]?.data?.symbols?.length === 1000, `parsed=${Boolean(envelope)}`);
+    }
+  }
+
+  const small = await pages('rows', 4000);
+  const large = await pages('rows', 50000);
+  const small_symbols = symbolsOf(small).map(keyOf);
+  const large_symbols = symbolsOf(large).map(keyOf);
+  check(`response pagination (rows): ${small.length} pages of 4000 and ${large.length} of 50000 each deliver every symbol once, in the same order`,
+    clean(small) && clean(large) && small.length > large.length && small_symbols.length === 1000 && new Set(small_symbols).size === 1000
+      && JSON.stringify(small_symbols) === JSON.stringify(large_symbols),
+    `rows(4000)=${small_symbols.length} unique=${new Set(small_symbols).size} rows(50000)=${large_symbols.length}`);
+  // The page text, its `responsePagination` block included, fits `responseLength` unless the page is flagged `oversized`.
+  const planned = small.map(p => p.sc?.responsePagination);
+  check('response pagination (rows): every page is a complete JSON envelope that fits its bound with its pagination block',
+    small.every((p, i) => { try { JSON.parse(p.text); } catch { return false; } return p.text.length <= 4000 || planned[i]?.oversized === true; })
+      && large.every((p, i) => p.text.length <= 50000 || p.sc?.responsePagination?.oversized === true),
+    `text max=${Math.max(...small.map(p => p.text.length))}/4000 ${Math.max(...large.map(p => p.text.length))}/50000`);
 }
 
 const result = summary();

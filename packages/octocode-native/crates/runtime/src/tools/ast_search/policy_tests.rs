@@ -733,6 +733,31 @@ fn an_empty_match_over_ignored_and_hidden_files_leads_to_them() {
     }
 }
 
+/// Without `language` each file selects its grammar, so an empty scan that
+/// parsed nothing still probes the skipped walks: the source behind an ignore
+/// rule or a hidden directory is named, with the query that lifts it.
+#[test]
+fn an_empty_match_without_language_leads_to_skipped_files() {
+    for (dir, flag) in [("gen", "includeIgnored"), (".cfg", "includeHidden")] {
+        let root = Fixture::new();
+        std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
+        root.write(".gitignore", "gen/\n");
+        let pkg = root.0.join("pkg");
+        std::fs::create_dir_all(pkg.join(dir)).expect("dir");
+        std::fs::write(pkg.join(dir).join("a.py"), "print(1)\n").expect("source");
+        let request = json!({
+            "operation":"match","mainGoal":"test","reasoning":"test",
+            "path":pkg,"pattern":"print($A)"
+        });
+        let empty = run(&root.0, request).expect("empty match");
+        let retry = &empty["next"]["includeSkipped"]["query"]["queries"][0];
+        assert_eq!(retry[flag], true, "{dir}: {empty}");
+        assert!(retry.get("language").is_none(), "{dir}: {empty}");
+        let found = run(&root.0, retry.clone()).expect("lead runs");
+        assert_eq!(found["matchCount"], 1, "{dir}: {found}");
+    }
+}
+
 /// An empty match that did parse files still names the ignored files of its
 /// grammar it left out, and leads to the same query with them on: the hint
 /// about the pattern's shape is not the only explanation.

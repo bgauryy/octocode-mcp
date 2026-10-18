@@ -1,7 +1,5 @@
 //! ghSearchHistory and ghGetHistoryItem (commits, issues, pull requests)
 //! through the runtime against a mock GitHub.
-// Integration test crate — assertions use unwrap/expect/panic freely.
-#![allow(clippy::expect_used, clippy::panic)]
 
 use crate::support::{self, Run as _};
 

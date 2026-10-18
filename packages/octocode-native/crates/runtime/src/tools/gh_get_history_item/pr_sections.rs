@@ -249,9 +249,15 @@ pub(super) async fn shape_pr_commits(
                 )
                 .await?;
                 let files = array(detail.get("files").cloned().unwrap_or(json!([])));
-                let (files, files_page) = paginate_window(files, 0, !more, Some(1), Some(per_page));
+                let (files, mut files_page) =
+                    paginate_window(files, 0, !more, Some(1), Some(per_page));
                 commit["files"] = Value::Array(compact_inventory(&files));
-                if let Some(next_page) = files_page.get("nextPage").and_then(Value::as_u64) {
+                // The cursor rides the continuation, never the block.
+                if let Some(next_page) = files_page
+                    .as_object_mut()
+                    .and_then(|page| page.remove("nextPage"))
+                    .and_then(|page| page.as_u64())
+                {
                     commit["contentPagination"]["files"] = files_page;
                     more_files = Some(commit_files_page(query, &sha, next_page, per_page));
                 }

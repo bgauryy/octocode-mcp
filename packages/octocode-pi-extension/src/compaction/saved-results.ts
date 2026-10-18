@@ -1,7 +1,9 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import { JOB_TYPE } from '../files/bash-jobs.js';
+import { clearedResults } from '../files/reads.js';
 import { shortPath } from '../shared/format.js';
 import { sessionsRoot, tildePath } from '../shared/home.js';
 import { saveFullOutput } from '../shared/spill.js';
@@ -75,25 +77,54 @@ function savedPaths(text: string): string[] {
   return [...text.matchAll(savedPathPattern(root))].flatMap((match) => resolveSaved(match[0], root) ?? []);
 }
 
-/**
- * The paths earlier summaries of Octocode's carried: those of the latest compaction on the branch that has them. A
- * compaction that fell back to Pi's default summary has no `details.savedResults`, so the walk goes on to the one before.
- */
-export function carriedSavedResults(branch: readonly SessionEntry[]): string[] {
-  for (const entry of [...branch].reverse()) {
-    if (entry.type !== 'compaction' || !isRecord(entry.details)) continue;
-    const carried = entry.details[SAVED_RESULTS_DETAILS];
-    if (Array.isArray(carried)) return carried.filter((item): item is string => typeof item === 'string');
-  }
-  return [];
+/** The message a branch entry adds to the context, with a custom message's text kept (a job report names its log there). */
+function branchMessage(entry: SessionEntry): unknown {
+  if (entry.type === 'message') return entry.message;
+  return entry.type === 'custom_message' ? { role: 'custom', customType: entry.customType, content: entry.content } : undefined;
 }
 
 /**
- * Each file saved from the summarized `messages`, once: those `carried` from the earlier summary, then the paths a tool
- * result or job report names, then the file `cleared` (tool call id → saved copy, `clearedResults`) holds for a result that was cleared.
+ * The files saved from the messages compaction `at` summarized: the entries from where the compaction before it began
+ * keeping (else right after it) up to where it begins keeping (else up to it). Those it kept are summarized by the next one.
+ */
+function stretchPaths(branch: readonly SessionEntry[], at: number, before: number | undefined, cleared: ReadonlyMap<string, string>): string[] {
+  const indexOf = (id: unknown, fallback: number): number => {
+    const index = typeof id === 'string' ? branch.findIndex((entry) => entry.id === id) : -1;
+    return index >= 0 ? index : fallback;
+  };
+  const from = before === undefined ? 0 : Math.min(indexOf((branch[before] as { firstKeptEntryId?: unknown }).firstKeptEntryId, before + 1), at);
+  const to = Math.min(indexOf((branch[at] as { firstKeptEntryId?: unknown }).firstKeptEntryId, at), at);
+  return savedResultPaths(branch.slice(from, Math.max(from, to)).map(branchMessage), cleared);
+}
+
+/**
+ * The paths earlier summaries carried: those of the latest compaction on the branch that recorded them, then the files
+ * saved during each later stretch that a compaction without a record (Pi's default summary, which has no
+ * `details.savedResults`) summarized, found in its messages as for an Octocode summary.
+ */
+export function carriedSavedResults(branch: readonly SessionEntry[]): string[] {
+  const compactions = branch.flatMap((entry, index) => (entry.type === 'compaction' ? [index] : []));
+  const cleared = clearedResults(branch);
+  const unrecorded: string[][] = [];
+  let recorded: string[] = [];
+  for (let at = compactions.length - 1; at >= 0; at--) {
+    const entry = branch[compactions[at]!] as SessionEntry & { details?: unknown };
+    const carried = isRecord(entry.details) ? entry.details[SAVED_RESULTS_DETAILS] : undefined;
+    if (Array.isArray(carried)) {
+      recorded = carried.filter((item): item is string => typeof item === 'string');
+      break;
+    }
+    unrecorded.unshift(stretchPaths(branch, compactions[at]!, compactions[at - 1], cleared));
+  }
+  return [...new Set([...recorded, ...unrecorded.flat()])];
+}
+
+/**
+ * Each file saved from the summarized `messages`, once: those `carried` from the earlier summary that are still on disk
+ * (the session sweep removes old ones), then the paths a tool result or job report names, then the file `cleared` (tool call id → saved copy, `clearedResults`) holds for a result that was cleared.
  */
 export function savedResultPaths(messages: readonly unknown[], cleared: ReadonlyMap<string, string>, carried: readonly string[] = []): string[] {
-  const found = new Set(carried);
+  const found = new Set(carried.filter((file) => fs.existsSync(file)));
   for (const message of messages) {
     // A finished background job's report names its log (and the older part after a rotation) like a result does.
     if (isRecord(message) && message['role'] === 'custom' && message['customType'] === JOB_TYPE) for (const file of savedPaths(contentText(message['content']))) found.add(file);

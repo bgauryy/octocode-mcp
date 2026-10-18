@@ -31,7 +31,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::Instant,
 };
 
 pub use query::{OPS, QueryOptions, query};
@@ -171,10 +171,7 @@ fn scope_slug(root: &Path, workspace: &Path) -> String {
 
 /// `(compact, iso)` UTC timestamps: `20260928T101500Z`, `2026-09-28T10:15:00Z`.
 fn utc_now() -> (String, String) {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as i64);
-    let iso = crate::civil_date::iso8601_secs(secs);
+    let iso = crate::civil_date::iso8601_secs(crate::civil_date::unix_secs());
     (iso.replace(['-', ':'], ""), iso)
 }
 

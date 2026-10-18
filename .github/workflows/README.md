@@ -9,7 +9,9 @@ binaries. Only the `e2e` job builds the packages, a throwaway debug build
 (`build:dev`) that `test:tools` drives through the CLI and MCP server and the
 native package's Node tests load; it runs after the `native` job passes. The
 `native-scripts` job runs the native package's script tests without a build,
-and the `native` job also regenerates the tool and config contracts (pinned
+and the `native` job runs the native package scripts unchanged (`fmt:rust:check`,
+`lint`, `test:rust` with the nextest `ci` profile, `deny`, `shear`), then
+regenerates the tool and config contracts (pinned
 `cargo-typify` 0.8.0) and fails when a checked-in copy differs. Release builds stay local (`build:target <platform>`, `build:all`,
 or `dev.mjs build:publish`).
 

@@ -1,7 +1,5 @@
 //! Convert relative GitHub history windows (`30d`) into ISO-8601.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 pub struct DateWindow {
     pub value: Option<String>,
     pub warning: Option<String>,
@@ -52,10 +50,7 @@ pub fn resolve_date_window(value: &str) -> DateWindow {
                 return invalid(value);
             }
         };
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        let now = crate::civil_date::unix_secs();
         return DateWindow {
             value: Some(crate::civil_date::iso8601_secs(
                 now.saturating_sub(seconds).max(0),

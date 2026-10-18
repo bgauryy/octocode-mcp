@@ -542,11 +542,84 @@ impl GitHubServices {
                 remaining: output.remaining,
                 ..super::dispatch::value_result(output.data)
             },
-            Err(error) => {
-                let next = gh_get_history_item::recovery(error.kind, error.reason, raw_query);
+            Err(mut error) => {
+                let mut next = gh_get_history_item::recovery(error.kind, error.reason, raw_query);
+                if error.reason == Some(ProviderErrorReason::RefNotFound)
+                    && let Some((message, retry)) =
+                        self.missing_history_ref(raw_query, request_context).await
+                {
+                    error.message = retry
+                        .message(message.as_deref().unwrap_or(&error.message))
+                        .into_boxed_str();
+                    let (name, lead) = retry.lead();
+                    next.get_or_insert_with(|| serde_json::json!({}))[name] = lead;
+                }
                 history_error(error, false, next)
             }
         })
+    }
+
+    /// A history item read at a ref that is not there, named against the
+    /// default branch: a commit's `ref`, or the comparison sides GitHub's one
+    /// not-found answer leaves unnamed (probed, so the message says which).
+    /// The retry sets each missing ref to the default branch; a comparison
+    /// whose other side already is the default branch has no useful retry.
+    /// `Some(message)` replaces the provider's message before the default
+    /// branch is named.
+    async fn missing_history_ref(
+        &self,
+        query: &Value,
+        context: &RequestContext,
+    ) -> Option<(Option<String>, crate::tools::gh_shared::DefaultBranchRetry)> {
+        let text = |name: &str| query.get(name).and_then(Value::as_str).unwrap_or_default();
+        let retry = async |fields: &[&str]| {
+            crate::tools::gh_shared::default_branch_retry(
+                &self.provider,
+                crate::tools::id::ToolId::GhGetHistoryItem,
+                query.clone(),
+                fields,
+                context,
+            )
+            .await
+        };
+        match text("operation") {
+            "commit" => Some((None, retry(&["ref"]).await?)),
+            "compare" => {
+                let (owner, repo) = (text("owner"), text("repo"));
+                let sides = [("base", text("base")), ("head", text("head"))];
+                let missing = crate::tools::gh_shared::unresolved_refs(
+                    &self.provider,
+                    owner,
+                    repo,
+                    &sides,
+                    context,
+                )
+                .await;
+                if missing.is_empty() {
+                    return None;
+                }
+                let retry = retry(&missing).await?;
+                // The retry must still compare two refs: a side that
+                // resolved and already is the default branch leaves none.
+                if sides.iter().all(|(field, reference)| {
+                    missing.contains(field) || *reference == retry.branch()
+                }) {
+                    return None;
+                }
+                let named = missing
+                    .iter()
+                    .map(|field| format!("\"{}\" ({field})", text(field)))
+                    .collect::<Vec<_>>()
+                    .join(" and ");
+                let message = format!(
+                    "Cannot compare {}...{} in {owner}/{repo}: {named} not found",
+                    text("base"),
+                    text("head")
+                );
+                Some((Some(message), retry))
+            }
+            _ => None,
+        }
     }
 
     async fn execute_search_history_resolved(

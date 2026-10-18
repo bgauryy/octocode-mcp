@@ -4,12 +4,13 @@ mod provider_tests;
 mod query;
 
 use crate::tools::gh_shared::{
-    GhFailure, SearchCompleteness, SearchWindow, add_next, apply_partial, broaden_lead,
-    drop_each_keyword, field_names, pick_rows, search_failure, with_search_repair, without,
+    Broaden, GhFailure, Rescope, SearchCompleteness, SearchWindow, add_next, apply_partial,
+    broaden, field_names, pick_rows, push_warning_front, rescope_on_rename, search_failure,
+    search_may_be_renamed, with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
-use crate::tools::paging::push_warnings;
+use crate::tools::paging::{clamp_page_size, push_warnings};
 use crate::tools::result::{Continuation, ToolData, query_row, remove_null_fields};
 use octocode_github::{
     ConditionalCache, GitHubProvider, ProviderError, RepositorySearchPage, RepositorySearchRequest,
@@ -53,13 +54,9 @@ pub async fn run<C: ConditionalCache>(
     })
 }
 
-/// Repositories per page: the query's, within the contract maximum.
+/// Repositories per page.
 fn page_size(query: &GhSearchRepoQuery) -> usize {
-    usize_of(query.page_size).min(crate::contracts::query_schema_max(
-        ToolId::GhSearchRepo,
-        None,
-        "pageSize",
-    ))
+    clamp_page_size(ToolId::GhSearchRepo, None, usize_of(query.page_size))
 }
 
 pub(crate) async fn execute<C: ConditionalCache>(
@@ -75,10 +72,44 @@ pub(crate) async fn execute<C: ConditionalCache>(
     crate::tools::gh_shared::reject_boolean_keywords(&query.keywords)?;
     let current = usize_of(query.page);
     let per = page_size(query);
-    let (data, listing) = fetch_page(provider, query, current, per, context).await?;
+    let fetched = fetch_page(provider, query, current, per, context).await;
+    // GitHub search does not follow renames: a search inside one
+    // repository that a rename could explain reruns once under the
+    // canonical name.
+    if let (Some(owner), Some(repo)) = (query.owner.as_deref(), query.repo.as_deref())
+        && search_may_be_renamed(&fetched, |(page, _)| {
+            page.items.is_empty() && page.total_count == 0
+        })
+    {
+        match rescope_on_rename(provider, owner, repo, context).await? {
+            Rescope::Renamed {
+                owner,
+                repo,
+                warning,
+            } => {
+                let decode = |error: &dyn std::fmt::Display| {
+                    ProviderError::new(
+                        octocode_github::ProviderErrorKind::Decode,
+                        error.to_string(),
+                    )
+                };
+                let renamed = GhSearchRepoQuery {
+                    owner: Some(owner.parse().map_err(|error| decode(&error))?),
+                    repo: Some(repo.parse().map_err(|error| decode(&error))?),
+                    ..query.clone()
+                };
+                let mut output = Box::pin(execute(provider, &renamed, context)).await?;
+                push_warning_front(&mut output.data, warning);
+                return Ok(output);
+            }
+            Rescope::Missing(error) => return Err(error),
+            Rescope::Stands => {}
+        }
+    }
+    let (data, listing) = fetched?;
     let page = RepoPage::of(&data, listing.as_ref(), current, per);
     let mut leads = top_leads(data.items.first());
-    // Archived repositories are excluded unless the caller set `archived`;
+    // Archived repositories are excluded unless the caller set `includeArchived`;
     // a listing that skipped some offers them (the description states the
     // search default once).
     if query.include_archived != Some(true) && page.archived_skipped > 0 {
@@ -299,22 +330,26 @@ async fn exact_repository<C: ConditionalCache>(
 /// A repository row's id: a `fields` pick keeps it.
 const REPO_ID: &[&str] = &["owner", "repo"];
 
-/// The filters a query sets beside its keywords, by wire name: the one
-/// table every narrowing check reads.
-fn set_filters(query: &GhSearchRepoQuery) -> Vec<&'static str> {
-    [
-        ("topics", !query.topics.is_empty()),
-        ("language", query.language.is_some()),
-        ("stars", query.stars.is_some()),
-        ("pushed", query.pushed.is_some()),
-        ("created", query.created.is_some()),
-        ("match", !query.match_in.is_empty()),
-        ("license", query.license.is_some()),
-        ("qualifiers", query.qualifiers.is_some()),
-    ]
-    .into_iter()
-    .filter_map(|(name, set)| set.then_some(name))
-    .collect()
+/// The filters a query can set beside its keywords, by wire name, one
+/// group each: the one table every narrowing check reads.
+const FILTERS: &[&[&str]] = &[
+    &["topics"],
+    &["language"],
+    &["stars"],
+    &["pushed"],
+    &["created"],
+    &["matchIn"],
+    &["license"],
+    &["qualifiers"],
+];
+
+/// Whether the query sets any of [`FILTERS`].
+fn sets_filter(query: &GhSearchRepoQuery) -> bool {
+    let row = query_row(query, &[]);
+    FILTERS
+        .iter()
+        .flat_map(|group| group.iter())
+        .any(|key| row.get(*key).is_some())
 }
 
 /// GitHub drops a `language:` qualifier it does not know and returns
@@ -376,7 +411,7 @@ async fn ignored_language<C: ConditionalCache>(
 /// the pair is a one-row lookup.
 fn filtered(query: &GhSearchRepoQuery) -> bool {
     !query.keywords.is_empty()
-        || !set_filters(query).is_empty()
+        || sets_filter(query)
         // `archived:false` is the default, so it filters nothing.
         || query.include_archived == Some(true)
 }
@@ -494,17 +529,19 @@ fn include_archived(query: &GhSearchRepoQuery) -> Value {
 /// Broadened variants at most: one call's batch.
 const BROADEN_VARIANTS: usize = 5;
 
-/// An empty search, broadened: one variant per set filter, then, with
-/// several keywords, one per dropped keyword. A variant with nothing left to
-/// search by is skipped.
+/// An empty search, broadened ([`broaden`]): one variant per set filter,
+/// then one per dropped keyword; a lone keyword of an `owner`+`repo` search
+/// drops to that repository's own row.
 fn broaden_search(query: &GhSearchRepoQuery) -> Option<Value> {
-    let base = copied_search(query);
-    let mut variants = set_filters(query)
-        .into_iter()
-        .map(|filter| without(&base, &[filter]))
-        .collect::<Vec<_>>();
-    variants.extend(drop_each_keyword(&base));
-    broaden_lead(ToolId::GhSearchRepo, variants, BROADEN_VARIANTS)
+    broaden(
+        ToolId::GhSearchRepo,
+        &copied_search(query),
+        &Broaden {
+            strip: &[],
+            groups: FILTERS,
+        },
+        BROADEN_VARIANTS,
+    )
 }
 
 /// Provider pages read by one owner-only listing call before it stops.
@@ -617,24 +654,9 @@ fn repository_row(item: octocode_github::RepositorySearchItem, wanted: &[String]
 /// This tool's output facts for the shared response stages.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
-    fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {
-        use crate::tools::output::has_value;
-        if [
-            "topics",
-            "language",
-            "stars",
-            "pushed",
-            "created",
-            "license",
-            "qualifiers",
-        ]
-        .iter()
-        .any(|key| has_value(query, key))
-        {
-            "Drop topics/language/stars/date/license filters or use fewer keywords."
-        } else {
-            "Use fewer or broader keywords, or set owner and repo to open one."
-        }
+    /// A search with a filter to drop leads to `broadenSearch` instead.
+    fn fallback_hint(&self, _query: &serde_json::Value) -> &'static str {
+        "Use fewer or broader keywords, or set owner and repo to open one."
     }
     /// A missing owner names the login and has no repair; an exact
     /// repository that did not resolve carries its own `findRepository`
@@ -678,7 +700,7 @@ mod tests {
         assert!(complete.data.get("hints").is_none());
         assert_eq!(
             complete.data["next"]["broadenSearch"]["query"]["queries"],
-            json!([{"keywords":["x"]}])
+            json!([{"keywords":["x"]}, {"language":"rust"}])
         );
 
         for (incomplete, capped) in [(true, false), (false, true)] {
@@ -688,6 +710,31 @@ mod tests {
             assert!(partial.data.get("hints").is_none());
             assert!(partial.data.get("next").is_none());
         }
+    }
+
+    /// An empty search inside one repository with a lone keyword broadens
+    /// to that repository's own row; each filter drops by its wire name.
+    #[test]
+    fn a_lone_keyword_in_one_repository_broadens_to_its_row() {
+        let query: GhSearchRepoQuery =
+            serde_json::from_value(json!({"owner":"o","repo":"r","keywords":["x"]}))
+                .expect("query");
+        let empty = repository_output(json!({"repositories":[]}), &query, true, false, false);
+        assert_eq!(
+            empty.data["next"]["broadenSearch"]["query"]["queries"],
+            json!([{"owner":"o","repo":"r"}]),
+            "{}",
+            empty.data
+        );
+        let matched: GhSearchRepoQuery =
+            serde_json::from_value(json!({"keywords":["x"],"matchIn":["name"]})).expect("query");
+        let empty = repository_output(json!({"repositories":[]}), &matched, true, false, false);
+        assert_eq!(
+            empty.data["next"]["broadenSearch"]["query"]["queries"],
+            json!([{"keywords":["x"]}]),
+            "{}",
+            empty.data
+        );
     }
 
     /// A topic that only repeats the repository's own name is dropped;

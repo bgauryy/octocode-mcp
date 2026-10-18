@@ -35,11 +35,10 @@
   "scripts": {
     "build": "node build.mjs",
     "clean": "rm -rf dist/",
-    "lint": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
-    "test": "node ../../node_modules/vitest/vitest.mjs run",
-    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage",
-    "test:quiet": "node ../../node_modules/vitest/vitest.mjs run --reporter=dot --silent",
-    "test:servers": "node ../../node_modules/vitest/vitest.mjs run --config vitest.servers.config.ts",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:servers": "vitest run --config vitest.servers.config.ts",
     "typecheck": "yarn lint",
     "verify": "yarn lint && yarn test:coverage && yarn build"
   },

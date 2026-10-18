@@ -233,7 +233,10 @@ pub(super) struct PatchStream<'a> {
 impl PatchStream<'_> {
     /// The rows this window shows, the files it leaves unfinished, and the
     /// clipped files it starts.
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::type_complexity,
+        reason = "one caller destructures the three parts of a window together"
+    )]
     pub(super) fn rows(
         &self,
         files: &[Value],

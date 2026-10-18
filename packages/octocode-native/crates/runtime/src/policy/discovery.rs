@@ -291,8 +291,9 @@ impl Withheld {
 /// A text search walk's path filter: admits exactly what [`PathPolicy`]
 /// admits, applies the default excludes unless `defaultExcludes:false` (the
 /// text search's default-pruned directories, as [`Prune::at`] applies them
-/// under the root, and the generated files), and records both, and the dot
-/// entries the walk left out, so the result can disclose them.
+/// under the root, and the generated files), and records both, the dot and
+/// ignored entries the walk left out, and the symlinks it did not follow,
+/// so the result can disclose them.
 ///
 /// [`PathPolicy`]: super::path::PathPolicy
 /// [`Prune::at`]: octocode_engine::search::walk::Prune::at
@@ -428,6 +429,10 @@ impl octocode_engine::portable::TextSearchPathFilter for SearchWalk {
                 skips.ignored_hidden |= hidden;
             });
         }
+    }
+
+    fn skipped_symlink(&self, _path: &Path) {
+        self.note(|skips| skips.withheld.symlinks += 1);
     }
 }
 

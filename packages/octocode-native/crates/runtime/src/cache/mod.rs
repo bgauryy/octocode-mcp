@@ -11,7 +11,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime};
 
 /// An entry's identity. `scope` is opaque to the store: a provider passes
 /// its credential [`octocode_github::Partition::identity`], a local memo
@@ -288,10 +288,9 @@ fn expired(path: &std::path::Path, now: u64) -> bool {
     })
 }
 
+/// The wall clock as the header's unsigned unix seconds.
 fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs())
+    crate::civil_date::unix_secs().unsigned_abs()
 }
 
 struct Disk {

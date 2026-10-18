@@ -7,14 +7,14 @@ import type { Usage } from '@earendil-works/pi-ai';
 import { BROWSER_VISIBLE_ENV, CACHE_RETENTION_ENV, childCacheRetention, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, PERMISSION_NONCE_FILE_ENV, PERMISSION_RELAY_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
 import type { ActionClass, PermissionMode } from '../permission/mode.js';
 import { atomicWriteFileSync, shortHash } from '../shared/atomic.js';
-import { formatDuration } from '../shared/format.js';
+import { formatDuration, tailNote } from '../shared/format.js';
 import { PRIVATE_FILE_MODE, privateDir, sessionOutputDir } from '../shared/home.js';
 import { adoptTree, groupAlive, groupStartTimes, prepareTree, processStartTime, sameProcess, stopTree } from '../shared/process.js';
 import { visibleControls } from '../shared/sanitize.js';
-import { capChars, cutText, settleWithin } from '../shared/util.js';
+import { cutText, settleWithin } from '../shared/util.js';
 import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_GOAL_ENV, AGENT_ROLE_ENV, AGENT_SCRATCH_ENV, PARENT_ID_ENV, PARENT_PID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
 import { profileExcludes, type AgentProfile } from './profiles.js';
-import { newChildState, parseEvent, reduceEvent, type ChildEffect, type ChildProgress, type WatchdogLimits } from './events.js';
+import { newChildState, noticeText, parseEvent, reduceEvent, type ChildEffect, type ChildNotices, type ChildProgress, type ChildState, type WatchdogLimits } from './events.js';
 import { ReportTracker } from './report.js';
 import { ChildRelay, type RelayHost } from './relay.js';
 
@@ -127,16 +127,41 @@ function writeNonceFile(nonce: string, id: string): string | undefined {
   }
 }
 
+/** Where a child saves its conversation: Pi's session folder and the session id (the child's name, so its Octocode folder maps back to it). */
+export interface ChildSession {
+  dir: string;
+  id: string;
+}
+
+/**
+ * Every child saves its conversation in its scratch folder (`<scratch>/session`, removed with the folder), under its
+ * own name (no new child gets the name of an existing scratch folder, `scratchNames`, so none reopens another's): its compaction summary then names a transcript to read, and the parent can find it. Without a scratch
+ * folder it goes to the run's private output folder. Whether the child stays reachable is `lingerSeconds`, not this.
+ */
+export function childSession(identity: Pick<Identity, 'id' | 'scratch'>): ChildSession {
+  const root = identity.scratch ?? reportDir(identity.id);
+  if (!root) throw new Error(`Subagent ${identity.id} has nowhere to save its session: neither its scratch folder nor the output folder can be written.`);
+  return { dir: path.join(root, 'session'), id: identity.id };
+}
+
+/** The saved session file (`<timestamp>_<id>.jsonl`, named by Pi), once the child has written it. */
+export function childSessionFile(session: ChildSession): string | undefined {
+  try {
+    const name = fs.readdirSync(session.dir).find((entry) => entry.endsWith(`_${session.id}.jsonl`));
+    return name ? path.join(session.dir, name) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The Pi arguments of a child. It runs in RPC mode: the task is not an argument (RPC ignores a positional task and
  * rejects `@file`) but a `prompt` command that `runSubagent` writes to its stdin, so a task of any length goes whole.
  */
 export function buildAgentArgs(
-  profile: AgentProfile | undefined, model: string | undefined, extension = selfExtensionPath(), promptDir?: string,
-  session?: { dir: string; id: string },
+  profile: AgentProfile | undefined, model: string | undefined, extension = selfExtensionPath(), promptDir: string | undefined, session: ChildSession,
 ): string[] {
-  // Ephemeral, unless it lingers: then its conversation is saved under its own name, and a follow-up resumes it.
-  const args = ['--mode', 'rpc', ...(session ? ['--session-dir', session.dir, '--session-id', session.id] : ['--no-session'])];
+  const args = ['--mode', 'rpc', '--session-dir', session.dir, '--session-id', session.id];
   // `--no-extensions` also turns off Pi's built-in MCP and tool-search extensions, which serve Octocode's research tools
   // and the user's own deferred MCP servers: load them back unless the profile opts out of MCP.
   if (extension) args.push('--no-extensions', '-e', extension, ...(profile?.mcp === false ? [] : ['-e', 'builtin:mcp', '-e', 'builtin:tool-search']));
@@ -225,9 +250,10 @@ export async function runSubagent(
     const child = spawn(command, [...prefix, ...args], { cwd, env: subagentProcessEnv(profile, process.env, identity, nonceFile), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     adoptTree(child.pid);
     const state = newChildState();
-    const report = new ReportTracker(identity.scratch ?? reportDir(identity.id));
+    const outputDir = identity.scratch ?? reportDir(identity.id);
+    const report = new ReportTracker(outputDir);
+    const stderr = new StderrTail(outputDir);
     let buffer = '';
-    let stderr = '';
     let frameBytes = 0;
     let streamFailure: Error | undefined;
     // A write to a child that already exited fails with EPIPE; its exit settles the run.
@@ -349,9 +375,7 @@ export async function runSubagent(
         start = newline + 1;
       }
     });
-    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-      stderr = cutText(stderr + chunk, 4000, { chars: true, tail: true });
-    });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => stderr.write(chunk));
     // The run settles once, from `close` (stdio drained) or, when a grandchild that left the process group keeps the
     // pipes open, from `exit` plus a short grace: the tool call must return and its slot be freed either way.
     let finished = false;
@@ -366,6 +390,7 @@ export async function runSubagent(
       return true;
     };
     child.on('error', (error) => {
+      stderr.close();
       if (finish()) reject(error);
     });
     child.on('exit', (code, exitSignal) => {
@@ -389,7 +414,10 @@ export async function runSubagent(
       for (const stream of [child.stdout, child.stderr]) stream.destroy();
       if (buffer.trim()) handleLine(buffer);
       relay.end();
-      const { text: finalText, body: progress, pointer, error, answered } = report.result();
+      stderr.close();
+      const saved = savedNotices(state, outputDir);
+      if (saved) progress({ usage: state.usage, notices: saved });
+      const { text: finalText, body: lastProgress, pointer, error, answered } = report.result();
       if (streamFailure) reject(streamFailure);
       // A child stopped while settling after its answer still delivers that answer.
       else if (stalled && !answered) reject(stalled);
@@ -397,12 +425,13 @@ export async function runSubagent(
       // The child's report (already shown with visible escapes by `Report`) and stderr are untrusted text headed for the model and the terminal. A crash before any
       // final answer is a failure even when the child narrated progress first: narration is not a report.
       else if (code !== 0 && !answered) {
-        // The progress text is cut to 500 characters (the cut is stated); the pointer to the saved report is always kept.
-        const last = finalText ? `\nLast progress: ${capChars(progress.trim(), 500)}${pointer ? `\n${visibleControls(pointer)}` : ''}` : '';
-        reject(new Error(`Subagent ${exitReason(code, exitSignal)}: ${visibleControls(stderr).trim() || 'no output'}${last}`));
+        // The progress text is already the report preview (bounded, with its own trim note); the pointer to the saved report is always kept.
+        const last = finalText ? `\nLast progress: ${lastProgress.trim()}${pointer ? `\n${visibleControls(pointer)}` : ''}` : '';
+        reject(new Error(`Subagent ${exitReason(code, exitSignal)}: ${stderr.text()}${last}`));
       }
       else {
-        const failure = cancelled ? 'Subagent cancelled before its run settled' : error;
+        // A child that aborted itself (its compaction kept thrashing, say) says why in its last error notice.
+        const failure = cancelled ? (state.notices.lastError ? `Subagent stopped: ${state.notices.lastError}` : 'Subagent cancelled before its run settled') : error;
         resolve({ text: finalText, usage: state.usage, ...(failure ? { error: failure } : {}) });
       }
     };
@@ -419,6 +448,82 @@ export async function runSubagent(
     // A child that never started its permission module (it failed first) leaves the file: it is removed with the run.
     if (nonceFile) fs.rmSync(nonceFile, { force: true });
   });
+}
+
+/** Characters of a child's stderr a failure shows (its end); a longer stderr is saved whole. */
+const STDERR_TAIL_CHARS = 4_000;
+const STDERR_FILE = 'stderr.txt';
+const NOTICES_FILE = 'notices.txt';
+
+/**
+ * A child's stderr, bounded in memory: its last `STDERR_TAIL_CHARS` characters (control characters made visible), and,
+ * once it outgrows that, all of it streamed to `stderr.txt` in `dir`, so a failure that shows only the end can name the whole.
+ */
+class StderrTail {
+  private tail = '';
+  private total = 0;
+  private fd: number | undefined;
+  private file: string | undefined;
+  private failed = false;
+
+  constructor(private readonly dir: string | undefined) {}
+
+  write(chunk: string): void {
+    const text = visibleControls(chunk);
+    const before = this.tail;
+    this.total += text.length;
+    this.tail = cutText(before + text, STDERR_TAIL_CHARS, { chars: true, tail: true });
+    if (this.total <= STDERR_TAIL_CHARS || this.failed) return;
+    try {
+      if (this.fd === undefined) {
+        if (!this.dir) throw new Error('no folder');
+        const file = path.join(this.dir, STDERR_FILE);
+        this.fd = fs.openSync(file, 'w', PRIVATE_FILE_MODE);
+        this.file = file;
+        // Nothing was cut before the first overflow, so the tail is everything that came earlier.
+        fs.writeSync(this.fd, before);
+      }
+      fs.writeSync(this.fd, text);
+    } catch {
+      this.failed = true;
+      this.file = undefined;
+      this.close();
+    }
+  }
+
+  close(): void {
+    if (this.fd === undefined) return;
+    try {
+      fs.closeSync(this.fd);
+    } catch {
+      // Nothing to do: the file is a convenience copy.
+    }
+    this.fd = undefined;
+  }
+
+  /** What an error shows: the whole stderr when it fit, else a note on the cut and where the whole is, then the end. */
+  text(): string {
+    const shown = this.tail.trim() || 'no output';
+    return this.total > STDERR_TAIL_CHARS ? `${tailNote('stderr', this.tail.length, this.total, this.file)}\n${shown}` : shown;
+  }
+}
+
+/**
+ * The run's notices as the parent gets them at the end. When some did not fit the inline page, every notice (whole, one
+ * per line, repeats folded with their count) is saved to `notices.txt` in `dir` and the notices name it; when it cannot
+ * be saved, every notice goes inline instead, so none is dropped. Undefined when the inline page already holds them all.
+ */
+function savedNotices(state: ChildState, dir: string | undefined): ChildNotices | undefined {
+  if (state.notices.more === 0) return undefined;
+  const all = [...state.noticeLog.values()];
+  try {
+    if (!dir) throw new Error('no folder');
+    const file = path.join(dir, NOTICES_FILE);
+    fs.writeFileSync(file, `${all.map(noticeText).join('\n')}\n`, { mode: PRIVATE_FILE_MODE });
+    return { ...state.notices, file };
+  } catch {
+    return { ...state.notices, kept: all, more: 0 };
+  }
 }
 
 /** Where a child without a scratch folder (an unwritable workspace) spills a long report, so a cut report always has its whole copy. */

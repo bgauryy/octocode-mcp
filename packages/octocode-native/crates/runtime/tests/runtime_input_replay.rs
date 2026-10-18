@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
-
 //! Replays localFetch rows agents sent verbatim that the canonical schema
 //! rejects (`fixtures/benchmark-localfetch-ranges.json`, each with the
 //! rejection it got). Admission accepts exactly the canonical language, so

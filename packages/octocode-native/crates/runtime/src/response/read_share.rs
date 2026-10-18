@@ -206,17 +206,18 @@ fn restore_page_size(data: &mut Value, original: &Value) {
 /// Re-read each row of an overflowing `localFetch`/`ghGetFileContent` response
 /// that exceeds its fair share of `window` as a shorter line page. `rerun`
 /// executes the shortened queries (in order) and returns one row each; a
-/// shortened read that fails keeps the row's first result.
+/// shortened read that fails keeps the row's first result. A `window` of 0
+/// leaves every row as read.
 pub(crate) fn share_window(
     tool: ToolId,
     queries: &[Value],
     mut rows: Vec<DomainResult>,
-    window: Option<usize>,
+    window: usize,
     rerun: impl FnOnce(&[Value]) -> Result<Vec<DomainResult>, ExecutionError>,
 ) -> Result<Vec<DomainResult>, ExecutionError> {
-    let Some(window) = window.filter(|window| *window > 0) else {
+    if window == 0 {
         return Ok(rows);
-    };
+    }
     let cuts = plan(tool, queries, &rows, window);
     if cuts.is_empty() {
         return Ok(rows);
@@ -358,7 +359,7 @@ mod tests {
                     ToolId::LocalFetch,
                     &[query.clone()],
                     rows,
-                    Some(window),
+                    window,
                     |shortened| {
                         rereads += 1;
                         Ok(shortened
@@ -492,7 +493,7 @@ mod tests {
                 ToolId::LocalFetch,
                 &[query(json!({}))],
                 vec![row],
-                Some(20_000),
+                20_000,
                 |_| {
                     calls += 1;
                     Ok(Vec::new())
@@ -509,7 +510,7 @@ mod tests {
             ToolId::LocalFetch,
             &[query(json!({"length":7}))],
             vec![row],
-            Some(20_000),
+            20_000,
             |_| {
                 calls += 1;
                 Ok(Vec::new())
@@ -530,7 +531,7 @@ mod tests {
                 "path":"a.txt", "offset":900, "snapshot":"native-snapshot", "selection":"native-plan", "ref":"native-commit"
             }]}}});
             let mut calls = 0;
-            let result = share_window(tool, std::slice::from_ref(&original), vec![row], Some(20_000), |shortened| {
+            let result = share_window(tool, std::slice::from_ref(&original), vec![row], 20_000, |shortened| {
                 calls += 1;
                 assert_eq!(shortened.len(), 1);
                 let query = &shortened[0];
@@ -603,7 +604,7 @@ mod tests {
             ToolId::LocalFetch,
             &queries,
             rows,
-            Some(20_000),
+            20_000,
             |shortened| {
                 seen = shortened.to_vec();
                 Ok(shortened
@@ -634,18 +635,12 @@ mod tests {
     fn a_failed_shortened_read_keeps_the_first_result() {
         let rows = vec![local_row(300, 60), local_row(300, 60)];
         let queries = vec![query(json!({})), query(json!({}))];
-        let shared = share_window(
-            ToolId::LocalFetch,
-            &queries,
-            rows,
-            Some(20_000),
-            |shortened| {
-                Ok(shortened
-                    .iter()
-                    .map(|_| DomainResult::payload(json!({"error":"gone"}), Some("error")))
-                    .collect())
-            },
-        )
+        let shared = share_window(ToolId::LocalFetch, &queries, rows, 20_000, |shortened| {
+            Ok(shortened
+                .iter()
+                .map(|_| DomainResult::payload(json!({"error":"gone"}), Some("error")))
+                .collect())
+        })
         .expect("shared");
         assert!(shared.iter().all(|row| row.data["content"].is_string()));
     }
@@ -688,7 +683,7 @@ mod tests {
             ToolId::GhGetFileContent,
             std::slice::from_ref(&original),
             vec![first],
-            Some(20_000),
+            20_000,
             |shortened| {
                 assert_eq!(shortened.len(), 1);
                 Ok(vec![DomainResult::payload(
@@ -725,7 +720,7 @@ mod tests {
                 tool,
                 std::slice::from_ref(&original),
                 vec![local_row(900, 60)],
-                Some(20_000),
+                20_000,
                 |shortened| {
                     seen = shortened.to_vec();
                     Ok(Vec::new())

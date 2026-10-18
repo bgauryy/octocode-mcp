@@ -672,16 +672,17 @@ describe('browser input, forms, waits and tabs', () => {
     expect(await text({ action: 'navigate', url: 'https://example.com/form' })).toMatch(/Note: the page was still changing 6s after loading/);
     setTimeout(() => (saved = true), 100);
     const waited = await text({ action: 'navigate', url: 'https://example.com/form', text: 'Saved!' });
-    expect(waited).toMatch(/^"Saved!" appeared after \d+\.\ds\.\n\n# Form/);
+    expect(waited).toMatch(/^"Saved!" appeared after \d+(?:ms|\.\ds|s)\.\n\n# Form/);
     expect(waited).not.toContain('still changing');
-    expect(await text({ action: 'snapshot', text: 'Saved!' })).toMatch(/^"Saved!" appeared after 0\.\ds\./);
+    // The text is already there: the wait is as short as the machine allows, so assert the format (`formatDuration(ms, true)`), not the speed.
+    expect(await text({ action: 'snapshot', text: 'Saved!' })).toMatch(/^"Saved!" appeared after \d+(?:ms|\.\ds|s)\./);
   }, 20_000);
 
   it('waits for text, and follows, lists and switches tabs', async () => {
     let saved = false;
     const { cdp, text, run } = await open({ late: () => saved });
     setTimeout(() => (saved = true), 100);
-    expect(await text({ action: 'wait', text: 'Saved!' })).toMatch(/^"Saved!" appeared after \d+\.\ds\./);
+    expect(await text({ action: 'wait', text: 'Saved!' })).toMatch(/^"Saved!" appeared after \d+(?:ms|\.\ds|s)\./);
     await expect(run({ action: 'wait' })).rejects.toThrow(/wait needs text/);
 
     // The button opens a popup: the session moves to it.

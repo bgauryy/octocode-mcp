@@ -510,22 +510,23 @@ fn yaml(mut value: Value, keys: &[&str]) -> String {
     if rows.is_empty() {
         return text;
     }
-    // Each placeholder is a plain scalar on its own list item; the flow
-    // mapping replaces that whole item (one line per row object). The
-    // tag never occurs in the value, so only placeholder items match.
+    // Each placeholder is a plain scalar: a list item's or a mapping value's.
+    // Its row text replaces that scalar (one line per row object or call).
+    // The tag never occurs in the value, so only placeholders match.
     let mut out = String::with_capacity(text.len() + rows.iter().map(String::len).sum::<usize>());
     for line in text.split_inclusive('\n') {
         let body = line.trim_end_matches('\n');
-        let indent = body.len() - body.trim_start().len();
-        let row = body[indent..]
-            .strip_prefix("- ")
-            .and_then(|item| item.strip_prefix(tag.as_str()))
-            .and_then(|item| item.strip_suffix("__"))
-            .and_then(|index| index.parse::<usize>().ok())
-            .and_then(|index| rows.get(index));
+        let row = body.rfind(tag.as_str()).and_then(|at| {
+            let lead = &body[..at];
+            if !lead.ends_with("- ") && !lead.ends_with(": ") {
+                return None;
+            }
+            let index = body[at + tag.len()..].strip_suffix("__")?.parse::<usize>();
+            rows.get(index.ok()?).map(|row| (lead, row))
+        });
         match row {
-            Some(row) => {
-                out.push_str(&body[..indent + 2]);
+            Some((lead, row)) => {
+                out.push_str(lead);
                 out.push_str(row);
                 out.push_str(&line[body.len()..]);
             }
@@ -595,16 +596,22 @@ fn is_flow_row(value: &Value) -> bool {
 const FLOW_KEYS: [&str; 2] = ["matches", "symbols"];
 
 /// Replace every item of a location-row list (see [`FLOW_KEYS`]) that is a
-/// flow row with a placeholder string and record its flow text.
-/// `next`/`hints` continuations stay block style: an agent copies them.
+/// flow row with a placeholder string and record its flow text. Each
+/// `next`/`hints` call becomes one line, `<tool> <query JSON>`
+/// ([`crate::tools::result::call_line`], the hints channel's own string):
+/// the CLI runs it pasted back as `<tool> '<query JSON>'`.
 fn flow_rows(value: &mut Value, rows: &mut Vec<String>, depth: usize, tag: &str) {
-    if depth > 12 {
+    if depth > crate::tools::result::NESTING_DEPTH {
         return;
     }
     match value {
         Value::Object(map) => {
             for (key, child) in map.iter_mut() {
-                if matches!(key.as_str(), "next" | "hints" | "query") {
+                if matches!(key.as_str(), "next" | "hints") {
+                    call_lines(child, rows, tag);
+                    continue;
+                }
+                if key == "query" {
                     continue;
                 }
                 match child {
@@ -628,6 +635,23 @@ fn flow_rows(value: &mut Value, rows: &mut Vec<String>, depth: usize, tag: &str)
                 flow_rows(item, rows, depth + 1, tag);
             }
         }
+        _ => {}
+    }
+}
+
+/// Replace a `next`/`hints` value that is a call, or each call it maps or
+/// lists, with a placeholder for its one-line text.
+fn call_lines(value: &mut Value, rows: &mut Vec<String>, tag: &str) {
+    let mut line = |call: &mut Value| {
+        if let Some(text) = crate::tools::result::call_line(call) {
+            *call = Value::String(flow_placeholder(tag, rows.len()));
+            rows.push(text);
+        }
+    };
+    match value {
+        call if crate::tools::result::is_call(call) => line(call),
+        Value::Object(calls) => calls.values_mut().for_each(line),
+        Value::Array(calls) => calls.iter_mut().for_each(line),
         _ => {}
     }
 }
@@ -975,7 +999,7 @@ mod tests {
         }
         assert!(yaml.contains("path: big.ts"), "patchless rows stay: {yaml}");
         assert!(
-            yaml.contains("patch: ''"),
+            yaml.contains("patch: \"\""),
             "empty rename diff stays inline: {yaml}"
         );
         assert!(
@@ -1139,5 +1163,51 @@ mod tests {
         );
         let json_text = render_tool(ToolId::LocalSearch, &response, &json!({}), TextFormat::Json);
         assert!(json_text.contains(r#"{"path":"a.rs"}"#), "{json_text}");
+    }
+
+    /// Every `next`/`hints` call renders as one line, `name: <tool> <query
+    /// JSON>`, the same string the hints channel publishes, so a reader
+    /// pastes it back as `octocode <tool> '<query JSON>'`; a response page's
+    /// own `next` call too. JSON text keeps the calls as objects.
+    #[test]
+    fn next_leads_render_as_one_line_calls() {
+        let page = crate::tools::result::Continuation::new(
+            ToolId::LocalSearch,
+            json!({"matchString":"f","path":"src","page":2}),
+        )
+        .build();
+        let lead = crate::tools::result::Continuation::new(
+            ToolId::LocalFetch,
+            json!({"path":"src/a.rs","fullContent":true}),
+        )
+        .confidence("low")
+        .build();
+        let response = json!({
+            "results":[{"index":0,"data":{"files":[{"path":"src/a.rs","matchCount":1}],
+                "next":{"nextPage":page},"hints":{"readFile":lead}}}],
+            "responsePagination":{"hasMore":true,"next":page}});
+        let text = render_tool(ToolId::LocalSearch, &response, &json!({}), TextFormat::Yaml);
+        let line = crate::tools::result::call_line(&page).expect("call");
+        assert_eq!(
+            line,
+            r#"localSearch {"queries":[{"matchString":"f","path":"src","page":2}]}"#
+        );
+        assert!(text.contains(&format!("\n  nextPage: {line}\n")), "{text}");
+        assert!(text.contains(&format!("\n  next: {line}\n")), "{text}");
+        assert!(
+            text.contains(
+                r#"  readFile: Approximate: localFetch {"queries":[{"path":"src/a.rs","fullContent":true}]}"#
+            ),
+            "{text}"
+        );
+        let mut published = response.clone();
+        crate::response::channels::publish_hints(&mut published, ToolId::LocalSearch);
+        let hint = published["results"][0]["data"]["hints"][0]
+            .as_str()
+            .expect("published hint");
+        assert!(text.contains(&format!("\n  {hint}\n")), "{hint}\n{text}");
+        let json_text = render_tool(ToolId::LocalSearch, &response, &json!({}), TextFormat::Json);
+        let parsed: Value = serde_json::from_str(&json_text).expect("json");
+        assert_eq!(parsed["results"][0]["data"]["next"]["nextPage"], page);
     }
 }

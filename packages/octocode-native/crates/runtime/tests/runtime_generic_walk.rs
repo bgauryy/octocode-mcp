@@ -2,7 +2,6 @@
 //! satisfies the output contract and offers only contract-valid leads, every
 //! page lead is followed verbatim, no call repeats, and every row arrives
 //! exactly once with the union equal to the unpaged rows.
-#![allow(clippy::panic)]
 
 use crate::support::{self, ALL_EXTRAS, Workspace};
 use serde_json::{Value, json};

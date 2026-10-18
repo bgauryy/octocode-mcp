@@ -1,13 +1,13 @@
 use super::{CloneContext, CloneError, check_control, hash};
 use crate::cache::evictions::log_eviction;
-use crate::civil_date::{days_from_civil, iso8601_millis};
+use crate::civil_date::{days_from_civil, iso8601_millis, unix_millis};
 use octocode_io::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 pub(super) const META_FILE: &str = ".octocode-clone-meta.json";
 pub(super) const LOCK_META_FILE: &str = ".octocode-lock.json";
@@ -42,6 +42,11 @@ pub(super) struct CacheMeta {
     pub verified: bool,
     /// Commits of history fetched.
     pub depth: u64,
+    /// Repo-relative paths of the repository symlinks the checkout holds
+    /// (as plain files), recorded at publication so a hit reports them;
+    /// `None` for entries written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symlinks: Option<Vec<String>>,
 }
 
 /// What a cache entry holds: repository, commit, sparse scope
@@ -57,7 +62,7 @@ pub(super) struct Identity<'a> {
 
 impl CacheMeta {
     pub fn new(identity: &Identity<'_>, commit_sha: &str, ttl: Duration) -> Self {
-        let now = now_millis();
+        let now = unix_millis();
         Self {
             cloned_at: iso8601_millis(now),
             expires_at: iso8601_millis(now.saturating_add(ttl.as_millis() as i64)),
@@ -73,6 +78,7 @@ impl CacheMeta {
             // checkout before reporting success.
             verified: true,
             depth: identity.depth,
+            symlinks: None,
         }
     }
 }
@@ -213,7 +219,7 @@ fn try_lock(path: &Path) -> Option<CloneLock> {
 fn write_lock_meta(path: &Path) -> Result<(), CloneError> {
     let bytes = serde_json::to_vec(&LockMeta {
         pid: std::process::id(),
-        created_at: now_millis(),
+        created_at: unix_millis(),
     })
     .map_err(|error| CloneError::new("cacheUnavailable", error.to_string()))?;
     write_atomic(&path.join(LOCK_META_FILE), &bytes, false).map_err(cache_io)
@@ -228,7 +234,7 @@ fn recover_stale_lock(path: &Path) -> bool {
         .ok()
         .and_then(|bytes| serde_json::from_slice::<LockMeta>(&bytes).ok());
     let stale = if let Some(meta) = meta {
-        now_millis().saturating_sub(meta.created_at) > STALE_LOCK_AGE.as_millis() as i64
+        unix_millis().saturating_sub(meta.created_at) > STALE_LOCK_AGE.as_millis() as i64
             && !crate::process_status::is_alive(meta.pid)
     } else {
         fs::metadata(path)
@@ -240,7 +246,7 @@ fn recover_stale_lock(path: &Path) -> bool {
     if !stale {
         return false;
     }
-    let tombstone = path.with_extension(format!("stale-{}", now_millis()));
+    let tombstone = path.with_extension(format!("stale-{}", unix_millis()));
     fs::rename(path, &tombstone).is_ok() && fs::remove_dir_all(tombstone).is_ok()
 }
 
@@ -258,7 +264,7 @@ pub(super) fn valid_clone(path: &Path, ttl: Duration) -> Option<CacheMeta> {
     let cloned = parse_iso_millis(&meta.cloned_at)?;
     let expires = parse_iso_millis(&meta.expires_at)?;
     let effective_expiry = cloned.saturating_add(ttl.as_millis() as i64).min(expires);
-    (path.is_dir() && now_millis() < effective_expiry).then_some(meta)
+    (path.is_dir() && unix_millis() < effective_expiry).then_some(meta)
 }
 
 /// A served cache hit's age: when it was cloned and when it stops being
@@ -535,13 +541,6 @@ fn cache_io(error: io::Error) -> CloneError {
         "cacheUnavailable",
         format!("Clone cache operation failed: {error}"),
     )
-}
-
-fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
 }
 
 fn parse_iso_millis(value: &str) -> Option<i64> {

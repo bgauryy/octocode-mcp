@@ -6,7 +6,7 @@ import type { Permission } from '../permission/ask.js';
 import { projectTrustNow } from '../shared/trust.js';
 import { contentText, DAY_MS, textResult } from '../shared/util.js';
 import { memoryLabel, parseMemoryId } from './query.js';
-import { MEMORY_KINDS, MemoryError, memoryLine, noMemory, refuseMemorySecrets, type Memory, type MemoryStore } from './store.js';
+import { MEMORY_KINDS, MemoryError, memoryLine, memoryToolLine, noMemory, refuseMemorySecrets, type Memory, type MemoryStore } from './store.js';
 
 const DEFAULT_LIMIT = 10;
 
@@ -63,8 +63,12 @@ export function describeMemory(memory: Memory, now = Date.now()): string {
   ].join('\n');
 }
 
+/** Characters of a body in a search, list or save line; a longer body ends its line with the `memory get` that reads it whole. */
+const LINE_BODY_CHARS = 160;
+const SAVED_BODY_CHARS = 60;
+
 function listText(memories: readonly Memory[], empty: string): string {
-  return memories.length > 0 ? memories.map((memory) => memoryLine(memory)).join('\n') : empty;
+  return memories.length > 0 ? memories.map((memory) => memoryToolLine(memory, LINE_BODY_CHARS)).join('\n') : empty;
 }
 
 /**
@@ -149,7 +153,7 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
           if (params.op === 'delete') {
             if (current) guardWide(current.scope === 'global' || current.pinned, `deleting ${memoryLabel(current.id)}`);
             const removed = store.delete(needId());
-            return textResult(`Deleted ${memoryLine(removed, 60)}`, { ids: [removed.id] });
+            return textResult(`Deleted ${memoryLine(removed)}`, { ids: [removed.id] });
           }
           if (params.scope === 'all') throw new Error('set scope is project or global.');
           const global = (params.scope ?? current?.scope) === 'global';
@@ -171,7 +175,7 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
             ...(trusted ? {} : { hideProject: true }),
           });
           const hidden = !trusted && memory.scope === 'project' ? '\nThis untrusted project hides project memories from reads until the user /trusts it.' : '';
-          return textResult(`${created ? 'Saved' : 'Updated'} ${memoryLine(memory, 60)}${hidden}`, { ids: [memory.id] });
+          return textResult(`${created ? 'Saved' : 'Updated'} ${memoryToolLine(memory, SAVED_BODY_CHARS)}${hidden}`, { ids: [memory.id] });
         }
       }
       throw new Error(`Unknown op ${String(params.op)}.`);

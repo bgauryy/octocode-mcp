@@ -15,6 +15,9 @@ impl ToolOutput for Output {
     fn evidence_kind(&self, _query: &Value, _data: &Value) -> &'static str {
         "provider"
     }
+    fn settle_repaired_row(&self, row: &mut Value) {
+        super::settle_repaired_row(row);
+    }
 }
 
 #[cfg(test)]

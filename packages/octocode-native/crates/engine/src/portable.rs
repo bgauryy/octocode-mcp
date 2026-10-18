@@ -13,6 +13,7 @@ pub use crate::search::text_pattern::{
 };
 pub use crate::signatures::extract_graph_facts;
 pub use crate::text::diff_parser::filter_patch;
+pub use crate::text::yaml_utils::yaml_to_json;
 
 /// Contain a panic from a fallible engine entry point at the transport-neutral
 /// boundary. An unguarded panic here (deep in a parser or filesystem walk on

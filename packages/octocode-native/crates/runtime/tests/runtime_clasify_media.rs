@@ -1,6 +1,5 @@
-#![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 //! Original image bytes stay inside the runtime/provider boundary.
-use crate::support::{PROVIDER_LIMITS, Run as _, Workspace};
+use crate::support::{Run as _, Workspace, capture_allowed, clasify_runtime};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use octocode_native::runtime::ToolRuntime;
 use serde_json::{Value, json};
@@ -45,22 +44,11 @@ async fn provider() -> MockServer {
     server
 }
 
+/// A clasify runtime that may also read what URL capture saved.
 fn runtime(workspace: &Workspace, server: &MockServer, extra: &[(&str, String)]) -> ToolRuntime {
-    let mut env = vec![
-        ("OCTOCODE_BETA", "true".into()),
-        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        (
-            "ALLOWED_PATHS",
-            format!(
-                "{},{}",
-                workspace.workspace.display(),
-                workspace.home.join("tmp/capture/url").display()
-            ),
-        ),
-    ];
+    let mut env = vec![capture_allowed(workspace)];
     env.extend(extra.iter().cloned());
-    workspace.runtime_with(&env, PROVIDER_LIMITS)
+    clasify_runtime(workspace, server, &env)
 }
 
 fn row(path: &str) -> Value {

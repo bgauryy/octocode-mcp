@@ -116,3 +116,87 @@ describe('reduceEvent', () => {
     expect(reduce(state, { type: 'response', command: 'abort', success: false })).toEqual([]);
   });
 });
+
+describe('reduceEvent: compaction', () => {
+  const end = (fields: Record<string, unknown>) => ({ type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false, ...fields });
+  const usage = { input: 40, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 50, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.004 } };
+
+  it('shows the row compacting while it runs, and not once it ended', () => {
+    const state = newChildState();
+    expect(progress(reduce(state, { type: 'compaction_start', reason: 'threshold' }))).toEqual([{ compacting: true, usage: state.usage }]);
+    expect(state.lastActivity).toBe('compacting its context');
+    expect(progress(reduce(state, end({ aborted: true })))).toEqual([{ compacting: false, compactions: { done: 0, aborted: 1, failed: 0 }, usage: state.usage }]);
+  });
+
+  it('counts a finished compaction with its sizes, and adds its own usage to the run once', () => {
+    const state = newChildState();
+    reduce(state, reply('stop'));
+    const before = state.usage.cost.total;
+    reduce(state, end({ result: { summary: 's', firstKeptEntryId: 'e', tokensBefore: 150_000, estimatedTokensAfter: 32_000, usage, details: {} } }));
+    expect(state.compactions).toEqual({ done: 1, aborted: 0, failed: 0, tokensBefore: 150_000, tokensAfter: 32_000 });
+    expect(state.usage).toMatchObject({ input: 43, output: 12, totalTokens: 55 });
+    expect(state.usage.cost.total).toBeCloseTo(before + 0.004);
+    // The next reply adds its own only: the compaction's usage is not carried into later totals twice.
+    reduce(state, reply('stop'));
+    expect(state.usage).toMatchObject({ input: 46, output: 14 });
+  });
+
+  it('records a failed compaction with its message, and a cancelled one without an error', () => {
+    const state = newChildState();
+    reduce(state, end({ errorMessage: 'provider down' }));
+    reduce(state, end({ errorMessage: '' }));
+    reduce(state, end({ aborted: true }));
+    expect(state.compactions).toEqual({ done: 0, aborted: 1, failed: 2, error: 'compaction failed' });
+    expect(state.usage.input).toBe(0);
+  });
+
+  it('ignores the compaction of a call a tool made itself', () => {
+    const state = newChildState();
+    expect(reduce(state, { type: 'compaction_start', parentToolCallId: 'p' })).toEqual([]);
+    expect(reduce(state, end({ parentToolCallId: 'p', result: { tokensBefore: 1, estimatedTokensAfter: 1, usage } }))).toEqual([]);
+    expect(state.compactions).toEqual({ done: 0, aborted: 0, failed: 0 });
+  });
+});
+
+describe('reduceEvent: notices', () => {
+  const notify = (notifyType: unknown, message: string, id = message) => ({ type: 'extension_ui_request', id, method: 'notify', message, notifyType });
+
+  it('keeps warnings and errors, still hands the event to the relay, and leaves info and audit entries out', () => {
+    const state = newChildState();
+    const warning = notify('warning', 'summary fell back');
+    expect(reduce(state, warning)).toEqual([{ kind: 'ui', event: warning }, { kind: 'progress', update: { notices: { kept: [{ level: 'warning', text: 'summary fell back', count: 1 }], more: 0 }, usage: state.usage } }]);
+    expect(reduce(state, notify('info', 'just so you know'))).toHaveLength(1);
+    expect(reduce(state, notify('warning', 'octocode-audit/1 {}'))).toHaveLength(1);
+    expect(reduce(state, { type: 'extension_ui_request', id: 'x', method: 'setStatus', message: 'm', notifyType: 'error' })).toHaveLength(1);
+    expect(reduce(state, notify(undefined, 'no level'))).toHaveLength(1);
+    expect(state.notices).toEqual({ kept: [{ level: 'warning', text: 'summary fell back', count: 1 }], more: 0 });
+  });
+
+  it('keeps five, counts the rest, and remembers the latest error even past the five', () => {
+    const state = newChildState();
+    for (let n = 1; n <= 6; n++) reduce(state, notify('warning', `w${n}`));
+    reduce(state, notify('error', 'the reason'));
+    reduce(state, notify('warning', 'w8'));
+    expect(state.notices.kept.map((notice) => notice.text)).toEqual(['w1', 'w2', 'w3', 'w4', 'w5']);
+    expect(state.notices).toMatchObject({ more: 3, lastError: 'the reason' });
+  });
+
+  it('names an error as the stop reason only when no model turn followed it', () => {
+    const state = newChildState();
+    reduce(state, notify('error', 'earlier error'));
+    reduce(state, reply('toolUse'));
+    expect(state.notices.lastError).toBeUndefined();
+    // The error stays in the report's notices; it is just not the reason the run stopped.
+    expect(state.notices.kept.map((notice) => notice.text)).toEqual(['earlier error']);
+    reduce(state, notify('error', 'the stop reason'));
+    expect(state.notices.lastError).toBe('the stop reason');
+  });
+
+  it('shows hidden characters in a notice, which is kept whole (see notices-whole.test.ts)', () => {
+    const state = newChildState();
+    reduce(state, notify('error', `bad\u001b[31m ${'x'.repeat(2_000)}`));
+    const [first] = state.notices.kept;
+    expect(first!.text).toContain('\\u{1b}');
+    expect(first!.text).toHaveLength('bad\\u{1b}[31m '.length + 2_000);
+  });
+});

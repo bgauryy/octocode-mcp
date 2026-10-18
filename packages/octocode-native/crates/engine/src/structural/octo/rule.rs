@@ -2,11 +2,13 @@ use std::time::Instant;
 
 use regex::Regex;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use tree_sitter::Node;
 
 use crate::structural::kinds::named_kind_id;
 use crate::structural::language::AgLanguage;
 
+use super::error::CompileError;
 use super::matching::{
     CandidatePlan, CaptureEnv, ExecutionError, SECONDARY_CAPTURE, ancestors_from_root,
     named_children, node_text, raw_range,
@@ -23,19 +25,19 @@ use super::pattern::CompiledPattern;
 struct RawRuleDocument {
     rule: RawRule,
     #[serde(rename = "id")]
-    _id: Option<serde_yaml_ng::Value>,
+    _id: Option<IgnoredAny>,
     #[serde(rename = "language")]
-    _language: Option<serde_yaml_ng::Value>,
+    _language: Option<IgnoredAny>,
     #[serde(rename = "severity")]
-    _severity: Option<serde_yaml_ng::Value>,
+    _severity: Option<IgnoredAny>,
     #[serde(rename = "message")]
-    _message: Option<serde_yaml_ng::Value>,
+    _message: Option<IgnoredAny>,
     #[serde(rename = "note")]
-    _note: Option<serde_yaml_ng::Value>,
+    _note: Option<IgnoredAny>,
     #[serde(rename = "url")]
-    _url: Option<serde_yaml_ng::Value>,
+    _url: Option<IgnoredAny>,
     #[serde(rename = "metadata")]
-    _metadata: Option<serde_yaml_ng::Value>,
+    _metadata: Option<IgnoredAny>,
 }
 
 #[derive(Deserialize)]
@@ -77,27 +79,24 @@ pub(super) struct CompiledRule {
 /// grammar cannot compile is `structural.query.compileFailed`.
 pub const RULE_INVALID: &str = "structural.rule.invalid";
 
-fn invalid_rule(message: &str) -> String {
-    format!("[{RULE_INVALID}] {message}")
-}
-
-pub(in crate::structural) fn parse_rule(rule: &str) -> Result<RawRule, String> {
+pub(in crate::structural) fn parse_rule(rule: &str) -> Result<RawRule, CompileError> {
     #[cfg(test)]
     RULE_PARSE_COUNT.with(|count| count.set(count.get() + 1));
     if rule.len() > 64_000 {
-        return Err(invalid_rule("structural rule exceeds 64000 byte limit"));
+        return Err(CompileError::rule(
+            "structural rule exceeds 64000 byte limit",
+        ));
     }
-    let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(rule).map_err(|err| yaml_error(&err))?;
+    let value = crate::text::yaml_utils::yaml_to_json(rule).map_err(|err| yaml_error(&err))?;
     let wrapped = value
-        .as_mapping()
+        .as_object()
         .is_some_and(|mapping| mapping.contains_key("rule"));
     let raw: RawRule = if wrapped {
-        serde_yaml_ng::from_value::<RawRuleDocument>(value)
+        serde_json::from_value::<RawRuleDocument>(value)
             .map_err(|err| yaml_error(&err))?
             .rule
     } else {
-        serde_yaml_ng::from_value(value).map_err(|err| yaml_error(&err))?
+        serde_json::from_value(value).map_err(|err| yaml_error(&err))?
     };
     validate_rule_depth(&raw, 0)?;
     Ok(raw)
@@ -111,12 +110,15 @@ pub const EXAMPLE_RULE: &str =
 /// A rule that does not deserialize. An unknown key lists the keys the rule
 /// takes; the example shows how they combine, since the usual mistake is a
 /// key from another matcher (`field`, `constraints`) that has no equivalent.
-fn yaml_error(err: &serde_yaml_ng::Error) -> String {
+fn yaml_error(err: &impl std::fmt::Display) -> CompileError {
     let message = format!("invalid rule YAML: {err}");
+    // Neither serde-saphyr nor serde_json has a typed accessor for an
+    // unknown-field error; serde's own wording is the one thing to match, and
+    // this is the only such site.
     if message.contains("unknown field") {
-        invalid_rule(&format!("{message}. Example rule: {EXAMPLE_RULE}"))
+        CompileError::rule(format!("{message}. Example rule: {EXAMPLE_RULE}"))
     } else {
-        invalid_rule(&message)
+        CompileError::rule(message)
     }
 }
 
@@ -125,9 +127,11 @@ thread_local! {
     pub(super) static RULE_PARSE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-fn validate_rule_depth(rule: &RawRule, depth: usize) -> Result<(), String> {
+fn validate_rule_depth(rule: &RawRule, depth: usize) -> Result<(), CompileError> {
     if depth >= 64 {
-        return Err(invalid_rule("structural rule exceeds 64 nesting levels"));
+        return Err(CompileError::rule(
+            "structural rule exceeds 64 nesting levels",
+        ));
     }
     for child in rule
         .all
@@ -144,13 +148,13 @@ fn validate_rule_depth(rule: &RawRule, depth: usize) -> Result<(), String> {
 }
 
 /// Every `kind` in `rule` and its sub-rules names a node of `language`.
-fn check_kinds(language: &tree_sitter::Language, rule: &RawRule) -> Result<(), String> {
+fn check_kinds(language: &tree_sitter::Language, rule: &RawRule) -> Result<(), CompileError> {
     if let Some(kind) = rule.kind.as_deref()
         && named_kind_id(language, kind).is_none()
     {
-        return Err(format!(
+        return Err(CompileError::grammar(format!(
             "unknown node kind '{kind}' for this language grammar"
-        ));
+        )));
     }
     rule.all
         .iter()
@@ -167,7 +171,7 @@ impl CompiledRule {
     /// rule (`kind: ...`). A top-level `rule` key is unambiguous: `RawRule` has
     /// no such field, so a bare rule can never contain one.
     #[cfg(test)]
-    pub(super) fn new(lang: &AgLanguage, rule: &str) -> Result<Self, String> {
+    pub(super) fn new(lang: &AgLanguage, rule: &str) -> Result<Self, CompileError> {
         let raw = parse_rule(rule)?;
         Self::compile(lang, &raw)
     }
@@ -175,12 +179,12 @@ impl CompiledRule {
     /// Every `kind` of the rule, at any depth, is checked before any
     /// pattern parses: a kind this grammar lacks is named as itself, never
     /// hidden behind an error of a pattern beside it.
-    pub(super) fn compile(lang: &AgLanguage, raw: &RawRule) -> Result<Self, String> {
+    pub(super) fn compile(lang: &AgLanguage, raw: &RawRule) -> Result<Self, CompileError> {
         check_kinds(&lang.tree_sitter_language(), raw)?;
         Self::compile_checked(lang, raw)
     }
 
-    fn compile_checked(lang: &AgLanguage, raw: &RawRule) -> Result<Self, String> {
+    fn compile_checked(lang: &AgLanguage, raw: &RawRule) -> Result<Self, CompileError> {
         let pattern = raw
             .pattern
             .as_deref()
@@ -191,7 +195,7 @@ impl CompiledRule {
             .as_deref()
             .map(Regex::new)
             .transpose()
-            .map_err(|err| invalid_rule(&format!("invalid rule regex: {err}")))?;
+            .map_err(|err| CompileError::rule(format!("invalid rule regex: {err}")))?;
         let has = raw
             .has
             .as_deref()
@@ -235,7 +239,7 @@ impl CompiledRule {
             candidate_plan: CandidatePlan::Any,
         };
         if compiled.is_empty() {
-            return Err(invalid_rule(
+            return Err(CompileError::rule(
                 "invalid rule: rule must contain at least one matcher",
             ));
         }

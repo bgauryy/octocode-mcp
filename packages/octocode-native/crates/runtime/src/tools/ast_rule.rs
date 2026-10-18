@@ -55,8 +55,9 @@ impl GlobParsers {
 /// Error code for a pattern or rule that compiles for no grammar.
 pub(crate) const INVALID_PATTERN: &str = "invalidPattern";
 
-/// Recovery for [`INVALID_PATTERN`], in both tools.
-pub(crate) const INVALID_PATTERN_HINT: &str = "Make the pattern one complete, parseable node, or inspect its shape with astSearch operation:\"syntaxTree\".";
+/// Recovery for [`INVALID_PATTERN`], in both tools: the code covers a
+/// pattern that parses as no node and a rule whose YAML does not parse.
+pub(crate) const INVALID_PATTERN_HINT: &str = "Make each pattern one complete, parseable node and a rule valid YAML; astSearch operation:\"syntaxTree\" shows the shape.";
 
 /// Why a pattern that parsed can still match nothing: astSearch's fallback
 /// hint for a pattern row without its own.
@@ -388,6 +389,15 @@ mod tests {
         assert_eq!(hint, "0 matches in 99999 objective-cpp files.");
         assert!(hint.chars().count() <= crate::response::rows::MAX_GUIDANCE_CHARS);
         assert_eq!(super::empty_match_hint(1, None), "0 matches in 1 file.");
+    }
+
+    /// `invalidPattern` is also a rule that does not parse: its recovery
+    /// names the rule, not only the pattern, within the guidance limit.
+    #[test]
+    fn the_invalid_pattern_hint_covers_rules() {
+        let hint = super::INVALID_PATTERN_HINT;
+        assert!(hint.contains("pattern") && hint.contains("rule"), "{hint}");
+        assert!(hint.chars().count() <= crate::response::rows::MAX_GUIDANCE_CHARS);
     }
 
     /// A syntax-tree budget stop is terminal: its recovery names no

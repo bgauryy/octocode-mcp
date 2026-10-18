@@ -42,7 +42,8 @@ use crate::graph::{
 };
 
 // LSP SymbolKind numeric codes (subset we emit); keep them in sync with the
-// LSP spec.
+// LSP spec. `TYPE_ALIAS` is module-private: LSP has no type-alias kind, and
+// the tree never leaves this module, so declarations name it `type`.
 mod kind {
     pub const NAMESPACE: u8 = 3;
     pub const CLASS: u8 = 5;
@@ -55,6 +56,8 @@ mod kind {
     pub const VARIABLE: u8 = 13;
     pub const CONSTANT: u8 = 14;
     pub const ENUM_MEMBER: u8 = 22;
+    /// Outside the LSP range (1..=26): never confused with a spec kind.
+    pub const TYPE_ALIAS: u8 = 0;
 }
 
 #[derive(Serialize)]
@@ -181,18 +184,14 @@ pub(crate) fn extract_graph_facts_with_metadata(
     content: &str,
     file_path: &str,
 ) -> Option<super::GraphFactsExtraction> {
-    on_oxc_worker(
-        content,
-        file_path,
-        extract_graph_facts_with_metadata_inner::<true>,
-    )
+    on_oxc_worker(content, file_path, extract_graph_facts_with_metadata_inner)
 }
 
-fn extract_graph_facts_with_metadata_inner<const COMMON_JS: bool>(
+fn extract_graph_facts_with_metadata_inner(
     content: &str,
     file_path: &str,
 ) -> Option<super::GraphFactsExtraction> {
-    with_js_program::<COMMON_JS, _>(content, file_path, |ext, parser_ret| {
+    with_js_program::<true, _>(content, file_path, |ext, parser_ret| {
         let line_index = SpanPositions::new(content);
         let mut symbols = Vec::new();
         collect_program(&parser_ret.program, &line_index, &mut symbols);
@@ -215,7 +214,7 @@ fn extract_graph_facts_with_metadata_inner<const COMMON_JS: bool>(
         }
         // OXC tokens make this an absence check, not a binding claim. Candidate
         // loaders still require the full native scope inventory, including escapes.
-        let common_js = if COMMON_JS && commonjs::may_contain_loader(&parser_ret.tokens, content) {
+        let common_js = if commonjs::may_contain_loader(&parser_ret.tokens, content) {
             commonjs::collect_common_js_loads(&parser_ret.program, &line_index)
         } else {
             Vec::new()
@@ -851,6 +850,27 @@ fn flatten_symbols(
 #[cfg(test)]
 mod graph_occurrence_tests {
     #[test]
+    fn export_ranges_include_wrappers_without_moving_symbol_anchors() {
+        let source = "export function first(){}\nexport default class Second {}\nexport const left = 1, right = 2;";
+        let value: serde_json::Value =
+            serde_json::from_str(&extract_graph_facts(source, "exports.ts").unwrap()).unwrap();
+        let declarations = value["declarations"].as_array().unwrap();
+        for (name, line, column) in [("first", 0, 16), ("Second", 1, 21), ("left", 2, 13)] {
+            let d = declarations.iter().find(|d| d["name"] == name).unwrap();
+            assert_eq!(
+                d["range"]["start"],
+                serde_json::json!({"line":line,"character":0})
+            );
+            assert_eq!(
+                d["selectionRange"]["start"],
+                serde_json::json!({"line":line,"character":column})
+            );
+        }
+        let right = declarations.iter().find(|d| d["name"] == "right").unwrap();
+        assert_eq!(right["range"]["end"]["character"], 33);
+    }
+
+    #[test]
     fn exported_declaration_outline_scales_without_losing_aliases() {
         let mut source = (0..20_000)
             .map(|i| format!("export function fn{i}() {{ return {i}; }}\n"))
@@ -918,6 +938,22 @@ mod graph_occurrence_tests {
         assert_eq!(loads[0]["binding"], "unshadowed-global");
         assert_eq!(loads[0]["kind"], "commonjs-require");
         assert_eq!(loads[1]["specifier"], "./other.cjs");
+    }
+
+    #[test]
+    fn commonjs_recall_holds_on_generated_loader_corpora() {
+        let plain = (0..180)
+            .map(|i| format!("const dep{i} = require('./dep{i}.cjs');\n"))
+            .collect::<String>();
+        assert_eq!(common_js(&plain).as_array().unwrap().len(), 180);
+        let escaped = (0..120)
+            .map(|i| {
+                format!(
+                    r#"function task{i}() {{ const name = './dep{i}.cjs'; return requ\u0069re(name); }}"#
+                )
+            })
+            .collect::<String>();
+        assert_eq!(common_js(&escaped).as_array().unwrap().len(), 120);
     }
 
     #[test]
@@ -1092,10 +1128,6 @@ mod graph_occurrence_tests {
     }
 }
 
-#[cfg(test)]
-#[path = "js_oxc_commonjs_bench.rs"]
-mod commonjs_bench;
-
 fn import_export_kind(kind: ImportOrExportKind) -> &'static str {
     match kind {
         ImportOrExportKind::Type => "type",
@@ -1116,6 +1148,7 @@ fn symbol_kind_name(kind: u8) -> &'static str {
         kind::VARIABLE => "variable",
         kind::CONSTANT => "constant",
         kind::ENUM_MEMBER => "enumMember",
+        kind::TYPE_ALIAS => "type",
         _ => "symbol",
     }
 }
@@ -1127,6 +1160,7 @@ fn collect_program(program: &Program, li: &SpanPositions, out: &mut Vec<Document
 }
 
 fn collect_statement(stmt: &Statement, li: &SpanPositions, out: &mut Vec<DocumentSymbol>) {
+    let first = out.len();
     match stmt {
         Statement::FunctionDeclaration(f) => push_opt(out, function_symbol(f, li)),
         Statement::ClassDeclaration(c) => push_opt(out, class_symbol(c, li)),
@@ -1157,6 +1191,23 @@ fn collect_statement(stmt: &Statement, li: &SpanPositions, out: &mut Vec<Documen
             }
         }
         _ => {}
+    }
+    // Export syntax belongs to the declaration, while selection ranges keep
+    // pointing at symbol names. For multiple bindings, attach only the outer
+    // edges so sibling ranges do not swallow each other.
+    if matches!(
+        stmt,
+        Statement::ExportDeclaration(_) | Statement::ExportDefaultDeclaration(_)
+    ) {
+        let span = li.range(stmt.span());
+        if let Some(symbol) = out.get_mut(first) {
+            symbol.range.start = span.start;
+        }
+        if out.len() > first
+            && let Some(symbol) = out.last_mut()
+        {
+            symbol.range.end = span.end;
+        }
     }
 }
 
@@ -1541,11 +1592,9 @@ fn global_symbol(decl: &TSGlobalDeclaration, li: &SpanPositions) -> Option<Docum
 }
 
 fn type_alias_symbol(decl: &TSTypeAliasDeclaration, li: &SpanPositions) -> Option<DocumentSymbol> {
-    // No dedicated LSP kind for a type alias; `Interface` groups named types and
-    // is what most TS servers report.
     Some(leaf(
         decl.id.name.as_str(),
-        kind::INTERFACE,
+        kind::TYPE_ALIAS,
         decl.span,
         decl.id.span,
         li,

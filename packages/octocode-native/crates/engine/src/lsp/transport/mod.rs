@@ -19,4 +19,4 @@ mod server_requests;
 
 pub(crate) use connection::JsonRpcConnection;
 pub(crate) use progress::{ProgressTracker, Readiness};
-pub(crate) use server_requests::{ClientRequestContext, configuration_section_for_command};
+pub(crate) use server_requests::ClientRequestContext;

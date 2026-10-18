@@ -3,9 +3,15 @@
 
 use super::{analysis::*, types::*};
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use crate::tools::result::Continuation;
 use serde_json::{Map, Value, json};
 use std::{collections::BTreeMap, path::Path};
+
+/// Most files one scan may walk: the contract `maxFiles` maximum.
+pub(super) fn max_files_maximum() -> u32 {
+    u32_of_usize(crate::tools::id::query_limits::ast_topology::MAX_FILES_MAXIMUM)
+}
 
 pub(super) fn paginate(
     items: Vec<Value>,
@@ -161,9 +167,10 @@ pub(super) fn add_coverage(
         };
     }
     let groups = group_diagnostics(&b.diagnostics);
-    let size = q
-        .diagnostic_page_size()
-        .clamp(1, super::topology_max("diagnosticPageSize")) as usize;
+    let size = q.diagnostic_page_size().clamp(
+        1,
+        u32_of_usize(crate::tools::id::query_limits::ast_topology::DIAGNOSTIC_PAGE_SIZE_MAXIMUM),
+    ) as usize;
     let total = groups.len();
     let pages = usize::max(1, total.div_ceil(size));
     // A page past the end is empty, never moved back to the last page (the
@@ -293,7 +300,7 @@ impl ScanCuts {
     pub(super) fn warnings(self, q: &AstTopologyQuery) -> Vec<String> {
         let mut warnings = Vec::new();
         if self.max_files {
-            let at_maximum = q.scan_files() >= super::topology_max("maxFiles");
+            let at_maximum = q.scan_files() >= max_files_maximum();
             warnings.push(format!(
                 "scan stopped at maxFiles ({}) — graph results are partial{}",
                 q.scan_files(),
@@ -317,7 +324,7 @@ impl ScanCuts {
     pub(super) fn terminal(self, q: &AstTopologyQuery) -> bool {
         self.files_skipped
             || self.edge_cap
-            || self.max_files && q.scan_files() >= super::topology_max("maxFiles")
+            || self.max_files && q.scan_files() >= max_files_maximum()
     }
 }
 
@@ -345,7 +352,7 @@ pub(super) fn insert_supersedes(
 /// The same query over a doubled file bound whose results replace this
 /// scan's rows (`supersedes`); `None` at the `maxFiles` maximum.
 pub(super) fn expand_scan(q: &AstTopologyQuery) -> Option<Value> {
-    let max_files = super::topology_max("maxFiles");
+    let max_files = max_files_maximum();
     let cur = q.scan_files();
     if cur >= max_files {
         return None;

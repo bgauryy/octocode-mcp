@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { COMPACTION_NOTE_TYPE } from '../src/compaction/record.js';
 import { carryFileLists, splitSummary, SUMMARIZER_RESULT_CHARS, summarizerView, SUMMARY_FOCUS, summaryInstructions, transcriptNote, USER_MESSAGE_CHARS, USER_MESSAGES_CHARS, USER_MESSAGES_SHARE, userMessagesSection, userText, windowBudget, writeSummary } from '../src/compaction/summary.js';
 
 const fileOps = () => ({ read: new Set<string>(), written: new Set<string>(), edited: new Set<string>() });
@@ -10,7 +11,9 @@ describe('compaction summary', () => {
     expect(summaryInstructions(undefined)).toBe(SUMMARY_FOCUS);
     expect(summaryInstructions('  ')).toBe(SUMMARY_FOCUS);
     expect(summaryInstructions(' focus on tests ')).toBe(`focus on tests\n\n${SUMMARY_FOCUS}`);
-    for (const section of ['## Errors & Fixes', '## Where We Stopped', '## Follow-ups']) expect(SUMMARY_FOCUS).toContain(section);
+    for (const section of ['## Errors & Fixes', '## Where We Stopped', '## Follow-ups', '## TL;DR']) expect(SUMMARY_FOCUS).toContain(section);
+    expect(SUMMARY_FOCUS).toMatch(/\n## TL;DR\nOne or two lines on what the messages above did[^\n]*"Topics: " with 3 to 8 comma-separated keywords/);
+    expect(SUMMARY_FOCUS).toMatch(/except ## TL;DR: write it afresh/);
     expect(SUMMARY_FOCUS).toMatch(/only record/);
     expect(SUMMARY_FOCUS).toMatch(/appended after your summary word for word by code, so do not copy them/);
   });
@@ -20,6 +23,19 @@ describe('compaction summary', () => {
     expect(transcriptNote(undefined, false)).toBe('');
     expect(transcriptNote(file, false)).toBe(`\n\n## Recovery\n- The full transcript before this summary is ~/s/a.jsonl (JSONL, one entry per line): search it for an exact message, error or tool result instead of guessing.`);
     expect(transcriptNote(undefined, true)).toBe('\n\n## Recovery\n- Record follow-ups that must outlive this session with `backlog`.');
+  });
+
+  it('puts the archive pointer lines first in Recovery, then the transcript as the fallback, then the backlog line, one bullet each', () => {
+    const note = transcriptNote('/s/a.jsonl', true, ['archive is in /a', '9-abc.md \u00b7 tldr']);
+    expect(note.split('\n').slice(3)).toEqual([
+      '- archive is in /a',
+      '- 9-abc.md \u00b7 tldr',
+      '- If the archive does not have it, the full transcript is /s/a.jsonl (JSONL, one entry per line).',
+      '- Record follow-ups that must outlive this session with `backlog`.',
+    ]);
+    expect(transcriptNote(undefined, false, ['only this'])).toBe('\n\n## Recovery\n- only this');
+    // A rewritten summary does not carry the section back: it is cut off by its bullet shape.
+    expect(splitSummary(`## Goal\nx${note}`).body).toBe('## Goal\nx');
   });
 
   it("carries the file lists of the latest compaction only when a hook wrote it (Pi carries its own)", () => {
@@ -34,16 +50,22 @@ describe('compaction summary', () => {
     expect(pi.read.size + pi.edited.size).toBe(0);
   });
 
-  it("leaves the summary to Pi without a model, after an abort, or when the call fails", async () => {
-    const pi = { getThinkingLevel: () => 'off', getActiveTools: () => [] } as never;
+  it("leaves the summary to Pi without a model, after an abort, or when the call fails, and records why in the session", async () => {
+    const notes: unknown[] = [];
+    const pi = { getThinkingLevel: () => 'off', getActiveTools: () => [], getSettings: () => ({}), appendEntry: (customType: string, data: unknown) => notes.push({ customType, data }) } as never;
     const event = (aborted = false) => ({ preparation: { messagesToSummarize: [], turnPrefixMessages: [], fileOps: fileOps(), settings: { reserveTokens: 1000 } }, branchEntries: [], signal: { aborted } }) as never;
     const notices: string[] = [];
-    const ctx = (model: unknown) => ({ model, modelRegistry: { streamSimple: () => { throw new Error('down'); } }, sessionManager: { getSessionFile: () => undefined }, hasUI: true, ui: { notify: (text: string) => notices.push(text) } }) as never;
+    const ctx = (model: unknown) => ({ model, modelRegistry: { streamSimple: () => { throw new Error('down'); } }, sessionManager: { getSessionFile: () => undefined, getSessionId: () => 's', getBranch: () => [], buildSessionProjection: () => ({ entries: [], messages: [] }) }, hasUI: true, ui: { notify: (text: string) => notices.push(text) } }) as never;
     expect(await writeSummary(pi, event(), ctx(undefined))).toBeUndefined();
+    expect(notes).toEqual([{ customType: COMPACTION_NOTE_TYPE, data: { kind: 'default-summary', reason: 'no model is selected for the summary' } }]);
+    // A cancel is the user's own: no default summary follows, so nothing is recorded or shown.
     expect(await writeSummary(pi, event(true), ctx({ id: 'm' }))).toBeUndefined();
+    expect(notes).toHaveLength(1);
     expect(notices).toEqual([]);
     expect(await writeSummary(pi, event(), ctx({ id: 'm', provider: 'p', api: 'x', maxTokens: 100, contextWindow: 1000 }))).toBeUndefined();
     expect(notices.at(-1)).toMatch(/compaction summary failed .*Pi writes its default summary/);
+    expect(notes).toHaveLength(2);
+    expect(notes[1]).toMatchObject({ customType: COMPACTION_NOTE_TYPE, data: { kind: 'default-summary', reason: expect.stringMatching(/^Octocode's compaction summary failed \(.+\)$/) } });
   });
 
   it('splits a summary it wrote into the model part, the kept user messages and the note; any other summary is all body', () => {
@@ -101,6 +123,20 @@ describe('compaction summary', () => {
     expect(view[1]).toBe(messages[1]);
     expect(view[2]).toBe(messages[2]);
     expect((messages[0]!.content as Array<{ text?: string }>)[0]!.text).toBe(log);
+  });
+
+  it('names the archive segment where the whole text is, once an archive is being written, and the transcript otherwise', () => {
+    const long = `HEAD${'x'.repeat(USER_MESSAGE_CHARS * 2)}TAIL`;
+    const budget = { total: USER_MESSAGES_CHARS, perMessage: USER_MESSAGE_CHARS };
+    const cut = splitSummary(userMessagesSection([], 0, [long], budget, 4)).messages[0]!;
+    expect(cut).toMatch(/characters of this message are left out here; segment 4 of the archive has it whole\]/);
+    expect(cut).not.toContain('transcript');
+    const many = Array.from({ length: Math.ceil(USER_MESSAGES_CHARS / USER_MESSAGE_CHARS) + 3 }, (_, i) => `${i}:${'y'.repeat(USER_MESSAGE_CHARS)}`);
+    expect(userMessagesSection([], 2, many, budget, 4)).toMatch(/Earlier user messages not kept here: \d+ \(the archive \(segment 4 and earlier\) has them\)\./);
+    expect(userMessagesSection([], 2, many, budget)).toMatch(/Earlier user messages not kept here: \d+ \(the transcript has them\)\./);
+    const log = `START ${'.'.repeat(10_000)} FAILED`;
+    const view = summarizerView([{ role: 'toolResult', toolCallId: 't', content: [{ type: 'text', text: log }] }], 4) as Array<{ content: Array<{ text: string }> }>;
+    expect(view[0]!.content[0]!.text).toMatch(/left out for the summary; segment 4 of the archive has them\]/);
   });
 
   it('never cuts an emoji in half where the summarizer view or a long user message is shortened', () => {

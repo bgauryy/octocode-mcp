@@ -16,7 +16,9 @@ pub use crate::contracts::tool_types::{
 };
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::field_names;
+use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
+use crate::tools::paging::clamp_page_size;
 pub(crate) use errors::history_failure;
 use filters::Filters;
 use octocode_github::{
@@ -263,7 +265,9 @@ pub async fn execute<C: octocode_github::ConditionalCache>(
     // GitHub search does not follow renames, so a renamed repository answers
     // with no rows or a 422; only then is the canonical name looked up.
     if searching
-        && may_be_renamed(&fetched)
+        && crate::tools::gh_shared::search_may_be_renamed(&fetched, |fetched| {
+            fetched.result.items.is_empty() && fetched.result.total_count == 0
+        })
         && let Some(warnings) = follow_rename(provider, &mut query, context).await?
     {
         rename_warnings = warnings;
@@ -273,7 +277,13 @@ pub async fn execute<C: octocode_github::ConditionalCache>(
         mut result,
         terms,
         warnings,
-    } = fetched.map_err(|error| missing_scope_failure(error, &query))?;
+    } = match fetched {
+        Ok(fetched) => fetched,
+        Err(error) => {
+            let failure = missing_scope_failure(error, &query);
+            return Err(at_default_branch(provider, failure, &query, context).await);
+        }
+    };
     // A REST list follows a rename redirect itself: the rows are the
     // renamed repository's, so its leads and pages name the canonical one.
     let redirected = !searching
@@ -346,11 +356,12 @@ async fn confirm_commit_users(
 /// The page size: the stamped contract default, else the schema default,
 /// within the schema maximum.
 fn page_size(query: &HistorySearch) -> usize {
-    use crate::tools::id::query_limits::gh_search_history::{PAGE_SIZE_DEFAULT, PAGE_SIZE_MAXIMUM};
-    query
-        .page_size()
-        .unwrap_or(PAGE_SIZE_DEFAULT)
-        .min(PAGE_SIZE_MAXIMUM)
+    use crate::tools::id::query_limits::gh_search_history::PAGE_SIZE_DEFAULT;
+    clamp_page_size(
+        ToolId::GhSearchHistory,
+        None,
+        query.page_size().unwrap_or(PAGE_SIZE_DEFAULT),
+    )
 }
 
 /// One provider page and the search terms it ran.
@@ -449,53 +460,32 @@ async fn list_pull_requests(
         .await
 }
 
-/// A scoped search a rename could explain: no rows, or a repository GitHub
-/// search could not find (its 422 "cannot be searched", typed by the
-/// transport).
-fn may_be_renamed(fetched: &Result<Fetched, ProviderError>) -> bool {
-    match fetched {
-        // Rows on other pages mean the scope exists: a page past the end is
-        // not a rename.
-        Ok(fetched) => fetched.result.items.is_empty() && fetched.result.total_count == 0,
-        Err(error) => crate::tools::gh_shared::repository_not_found(error),
-    }
-}
-
-/// Points the query at the repository's canonical name when it was renamed,
-/// returning the rename warnings; `None` when the name stands. A failed
-/// lookup keeps the original answer.
+/// Points the query at the repository's canonical name when it was renamed
+/// ([`crate::tools::gh_shared::rescope_on_rename`]), returning the rename
+/// warnings; `None` when the name stands. A missing repository keeps the
+/// original answer, which states it.
 async fn follow_rename<C: octocode_github::ConditionalCache>(
     provider: &octocode_github::GitHubProvider<C>,
     query: &mut HistorySearch,
     context: &RequestContext,
 ) -> Result<Option<Vec<String>>, ProviderError> {
+    use crate::tools::gh_shared::Rescope;
     let Some((owner, repo)) = query.owner().zip(query.repo()) else {
         return Ok(None);
     };
-    match crate::tools::gh_shared::canonical_repo(
-        provider,
-        owner,
-        repo,
-        context,
-        crate::tools::gh_shared::RenameCheck::Metadata,
+    Ok(
+        match crate::tools::gh_shared::rescope_on_rename(provider, owner, repo, context).await? {
+            Rescope::Renamed {
+                owner,
+                repo,
+                warning,
+            } => {
+                query.query.set_scope(&owner, &repo);
+                Some(vec![warning])
+            }
+            Rescope::Missing(_) | Rescope::Stands => None,
+        },
     )
-    .await
-    {
-        Ok(Some(canonical)) => {
-            let warning = crate::tools::gh_shared::renamed_warning(owner, repo, &canonical);
-            query.query.set_scope(&canonical.0, &canonical.1);
-            Ok(Some(vec![warning]))
-        }
-        Err(error)
-            if matches!(
-                error.kind,
-                ProviderErrorKind::Cancelled | ProviderErrorKind::Timeout
-            ) =>
-        {
-            Err(error)
-        }
-        Ok(None) | Err(_) => Ok(None),
-    }
 }
 
 /// A page past GitHub's 1,000-result search window, with its one repair:
@@ -562,6 +552,47 @@ fn missing_scope_failure(mut error: ProviderError, query: &HistorySearch) -> His
             serde_json::json!({"viewRefs": crate::tools::gh_shared::ref_recovery(owner, repo)}),
         ),
     }
+}
+
+/// A commit listing at a `ref` that did not resolve ([`missing_scope_failure`]
+/// leads with `viewRefs`): when the repository itself resolves, the failure
+/// names its default branch and offers the same listing at it.
+async fn at_default_branch<C: octocode_github::ConditionalCache>(
+    provider: &octocode_github::GitHubProvider<C>,
+    mut failure: HistoryFailure,
+    query: &HistorySearch,
+    context: &RequestContext,
+) -> HistoryFailure {
+    let (Some(owner), Some(repo), Some(reference)) =
+        (query.owner(), query.repo(), query.reference())
+    else {
+        return failure;
+    };
+    let Some(next) = failure
+        .next
+        .as_mut()
+        .filter(|next| next.get("viewRefs").is_some())
+    else {
+        return failure;
+    };
+    let row = crate::tools::result::query_row(&query.query, &[]);
+    if let Some(retry) = crate::tools::gh_shared::default_branch_retry(
+        provider,
+        crate::tools::id::ToolId::GhSearchHistory,
+        row,
+        &["ref"],
+        context,
+    )
+    .await
+    {
+        // The repository resolved, so only the ref is missing.
+        failure.error.message = retry
+            .message(&format!("Ref \"{reference}\" not found in {owner}/{repo}"))
+            .into_boxed_str();
+        let (name, lead) = retry.lead();
+        next[name] = lead;
+    }
+    failure
 }
 
 /// Output facts the shared response stages ask about.

@@ -4,6 +4,7 @@ use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
     ArtifactType, TerminalLimit,
 };
+use crate::tools::num::usize_of;
 /// Compile-once XML/coordinate patterns. `maven-metadata.xml` and POM parsing
 /// run per lookup; compiling these constant patterns on every call (and once
 /// per extracted tag in the old `field` closure) was pure waste.
@@ -102,7 +103,7 @@ pub(crate) async fn maven(
         ArtifactType::Maven,
     )?
     .iter()
-    .skip(usize::try_from(offset).unwrap_or(usize::MAX))
+    .skip(usize_of(offset))
     .take(size)
     .map(|value| {
         let row = object_for(value, ArtifactType::Maven)?;
@@ -172,10 +173,14 @@ async fn exact(
     let parts = package_name.split(':').collect::<Vec<_>>();
     let valid = patterns::valid_coordinate();
     if parts.len() != 2 || parts.iter().any(|part| !valid.is_match(part)) {
-        return Err(ArtifactError::new(
-            "invalidInput",
-            format!("packageName \"{package_name}\" is not a Maven groupId:artifactId."),
-        ));
+        return Err(ArtifactError {
+            // A bare artifact name (`guava`) is what a keyword search finds.
+            searchable_name: parts.len() == 1 && valid.is_match(package_name),
+            ..ArtifactError::new(
+                "invalidInput",
+                format!("packageName \"{package_name}\" is not a Maven groupId:artifactId."),
+            )
+        });
     }
     let group = parts[0];
     let name = parts[1];
@@ -238,6 +243,8 @@ async fn exact(
         if let Some(pom) = pom? {
             artifact.repository = pom.repository;
             artifact.dependencies = Some(pom.dependencies);
+            artifact.optional_dependencies =
+                (!pom.optional_dependencies.is_empty()).then_some(pom.optional_dependencies);
             artifact.unresolved_properties = pom.unresolved;
         }
         artifact.published_at = published_at;
@@ -293,8 +300,10 @@ fn release_version(version: &str) -> &str {
 struct Pom {
     /// Upstream source link: `<scm><url>`, else the project-level `<url>`.
     repository: Option<String>,
-    /// Required runtime dependencies (see [`required_dependencies`]).
+    /// Required runtime dependencies (see [`runtime_dependencies`]).
     dependencies: Vec<String>,
+    /// `<optional>true</optional>` runtime dependencies, in the same form.
+    optional_dependencies: Vec<String>,
     /// Properties those dependencies name that this POM does not define.
     unresolved: Vec<String>,
 }
@@ -330,30 +339,31 @@ async fn read_pom(
         .captures(&clean)
         .and_then(|capture| capture.get(1))
         .and_then(|block| first_url(block.as_str()));
-    let (dependencies, unresolved) = required_dependencies(&clean);
+    let (dependencies, optional_dependencies, unresolved) = runtime_dependencies(&clean);
     Ok(Some(Pom {
         repository: scm_url
             .or_else(|| first_url(&clean))
             .and_then(|value| super::util::canonical_repository(&value)),
         dependencies,
+        optional_dependencies,
         unresolved,
     }))
 }
 
 /// The project's own `<dependencies>` as `groupId:artifactId[:version]`
-/// (absent when a parent or BOM manages the version): compile and runtime
-/// scope only, never `<optional>true</optional>`. Managed, build-plugin,
-/// profile and reporting dependencies are not the project's requirements.
-/// A `${…}` the POM defines ([`pom_properties`]) is resolved; one it does
-/// not (a parent POM's property) stays as written and is returned beside
-/// the list, so it is stated, never guessed.
-fn required_dependencies(pom: &str) -> (Vec<String>, Vec<String>) {
+/// (absent when a parent or BOM manages the version), compile and runtime
+/// scope only: the required ones, then the `<optional>true</optional>` ones.
+/// Managed, build-plugin, profile and reporting dependencies are not the
+/// project's requirements. A `${…}` the POM defines ([`pom_properties`]) is
+/// resolved; one it does not (a parent POM's property) stays as written and
+/// is returned beside the lists, so it is stated, never guessed.
+fn runtime_dependencies(pom: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
     let project = patterns::inherited_blocks().replace_all(pom, "");
     let Some(block) = patterns::dependencies()
         .captures(&project)
         .and_then(|capture| capture.get(1))
     else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let tag = |pattern: &regex::Regex, text: &str| {
         pattern
@@ -363,30 +373,32 @@ fn required_dependencies(pom: &str) -> (Vec<String>, Vec<String>) {
     };
     let properties = pom_properties(&project);
     let mut unresolved = Vec::new();
-    let dependencies = patterns::dependency()
+    let (optional, required): (Vec<_>, Vec<_>) = patterns::dependency()
         .captures_iter(block.as_str())
         .filter_map(|capture| {
             let entry = patterns::exclusions().replace_all(capture.get(1)?.as_str(), "");
             let scope = tag(patterns::scope(), &entry).unwrap_or_else(|| "compile".into());
-            let optional = tag(patterns::optional(), &entry).is_some_and(|value| value == "true");
-            if optional || !matches!(scope.as_str(), "compile" | "runtime") {
+            if !matches!(scope.as_str(), "compile" | "runtime") {
                 return None;
             }
+            let optional = tag(patterns::optional(), &entry).is_some_and(|value| value == "true");
             let coordinate = format!(
                 "{}:{}",
                 tag(patterns::group_id(), &entry)?,
                 tag(patterns::artifact_id(), &entry)?
             );
-            Some(match tag(patterns::version(), &entry) {
+            let declared = match tag(patterns::version(), &entry) {
                 Some(version) => {
                     let version = resolve_properties(&version, &properties, &mut unresolved);
                     format!("{coordinate}:{version}")
                 }
                 None => coordinate,
-            })
+            };
+            Some((optional, declared))
         })
-        .collect();
-    (dependencies, unresolved)
+        .partition(|(optional, _)| *optional);
+    let declared = |rows: Vec<(bool, String)>| rows.into_iter().map(|(_, entry)| entry).collect();
+    (declared(required), declared(optional), unresolved)
 }
 
 /// The properties a POM defines for itself: its `<properties>` entries and
@@ -506,7 +518,7 @@ async fn published_day(
     (doc.get("v").and_then(serde_json::Value::as_str) == Some(version))
         .then(|| doc.get("timestamp")?.as_i64())
         .flatten()
-        .map(super::util::date_from_millis)
+        .map(crate::civil_date::date_millis)
 }
 
 #[cfg(test)]
@@ -694,11 +706,11 @@ mod tests {
 
     /// An exact row lists the POM's required runtime dependencies as
     /// declared (`groupId:artifactId[:version]`): compile and runtime scope,
-    /// never optional, test, provided or managed ones, nor a dependency's
-    /// exclusions. Its release day is the one Central's version search
-    /// records; a POM without dependencies declares none.
+    /// never test, provided or managed ones, nor a dependency's exclusions;
+    /// optional ones are listed apart. Its release day is the one Central's
+    /// version search records; a POM without dependencies declares none.
     #[tokio::test]
-    async fn maven_exact_lists_required_dependencies_and_the_release_day() {
+    async fn maven_exact_lists_required_and_optional_dependencies_and_the_release_day() {
         let pom = r#"<project>
             <parent><groupId>com.google.guava</groupId><artifactId>guava-parent</artifactId><version>33.7.1-jre</version></parent>
             <dependencyManagement><dependencies>
@@ -732,6 +744,10 @@ mod tests {
                 "org.runtime:rt:2".to_owned(),
             ])
         );
+        assert_eq!(
+            item.optional_dependencies,
+            Some(vec!["org.opt:opt:3".to_owned()])
+        );
         assert_eq!(item.published_at.as_deref(), Some("2024-12-16"));
         let version = http
             .seen()
@@ -753,6 +769,7 @@ mod tests {
         ))
         .await;
         assert_eq!(bare.dependencies, Some(Vec::new()));
+        assert_eq!(bare.optional_dependencies, None);
         // A search row for another version is not this release's day.
         let other = guava("<project/>").json(
             "/solrsearch/select",
@@ -853,21 +870,25 @@ mod tests {
     }
 
     /// A coordinate that is not `groupId:artifactId` is rejected before any
-    /// request, naming the field.
+    /// request, naming the field; only a bare artifact name is marked as a
+    /// name a keyword search finds.
     #[tokio::test]
     async fn maven_rejects_invalid_coordinate() {
         let http = RouteHttp::new();
         let b = test_budget();
         let client = RegistryClient::uncached(&http, &b);
-        let q = artifact_query(
-            json!({"ecosystem": ArtifactType::Maven, "packageName": "not-a-maven-coordinate"}),
-            None,
-        );
-        let err = maven(&q, &ArtifactProviderState::default(), &client)
-            .await
-            .expect_err("invalid maven coordinate");
-        assert_eq!(err.code, "invalidInput");
-        assert!(err.message.starts_with("packageName "), "{err:?}");
+        for (name, searchable) in [("not-a-maven-coordinate", true), ("g:a:1.0", false)] {
+            let q = artifact_query(
+                json!({"ecosystem": ArtifactType::Maven, "packageName": name}),
+                None,
+            );
+            let err = maven(&q, &ArtifactProviderState::default(), &client)
+                .await
+                .expect_err("invalid maven coordinate");
+            assert_eq!(err.code, "invalidInput");
+            assert!(err.message.starts_with("packageName "), "{err:?}");
+            assert_eq!(err.searchable_name, searchable, "{name}");
+        }
         assert!(http.seen().is_empty());
     }
 

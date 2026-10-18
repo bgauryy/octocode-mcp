@@ -65,8 +65,8 @@ fn location_links_select_the_symbol_and_preserve_definition_context() {
 // below rather than a synthetic stand-in — the property under test
 // (`wait_for_graceful_exit` actually observing/killing a real OS process) is
 // not meaningfully testable without one. Gated to unix: this crate's CI runs
-// `cargo test` only on its native host (macOS/Linux); win32-x64-msvc is a
-// cross-compiled release target that is never executed in CI, and `sh` is
+// `cargo test` only on its native host (macOS/Linux); the win32 platforms are
+// cross-compiled release targets that are never executed in CI, and `sh` is
 // not guaranteed on a developer's native Windows machine.
 #[cfg(unix)]
 #[test]

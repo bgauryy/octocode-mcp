@@ -8,13 +8,13 @@ import { livePaint } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { addReply, emptyTotals, entryMessage, isRecord, modelLookup, spendOf, unpricedModel, type Spend, type UsageTotals } from '../shared/util.js';
 import { autoCompactAt } from '../shared/tokens.js';
-import { QUEUED_STATUS } from './delivery.js';
+import { STATUS } from '../shared/status.js';
 import { notify } from '../shared/commands.js';
 
 /**
  * Octocode's two-line footer, in the order other coding agents converged on: line 1 is what the agent is and is doing
- * (model, permission mode, thinking, context, running agents, bash jobs and queued messages; speed and cost on the right), line 2 is where
- * it works (cwd, branch, session name, tokens, other extensions' statuses such as Pi's MCP and Octocode's hooks). Pure in (state, statuses, width) and
+ * (model, permission mode, thinking, context, running agents, bash jobs, queued messages and a running hook; speed and cost on the right), line 2 is where
+ * it works (cwd, branch, session name, tokens, the backlog counts, other extensions' statuses such as Pi's MCP). Pure in (state, statuses, width) and
  * never animated: Pi repaints the footer on every streamed token.
  */
 
@@ -37,10 +37,8 @@ export interface FooterState {
 type Color = Parameters<Theme['fg']>[0];
 type Paint = Pick<Theme, 'fg' | 'bold'>;
 
-/** Background subagents running, set when the team panel (which counts them) is unavailable. */
-export const SUBAGENTS_STATUS = 'octocode-subagents';
 /** Status keys this footer places itself; any other extension's status is appended to line 2. */
-const OWN = { permission: PERMISSION_ID, team: 'octocode-team', subagents: SUBAGENTS_STATUS, bash: 'octocode-bash', queued: QUEUED_STATUS, speed: 'octocode-speed' } as const;
+const OWN = { permission: PERMISSION_ID, ...STATUS } as const;
 const BAR_CELLS = 8;
 
 /** An 8-cell gauge and its colour: green under half, yellow to 80%, red above. */
@@ -134,6 +132,8 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
       { text: status(OWN.bash), priority: 90, keep: true },
       // Messages waiting for the run to end: the user should see theirs did not get lost.
       { text: status(OWN.queued), priority: 85, keep: true },
+      // Last of the left parts: its clock grows, so nothing else on the row moves with it.
+      { text: status(OWN.hooks), priority: 80, keep: true },
     ],
     [
       { text: status(OWN.speed) ? theme.fg('dim', status(OWN.speed)) : '', priority: 10 },
@@ -156,6 +156,7 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
       // Session names come from anywhere (RPC, other extensions); Pi strips only newlines.
       { text: state.sessionName ? theme.fg('muted', plainRow(state.sessionName)) : '', priority: 50 },
       { text: tokens, priority: 60 },
+      { text: status(OWN.backlog), priority: 20 },
       // As Pi's own footer does (sanitizeStatusText): a line break inside a footer row breaks pi-tui's row tracking.
       ...others.map(([, text]) => ({ text: singleLine(livePaint(text, theme)), priority: 20 })),
     ],

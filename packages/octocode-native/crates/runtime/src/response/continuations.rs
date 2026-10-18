@@ -26,6 +26,7 @@ use serde_json::{Map, Value};
 use crate::contracts::{ContractValidationError, ValidationIssue, validate_query};
 use crate::tools::id::ToolId;
 use crate::tools::id::continuation_channels::{HINTS_KEY, PAGES_KEY};
+use crate::tools::result::is_call;
 
 /// Which cross-tool calls a surface can run; a call to a disabled tool drops
 /// silently.
@@ -218,6 +219,9 @@ struct Visit<'a, 's> {
 /// Every object holding `next`/`hints` in `value`, at any depth; calls are
 /// caller content and never entered.
 fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
+    if is_call(value) {
+        return;
+    }
     match value {
         Value::Array(items) => {
             for (index, item) in items.iter_mut().enumerate() {
@@ -227,13 +231,10 @@ fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
             }
         }
         Value::Object(object) => {
-            if is_call(object) {
-                return;
-            }
             for key in [PAGES_KEY, HINTS_KEY] {
                 if let Some(Value::Object(calls)) = object.get_mut(key) {
                     calls.retain(|_, call| keep(call, ctx));
-                    for call in calls.values_mut().filter(|call| call_of(call)) {
+                    for call in calls.values_mut().filter(|call| is_call(call)) {
                         drop_brief(call);
                         inherit(call, ctx);
                     }
@@ -277,22 +278,12 @@ fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
     }
 }
 
-fn is_call(object: &Map<String, Value>) -> bool {
-    object.get("tool").is_some_and(Value::is_string)
-        && object.get("query").is_some_and(Value::is_object)
-}
-
-fn call_of(value: &Value) -> bool {
-    value.as_object().is_some_and(is_call)
-}
-
 /// Whether the surface keeps `call`: its own tool always; another tool only
 /// when available (the drop is recorded).
 fn keep(call: &Value, ctx: &mut Visit<'_, '_>) -> bool {
-    let Some(target) = call
-        .as_object()
-        .filter(|object| is_call(object))
-        .and_then(|object| object["tool"].as_str())
+    let Some(target) = Some(call)
+        .filter(|call| is_call(call))
+        .and_then(|call| call["tool"].as_str())
     else {
         return true;
     };

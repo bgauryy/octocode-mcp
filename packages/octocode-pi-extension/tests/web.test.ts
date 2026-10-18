@@ -244,11 +244,12 @@ describe('web', () => {
     ['unclosed comments and empty links', '<!--[]('.repeat(140_000)],
     ['tags searched for role=main', '<a'.repeat(500_000)],
   ])('reads a 1 MB page of %s in linear time', (_, html) => {
-    const started = performance.now();
+    const started = process.cpuUsage();
     describeHtml(html, 'https://example.com/');
-    // About 100 ms alone; a pattern that rescans to the end per unclosed tag takes minutes. The bound leaves room for
-    // a loaded machine running test files in parallel.
-    expect(performance.now() - started).toBeLessThan(2_000);
+    // About 100 ms alone; a pattern that rescans to the end per unclosed tag takes minutes. CPU time, not wall-clock
+    // time: the work is synchronous, and a loaded machine stretches the wall clock but not the CPU it needs.
+    const used = process.cpuUsage(started);
+    expect((used.user + used.system) / 1000).toBeLessThan(2_000);
   });
 
   it('recognises binary content types', () => {

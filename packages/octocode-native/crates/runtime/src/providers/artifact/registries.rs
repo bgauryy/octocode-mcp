@@ -80,16 +80,17 @@ pub(crate) async fn pypi(
         .and_then(|file| date_prefix(file.get("upload_time_iso_8601")));
     artifact.yanked = (info.get("yanked") == Some(&Value::Bool(true))).then_some(true);
     artifact.requires_python = string(info.get("requires_python"));
-    artifact.dependencies = info
+    // A requirement gated by an extra is optional, not required.
+    let (optional, required): (Vec<String>, Vec<String>) = info
         .get("requires_dist")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .filter(|requirement| !names_an_extra(requirement))
         .map(str::to_owned)
-        .collect::<Vec<_>>()
-        .into();
+        .partition(|requirement| names_an_extra(requirement));
+    artifact.dependencies = Some(required);
+    artifact.optional_dependencies = (!optional.is_empty()).then_some(optional);
     // PyPI names no commit; an upstream tag for this release pins the lead.
     if let Some(version) = artifact.version.clone() {
         let name = artifact.name.clone();
@@ -98,10 +99,6 @@ pub(crate) async fn pypi(
     Ok(ArtifactProviderPage::single(artifact))
 }
 
-/// A PyPI release's license as a short name: the SPDX `license_expression`,
-/// else a one-line `license` field, else the last `License :: …`
-/// classifier's name. Many projects put the full license text in `license`
-/// (numpy: 46 KB); that is no license name and is never the row's license.
 /// Whether a PEP 508 requirement applies only with an extra
 /// (`PySocks; extra == "socks"`, `x ; python_version<"4" and extra=='y'`):
 /// an optional dependency, not a required one.
@@ -118,6 +115,10 @@ fn names_an_extra(requirement: &str) -> bool {
     })
 }
 
+/// A PyPI release's license as a short name: the SPDX `license_expression`,
+/// else a one-line `license` field, else the last `License :: …`
+/// classifier's name. Many projects put the full license text in `license`
+/// (numpy: 46 KB); that is no license name and is never the row's license.
 fn pypi_license(info: &serde_json::Map<String, Value>) -> Option<String> {
     const SHORT: usize = 100;
     string(info.get("license_expression"))
@@ -408,14 +409,14 @@ async fn crate_source_ref(artifact: &mut ArtifactItem, client: &RegistryClient<'
     super::release_ref::pin_release_tag(artifact, &name, &version, client).await;
 }
 
-/// The runtime dependency count of a crate version: normal, non-optional
-/// dependencies (optional ones are features, like PyPI extras). A failed
-/// read leaves the count unset; it never fails the lookup.
+/// A crate version's normal dependencies as `name req`: the required ones,
+/// and the optional ones (features, like PyPI extras) apart. A failed read
+/// leaves both unknown; it never fails the lookup.
 async fn crate_dependencies(
     name: &str,
     version: &str,
     client: &RegistryClient<'_>,
-) -> Option<Vec<String>> {
+) -> Option<(Vec<String>, Vec<String>)> {
     let url = parse_url(&format!(
         "https://crates.io/api/v1/crates/{}/{}/dependencies",
         super::util::encode_component(name),
@@ -426,28 +427,29 @@ async fn crate_dependencies(
         .json(ArtifactType::Crates, url, true, None, None, JSON)
         .await
         .ok()??;
-    Some(
-        listing
-            .get("dependencies")?
-            .as_array()?
-            .iter()
-            .filter(|dependency| {
-                dependency.get("kind").and_then(Value::as_str) == Some("normal")
-                    && dependency.get("optional") != Some(&Value::Bool(true))
-            })
-            .filter_map(|dependency| {
-                let name = dependency.get("crate_id").and_then(Value::as_str)?;
-                Some(match dependency.get("req").and_then(Value::as_str) {
-                    Some(req) => format!("{name} {req}"),
-                    None => name.to_owned(),
-                })
-            })
-            .collect(),
-    )
+    let (optional, required): (Vec<_>, Vec<_>) = listing
+        .get("dependencies")?
+        .as_array()?
+        .iter()
+        .filter(|dependency| dependency.get("kind").and_then(Value::as_str) == Some("normal"))
+        .filter_map(|dependency| {
+            let name = dependency.get("crate_id").and_then(Value::as_str)?;
+            let entry = match dependency.get("req").and_then(Value::as_str) {
+                Some(req) => format!("{name} {req}"),
+                None => name.to_owned(),
+            };
+            Some((
+                dependency.get("optional") == Some(&Value::Bool(true)),
+                entry,
+            ))
+        })
+        .partition(|(optional, _)| *optional);
+    let entries = |rows: Vec<(bool, String)>| rows.into_iter().map(|(_, entry)| entry).collect();
+    Some((entries(required), entries(optional)))
 }
 
 /// Release facts of a resolved crate version that need their own reads:
-/// the source ref and the dependency count, read concurrently.
+/// the source ref and the dependency lists, read concurrently.
 async fn crate_release_facts(artifact: &mut ArtifactItem, client: &RegistryClient<'_>) {
     let Some(version) = artifact.version.clone() else {
         return;
@@ -457,7 +459,10 @@ async fn crate_release_facts(artifact: &mut ArtifactItem, client: &RegistryClien
         crate_dependencies(&name, &version, client),
         crate_source_ref(artifact, client)
     );
-    artifact.dependencies = dependencies;
+    if let Some((required, optional)) = dependencies {
+        artifact.dependencies = Some(required);
+        artifact.optional_dependencies = (!optional.is_empty()).then_some(optional);
+    }
 }
 
 pub(crate) async fn crates(
@@ -542,14 +547,6 @@ pub(crate) async fn crates(
     }
     let page = state.page.unwrap_or(1);
     let size = query.page_size();
-    // crates.io rejects (HTTP 400) a relevance page that starts at or past
-    // its candidate limit: that page is the limit, without a request.
-    if page.saturating_sub(1).saturating_mul(size as u64) >= CRATES_RELEVANCE_LIMIT {
-        return Ok(ArtifactProviderPage {
-            terminal_limit: Some(crates_limit(None)),
-            ..ArtifactProviderPage::empty(None)
-        });
-    }
     let url = keyword_url("https://crates.io/api/v1/crates", query, page, size)?;
     let (data, artifacts) =
         keyword_rows(client, ArtifactType::Crates, url, "crates", crate_item).await?;
@@ -557,34 +554,13 @@ pub(crate) async fn crates(
         .get("meta")
         .and_then(Value::as_object)
         .and_then(|meta| total(meta.get("total")));
-    let mut page = paged(artifacts, count, page, size, ArtifactType::Crates)?;
-    // The next page would start at the limit: the rest is unreachable.
-    if page
-        .next_state
-        .as_ref()
-        .and_then(|next| next.page)
-        .is_some_and(|next| (next - 1).saturating_mul(size as u64) >= CRATES_RELEVANCE_LIMIT)
-    {
-        page.next_state = None;
-        page.terminal_limit = Some(crates_limit(count));
-    }
-    Ok(page)
+    paged(artifacts, count, page, size, ArtifactType::Crates)
 }
 
 /// crates.io serves a relevance-sorted keyword search only below this many
-/// results (`RELEVANCE_CANDIDATE_LIMIT`).
-const CRATES_RELEVANCE_LIMIT: u64 = 1000;
-
-/// The terminal limit of a crates.io keyword search, with its total when
-/// known.
-fn crates_limit(total: Option<u64>) -> TerminalLimit {
-    let of = total
-        .map(|total| format!(" of {total}"))
-        .unwrap_or_default();
-    TerminalLimit::result_cap(format!(
-        "crates.io serves only the first {CRATES_RELEVANCE_LIMIT}{of} results of a keyword search."
-    ))
-}
+/// results (`RELEVANCE_CANDIDATE_LIMIT`; a page starting at or past it is
+/// HTTP 400): the shared page bounds end discovery there.
+pub(super) const CRATES_RELEVANCE_LIMIT: u64 = 1000;
 
 /// An exact Go module or package lookup on pkg.go.dev, pinned to
 /// `query.version()` when one is given.
@@ -601,15 +577,29 @@ async fn go_exact(
             &[("version", version.clone())],
         )
     };
-    let mut response = client
+    // pkg.go.dev answers a package path on the module endpoint with HTTP 400
+    // ("is a package, not a module") rather than 404; either sends the
+    // lookup to the package endpoint.
+    let (mut response, rejected) = match client
         .json(ArtifactType::Go, lookup("module")?, true, None, None, JSON)
-        .await?;
+        .await
+    {
+        Ok(response) => (response, None),
+        Err(error) if error.status == Some(400) => (None, Some(error)),
+        Err(error) => return Err(error),
+    };
     let mut is_package = false;
     if response.is_none() {
         response = client
             .json(ArtifactType::Go, lookup("package")?, true, None, None, JSON)
             .await?;
         is_package = true;
+        // Neither endpoint knows the path: the module rejection names why.
+        if response.is_none()
+            && let Some(rejected) = rejected
+        {
+            return Err(rejected);
+        }
     }
     // A pinned lookup answers with that version or not at all.
     let response = response.filter(|row| {
@@ -876,8 +866,8 @@ fn go_token<'a>(key: &str, cursor: &'a str) -> Option<&'a str> {
 }
 
 fn go_cursor_binding(key: &str) -> String {
-    use sha2::Digest;
-    hex::encode(&sha2::Sha256::digest(key.as_bytes())[..8])
+    // The first 8 bytes of the digest, as hex.
+    crate::digest::sha256(key.as_bytes())[..16].to_owned()
 }
 
 /// One pkg.go.dev search page: the first, or the one `token` starts.
@@ -1398,6 +1388,11 @@ mod tests {
             "extras are not dependencies: {:?}",
             item.dependencies
         );
+        assert_eq!(
+            item.optional_dependencies,
+            Some(vec!["PySocks!=1.5.7; extra == \"socks\"".to_owned()]),
+            "extras are optional dependencies"
+        );
         assert_eq!(item.yanked, None);
         // The upstream release tag pins the source lead.
         assert_eq!(item.source_ref.as_deref(), Some("v2.31.0"));
@@ -1619,10 +1614,11 @@ mod tests {
         assert_eq!(latest.repository_directory, None);
     }
 
-    /// A crate row counts its runtime dependencies like the other
-    /// ecosystems: normal and non-optional, on both exact-version paths.
+    /// A crate row lists its runtime dependencies like the other
+    /// ecosystems: normal ones, required apart from optional, on both
+    /// exact-version paths.
     #[tokio::test]
-    async fn crates_rows_count_runtime_dependencies() {
+    async fn crates_rows_list_runtime_dependencies() {
         let dependencies = json!({"dependencies": [
             {"crate_id": "a", "kind": "normal", "optional": false, "req": "^1.0"},
             {"crate_id": "b", "kind": "normal", "optional": true},
@@ -1663,10 +1659,9 @@ mod tests {
             .artifacts
             .remove(0);
         // The names ride the row; the list is the one dependency field.
-        assert_eq!(
-            serde_json::to_value(&latest).expect("row")["dependencies"],
-            json!(["a ^1.0", "e"])
-        );
+        let row = serde_json::to_value(&latest).expect("row");
+        assert_eq!(row["dependencies"], json!(["a ^1.0", "e"]));
+        assert_eq!(row["optionalDependencies"], json!(["b"]));
     }
 
     #[tokio::test]
@@ -1697,8 +1692,8 @@ mod tests {
             "yanked 1.0.200 is skipped"
         );
         // The latest reads the default version's view and the range the
-        // crate document; only the resolved version's dependency count is
-        // a second read.
+        // crate document; only the resolved version's dependency list is a
+        // second read.
         assert!(
             http.targets()
                 .iter()
@@ -1719,48 +1714,6 @@ mod tests {
             missing.nearest.iter().any(|version| version == "1.0.100"),
             "{missing:?}"
         );
-    }
-
-    /// crates.io answers a relevance search only below result 1000 (an
-    /// explicit page starting there is HTTP 400): the page that reaches it
-    /// ends with a terminal limit and no next page, and a page past it is
-    /// that limit without a request.
-    #[tokio::test]
-    async fn crates_discovery_stops_at_the_first_1000_results() {
-        let rows = (0..100)
-            .map(|n| json!({"name": format!("c{n}"), "max_version": "1.0.0"}))
-            .collect::<Vec<_>>();
-        let http = RouteHttp::routes(vec![(
-            "/api/v1/crates",
-            json!({"crates": rows, "meta": {"total": 23391}}),
-        )]);
-        let b = test_budget();
-        let client = RegistryClient::uncached(&http, &b);
-        let query = artifact_query(
-            json!({"ecosystem": "crates", "keywords": ["jwt"], "pageSize": 100}),
-            None,
-        );
-        let at = |page: u64| ArtifactProviderState {
-            page: Some(page),
-            ..Default::default()
-        };
-        let inside = crates(&query, &at(9), &client).await.expect("page 9");
-        assert_eq!(inside.next_state.and_then(|state| state.page), Some(10));
-        assert!(inside.terminal_limit.is_none());
-        let last = crates(&query, &at(10), &client).await.expect("page 10");
-        assert_eq!(last.artifacts.len(), 100);
-        assert!(last.next_state.is_none());
-        let limit = last.terminal_limit.expect("terminal limit");
-        assert_eq!(limit.reason, "providerResultCap");
-        assert!(limit.warning.contains("first 1000 of 23391"), "{limit:?}");
-        let requests = http.targets().len();
-        let past = crates(&query, &at(11), &client).await.expect("page 11");
-        assert!(past.artifacts.is_empty() && past.next_state.is_none());
-        assert_eq!(
-            past.terminal_limit.map(|limit| limit.reason),
-            Some("providerResultCap")
-        );
-        assert_eq!(http.targets().len(), requests, "no request past the reach");
     }
 
     async fn crate_lookup(
@@ -1899,7 +1852,7 @@ mod tests {
                 "{version}"
             );
         }
-        // Registry reads only (dependency counts aside); the release-ref
+        // Registry reads only (dependency lists aside); the release-ref
         // reads are lead sources.
         let mut seen: Vec<String> = small
             .targets()
@@ -2150,6 +2103,55 @@ mod tests {
             .await
             .expect("go without go.mod");
         assert_eq!(page.artifacts[0].dependencies, None);
+    }
+
+    /// pkg.go.dev rejects a package path on the module endpoint (HTTP 400,
+    /// not 404): the lookup still reads the package endpoint and returns the
+    /// package row with its containing module; a path neither endpoint knows
+    /// keeps the module rejection.
+    #[tokio::test]
+    async fn go_package_paths_rejected_as_modules_read_the_package_endpoint() {
+        let rejection = json!({"code": 400,
+            "message": "golang.org/x/net/http2 is a package, not a module"});
+        let http = RouteHttp::new()
+            .status("/v1/module/golang.org/x/net/http2", 400, rejection.clone())
+            .json(
+                "/v1/package/golang.org/x/net/http2",
+                json!({"path": "golang.org/x/net/http2", "modulePath": "golang.org/x/net",
+                    "version": "v0.61.0", "synopsis": "Package http2 implements the HTTP/2 protocol."}),
+            );
+        let b = test_budget();
+        let client = RegistryClient::uncached(&http, &b);
+        let q = exact_query(ArtifactType::Go, "golang.org/x/net/http2");
+        let page = go(&q, &ArtifactProviderState::default(), &client)
+            .await
+            .expect("package fallback");
+        let item = &page.artifacts[0];
+        assert_eq!(item.name, "golang.org/x/net/http2");
+        assert_eq!(item.module_path.as_deref(), Some("golang.org/x/net"));
+        assert_eq!(item.version.as_deref(), Some("v0.61.0"));
+        let paths = |http: &RouteHttp| {
+            http.seen()
+                .iter()
+                .map(|seen| seen.url.path().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let lookups = [
+            "/v1/module/golang.org/x/net/http2",
+            "/v1/package/golang.org/x/net/http2",
+        ];
+        assert_eq!(paths(&http)[..2], lookups, "{:?}", paths(&http));
+        let unknown = RouteHttp::new().status("/v1/module/golang.org/x/net/http2", 400, rejection);
+        let client = RegistryClient::uncached(&unknown, &b);
+        let error = go(&q, &ArtifactProviderState::default(), &client)
+            .await
+            .expect_err("rejected by both endpoints");
+        assert_eq!(error.status, Some(400));
+        assert!(
+            error.message.contains("is a package, not a module"),
+            "{error:?}"
+        );
+        assert_eq!(paths(&unknown), lookups);
     }
 
     /// An exact Packagist row states the release day (`time`) and the

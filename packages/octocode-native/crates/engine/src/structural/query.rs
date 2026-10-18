@@ -1,3 +1,4 @@
+use super::octo::CompileError;
 use super::types::{StructuralDiagnostic, StructuralQueryExplanation};
 use std::sync::OnceLock;
 
@@ -17,7 +18,7 @@ pub(super) struct StructuralQuery<'a> {
     pattern: Option<&'a str>,
     rule: Option<&'a str>,
     /// Share one language-independent YAML parse (including errors) for this request.
-    parsed_rule: OnceLock<Result<super::octo::RawRule, String>>,
+    parsed_rule: OnceLock<Result<super::octo::RawRule, CompileError>>,
 }
 
 impl<'a> StructuralQuery<'a> {
@@ -100,7 +101,7 @@ impl<'a> StructuralQuery<'a> {
         }
     }
 
-    pub(super) fn parsed_rule(&self) -> Result<&super::octo::RawRule, String> {
+    pub(super) fn parsed_rule(&self) -> Result<&super::octo::RawRule, CompileError> {
         self.parsed_rule
             .get_or_init(|| {
                 // `parsed_rule` is only reached for rule queries, which always

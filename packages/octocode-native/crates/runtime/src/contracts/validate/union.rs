@@ -241,6 +241,8 @@ fn reference(
                         | "schema.range"
                         | "schema.pattern"
                         | "schema.uri"
+                        | "schema.repository-url"
+                        | "schema.clone-suffix"
                 )
             })
         })
@@ -426,7 +428,7 @@ fn widen_literal_issues(issues: &mut [ValidationIssue], allowed: &[(Vec<String>,
         let hint = item
             .received
             .as_ref()
-            .and_then(|received| super::schema::boolean_enum_hint(literals, received))
+            .map(|received| super::enum_value::enum_hint(literals, received, &item.path))
             .unwrap_or_default();
         item.message = format!("Value is outside the allowed enum; allowed: {rendered}{hint}");
         item.schema = Some(serde_json::json!({ "enum": literals }));
@@ -539,6 +541,10 @@ fn branch_object<'a>(root: &'a Value, branch: &'a Value) -> &'a Value {
 /// An unknown field that a sibling branch declares is a mode mismatch, not a
 /// typo. Record the sibling's missing required fields so the error projector
 /// can say which mode the field belongs to (e.g. discovery-only `pageSize`).
+/// When the query omits the selectors of the one branch in its mode, and
+/// each is a single literal, the fix sets them (`setFields`:
+/// `nameRegex` → `operation:"files"`); when the query's own selector picks
+/// another branch, the field is that mode's (`siblingConflict`).
 fn annotate_sibling_branch_fields(
     issues: &mut [ValidationIssue],
     root: &Value,
@@ -553,18 +559,44 @@ fn annotate_sibling_branch_fields(
             continue;
         };
         // The fields any branch lists the unknown field's value for: the
-        // selector a misnamed `type`/`analysis` meant.
-        let mut listing = branches
+        // selector a misnamed `type`/`analysis` meant; for a `true` field,
+        // the fields that list its name (`merged:true` → `state`).
+        let listing = |listed: &Value| {
+            let mut fields = branches
+                .iter()
+                .filter_map(|branch| branch_object(root, branch).get("properties")?.as_object())
+                .flat_map(|properties| super::schema::fields_listing(root, properties, listed))
+                .collect::<Vec<_>>();
+            fields.sort();
+            fields.dedup();
+            fields
+        };
+        // The fields whose declared value kinds name the unknown field
+        // (`branch` → `ref`).
+        let mut of_kind = branches
             .iter()
             .filter_map(|branch| branch_object(root, branch).get("properties")?.as_object())
-            .flat_map(|properties| super::schema::fields_listing(root, properties, &value[field]))
+            .flat_map(|properties| super::schema::fields_of_kind(root, properties, field))
             .collect::<Vec<_>>();
-        listing.sort();
-        listing.dedup();
-        if !listing.is_empty()
-            && let Some(schema) = item.schema.as_mut().and_then(Value::as_object_mut)
-        {
-            schema.insert("valueFields".into(), serde_json::json!(listing));
+        of_kind.sort();
+        of_kind.dedup();
+        for (key, fields) in [
+            ("kindFields", of_kind),
+            ("valueFields", listing(&value[field])),
+            (
+                "nameFields",
+                if value[field] == Value::Bool(true) {
+                    listing(&Value::from(field.as_str()))
+                } else {
+                    Vec::new()
+                },
+            ),
+        ] {
+            if !fields.is_empty()
+                && let Some(schema) = item.schema.as_mut().and_then(Value::as_object_mut)
+            {
+                schema.insert(key.into(), serde_json::json!(fields));
+            }
         }
         let declaring = branches
             .iter()
@@ -584,15 +616,55 @@ fn annotate_sibling_branch_fields(
             .copied()
             .filter(|branch| selectors_accept(branch, value))
             .collect::<Vec<_>>();
-        let requires = sibling_missing_fields(root, &same_mode, value, field)
-            .or_else(|| sibling_selector_values(&declaring, value));
-        if let (Some(requires), Some(schema)) = (
-            requires,
-            item.schema.as_mut().and_then(Value::as_object_mut),
-        ) {
+        let Some(schema) = item.schema.as_mut().and_then(Value::as_object_mut) else {
+            continue;
+        };
+        if let Some(requires) = sibling_missing_fields(root, &same_mode, value, field) {
             schema.insert("siblingRequires".into(), Value::Array(requires));
+            if let [branch] = same_mode.as_slice()
+                && let Some(selectors) = omitted_selectors(root, branch, value, field)
+                && !selectors.is_empty()
+            {
+                schema.insert("setFields".into(), Value::Object(selectors));
+            }
+        } else if let Some(requires) = sibling_selector_values(&declaring, value) {
+            schema.insert("siblingRequires".into(), Value::Array(requires));
+            schema.insert("siblingConflict".into(), Value::Bool(true));
         }
     }
+}
+
+/// The required fields `branch` still lacks (besides `field`), each with
+/// its one literal (`operation:"files"`); `None` when one is no single
+/// literal, so only the caller can fill it, or when the query carries a
+/// field `branch` does not declare (it mixes forms: setting the selector
+/// would only move the conflict).
+fn omitted_selectors(
+    root: &Value,
+    branch: &Value,
+    value: &Value,
+    field: &str,
+) -> Option<serde_json::Map<String, Value>> {
+    let declared = branch.get("properties").and_then(Value::as_object)?;
+    if !value
+        .as_object()?
+        .keys()
+        .all(|key| declared.contains_key(key))
+    {
+        return None;
+    }
+    branch
+        .get("required")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|required| *required != field && value.get(*required).is_none())
+        .map(|required| {
+            let schema = super::super::resolve_ref(&branch["properties"][required], &root["$defs"]);
+            Some((required.to_owned(), single_literal(schema)?.clone()))
+        })
+        .collect()
 }
 
 /// The required fields each declaring branch still lacks, one alternative per
@@ -689,7 +761,6 @@ fn sibling_selector_values(declaring: &[&Value], value: &Value) -> Option<Vec<Va
     (!rendered.is_empty()).then(|| vec![Value::String(rendered.join(" or "))])
 }
 
-/// The literal values a `const` or `enum` selector accepts.
 /// Whether every literal selector of `branch` accepts the query's value.
 fn selectors_accept(branch: &Value, value: &Value) -> bool {
     branch
@@ -705,6 +776,7 @@ fn selectors_accept(branch: &Value, value: &Value) -> bool {
         )
 }
 
+/// The literal values a `const` or `enum` selector accepts.
 fn selector_literals(schema: &Value) -> Option<Vec<&Value>> {
     if let Some(literal) = schema.get("const") {
         return Some(vec![literal]);
@@ -1197,6 +1269,29 @@ mod tests {
             super::sibling_missing_fields(&root, &[&branch], &json!({}), "payload"),
             Some(vec![json!("operation:\"match\" and pattern")])
         );
+    }
+
+    /// A field of the one form whose omitted selector is a single literal
+    /// carries the fix that sets it; a query that also carries another
+    /// form's fields (mixed forms) does not.
+    #[test]
+    fn a_field_of_one_unselected_form_carries_its_selector_as_the_fix() {
+        let issues = |row: Value| {
+            prepare_many_and_validate("structureSearch", json!({"queries":[row]}))
+                .expect_err("nameRegex is a files field")
+                .issues
+        };
+        let found = issues(json!({"path":".","nameRegex":"x"}));
+        let schema = found[0].schema.as_ref().expect("annotated");
+        assert_eq!(
+            schema["setFields"],
+            json!({"operation":"files"}),
+            "{found:?}"
+        );
+        let explicit = issues(json!({"operation":"tree","path":".","nameRegex":"x"}));
+        let schema = explicit[0].schema.as_ref().expect("annotated");
+        assert!(schema.get("setFields").is_none(), "{explicit:?}");
+        assert_eq!(schema["siblingConflict"], true, "{explicit:?}");
     }
 
     #[test]

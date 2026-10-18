@@ -5,7 +5,7 @@
 use super::failure::LspFailure;
 use crate::tools::id::ToolId;
 use crate::tools::test_support::checks::{Page, Walker, assert_absent, paths_in};
-use crate::tools::test_support::{Fixture, assert_row_contract};
+use crate::tools::test_support::{Fixture, assert_row_contract, node_available, require_node};
 use octocode_engine::error::ErrorKind;
 use octocode_engine::lsp::client::NativeLspClient;
 use octocode_engine::lsp::pool::{LspClientPool, LspPoolOptions};
@@ -53,13 +53,6 @@ process.stdin.on('data', (d) => {
   }
 });
 "#;
-
-fn node_available() -> bool {
-    std::process::Command::new("node")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-}
 
 /// A canonical workspace holding the fake server script and `a.ts`; the
 /// directory goes when the [`Fixture`] drops.
@@ -123,8 +116,7 @@ fn alive(pid: &str) -> bool {
 /// during the first response would crash this fixture instead.
 #[test]
 fn initial_indexing_returns_partial_then_retries_on_the_same_server() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, script) = fixture();
@@ -216,8 +208,7 @@ fn initial_indexing_returns_partial_then_retries_on_the_same_server() {
 /// typed `ConnectionClosed` (`lsp.serverCrashed`), not a timeout.
 #[test]
 fn server_crash_mid_request_fails_pending_fast_as_server_crashed() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, script) = fixture();
@@ -250,8 +241,7 @@ fn server_crash_mid_request_fails_pending_fast_as_server_crashed() {
 /// process running.
 #[test]
 fn acquire_stop_loop_leaves_no_child_processes() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, script) = fixture();
@@ -294,8 +284,7 @@ fn acquire_stop_loop_leaves_no_child_processes() {
 /// is opened and the warm completes.
 #[test]
 fn prewarm_frees_its_key_when_the_file_is_not_opened() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, script) = fixture();
@@ -325,8 +314,7 @@ fn prewarm_frees_its_key_when_the_file_is_not_opened() {
 #[cfg(target_os = "linux")]
 #[test]
 fn node_server_starts_under_the_default_address_space_cap() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, script) = fixture();
@@ -1209,8 +1197,7 @@ async fn walk_across_silent_windows(operation: &str, silent: usize) -> (Fixture,
 /// a retry; it never reads as complete.
 #[test]
 fn a_failed_importer_request_marks_the_row_partial() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let server = IMPORTER_SERVER.replace(
@@ -1261,8 +1248,7 @@ fn a_failed_importer_request_marks_the_row_partial() {
 /// anchor's declaration is a reference.
 #[test]
 fn importer_recovery_without_declarations_keeps_import_bindings() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let honoring = "    case 'textDocument/references': {\n      const uri = p.textDocument.uri;\n      const inc = !!(p.context && p.context.includeDeclaration);\n      if (uri === declUri) return inc ? [decl] : [];\n      return inc ? [{ uri, range: at(0, 9, 6) }, { uri, range: at(1, 0, 6) }, decl] : [{ uri, range: at(1, 0, 6) }, decl];\n    }\n";
@@ -1321,8 +1307,7 @@ fn importer_recovery_without_declarations_keeps_import_bindings() {
 /// real path, and the declaration stays out.
 #[test]
 fn symlinked_twins_list_each_site_once_under_its_real_path() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let twins = "    case 'textDocument/references': {\n      const uri = p.textDocument.uri;\n      const inc = !!(p.context && p.context.includeDeclaration);\n      const linked = (u) => u.replace(root + '/', root + '/node_modules/pkg/');\n      const use = { uri: 'file://' + root + '/f000.ts', range: at(1, 0, 6) };\n      const twins = [use, decl].map((site) => ({ uri: linked(site.uri), range: site.range }));\n      if (uri === declUri) return (inc ? [decl, use] : [use]).concat(twins);\n      return [{ uri, range: at(0, 9, 6) }, use, decl];\n    }\n";
@@ -1394,8 +1379,7 @@ fn symlinked_twins_list_each_site_once_under_its_real_path() {
 /// whose localSearch rows (ignored files included) reach that file.
 #[test]
 fn importer_recovery_names_gitignored_files_it_skipped() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, execution) = importer_fixture_of(&[("f", 2)]);
@@ -1492,8 +1476,7 @@ fn importer_recovery_names_gitignored_files_it_skipped() {
 /// windows are one `next.nextImporterPage` away.
 #[test]
 fn importer_windows_without_sites_are_skipped_not_returned_empty() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     for operation in ["references", "callers"] {
@@ -1524,8 +1507,7 @@ fn importer_windows_without_sites_are_skipped_not_returned_empty() {
 /// program a closed anchor held.
 #[test]
 fn importer_windows_past_the_open_document_cap_keep_the_anchor_open() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let tracking = IMPORTER_SERVER
@@ -1568,12 +1550,13 @@ fn importer_windows_past_the_open_document_cap_keep_the_anchor_open() {
 /// (exit 0 with the importer lead), never an `empty` result.
 #[test]
 fn a_first_page_of_silent_windows_with_more_to_scan_is_not_empty() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let silent = 24 * (super::importers::MAX_WINDOWS_PER_REQUEST + 2);
-    for operation in ["references", "callers"] {
+    // The operations walk separate workspaces and pools, so they run side by
+    // side: each window of a silent server waits out its own settle.
+    let walk = |operation: &'static str| async move {
         let (_dir, root, execution) = importer_fixture_of(&[("n", silent), ("z", 1)]);
         let pool = LspClientPool::new(LspPoolOptions::default());
         let start = serde_json::json!({
@@ -1581,9 +1564,7 @@ fn a_first_page_of_silent_windows_with_more_to_scan_is_not_empty() {
             "symbolName": "target", "line": 1, "pageSize": 100,
             "workspaceRoot": root.to_string_lossy()
         });
-        let (pages, _) = tokio::runtime::Runtime::new()
-            .expect("rt")
-            .block_on(walk_pages(&pool, &root, &execution, start));
+        let (pages, _) = walk_pages(&pool, &root, &execution, start).await;
         let first = &pages[0].row;
         assert_ne!(
             first.get("status").and_then(serde_json::Value::as_str),
@@ -1600,7 +1581,10 @@ fn a_first_page_of_silent_windows_with_more_to_scan_is_not_empty() {
                 .is_some_and(|page| lists_path(&page.row, "z000.ts")),
             "{operation}: the walk reaches the importer past the silent windows"
         );
-    }
+    };
+    tokio::runtime::Runtime::new()
+        .expect("rt")
+        .block_on(async { tokio::join!(walk("references"), walk("callers")) });
 }
 
 /// A request skips at most [`super::importers::MAX_WINDOWS_PER_REQUEST`] windows. A
@@ -1609,15 +1593,13 @@ fn a_first_page_of_silent_windows_with_more_to_scan_is_not_empty() {
 /// the candidates verified, and `next.nextImporterPage` reaches the rest.
 #[test]
 fn a_capped_run_of_silent_windows_is_a_page_of_a_continuing_scan() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let silent = 24 * (super::importers::MAX_WINDOWS_PER_REQUEST + 2);
-    for operation in ["references", "callers"] {
-        let (_dir, pages) = tokio::runtime::Runtime::new()
-            .expect("rt")
-            .block_on(walk_across_silent_windows(operation, silent));
+    // Separate workspaces and pools: the operations walk side by side.
+    let walk = |operation: &'static str| async move {
+        let (_dir, pages) = walk_across_silent_windows(operation, silent).await;
         assert_eq!(pages.len(), 3, "{operation}: first, capped, landing");
         let capped = &pages[1].row;
         assert!(
@@ -1642,7 +1624,10 @@ fn a_capped_run_of_silent_windows_is_a_page_of_a_continuing_scan() {
                     .is_some_and(|path| path.ends_with("z000.ts")))),
             "{operation}"
         );
-    }
+    };
+    tokio::runtime::Runtime::new()
+        .expect("rt")
+        .block_on(async { tokio::join!(walk("references"), walk("callers")) });
 }
 
 /// References past the importer cap: walking `nextPage` then
@@ -1653,8 +1638,7 @@ fn a_capped_run_of_silent_windows_is_a_page_of_a_continuing_scan() {
 /// location pages, and the restart walks from the first window again.
 #[test]
 fn importer_pages_reach_every_reference_exactly_once() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, execution) = importer_fixture();
@@ -1776,8 +1760,7 @@ fn importer_pages_reach_every_reference_exactly_once() {
 /// the anchor's walk.
 #[test]
 fn importer_pages_reach_every_caller_exactly_once() {
-    if !node_available() {
-        eprintln!("skipping: node not available");
+    if !require_node() {
         return;
     }
     let (_dir, root, execution) = importer_fixture();
@@ -1925,7 +1908,12 @@ fn fallback_graph_pages(
             .expect("file")
             .1;
         let text = content.lines().nth(line).expect("line");
-        let name = text.split_whitespace().nth(2).expect("declaration name");
+        // A Rust trait impl is located at its self type, after `for`.
+        let words = text.split_whitespace().collect::<Vec<_>>();
+        let name = match words.iter().position(|word| *word == "for") {
+            Some(at) if words[0].starts_with("impl") => words[at + 1],
+            _ => words[2],
+        };
         let start = text.find(name).expect("name position");
         json!({"uri": octocode_engine::lsp::uri::path_to_uri(&root.join(file).to_string_lossy()).expect("uri"),
             "range": {"start":{"line":line,"character":start},"end":{"line":line,"character":start+name.len()}}})
@@ -2059,6 +2047,43 @@ fn fallback_type_hierarchy_obeys_depth_and_records_intermediate_identity() {
             row.get("isPartial").is_none(),
             "fully resolved graph: {row}"
         );
+    }
+}
+
+/// rust-analyzer answers `implementation` on a trait with its impl blocks,
+/// located at each self type: each trait impl is a direct subtype (its
+/// clause names the trait), and an impl has no subtypes of its own.
+#[test]
+fn fallback_rust_subtypes_are_the_trait_impls() {
+    let rows = fallback_graph_rows(
+        &[(
+            "lib.rs",
+            "pub trait Scan {}\npub struct Foo {}\nimpl Scan for Foo {}\npub struct Bar {}\nimpl<T: Scan> Scan for Bar {}\nimpl Foo {}\n",
+        )],
+        &[
+            ("lib.rs", 2, "Scan", "lib.rs", 0),
+            ("lib.rs", 4, "Scan", "lib.rs", 0),
+        ],
+        &[
+            ("lib.rs", 0, &[("lib.rs", 2), ("lib.rs", 4)]),
+            // Asked at an impl's self type, a server lists that type's impls.
+            ("lib.rs", 2, &[("lib.rs", 2), ("lib.rs", 5)]),
+        ],
+        &[("subtypes", "lib.rs", 0, 1), ("subtypes", "lib.rs", 0, 2)],
+    );
+    for row in rows {
+        let found = row["matches"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .map(|found| (found["symbolName"].as_str(), found["kind"].as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found,
+            [(Some("Foo"), Some("impl")), (Some("Bar"), Some("impl"))],
+            "{row}"
+        );
+        assert!(row.get("isPartial").is_none(), "{row}");
     }
 }
 
@@ -2227,7 +2252,8 @@ fn fallback_type_hierarchy_keeps_known_edges_when_an_implementation_alias_is_amb
             .contains("2 distinct type declarations"),
         "{row}"
     );
-    assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
+    // An ambiguous alias answers the same again: no retry.
+    assert!(row.pointer("/next/retry").is_none(), "{row}");
 }
 
 #[test]
@@ -2305,7 +2331,7 @@ fn fallback_type_hierarchy_preserves_diamond_edges_and_terminates_cycles() {
 }
 
 #[test]
-fn fallback_type_hierarchy_marks_unresolved_relations_partial_with_retry() {
+fn fallback_type_hierarchy_marks_unresolved_relations_partial_without_retry() {
     let rows = fallback_graph_rows(
         &[(
             "unknown.ts",
@@ -2325,7 +2351,8 @@ fn fallback_type_hierarchy_marks_unresolved_relations_partial_with_retry() {
             serde_json::json!(["typeHierarchyExpansionFailed"]),
             "{row}"
         );
-        assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
+        // An unresolved base stays unresolved: retrying reruns the same walk.
+        assert!(row.pointer("/next/retry").is_none(), "{row}");
         assert!(
             row["matches"].as_array().is_none_or(Vec::is_empty),
             "unverified edges omitted: {row}"

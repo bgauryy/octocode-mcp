@@ -1,9 +1,8 @@
 import { type Api, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { convertToLlm, type CompactionResult, type ExtensionAPI, type ExtensionContext, type SessionBeforeCompactEvent } from '@earendil-works/pi-coding-agent';
-import { clearedResults } from '../files/reads.js';
 import { CHARS_PER_TOKEN } from '../shared/tokens.js';
 import { clipText, contentText, errorMessage, isRecord } from '../shared/util.js';
-import { applyClearedResults } from './clearing.js';
+import { requestMessages } from './thinking.js';
 
 /**
  * The summary request that reads the conversation from the prompt cache. Pi's `compact()` serializes the conversation
@@ -104,8 +103,8 @@ function summaryCapTokens(model: Pick<Model<Api>, 'maxTokens'>, reserveTokens: n
  * Octocode's compaction result from the cache-sharing request, or undefined when it cannot be used: images are blocked
  * (the request would carry them), the call or the projection failed, or the reply stopped early, is empty, calls a tool
  * or is longer than the cap. `instructions` are the user's `/compact` focus and Octocode's own. `unusable` gets the reason
- * for every failure but blocked images (the user's own setting), so the caller can say why it falls back to a request
- * that bills the whole input.
+ * for every failure, so the caller can say why it falls back to a request that bills the whole input; `userChoice` marks
+ * blocked images, the user's own setting, which needs no warning. A cancel (abort) reports nothing.
  */
 export async function sharedSummary(
   pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getSettings'>,
@@ -113,16 +112,16 @@ export async function sharedSummary(
   ctx: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager'>,
   model: Model<Api>,
   instructions: string,
-  unusable: (reason: string) => void = () => undefined,
+  unusable: (reason: string, userChoice?: boolean) => void = () => undefined,
 ): Promise<CompactionResult | undefined> {
   try {
     const settings = pi.getSettings();
     // Pi replaces images with a note in a session's requests; this request cannot show them, so it is not made.
-    if (settings.images?.blockImages) return undefined;
+    if (settings.images?.blockImages) return void unusable('images are blocked in settings', true);
     const { preparation } = event;
     const projection = ctx.sessionManager.buildSessionProjection();
     // The projection plus the transform Octocode's own `context` handler applies to every real request.
-    const messages = applyClearedResults(projection.messages, clearedResults(ctx.sessionManager.getBranch()));
+    const messages = requestMessages(projection.messages, model, ctx.sessionManager.getBranch());
     const prompt = [SHARED_SUMMARY_PROMPT, boundaryNote(projection.entries, preparation.firstKeptEntryId), preparation.previousSummary === undefined ? '' : PREVIOUS_SUMMARY_NOTE, `Additional focus:\n${instructions}`].filter(Boolean).join('\n\n');
     const cap = summaryCapTokens(model, preparation.settings.reserveTokens);
     const level = pi.getThinkingLevel();

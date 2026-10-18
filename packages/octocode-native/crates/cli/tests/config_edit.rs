@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 use crate::support;
 use support::Workspace;
 

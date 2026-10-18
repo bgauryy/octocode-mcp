@@ -44,8 +44,22 @@ fn hoist_provider_limit(out: &mut Value, row: &str) {
     out["providerLimit"] = limit;
 }
 
+/// Page blocks state where the page stands; the cursor rides the `next`
+/// continuation it was read into, never the block.
+const CURSOR_FIELDS: [&str; 2] = ["nextPage", "nextOffset"];
+
+fn strip_cursors(pages: &mut Map<String, Value>) {
+    for page in pages.values_mut().filter_map(Value::as_object_mut) {
+        for field in CURSOR_FIELDS {
+            page.remove(field);
+        }
+    }
+}
+
 /// `next.*` for every unfinished axis of the pull request's page, and the
-/// note of what each leaves ([`Rest`]).
+/// note of what each leaves ([`Rest`]). `isPartial` is set only for an axis
+/// with more to read that no continuation reaches: `hasMore` beside a
+/// `next.*` page already says the rest is unread.
 pub(super) fn promote_pr_continuations(
     out: &mut Value,
     q: &HistoryItemRequest,
@@ -65,19 +79,19 @@ pub(super) fn promote_pr_continuations(
         .is_some_and(|entry| entry.get("hasMore").and_then(Value::as_bool) == Some(true));
     let mut next = Map::new();
     let mut notes = Vec::new();
-    let mut partial = false;
+    let mut unreached = false;
     for (axis, entry) in pages.iter() {
         if entry.get("hasMore").and_then(Value::as_bool) != Some(true) {
             continue;
         }
-        partial = true;
+        // The patch window that finishes the page offers the next file page.
         if axis == "files" && patches_open {
             continue;
         }
-        let Some((name, field, key)) = pr_axis(axis) else {
-            continue;
-        };
-        let Some(cursor) = entry.get(field).cloned() else {
+        let Some((name, key, cursor)) = pr_axis(axis)
+            .and_then(|(name, field, key)| Some((name, key, entry.get(field)?.clone())))
+        else {
+            unreached = true;
             continue;
         };
         let mut nq = base_public_query(q, ItemOperation::PullRequest);
@@ -94,11 +108,12 @@ pub(super) fn promote_pr_continuations(
         next.insert(name.into(), call);
         notes.extend(rest.note(name, axis, entry));
     }
-    if partial {
+    strip_cursors(pages);
+    if unreached {
         out["isPartial"] = json!(true);
-        if !next.is_empty() {
-            out["next"] = Value::Object(next);
-        }
+    }
+    if !next.is_empty() {
+        out["next"] = Value::Object(next);
     }
     notes
 }
@@ -156,15 +171,16 @@ fn narrow_to_axis(nq: &mut Value, axis: &str, q: &HistoryItemRequest) {
 }
 
 /// `next.*` for every unfinished axis of the issue's page, and the note of
-/// what each leaves ([`Rest`]).
+/// what each leaves ([`Rest`]); `isPartial` as for a pull request
+/// ([`promote_pr_continuations`]).
 pub(super) fn promote_issue_continuations(
     out: &mut Value,
     q: &HistoryItemRequest,
     rest: &Rest,
 ) -> Vec<Remaining> {
     let Some(pages) = out
-        .pointer("/issues/0/contentPagination")
-        .and_then(Value::as_object)
+        .pointer_mut("/issues/0/contentPagination")
+        .and_then(Value::as_object_mut)
     else {
         return Vec::new();
     };
@@ -178,7 +194,8 @@ pub(super) fn promote_issue_continuations(
     };
     let mut next = Map::new();
     let mut notes = Vec::new();
-    for (axis, entry) in pages {
+    let mut unreached = false;
+    for (axis, entry) in pages.iter() {
         if entry.get("hasMore").and_then(Value::as_bool) != Some(true) {
             continue;
         }
@@ -196,9 +213,13 @@ pub(super) fn promote_issue_continuations(
                 comment_bodies,
             ),
             "comments" => ("nextCommentPage", "page", "nextPage", comments),
-            _ => continue,
+            _ => {
+                unreached = true;
+                continue;
+            }
         };
         let Some(cursor) = entry.get(field) else {
+            unreached = true;
             continue;
         };
         let mut nq = base_public_query(q, ItemOperation::Issue);
@@ -216,8 +237,11 @@ pub(super) fn promote_issue_continuations(
         next.insert(name.into(), continuation(nq));
         notes.extend(rest.note(name, axis, entry));
     }
-    if !next.is_empty() {
+    strip_cursors(pages);
+    if unreached {
         out["isPartial"] = json!(true);
+    }
+    if !next.is_empty() {
         out["next"] = Value::Object(next);
     }
     notes

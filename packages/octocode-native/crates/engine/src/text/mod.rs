@@ -8,7 +8,7 @@ pub(crate) mod yaml_utils;
 
 /// The one extension helper, JS/TS extension set, line index, leading-BOM
 /// rule, bounded source read, regular-file open, and binary sniff.
-pub use file_extension::{JS_TS_EXTENSIONS, extension_of};
+pub use file_extension::{JS_EXTENSIONS, JS_TS_EXTENSIONS, extension_of};
 pub use source::{
     BinaryVerdict, Decoded, ReadError, Source, decode, open_regular, read_source, sniff,
 };

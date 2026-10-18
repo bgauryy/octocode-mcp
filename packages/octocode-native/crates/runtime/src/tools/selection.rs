@@ -4,6 +4,7 @@
 use crate::contracts::tool_types::{Selection, SelectionScope, SelectionStatus, SelectionUnit};
 use crate::runtime::{ExecutionContext, SelectionLimits};
 use crate::tools::id::ToolId;
+use crate::tools::num::u32_of_usize;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -666,7 +667,7 @@ impl Plan {
             unit,
             selected: Vec::new(),
             excluded: Vec::new(),
-            total: u32::try_from(total).unwrap_or(u32::MAX),
+            total: u32_of_usize(total),
             reason: reason.map(str::to_owned),
             unjudged: Vec::new(),
             pool: Vec::new(),
@@ -715,7 +716,7 @@ impl Plan {
             {
                 continue;
             }
-            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+            let ordinal = u32_of_usize(ordinal);
             match runs.last_mut() {
                 Some(run) if run[1] == ordinal => run[1] = ordinal.saturating_add(1),
                 _ => runs.push([ordinal, ordinal.saturating_add(1)]),
@@ -893,7 +894,6 @@ pub(crate) fn select(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn select_scoped(
     runtime: Option<&Runtime>,
     query: &Value,

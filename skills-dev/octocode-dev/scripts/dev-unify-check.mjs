@@ -2,8 +2,8 @@
 // Opt-in drift check for the native `dev-unify` feature (crates/runtime/Cargo.toml).
 // `build:dev` and `test:rust` should compile every shared crate once: a crate
 // both selections build, but with a different unit (features or profile
-// settings) in the test selection, is recompiled by every `cargo test` after
-// `build:dev`. Fails when such a crate is not an approved exception.
+// settings) in the test selection, is recompiled by every `test:rust` after
+// `build:dev` (nextest builds the same units as `cargo test --no-run`). Fails when such a crate is not an approved exception.
 //
 // Source of truth: nightly `cargo --unit-graph` (units with features and
 // profile settings). Without nightly it falls back to `cargo tree` feature
@@ -14,6 +14,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,11 +23,8 @@ const NATIVE = path.resolve(HERE, '..', '..', '..', 'packages', 'octocode-native
 
 /** `build:dev` hosts selection (packages/octocode-native/scripts/build-native.cjs `hostsCommand`). */
 export const BUILD_SELECTION = ['--locked', '-p', 'octocode-cli', '-p', 'octocode-runtime-napi', '--features', 'octocode-native/dev-unify'];
-/** First `test:rust` command (packages/octocode-native/package.json); the engine `--all-features` run is a separate selection by design. */
-export const TEST_SELECTION = [
-  '--locked', '-p', 'octocode-native', '-p', 'octocode-github', '-p', 'octocode-cli', '-p', 'octocode-runtime-napi',
-  '--features', 'octocode-runtime-napi/napi-test,octocode-native/dev-unify',
-];
+/** First `test:rust` selection (packages/octocode-native/package.json); the engine `--all-features` run is a separate selection by design. */
+export const TEST_SELECTION = createRequire(import.meta.url)(path.join(NATIVE, 'scripts', 'test-rust-selections.cjs')).testRustSelections()[0];
 /** Packages allowed to differ, with the reason. */
 export const EXEMPT = new Map([
   ['napi', "napi-test turns on napi/noop for tests only; dev-unify deliberately excludes it (crates/runtime/Cargo.toml)"],

@@ -132,6 +132,10 @@ impl Workspace {
                 "OCTOCODE_HOME".into(),
                 self.home.to_string_lossy().into_owned(),
             ),
+            // The OS home (`os_home` below) as child processes see it: without
+            // it, a spawned `gh` or `git` resolves an empty home and writes its
+            // state relative to the test's working directory.
+            ("HOME".into(), self.home.to_string_lossy().into_owned()),
             ("GITHUB_TOKEN".into(), self.token.clone()),
             ("GITHUB_API_URL".into(), UNMOCKED_GITHUB_API_URL.into()),
             ("OCTOCODE_ENABLE_STATS".into(), "false".into()),
@@ -276,7 +280,12 @@ pub fn envelope(mut input: Value) -> Value {
         return input;
     };
     let mut envelope = serde_json::Map::new();
-    for key in ["responseOffset", "responseLength", "responseSnapshot"] {
+    for key in [
+        "responseOffset",
+        "responseLength",
+        "responseScope",
+        "responseSnapshot",
+    ] {
         if let Some(value) = row.remove(key) {
             envelope.insert(key.into(), value);
         }
@@ -322,18 +331,47 @@ pub fn query_path(path: &Path, extra: Value) -> Value {
     query
 }
 
-/// Runtime whose classification provider is the mock `server`, at the
-/// production network timeout: the fixture's 5 s is too narrow during a cold
-/// native build with several mock servers active.
-pub fn provider_runtime(workspace: &Workspace, server: &MockServer) -> ToolRuntime {
-    workspace.runtime_with(
-        &[
-            ("OCTOCODE_BETA", "true".into()),
-            ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
-            ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
-        ],
-        PROVIDER_LIMITS,
+/// The environment pointing clasify at the mock classification provider
+/// `server`, plus `extra`.
+pub fn provider_env<'a>(
+    server: &MockServer,
+    extra: &[(&'a str, String)],
+) -> Vec<(&'a str, String)> {
+    let mut env = vec![
+        ("OCTOCODE_BETA", "true".to_owned()),
+        ("OCTOCODE_CLASSIFICATION_API", "secret".to_owned()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+    ];
+    env.extend(extra.iter().cloned());
+    env
+}
+
+/// Runtime whose classification provider is the mock `server`, plus `extra`,
+/// at the production network timeout: the fixture's 5 s is too narrow during
+/// a cold native build with several mock servers active.
+pub fn clasify_runtime(
+    workspace: &Workspace,
+    server: &MockServer,
+    extra: &[(&str, String)],
+) -> ToolRuntime {
+    workspace.runtime_with(&provider_env(server, extra), PROVIDER_LIMITS)
+}
+
+/// The workspace plus the URL capture directory, as `ALLOWED_PATHS` grants.
+pub fn capture_allowed(workspace: &Workspace) -> (&'static str, String) {
+    (
+        "ALLOWED_PATHS",
+        format!(
+            "{},{}",
+            workspace.workspace.display(),
+            workspace.home.join("tmp/capture/url").display()
+        ),
     )
+}
+
+/// The `GITHUB_API_URL` setting that points GitHub tools at the mock `server`.
+pub fn github_api(server: &MockServer) -> [(&'static str, String); 1] {
+    [("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]
 }
 
 /// [`FIXTURE_LIMITS`] at the production network timeout, for HTTP-backed

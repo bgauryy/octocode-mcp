@@ -413,6 +413,10 @@ pub(super) fn matching_hunks(
 ) -> Option<HunkMatch> {
     let hunks = parse_hunks(patch);
     let headings: Vec<&str> = hunks.iter().map(|hunk| hunk.heading).collect();
+    let starts: Vec<(usize, usize)> = hunks
+        .iter()
+        .map(|hunk| (hunk.old_start, hunk.new_start))
+        .collect();
     let (segments, cut_edges) = match head {
         Some(head) => match with_head_text(hunks, head) {
             Ok(stream) => (vec![stream], vec![(false, false)]),
@@ -458,17 +462,30 @@ pub(super) fn matching_hunks(
         }
         for (from, to, first_hit) in runs {
             let run = &lines[from..=to];
+            // A side with no line in the run starts, as in a unified diff,
+            // at its own line before the run: the last one above it, else
+            // the next one below less one, else (no line on that side in
+            // the hunk) the hunk header's own start.
             let side = |pick: fn(&DiffLine<'_>) -> Option<usize>,
-                        after: fn(&DiffLine<'_>) -> usize| {
+                        header: fn(&(usize, usize)) -> usize| {
                 let count = run.iter().filter(|line| pick(line).is_some()).count();
-                let start = run
-                    .iter()
-                    .find_map(pick)
-                    .unwrap_or_else(|| run.first().map_or(0, after).saturating_sub(1));
+                let start = run.iter().find_map(pick).unwrap_or_else(|| {
+                    lines[..from]
+                        .iter()
+                        .rev()
+                        .find_map(pick)
+                        .or_else(|| {
+                            lines[to + 1..]
+                                .iter()
+                                .find_map(pick)
+                                .map(|next| next.saturating_sub(1))
+                        })
+                        .unwrap_or_else(|| starts.get(lines[first_hit].hunk).map_or(0, header))
+                });
                 (start, count)
             };
-            let (old_start, old_count) = side(|l| l.old, |l| l.new.unwrap_or(0));
-            let (new_start, new_count) = side(|l| l.new, |l| l.old.unwrap_or(0));
+            let (old_start, old_count) = side(|l| l.old, |start| start.0);
+            let (new_start, new_count) = side(|l| l.new, |start| start.1);
             if !out.is_empty() && !out.ends_with('\n') {
                 out.push('\n');
             }

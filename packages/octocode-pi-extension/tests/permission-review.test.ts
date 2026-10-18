@@ -10,8 +10,9 @@ import type { PermissionRequest } from '../src/permission/request.js';
 import { classify, permissionGate } from '../src/permission/gate.js';
 import { createProvenance } from '../src/permission/provenance.js';
 import { Subcommands } from '../src/shared/commands.js';
-import { PERMISSION_ENV } from '../src/shared/env.js';
-import { canonicalPath, octocodeHome } from '../src/shared/home.js';
+import { PARENT_SESSION_ENV, PERMISSION_ENV } from '../src/shared/env.js';
+import { LIBRARY_FILE, RECORD_FILE } from '../src/shared/archive.js';
+import { canonicalPath, octocodeHome, sessionFolder } from '../src/shared/home.js';
 import { askSpawn } from '../src/subagents/profiles.js';
 import { fakeCtx, fakePermission, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
@@ -81,6 +82,39 @@ describe('browser actions', () => {
     for (const action of ['evaluate', 'attach']) {
       expect(of({ action })).toMatchObject({ action: 'browser.control' });
       expect(of({ action })!.grant, action).toBeUndefined();
+    }
+  });
+});
+
+describe("a child's access to its parent's archive of compacted history", () => {
+  const archive = () => path.join(sessionFolder('archive', 'parent-session'), LIBRARY_FILE);
+  const hints = (name: string): ToolAnnotations | undefined => (name.startsWith('mcp__octocode__local') ? { readOnlyHint: true } : undefined);
+
+  it.each(['manual', 'workspace', 'full'] as const)('reads it with the Octocode tools in %s mode, with nobody to ask', async (mode) => {
+    // Every child is started with its parent's session id (`subagents/process.ts`).
+    vi.stubEnv(PARENT_SESSION_ENV, 'parent-session');
+    const gate = permissionGate({ permission: fakePermission(mode, { isSubagent: true }), provenance: { check: () => undefined }, annotations: hints });
+    for (const toolName of ['mcp__octocode__localFetch', 'mcp__octocode__localSearch']) {
+      expect(await gate(call(toolName, { queries: [{ path: archive() }] }), fakeCtx({ cwd: repo(), hasUI: false })), `${toolName} in ${mode}`).toBeUndefined();
+    }
+    vi.unstubAllEnvs();
+  });
+
+  it("asks before an Octocode tool reads another repository's session history, or every session at once", () => {
+    const other = sessionFolder('archive', 'other-session');
+    fs.mkdirSync(other, { recursive: true });
+    fs.writeFileSync(path.join(other, RECORD_FILE), '# Session record other-session\n\n- Session: other-session\n- Repository: /elsewhere/.git\n- Workspace: /elsewhere\n\n## Goal\n');
+    for (const target of [path.join(other, RECORD_FILE), path.dirname(path.dirname(other))]) {
+      expect(classify(call('mcp__octocode__localSearch', { queries: [{ path: target, matchString: 'x' }] }), { cwd: repo() }, hints)?.action, target).toBe('read.outside');
+    }
+    // The session's own saved output reads freely.
+    expect(classify(call('mcp__octocode__localFetch', { queries: [{ path: sessionFolder('output') }] }), { cwd: repo() }, hints)).toBeUndefined();
+  });
+
+  it.each(['manual', 'workspace', 'full'] as const)('can never be changed by it with edit or write in %s mode (the file tool shares the check: files.test.ts)', async (mode) => {
+    const gate = permissionGate({ permission: fakePermission(mode, { isSubagent: true }), provenance: { check: () => undefined }, annotations: hints });
+    for (const toolName of ['edit', 'write']) {
+      expect(await gate(call(toolName, { path: archive(), content: 'x', edits: [] }), fakeCtx({ cwd: repo(), hasUI: false })), `${toolName} in ${mode}`).toMatchObject({ block: true, reason: expect.stringMatching(/Octocode's state folder/) });
     }
   });
 });

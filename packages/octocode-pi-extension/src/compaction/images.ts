@@ -16,24 +16,34 @@ export interface ContextEntry {
 /** Provider and gateway errors that reject a request for its byte size (not its tokens). */
 const TOO_LARGE_ERROR = /^\s*413\b|\b(?:status|http)\D{0,12}413\b|request_too_large|request entity too large|payload too large|request exceeds the maximum size|too much media/i;
 
-/**
- * Saves every image of a message to the session output folder, named by content: each as `<path> (sha256 …, n bytes)`,
- * or undefined when one could not be saved.
- */
-function saveImages(message: unknown): string[] | undefined {
-  const copies: string[] = [];
-  for (const part of parts(message)) {
-    if (!isRecord(part) || part['type'] !== 'image') continue;
-    const copy = typeof part['data'] === 'string' ? saveContentCopy(Buffer.from(part['data'], 'base64'), 'omitted-image', imageExtension(String(part['mimeType'])) ?? 'bin') : undefined;
-    if (!copy) return undefined;
-    copies.push(copy);
-  }
-  return copies;
+/** What saving a message's images came to: the saved copies, and the 1-based positions of the images that could not be saved. */
+interface SavedImages {
+  copies: string[];
+  failed: number[];
+  total: number;
 }
 
-/** The note that replaces a message's images: where they are saved, or that they could not be. */
-function imageNote(paths: string[] | undefined, from = 'an earlier tool call'): string {
-  return paths ? `[image from ${from} omitted; saved at ${paths.join(', ')}; read that file to see it again]` : `[image from ${from} omitted; it could not be saved]`;
+/**
+ * Saves every image of a message to the session output folder, named by content: each saved as `<path> (sha256 …, n
+ * bytes)`; one that cannot be saved does not stop the others.
+ */
+function saveImages(message: unknown): SavedImages {
+  const saved: SavedImages = { copies: [], failed: [], total: 0 };
+  for (const part of parts(message)) {
+    if (!isRecord(part) || part['type'] !== 'image') continue;
+    saved.total++;
+    const copy = typeof part['data'] === 'string' ? saveContentCopy(Buffer.from(part['data'], 'base64'), 'omitted-image', imageExtension(String(part['mimeType'])) ?? 'bin') : undefined;
+    if (copy) saved.copies.push(copy);
+    else saved.failed.push(saved.total);
+  }
+  return saved;
+}
+
+/** The note that replaces a message's images: where each is saved, and which could not be. */
+function imageNote({ copies, failed, total }: SavedImages, from = 'an earlier tool call'): string {
+  if (copies.length === 0) return `[image from ${from} omitted; it could not be saved]`;
+  const missing = failed.length === 0 ? '' : `; ${failed.length === 1 ? 'image' : 'images'} ${failed.join(', ')} of ${total} could not be saved`;
+  return `[image from ${from} omitted; saved at ${copies.join(', ')}${missing}; read ${copies.length === 1 ? 'that file' : 'those files'} to see ${copies.length === 1 && failed.length === 0 ? 'it' : 'them'} again]`;
 }
 
 export function parts(message: unknown): unknown[] {
@@ -74,9 +84,9 @@ export function planTooLargeRecovery(entries: ContextEntry[], failedId: string |
  * the bytes go, so an image that cannot be saved is still removed (the note says so).
  */
 function withoutImages(message: unknown): Array<{ type: 'text'; text: string }> {
-  const paths = saveImages(message);
+  const saved = saveImages(message);
   const from = isRecord(message) && message['role'] === 'user' ? 'an earlier user message' : 'an earlier tool call';
-  return [...texts(message).map((text) => ({ type: 'text' as const, text })), { type: 'text' as const, text: imageNote(paths, from) }];
+  return [...texts(message).map((text) => ({ type: 'text' as const, text })), { type: 'text' as const, text: imageNote(saved, from) }];
 }
 
 const length = (value: unknown) => (typeof value === 'string' ? value.length : 0);

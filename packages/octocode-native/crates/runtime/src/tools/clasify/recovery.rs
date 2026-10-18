@@ -129,7 +129,11 @@ mod tests {
 
     #[test]
     fn a_reader_failure_is_not_worded_as_classification_and_offers_no_dead_read() {
-        for code in ["pathNotFound", "outsideAllowedRoots"] {
+        for code in [
+            "pathNotFound",
+            "outsideAllowedRoots",
+            "largeSourceWindowOnly",
+        ] {
             let row = row(
                 Input::Source(
                     json!({"tool":"localFetch","query":{"path":"nope/missing.rs","ranges":["1-5"]}}),

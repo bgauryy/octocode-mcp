@@ -845,7 +845,7 @@ fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
         &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference("v1")),
-            history_depth: std::num::NonZeroU64::new(2),
+            history_depth: std::num::NonZeroU64::new(2).expect("depth"),
             ..query()
         },
         &context,
@@ -868,7 +868,7 @@ fn clone_eviction_preserves_dirty_expired_and_over_budget_checkouts() {
         &fixture,
         &GhCloneRepoQuery {
             ref_: Some(reference(&fixture.first_commit)),
-            history_depth: std::num::NonZeroU64::new(3),
+            history_depth: std::num::NonZeroU64::new(3).expect("depth"),
             ..query()
         },
         &context,
@@ -1025,6 +1025,47 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
     );
 }
 
+/// A runner whose `ls-tree` fails: the sparse scope cannot be resolved.
+struct FailingLsTree(RewriteRunner);
+
+impl GitRunner for FailingLsTree {
+    fn run(
+        &self,
+        request: &GitRunRequest<'_>,
+        control: &GitRunControl<'_>,
+    ) -> Result<GitOutput, CloneError> {
+        if request.args.iter().any(|argument| argument == "ls-tree") {
+            return Err(CloneError::new("gitFailed", "ls-tree failed"));
+        }
+        self.0.run(request, control)
+    }
+}
+
+/// A sparse path whose type `ls-tree` cannot resolve fails the clone with
+/// that error instead of guessing cone mode, which would check out the
+/// whole folder beside a requested file.
+#[test]
+fn an_unresolvable_sparse_path_type_fails_the_clone() {
+    let fixture = Fixture::new();
+    let (root, cache_home) = home_root();
+    let policy = test_support::workspace_policy(&root.0);
+    let endpoint = api_github_endpoint();
+    let runner = FailingLsTree(fixture_runner(&fixture));
+    let config = CloneConfig::persistent(&cache_home);
+    let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
+    let error = clone_pinned(
+        &fixture,
+        &GhCloneRepoQuery {
+            path: Some(one("README.md")),
+            ..query()
+        },
+        &context,
+    )
+    .expect_err("unresolved sparse scope");
+    assert_eq!(error.code, "gitFailed", "{error:?}");
+    assert_eq!(error.message, "ls-tree failed");
+}
+
 #[test]
 fn sparse_file_path_checks_out_only_that_file() {
     let fixture = Fixture::new();
@@ -1140,7 +1181,7 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     // The tag names main's commit: a deeper history is another entry.
     let deep_tag = GhCloneRepoQuery {
         ref_: Some(reference("v1")),
-        history_depth: std::num::NonZeroU64::new(2),
+        history_depth: std::num::NonZeroU64::new(2).expect("depth"),
         ..query()
     };
     let tag = clone_pinned(&fixture, &deep_tag, &context).expect("tag clone");
@@ -1184,9 +1225,12 @@ fn cache_limits_live_lock_and_failed_sparse_refresh_are_bounded() {
     .expect_err("missing sparse path");
     assert_eq!(missing.code, "pathNotFound");
     assert!(missing.message.contains("\"missing/path\""), "{missing:?}");
-    assert_eq!(missing.hints.len(), 1, "{missing:?}");
-    // The hint, not the message, names the recovery.
+    // The lead, not a hint or the message, names the recovery: nothing near
+    // `path` exists at the root, so it lists the root at the commit.
+    assert!(missing.hints.is_empty(), "{missing:?}");
     test_support::checks::assert_absent(&serde_json::json!(missing.message), "ghStructure");
+    let next = missing.next.as_deref().expect("recovery lead");
+    assert_eq!(next["viewTree"]["tool"], "ghStructure", "{next}");
     assert!(Path::new(&tag.location.local_path).is_dir());
 }
 
@@ -1508,7 +1552,15 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
     let mut config = CloneConfig::persistent(&cache_home);
     config.cache_ttl = Duration::from_secs(60);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
-    for (branch, sparse) in [("main", None), (head.as_str(), None), ("main", Some("src"))] {
+    // The same commit by branch then by SHA: the second is a cache hit, which
+    // reports the symlinks its meta recorded. A directory scope also holds
+    // the root's files (the link among them); a file scope holds only it.
+    for (branch, sparse, cached, listed) in [
+        ("main", None, false, true),
+        (head.as_str(), None, true, true),
+        ("main", Some("src"), false, true),
+        ("main", Some("src/lib.rs"), false, false),
+    ] {
         let clone = clone_pinned(
             &fixture,
             &GhCloneRepoQuery {
@@ -1519,15 +1571,34 @@ fn repository_symlinks_are_checked_out_as_plain_files() {
             &context,
         )
         .expect("clone");
+        assert_eq!(clone.location.cached, cached, "{branch} {sparse:?}");
         let link = Path::new(&clone.location.local_path).join("escape");
-        if sparse.is_none() {
+        if listed {
             let meta = fs::symlink_metadata(&link).expect("escape entry");
             assert!(
                 !meta.file_type().is_symlink(),
                 "{branch}: symlink materialized"
             );
+            let row = serde_json::to_value(&clone.location).expect("location");
+            assert_eq!(row["symlinks"], serde_json::json!(["escape"]), "{row}");
+        } else {
+            assert!(!link.exists(), "{branch} {sparse:?}");
+            assert_eq!(clone.location.symlinks, None, "{branch} {sparse:?}");
         }
     }
+    // An entry recorded before symlinks were kept lists them on a hit.
+    let full = clone_pinned(&fixture, &query(), &context).expect("cached clone");
+    let meta_path = Path::new(&full.location.local_path).join(cache::META_FILE);
+    let mut meta: serde_json::Value =
+        serde_json::from_slice(&fs::read(&meta_path).expect("meta")).expect("meta JSON");
+    assert_eq!(meta["symlinks"], serde_json::json!(["escape"]));
+    meta.as_object_mut()
+        .expect("meta object")
+        .remove("symlinks");
+    fs::write(&meta_path, serde_json::to_vec(&meta).expect("meta bytes")).expect("old meta");
+    let old = clone_pinned(&fixture, &query(), &context).expect("old entry hit");
+    assert!(old.location.cached);
+    assert_eq!(old.location.symlinks, Some(vec!["escape".to_owned()]));
     let seen = runner
         .seen
         .lock()
@@ -1753,6 +1824,71 @@ fn multiple_sparse_paths_check_out_every_path() {
     test_support::checks::assert_absent(&serde_json::json!(missing.message), "\"src\"");
 }
 
+/// A missing sparse path is recovered from the commit's own trees: a unique
+/// near-miss sibling at the deepest existing directory gives the same clone
+/// with the path corrected; otherwise that directory is listed, pinned to the
+/// commit.
+#[test]
+fn a_missing_sparse_path_leads_to_its_near_miss_or_its_nearest_directory() {
+    let bench = Bench::new();
+    let context = bench.context();
+    let commit = bench.fixture.first_commit.clone();
+    let failed = |path: GhCloneRepoQueryPath| {
+        let missing = clone_pinned(
+            &bench.fixture,
+            &GhCloneRepoQuery {
+                path: Some(path),
+                ..query()
+            },
+            &context,
+        )
+        .expect_err("missing sparse path");
+        assert_eq!(missing.code, "pathNotFound", "{missing:?}");
+        assert!(missing.hints.is_empty(), "{missing:?}");
+        *missing.next.expect("recovery lead")
+    };
+
+    // One near miss in the deepest existing directory: the clone, corrected.
+    let next = failed(one("src/nested/dta.txt"));
+    let lead = &next["repair"];
+    assert_eq!(lead["tool"], "ghCloneRepo", "{next}");
+    let row = &lead["query"]["queries"][0];
+    assert_eq!(row["path"], "src/nested/data.txt", "{next}");
+    assert_eq!(row["ref"], commit.as_str(), "{next}");
+    assert_eq!(row["owner"], "fixture-owner", "{next}");
+
+    // A directory is a near miss too, and a list is corrected in place.
+    let next = failed(many(&["other", "sr/nested"]));
+    let row = &next["repair"]["query"]["queries"][0];
+    assert_eq!(
+        row["path"],
+        serde_json::json!(["other", "src/nested"]),
+        "{next}"
+    );
+
+    // Nothing near: the deepest directory that exists, at the commit.
+    let next = failed(one("src/nested/deep/er/x.rs"));
+    let lead = &next["viewTree"];
+    assert_eq!(lead["tool"], "ghStructure", "{next}");
+    let row = &lead["query"]["queries"][0];
+    assert_eq!(row["path"], "src/nested", "{next}");
+    assert_eq!(row["ref"], commit.as_str(), "{next}");
+    assert!(next.get("repair").is_none(), "{next}");
+
+    // At the root, the listing names no path.
+    let next = failed(one("zzzzzz/a"));
+    let row = &next["viewTree"]["query"]["queries"][0];
+    assert!(row.get("path").is_none(), "{next}");
+    assert_eq!(row["ref"], commit.as_str(), "{next}");
+
+    // One uncorrectable path among several keeps the listing, not a clone.
+    let next = failed(many(&["src/nested/dta.txt", "src/qqqqqq/z"]));
+    assert_eq!(
+        next["viewTree"]["query"]["queries"][0]["path"], "src",
+        "{next}"
+    );
+}
+
 /// `depth` fetches that many commits and keys its own cache entry.
 #[test]
 fn history_depth_fetches_that_many_commits() {
@@ -1763,7 +1899,7 @@ fn history_depth_fetches_that_many_commits() {
     let deep = clone_pinned(
         &bench.fixture,
         &GhCloneRepoQuery {
-            history_depth: std::num::NonZeroU64::new(2),
+            history_depth: std::num::NonZeroU64::new(2).expect("depth"),
             ..query()
         },
         &context,

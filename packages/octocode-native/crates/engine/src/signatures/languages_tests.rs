@@ -665,3 +665,40 @@ fn selection_names_one_grammar_and_families_span_aliases_and_cpp_headers() {
     assert_eq!(js_source_swaps("jsx"), ["tsx", "d.ts"]);
     assert!(js_source_swaps("ts").is_empty());
 }
+
+#[test]
+fn js_ts_dispatch_extensions_are_the_registry_javascript_and_typescript_entries() {
+    let mut registry: Vec<&str> = supported_extensions()
+        .into_iter()
+        .filter(|extension| {
+            find_entry(extension).is_some_and(|entry| {
+                matches!(
+                    entry.language_id,
+                    Some("typescript" | "typescriptreact" | "javascript")
+                )
+            })
+        })
+        .collect();
+    registry.sort_unstable();
+    let mut dispatch = crate::text::JS_TS_EXTENSIONS.to_vec();
+    dispatch.sort_unstable();
+    assert_eq!(dispatch, registry);
+}
+
+#[test]
+fn c_family_extensions_are_the_enabled_c_cpp_and_cuda_grammars() {
+    for extension in ["c", "h"] {
+        assert!(is_c_family_extension(extension), ".{extension}");
+    }
+    #[cfg(feature = "tree-sitter-cpp")]
+    for extension in ["cpp", "hpp", "cc", "cxx", "hh", "hxx"] {
+        assert!(is_c_family_extension(extension), ".{extension}");
+    }
+    #[cfg(feature = "tree-sitter-cuda")]
+    for extension in ["cu", "cuh"] {
+        assert!(is_c_family_extension(extension), ".{extension}");
+    }
+    for extension in ["rs", "py", "ts", "cs", "go", "java", "not-an-extension"] {
+        assert!(!is_c_family_extension(extension), ".{extension}");
+    }
+}

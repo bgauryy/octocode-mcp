@@ -1,5 +1,4 @@
 //! Replays the installer migration fixtures, including exact reports and filesystem trees.
-#![allow(clippy::expect_used, clippy::panic)]
 
 use super::{InstallBundledSkillsOptions, install_bundled_skills};
 use serde_json::{Value, json};
@@ -8,22 +7,6 @@ use std::path::{Path, PathBuf};
 
 fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/skills")
-}
-
-fn temp_root(tag: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "octocode-skill-parity-{tag}-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("test fixture operation should succeed")
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).expect("test fixture operation should succeed");
-    // macOS: /var → /private/var; fixtures compare lexical paths, so anchor
-    // at the canonicalized root to keep <ROOT> substitution exact.
-    root.canonicalize()
-        .expect("test fixture operation should succeed")
 }
 
 fn substitute(value: &Value, from: &str, to: &str) -> Value {
@@ -120,7 +103,19 @@ fn native_installer_preserves_migration_reports_and_trees() {
             &fs::read_to_string(dir.join(&name)).expect("test fixture operation should succeed"),
         )
         .expect("test fixture operation should succeed");
-        let root = temp_root(name.trim_end_matches(".json"));
+        let temp = tempfile::Builder::new()
+            .prefix(&format!(
+                "octocode-skill-parity-{}-",
+                name.trim_end_matches(".json")
+            ))
+            .tempdir()
+            .expect("test fixture operation should succeed");
+        // macOS: /var → /private/var; fixtures compare lexical paths, so anchor
+        // at the canonicalized root to keep <ROOT> substitution exact.
+        let root = temp
+            .path()
+            .canonicalize()
+            .expect("test fixture operation should succeed");
         let root_str = root.to_string_lossy().into_owned();
         materialize_setup(&root, &fixture["setup"]);
 
@@ -148,6 +143,5 @@ fn native_installer_preserves_migration_reports_and_trees() {
             fixture["tree"],
             "tree parity failed for fixture {name}"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 }

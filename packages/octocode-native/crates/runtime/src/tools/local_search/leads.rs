@@ -16,7 +16,8 @@ use crate::tools::cancel::CancellationCheck;
 use crate::tools::empty_walk::{Cause, Globs, Hits, Tagged, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
-use crate::tools::result::{Continuation, ToolError};
+use crate::tools::num::u32_of_usize;
+use crate::tools::result::{CURSOR_FIELDS, Continuation, ToolError, query_row};
 use octocode_engine::{portable::search_text_cancellable, types::TextSearchOptions};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -247,8 +248,8 @@ impl Found<'_> {
                 Continuation::new(ToolId::LspSearch, row).build(),
             );
         }
-        if let Some(lead) = self.expand_values_lead(warnings) {
-            add("expandValues".into(), lead);
+        for (name, lead) in self.expand_values_leads() {
+            add(name, lead);
         }
         // Binaries were never text to search: a row with hits states their
         // count in `stats`, an empty row says it in `warnings`, where the
@@ -261,11 +262,6 @@ impl Found<'_> {
             }
             add("binarySkipped".into(), listing);
         }
-        // What the walk left out is disclosed once, on the first page: the
-        // security policy's withheld entries (nothing lifts them), and the
-        // default-excluded and hidden paths (`skippedPaths`) with the same
-        // search over them. An empty page proves which of them hold a match
-        // below, in `disclose_unsearched`.
         // Directories the depth limit left unentered are coverage the walk
         // never had: disclosed once, with the same search at every depth.
         if first_disclosure
@@ -276,6 +272,11 @@ impl Found<'_> {
             ));
             add("expandDepth".into(), unlimited_depth_lead(query));
         }
+        // What the walk left out is disclosed once, on the first page: the
+        // security policy's withheld entries (nothing lifts them), and the
+        // default-excluded and hidden paths (`skippedPaths`) with the same
+        // search over them. An empty page proves which of them hold a match
+        // below, in `disclose_unsearched`.
         if first_disclosure {
             warnings.extend(self.skipped.withheld.notice());
             let causes = self.skipped_causes();
@@ -286,7 +287,7 @@ impl Found<'_> {
         // Thousands of hits page for dozens of calls: one count call ranks
         // the files first, so the next read or narrowing is chosen, not paged.
         if self.first_page()
-            && !is_count_or_list_view(query)
+            && !list_view(query.result_view)
             && let Some(total) = self
                 .scanned
                 .match_count
@@ -313,6 +314,13 @@ impl Found<'_> {
             add("findSimilar".into(), regex_lead(query, engine));
         } else if literal_missed {
             warnings.push("matchString ran as literal text.".to_owned());
+        }
+        // A literal page whose text reads as an alternation (`a|b`) may
+        // answer part of the question: one bounded count of the regex
+        // reading says when it matches more lines.
+        if let Some((engine, warning)) = self.alternation_reading(search_options, cancel) {
+            warnings.push(warning);
+            add("findSimilar".into(), regex_lead(query, engine));
         }
         // Files whose match the `fileHas`/`fileLacks` terms removed: the
         // empty page is the filter's, not the pattern's.
@@ -448,9 +456,9 @@ impl Found<'_> {
         Ok((!disclosure.entries.is_empty()).then_some(disclosure))
     }
 
-    /// The one call that reads every clipped value on the page whole; a
-    /// warning counts the windows past what one call holds.
-    fn expand_values_lead(&self, warnings: &mut Vec<String>) -> Option<Value> {
+    /// The calls that read every clipped value on the page whole
+    /// (see [`numbered_calls`]).
+    fn expand_values_leads(&self) -> Vec<(String, Value)> {
         let query = self.query;
         let expansions = expand_values(
             query,
@@ -465,15 +473,79 @@ impl Found<'_> {
                 value_cap: self.layout.budget_cap.unwrap_or(RESPONSE_VALUE_CHAR_BUDGET),
             }),
         );
-        let (lead, left) = one_call(&expansions)?;
-        if left > 0 {
-            warnings.push(format!(
-                "expandValues reads {} of {} clipped-value windows; {left} more are on this page.",
-                expansions.len() - left,
-                expansions.len()
-            ));
+        numbered_calls("expandValues", &expansions)
+    }
+
+    /// The regex reading of a literal first page whose `matchString` reads
+    /// as an alternation ([`reads_as_alternation`]) and compiles: its engine
+    /// and the warning, when one bounded count of it over the query's own
+    /// walk finds more matched lines than the literal search.
+    fn alternation_reading(
+        &self,
+        search_options: &TextSearchOptions,
+        cancel: &impl CancellationCheck,
+    ) -> Option<(&'static str, String)> {
+        let query = self.query;
+        let literal = self.scanned.matched_lines?;
+        if self.empty
+            || !self.walk_complete
+            || !self.first_page()
+            || query.regex.is_some()
+            || query.invert_match == Some(true)
+            || !reads_as_alternation(&query.match_string)
+        {
+            return None;
         }
-        Some(lead)
+        let engine = regex_engine(&query.match_string)?;
+        let mut options = search_options.clone();
+        options.fixed_string = Some(false);
+        options.perl_regex = Some(engine == "pcre2");
+        if octocode_engine::portable::matches_line_break(&query.match_string, false) {
+            options.multiline = Some(true);
+        }
+        options.files_only = Some(false);
+        options.files_without_match = Some(false);
+        options.count_matches_per_file = Some(false);
+        options.count_lines_per_file = Some(true);
+        options.only_matching = Some(false);
+        options.unique = Some(false);
+        options.count_unique = Some(false);
+        options.context_lines = Some(0);
+        options.digest_max_bytes = None;
+        let walk = Arc::new(crate::policy::discovery::SearchWalk::new(
+            self.paths.clone(),
+            std::path::PathBuf::from(&options.path),
+            query.default_excludes.defaults(),
+            options.include.as_deref().unwrap_or_default(),
+        ));
+        let started = std::time::Instant::now();
+        let deadline = crate::tools::empty_walk::probe_budget();
+        let cut = std::sync::atomic::AtomicBool::new(false);
+        let found = search_text_cancellable(options, walk, &|| {
+            let late = started.elapsed() > deadline;
+            if late {
+                cut.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            cancel.check().is_err() || late
+        })
+        .ok()?;
+        let lines = found.stats.matched_lines.filter(|lines| *lines > literal)?;
+        let floor = if cut.load(std::sync::atomic::Ordering::Relaxed) {
+            "at least "
+        } else {
+            ""
+        };
+        Some((
+            engine,
+            format!(
+                "matchString ran as literal text ({}); with regex:\"{engine}\" it matches {floor}{lines}.",
+                crate::response::pages::counted(
+                    u64::from(literal),
+                    "matched line",
+                    "matched lines"
+                )
+            ),
+        ))
     }
 
     pub(super) fn first_page(&self) -> bool {
@@ -1006,7 +1078,7 @@ fn probe_spellings(
         .chain(near)
         .map(String::as_str)
         .chain(folded)
-        .map(|term| u32::try_from(term.len()).unwrap_or(u32::MAX))
+        .map(|term| u32_of_usize(term.len()))
         .max();
     options.sort = Some("path".into());
     options.digest_max_bytes = None;
@@ -1064,8 +1136,7 @@ fn probe_spellings(
 /// The same search over other spellings of the identifier: its case-style
 /// variants anywhere, or the near spellings found as whole words.
 fn variants_lead(query: &LocalSearchQuery, variants: &[String], whole_word: bool) -> Value {
-    let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
+    restart_lead(query, |fields| {
         let pattern = variants
             .iter()
             .map(|variant| regex::escape(variant))
@@ -1077,27 +1148,50 @@ fn variants_lead(query: &LocalSearchQuery, variants: &[String], whole_word: bool
         if whole_word {
             fields.insert("wholeWord".into(), json!(true));
         }
-    }
-    Continuation::new(ToolId::LocalSearch, lead).build()
+    })
 }
 
 /// The same search without its `maxDepth`, from page 1.
 fn unlimited_depth_lead(query: &LocalSearchQuery) -> Value {
-    let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
+    restart_lead(query, |fields| {
         fields.remove("maxDepth");
-    }
-    Continuation::new(ToolId::LocalSearch, lead).build()
+    })
 }
 
 /// The same search without its `fileHas`/`fileLacks` terms, from page 1.
 fn unfiltered_terms_lead(query: &LocalSearchQuery) -> Value {
-    let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
+    restart_lead(query, |fields| {
         fields.remove("fileHas");
         fields.remove("fileLacks");
+    })
+}
+
+/// Whether `text` read as a regex is an alternation: a `|` outside escapes
+/// and character classes splits it into alternatives none of which is
+/// empty.
+fn reads_as_alternation(text: &str) -> bool {
+    // Chars in each alternative so far.
+    let mut alternatives = vec![0usize];
+    let mut chars = text.chars();
+    let mut class = false;
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '[' => class = true,
+            ']' => class = false,
+            '|' if !class => {
+                alternatives.push(0);
+                continue;
+            }
+            _ => {}
+        }
+        if let Some(last) = alternatives.last_mut() {
+            *last += 1;
+        }
     }
-    Continuation::new(ToolId::LocalSearch, lead).build()
+    alternatives.len() > 1 && alternatives.iter().all(|chars| *chars > 0)
 }
 
 /// The engine `text` compiles in as a regex: `rust`, else `pcre2`.
@@ -1115,21 +1209,21 @@ fn regex_engine(text: &str) -> Option<&'static str> {
 /// The same search with `matchString` read as a regex under `engine`, and
 /// across lines when the regex matches a line break, so the lead runs.
 fn regex_lead(query: &LocalSearchQuery, engine: &str) -> Value {
-    let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
+    restart_lead(query, |fields| {
         fields.insert("regex".into(), json!(engine));
         if query.multiline == LocalSearchQueryMultiline::Off
             && octocode_engine::portable::matches_line_break(&query.match_string, false)
         {
             fields.insert("multiline".into(), json!("on"));
         }
-    }
-    Continuation::new(ToolId::LocalSearch, lead).build()
+    })
 }
 
-/// An empty search for an identifier: say when its other case styles
-/// match, or else spellings one edit away (a typo), so a spelling miss does
-/// not read as absence. One walk probes both.
+/// An empty literal search: say when its text matches ignoring case (a
+/// case-sensitive run), else when an identifier's other case styles match,
+/// else its spellings one edit away (a typo), so a spelling miss does not
+/// read as absence. One walk probes all three; the first that matches
+/// leads (`ignoreCase`, else `findSimilar`).
 pub(super) fn disclose_variants(
     query: &LocalSearchQuery,
     paths: &PathPolicy,
@@ -1211,31 +1305,17 @@ pub(super) fn disclose_variants(
 
 /// The same search with `caseMode:"insensitive"`, from page 1.
 fn ignore_case_lead(query: &LocalSearchQuery) -> Value {
-    let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
+    restart_lead(query, |fields| {
         fields.insert("caseMode".into(), json!("insensitive"));
-    }
-    Continuation::new(ToolId::LocalSearch, lead).build()
+    })
 }
 
 /// Matches at which a line view leads to its per-file counts.
 pub(super) const LARGE_RESULT_MATCHES: u32 = 1_000;
 
-/// Views that already answer per file (counts) or list paths.
-fn is_count_or_list_view(query: &LocalSearchQuery) -> bool {
-    matches!(
-        query.result_view,
-        LocalSearchQueryResultView::CountMatches
-            | LocalSearchQueryResultView::CountLines
-            | LocalSearchQueryResultView::Files
-            | LocalSearchQueryResultView::FilesWithout
-    )
-}
-
 /// The same search as per-file match counts, from page 1.
 pub(super) fn count_lead(query: &LocalSearchQuery) -> Value {
-    let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
+    restart_lead(query, |fields| {
         fields.insert("resultView".into(), json!("countMatches"));
         // Fields that shape match rows (or are valid only under matchOnly)
         // have no meaning in a count view.
@@ -1248,26 +1328,27 @@ pub(super) fn count_lead(query: &LocalSearchQuery) -> Value {
         ] {
             fields.remove(field);
         }
-    }
-    Continuation::new(ToolId::LocalSearch, lead).build()
+    })
 }
 
 /// The same search from page 1 with the walk's `causes` lifted.
 pub(super) fn lifting_lead(query: &LocalSearchQuery, causes: &[Cause]) -> Value {
-    let mut lead = restart_fields(query);
+    let mut lead = query_row(query, &CURSOR_FIELDS);
     lift(&mut lead, causes);
     Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
-/// The query as a fresh page-1 search: no page, match page or snapshot.
-pub(super) fn restart_fields(query: &LocalSearchQuery) -> Value {
-    let mut lead = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
+/// The query as a fresh page-1 search (no [`CURSOR_FIELDS`]) with `edit`
+/// applied, as the localSearch call that runs it.
+fn restart_lead(
+    query: &LocalSearchQuery,
+    edit: impl FnOnce(&mut serde_json::Map<String, Value>),
+) -> Value {
+    let mut lead = query_row(query, &CURSOR_FIELDS);
     if let Some(fields) = lead.as_object_mut() {
-        fields.retain(|key, value| {
-            !value.is_null() && !matches!(key.as_str(), "page" | "matchPage" | "snapshot")
-        });
+        edit(fields);
     }
-    lead
+    Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
 /// A structureSearch `files` listing of the searched scope in the query's
@@ -2025,6 +2106,23 @@ mod enclosing_cap_tests {
 }
 
 #[cfg(test)]
+mod alternation_tests {
+    use super::reads_as_alternation;
+
+    /// A `|` splits alternatives only outside escapes and classes, and every
+    /// alternative must hold text.
+    #[test]
+    fn an_alternation_has_text_on_every_side() {
+        for text in ["a|b", "(a|b)c", "foo|bar|baz", r"a\.b|c"] {
+            assert!(reads_as_alternation(text), "{text}");
+        }
+        for text in ["a", "a||b", "|a", "a|", r"a\|b", "[a|b]", ""] {
+            assert!(!reads_as_alternation(text), "{text}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod empty_hint_tests {
     use super::empty_hint;
 
@@ -2040,27 +2138,32 @@ mod empty_hint_tests {
     }
 }
 
-/// One executable call from `reads` (one-row calls of one tool, see
-/// [`expand_values`]): as many rows as one call accepts, and how many reads
-/// it leaves out. A page offers one value-expansion lead, not one per file.
-/// A default page is cut so its reads fit (see [`stream_pages`]); only a
-/// caller-sized page can leave reads out.
-fn one_call(reads: &[Value]) -> Option<(Value, usize)> {
-    let first = reads.first()?;
-    let tool = ToolId::from_name(first["tool"].as_str()?)?;
-    let limit = crate::tools::result::rows_per_call(tool);
-    let mut rows = Vec::new();
-    let mut left = 0;
-    for read in reads {
-        match crate::tools::result::continuation_row(read) {
-            Some(row) if read["tool"] == first["tool"] && rows.len() < limit => {
-                rows.push(row.clone());
-            }
-            _ => left += 1,
+/// Executable calls from `reads` (one-row calls, see [`expand_values`]):
+/// each run of one tool's rows in calls of as many rows as that tool
+/// accepts, the first named `name` and the rest `name2`, `name3`, …, so
+/// every read is one call away. A default page is cut so its reads fit one
+/// call (see [`stream_pages`]); a caller-sized page may need more.
+fn numbered_calls(name: &str, reads: &[Value]) -> Vec<(String, Value)> {
+    let mut calls = Vec::new();
+    for run in reads.chunk_by(|a, b| a["tool"] == b["tool"]) {
+        let Some(tool) = run[0]["tool"].as_str().and_then(ToolId::from_name) else {
+            continue;
+        };
+        let rows = run
+            .iter()
+            .filter_map(crate::tools::result::continuation_row)
+            .cloned()
+            .collect::<Vec<_>>();
+        for chunk in rows.chunks(crate::tools::result::rows_per_call(tool)) {
+            let key = match calls.len() {
+                0 => name.to_owned(),
+                index => format!("{name}{}", index + 1),
+            };
+            let call = Continuation::input(tool, json!({ "queries": chunk }))
+                .confidence("exact")
+                .build();
+            calls.push((key, call));
         }
     }
-    let call = Continuation::input(tool, json!({ "queries": rows }))
-        .confidence("exact")
-        .build();
-    Some((call, left))
+    calls
 }

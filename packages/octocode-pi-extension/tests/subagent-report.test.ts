@@ -13,6 +13,16 @@ describe('the outcome word a report starts with', () => {
   it.each([[undefined], [''], ['Finished the work'], ['Not done yet'], ['doneness'], ['done-ish'], ['The task is done'], ['1. done']])('treats %j as unknown, never a failure', (text) => expect(reportStatus(text)).toBeUndefined());
 });
 
+describe('a failed reply\'s error message', () => {
+  it('reaches the parent whole, however long the provider\'s message is', () => {
+    const message = `provider said: ${'overloaded, retry later; '.repeat(80)}the end`;
+    const report = new ReportTracker();
+    report.answer('partial findings', 'error', message);
+    expect(report.result().error).toBe(message);
+    expect(report.result().error).not.toContain('more characters cut');
+  });
+});
+
 describe('incremental subagent reports', () => {
   it('marks output-limit answers incomplete and accepts a later successful retry', () => {
     const report = new ReportTracker(tmp());

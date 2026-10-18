@@ -1,8 +1,9 @@
 import { apiClientLabel, fenceUntrusted, headerText, messageHeader } from '../shared/fence.js';
-import { formatClock, formatDuration, memberStats } from '../shared/format.js';
+import { formatAgo, formatClock, formatDuration, memberStats } from '../shared/format.js';
 import { resolveToolPath } from '../shared/home.js';
 import type { Change } from './edits.js';
 import { keysOverlap } from './lease-key.js';
+import { asksLabel, type Ask } from './asks.js';
 import type { DeadLetter, Lease, Member, Message } from './model.js';
 import { cutText, errorMessage, firstLine } from '../shared/util.js';
 import { visibleControls } from '../shared/sanitize.js';
@@ -118,12 +119,11 @@ export function resolveTarget(members: Member[], from: string, to: string, paren
   return byRole.length > 1 ? `"${to}" matches several agents (${known}); use one id.` : `No live agent "${to}". Live agents: ${known}.`;
 }
 
-function ago(at: number, now: number): string {
-  return `${formatDuration(now - at)} ago`;
-}
-
-/** The `coordinate list` text: one block per agent with join and last-seen times, unanswered messages and reserved paths. */
-export function describeMembers(members: Member[], selfId: string | undefined, now = Date.now()): string {
+/**
+ * The `coordinate list` text: one block per agent with join and last-seen times, unanswered messages and reserved paths.
+ * `asks` (by agent id; `/agents` passes it) adds each subagent's questions to its parent.
+ */
+export function describeMembers(members: Member[], selfId: string | undefined, now = Date.now(), asks?: ReadonlyMap<string, readonly Ask[]>): string {
   if (members.length === 0) return 'No agents have joined in this repository.';
   // Goals, activity and paths come from other processes' rows: untrusted text the model reads.
   return visibleControls(members
@@ -132,12 +132,14 @@ export function describeMembers(members: Member[], selfId: string | undefined, n
       const parent = member.parentId ? ` · parent ${member.parentId}` : '';
       const model = member.model ? ` · ${member.model}` : '';
       const doing = member.status === 'working' ? (member.activity ?? 'working') : 'idle';
+      const asked = asksLabel(asks?.get(member.id));
       return [
         `${member.id}${you} · ${member.role} · ${member.status}${model}${parent}`,
         ...(member.goal ? [`  goal: ${firstLine(member.goal)}`] : []),
-        `  joined ${formatClock(member.joinedAt)} (${ago(member.joinedAt, now)}) · seen ${ago(member.updatedAt, now)} · ${memberStats(member)}`,
+        `  joined ${formatClock(member.joinedAt)} (${formatAgo(now - member.joinedAt)}) · seen ${formatAgo(now - member.updatedAt)} · ${memberStats(member)}`,
         `  ${firstLine(doing)}`,
         ...(member.pending ? [`  ${member.pending} message${member.pending === 1 ? '' : 's'} awaiting its reply`] : []),
+        ...(asked ? [`  ${asked} to its parent`] : []),
         ...(member.locks?.length ? [`  holds ${member.locks.join(', ')}`] : []),
       ].join('\n');
     })
@@ -146,7 +148,7 @@ export function describeMembers(members: Member[], selfId: string | undefined, n
 
 /** How long a lease has been held, for refusals: `locked 12m ago`. */
 export function leaseAge(lease: Lease, now = Date.now()): string {
-  return lease.acquiredAt > 0 ? `locked ${ago(lease.acquiredAt, now)}` : 'locked';
+  return lease.acquiredAt > 0 ? `locked ${formatAgo(now - lease.acquiredAt)}` : 'locked';
 }
 
 export function describeConflicts(conflicts: Array<{ path: string; heldBy: Lease }>, now = Date.now()): string {
@@ -188,7 +190,7 @@ export function describeChanges(changes: Change[], options: { self?: string | un
   const kept = options.requested !== undefined && options.requested > options.minutes ? [`(You asked for ${options.requested}m; changes are kept only ${formatDuration(options.minutes * 60_000)}, so that is all that was searched.)`] : [];
   if (changes.length === 0) return [`No agent changed files${scope} in the last ${options.minutes}m. Files changed outside agents (you, bash, git) are not tracked: search files by modification time for those.`, ...kept].join('\n');
   const shown = changes.slice(0, options.limit);
-  const lines = shown.map((change) => `- ${change.path} · ${change.agent}${change.agent === options.self ? ' (you)' : ''} via ${change.tool} · ${formatDuration(now - change.at)} ago${change.count > 1 ? ` · ${change.count} changes` : ''}`);
+  const lines = shown.map((change) => `- ${change.path} · ${change.agent}${change.agent === options.self ? ' (you)' : ''} via ${change.tool} · ${formatAgo(now - change.at)}${change.count > 1 ? ` · ${change.count} changes` : ''}`);
   const more = changes.length > shown.length ? [`(${changes.length - shown.length} more; raise limit or narrow paths)`] : [];
   return visibleControls([`Files changed by agents in the last ${options.minutes}m${scope} (newest first):`, ...lines, ...more, ...kept].join('\n'));
 }
