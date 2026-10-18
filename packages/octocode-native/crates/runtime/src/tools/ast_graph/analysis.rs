@@ -830,7 +830,7 @@ pub(super) fn cycles(b: &BuiltGraph) -> (Vec<Value>, Value, Vec<String>, bool) {
         .flatten()
         .filter_map(Value::as_str)
         .collect::<BTreeSet<_>>();
-    let module_tree = scc(&b.nodes, true)
+    let module_tree = scc(&code_graph(&b.nodes), true)
         .iter()
         .filter(|files| !files.iter().any(|f| in_use_cycle.contains(f.as_str())))
         .count();

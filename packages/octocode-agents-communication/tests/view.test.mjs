@@ -31,9 +31,9 @@ async function fixture(t){
 
 test('view exposes live workspace entities read-only, with bounded complete pagination',async t=>{
  const f=await fixture(t),db=new DatabaseSync(f.database);t.after(()=>db.close());
- for(let i=0;i<115;i++)f.call('send_message',{to:f.b,replyRequired:false,body:`message ${i} <script>not executable</script>`,conversationId:i<60?'older-thread':'recent-thread',reasoning:'Exercise observer pagination'},f.a);
- const request=f.call('send_message',{to:f.a,body:'Please review',replyRequired:true,reasoning:'Verify request and completion visibility'},f.b);
- const answer=f.call('complete',{message:request.id,reply:'Reviewed'},f.a);
+ for(let i=0;i<115;i++)f.call('send_message',{to:f.b,body:`message ${i} <script>not executable</script>`,conversationId:i<60?'older-thread':'recent-thread',reasoning:'Exercise observer pagination'},f.a);
+ const request=f.call('send_message',{to:f.a,question:'Please review',reasoning:'Verify request and completion visibility'},f.b);
+ const answer=f.call('complete',{message:request.id,outcome:'done',reply:{conclusion:'Reviewed'}},f.a);
  f.call('lock',{path:'active.rs',reasoning:'Owned edit',ttlMs:600000},f.a);
  const old=f.call('lock',{path:'expired.rs',reasoning:'Old edit',ttlMs:1000},f.b);
  db.prepare('UPDATE leases SET expiresAt=0 WHERE id=?').run(old.lease.id);
@@ -71,7 +71,7 @@ test('view exposes live workspace entities read-only, with bounded complete pagi
  assert.ok((await f.get('api/message?status=pending')).items.every(r=>r.pending>0));
  assert.equal((await f.get('api/message?agent='+f.b+'&q='+encodeURIComponent('Please review'))).items.length,1,'Agent filter includes sent messages');
  assert.equal((await f.get('api/message?agent='+f.a+'&q='+encodeURIComponent('Please review'))).items.length,1,'Agent filter includes received messages');
- f.call('send_message',{to:f.b,replyRequired:false,body:'Résumé + 100% & history',reasoning:'UTF-8 literal search'},f.a);
+ f.call('send_message',{to:f.b,body:'Résumé + 100% & history',reasoning:'UTF-8 literal search'},f.a);
  assert.equal((await f.get('api/message?q='+encodeURIComponent('Résumé + 100% &'))).items.length,1);
  assert.equal((await f.get('api/message?q='+encodeURIComponent("' OR 1=1 --"))).items.length,0);
  db.prepare('UPDATE sessions SET expiresAt=0 WHERE id=?').run(f.a);

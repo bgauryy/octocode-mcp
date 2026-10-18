@@ -8,7 +8,12 @@ The document, or a review: BLUF verdict, then findings as [review comments](refe
 
 ## Saved result
 
-Shipped documents (README, guide, ADR): the requested path or project docs location. Reviews, audits, and drafts with no named destination: `<workspace>/.octocode/octocode-documentation/<YYYY-MM-DD>-<slug>.md`. A user-named path wins.
+| Result | Location |
+|---|---|
+| Shipped document (README, guide, ADR) | The requested path or project docs location |
+| Review, audit, or draft with no named destination | `<workspace>/.octocode/octocode-documentation/<YYYY-MM-DD>-<slug>.md` |
+
+A user-named path wins.
 
 ## Saved report
 
@@ -27,12 +32,17 @@ next: <the one next action for whoever continues, in the imperative>
 
 Open the `#` title with a lead stating the answer.
 
-Put findings under `## Findings` as one table, most severe first, then add `## Unverified` for facts that still need a check:
+| Saved report | After the lead | Then |
+|---|---|---|
+| Review | `## Findings`: one table, most severe first | `## Unverified`: facts that still need a check |
+| Draft | The document | `## Destination` (where it ships), then `## Unverified` |
+
+Every saved report has either `## Findings` (a review) or `## Destination` (a draft). The findings table:
 
 | Location | Issue | Correction | Severity | Verified |
 |---|---|---|---|---|
 
-Severity: `Critical`, `High`, `Medium`, `Low`; `Verified`: `Yes` or `No`. A draft puts the document after the lead, then `## Destination` (where it ships) and `## Unverified`. Every saved report has either `## Findings` (a review) or `## Destination` (a draft).
+Severity: `Critical`, `High`, `Medium`, `Low`; `Verified`: `Yes` or `No`.
 
 Date the file name with `date +%F`. Render, fix every `warning:` line, and reply with a short summary and the `.html` and `.md` paths:
 

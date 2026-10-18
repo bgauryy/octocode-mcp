@@ -257,4 +257,4 @@ and prepublish checks versions without rewriting manifests or resolving dependen
 
 Build notes:
 - `crates/runtime/build.rs` resolves `packages/octocode-config` from the manifest directory, so the crate builds only inside this monorepo. That is fine while `publish = false`.
-- The optional dependencies in `crates/runtime/Cargo.toml` exist to unify feature sets for development builds; `node skills-dev/octocode-dev/scripts/dev.mjs check:dev-unify` verifies that they still do.
+- The optional dependencies in `crates/runtime/Cargo.toml` exist to unify feature sets for development builds.

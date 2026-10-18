@@ -10,6 +10,10 @@ import type { TeamStore } from './store.js';
  * index read): the inbox is read only when something new waits. A message that waits at or before the hand-off point
  * without this inbox having handed it over means the database was emptied or replaced under a live session (its message
  * numbers start again): the point is reset, so the new messages are not skipped.
+ *
+ * A read that finds nothing waiting remembers the database's change marker (`TeamStore.stamp`): while it stays the
+ * same, no process has written the database, so the next ticks run no query. The agent's own heartbeat rewrites its
+ * row every few seconds, which bounds the delay should a write ever leave the marker unchanged.
  */
 export class Inbox {
   /** The newest message handed to Pi: later ticks hand over only newer ones, so none is injected twice. */
@@ -18,6 +22,8 @@ export class Inbox {
   private readonly unseen = new Set<number>();
   /** Seen by the model, not yet recorded (the database was busy): recorded on the next tick. */
   private readonly seenIds = new Set<number>();
+  /** The recipient, hand-off point and database stamp at which a read found nothing waiting. */
+  private idleAt: string | undefined;
 
   /** Only newly handed mail needs a context scan; earlier conversation mail is already accounted for. */
   get awaitingContext(): boolean {
@@ -34,16 +40,24 @@ export class Inbox {
     this.handed = 0;
     this.unseen.clear();
     this.seenIds.clear();
+    this.idleAt = undefined;
   }
 
   /** Records what the model saw, then hands the next batch to `send`; a refused batch is offered again next tick. */
   deliver(db: TeamStore, id: string, send: (batch: Message[]) => boolean): void {
     this.record(db, id);
+    // Taken before the reads: a write that lands after it moves the stamp, so the next tick reads.
+    const stamp = db.stamp();
+    const state = () => `${id}|${this.handed}|${stamp}`;
+    if (state() === this.idleAt) return;
     if (this.handed > 0 && db.waitingThrough(id, this.handed).some((message) => !this.unseen.has(message))) {
       this.handed = 0;
       this.unseen.clear();
     }
-    if (db.waiting(id, this.handed) === 0) return;
+    if (db.waiting(id, this.handed) === 0) {
+      this.idleAt = state();
+      return;
+    }
     const batch = db.pending(id, this.handed);
     if (batch.length === 0) return; // Another process can remove the recipient between the two reads.
     const before = this.handed;

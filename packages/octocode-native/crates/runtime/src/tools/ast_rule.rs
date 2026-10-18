@@ -156,7 +156,7 @@ pub(crate) fn group_diagnostics(rows: Vec<serde_json::Value>) -> Vec<serde_json:
 }
 
 /// A rule that does not compile, as both tools report it.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct RuleError {
     pub code: &'static str,
     pub message: String,
@@ -323,8 +323,10 @@ pub(crate) fn present_grammars(
 }
 
 /// The grammars of a file census (`extension → files`), each with its full
-/// extension set, most files first (ties by name).
-pub(crate) fn rank_grammars(seen: BTreeMap<String, usize>) -> Vec<(String, BTreeSet<String>)> {
+/// extension set and file count, most files first (ties by name).
+pub(crate) fn count_grammars(
+    seen: BTreeMap<String, usize>,
+) -> Vec<(String, BTreeSet<String>, usize)> {
     let mut grammars: BTreeMap<String, (BTreeSet<String>, usize)> = BTreeMap::new();
     for (extension, count) in seen {
         if let Some(entry) = languages::find_entry(&extension)
@@ -340,7 +342,15 @@ pub(crate) fn rank_grammars(seen: BTreeMap<String, usize>) -> Vec<(String, BTree
     ranked.sort_by(|(a, (_, a_files)), (b, (_, b_files))| b_files.cmp(a_files).then(a.cmp(b)));
     ranked
         .into_iter()
-        .map(|(language, (extensions, _))| (language, extensions))
+        .map(|(language, (extensions, files))| (language, extensions, files))
+        .collect()
+}
+
+/// [`count_grammars`] without the counts.
+pub(crate) fn rank_grammars(seen: BTreeMap<String, usize>) -> Vec<(String, BTreeSet<String>)> {
+    count_grammars(seen)
+        .into_iter()
+        .map(|(language, extensions, _)| (language, extensions))
         .collect()
 }
 

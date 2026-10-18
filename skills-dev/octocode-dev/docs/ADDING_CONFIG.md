@@ -133,6 +133,12 @@ Declare the section and its fields in the same contract. `file` controls whether
 
 Credential values never appear in `ResolvedConfig`, logs, inspection output, or generated diagnostics. Consumers read them from `effective_env` in Rust or `process.env` in TypeScript.
 
+```mermaid
+flowchart LR
+  Q{"Does a trusted .octocoderc supply a fallback value?"} -- no --> A["Pattern A: environment entry only"]
+  Q -- yes --> B["Pattern B: credential field, environment preferred"]
+```
+
 ### Pattern A: credential without a `.octocoderc` field
 
 Declare an environment entry, not a resolved config field:

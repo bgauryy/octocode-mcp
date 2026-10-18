@@ -13,7 +13,7 @@ Always include `## Summary`, `## Proposed design`, `## Validation and success`, 
 | Alternatives and rationale | Viable options, costs, benefits, why this fits, what could change it |
 | Risks and mitigations | Drawbacks, failure conditions, prevention or detection |
 | Implementation and rollout | Prerequisites, dependency-ordered steps, migration, rollout signals, rollback |
-| Validation and success | Acceptance checks as `Check: given <state>, when <action>, then <observable result>`; baselines or targets, rollback thresholds; measurements apart from estimates |
+| Validation and success | Acceptance checks as Given–When–Then (given <state>, when <action>, then <observable result>); baselines or targets, rollback thresholds; measurements apart from estimates |
 | Open questions | What is unresolved, impact, what settles it, owner when needed |
 | References | Citations beside claims; a short list only when useful |
 
@@ -22,9 +22,9 @@ Always include `## Summary`, `## Proposed design`, `## Validation and success`, 
 
 - Clear technical English (unless asked otherwise) for a capable newcomer to this system.
 - Concrete verbs, short paragraphs, consistent terms, defined acronyms, exact identifiers.
-- Separate current behavior (fact), proposal, evidence, and assumptions.
+- Facts, assumptions, unknowns: current behavior with its evidence as facts, assumptions marked, unknowns named (what nobody checked); the proposal stays apart; never present a guess as a fact.
 - "must" = requirement, "should" = recommendation; uppercase only under a real protocol convention.
-- Observable outcomes, not promises; name material uncertainty.
+- Observable outcomes, not promises.
 - Cut repetition, sales language, narration, author/date/status tables, timestamps, tool inventories, scores, logs, transcripts, receipts. Header `status` owns decision state.
 
 ## Delivery

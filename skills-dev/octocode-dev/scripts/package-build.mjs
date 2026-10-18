@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Build helpers shared by the published Node packages (`octocode`,
-// `octocode-mcp`).
+// `octocode-mcp`): the bundle's externals, the build-time check that every
+// external runtime import is a declared dependency, and the shared docs copy.
 //
 //   node package-build.mjs docs <outDir>   copy repo docs/ to <cwd>/<outDir>/docs
 import { cpSync, existsSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 
+const nodeBuiltins = new Set([...builtinModules, ...builtinModules.map(name => `node:${name}`)]);
+
 /**
  * What a package bundle keeps external: Node built-ins and the package's
  * published runtime dependencies, so consumers install those from the
@@ -17,10 +20,51 @@ const repoRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
  */
 export function packageExternals(pkg) {
   return [
-    ...builtinModules,
-    ...builtinModules.map(name => `node:${name}`),
+    ...nodeBuiltins,
     ...Object.keys(pkg.dependencies ?? {}),
   ];
+}
+
+function packageName(specifier) {
+  const parts = specifier.split('/');
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+}
+
+function undeclaredExternalRuntimeImports(metafiles, dependencies = {}) {
+  const declared = new Set(Object.keys(dependencies));
+  const externalPackages = new Set();
+
+  for (const metafile of metafiles) {
+    for (const output of Object.values(metafile.outputs)) {
+      for (const imported of output.imports) {
+        if (!imported.external) continue;
+        const specifier = imported.path;
+        if (
+          specifier.startsWith('.') ||
+          specifier.startsWith('/') ||
+          nodeBuiltins.has(specifier)
+        ) {
+          continue;
+        }
+        externalPackages.add(packageName(specifier));
+      }
+    }
+  }
+
+  return [...externalPackages].filter(name => !declared.has(name)).sort();
+}
+
+export function assertDeclaredRuntimeImports({
+  metafiles,
+  dependencies,
+  label = 'bundle',
+}) {
+  const undeclared = undeclaredExternalRuntimeImports(metafiles, dependencies);
+  if (undeclared.length > 0) {
+    throw new Error(
+      `${label} has undeclared external runtime import(s): ${undeclared.join(', ')}`
+    );
+  }
 }
 
 /** Where a bundled doc's links to files outside `docs/` resolve once shipped. */

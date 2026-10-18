@@ -554,6 +554,19 @@ fn echoes_go_only_when_they_equal_the_request_and_echo_extras_keep_them() {
 
 use super::*;
 
+/// A cancelled call has one recovery on every tool: retry only when the
+/// result is still needed and what cancelled it changed, else report it.
+#[test]
+fn a_cancellation_bounds_its_retry_and_otherwise_reports() {
+    for tool in [ToolId::LocalSearch, ToolId::Clasify, ToolId::GhSearchCode] {
+        assert_eq!(error_code_hint(tool, "cancelled"), Some(CANCELLED_HINT));
+    }
+    for slot in ["still needed", "changed", "otherwise report"] {
+        assert!(CANCELLED_HINT.contains(slot), "{slot}: {CANCELLED_HINT}");
+    }
+    assert!(CANCELLED_HINT.chars().count() <= MAX_GUIDANCE_CHARS);
+}
+
 #[test]
 fn relative_row_paths_drop_dot_segments_only() {
     let row = |path: &str| json!({"data": {"path": path, "matches": [{"path": path}]}});

@@ -62,8 +62,8 @@ Load when reading script output, searching a session, mapping a site, or extract
 ## Extraction
 
 - Define the schema or claim list first; report row counts and 3–5 sample rows. `sources.jsonl` holds route, URL, status, content type, fetch time.
-- Spot-check critical facts against raw HTML or snippets; cross-check key claims with another selector or source.
-- Mark partial, blocked, transformed, or inferred data; summaries need exact source evidence.
+- Claim–evidence: each claim or row beside its exact source evidence; spot-check critical facts against raw HTML or snippets and cross-check key claims with another selector or source.
+- Facts, assumptions, unknowns: mark partial, blocked, transformed, or inferred data instead of presenting it as fact.
 - Rows as JSONL in `extracts/`, excerpts in `snippets/`; narrative in the saved report ([output](../output.md)), not `reports/summary.md`.
 
 ## Capture limits

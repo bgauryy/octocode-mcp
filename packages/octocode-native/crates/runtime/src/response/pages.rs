@@ -334,7 +334,7 @@ fn row_left(pagination: &Value, data: &Map<String, Value>, call: &Value) -> Opti
 }
 
 /// The one text of a stale snapshot, whichever tool's cursor went stale.
-pub const STALE_SNAPSHOT_ERROR: &str = "The snapshot does not match this source and query (they changed, or the snapshot is missing or from another call); nothing shown remains valid, start over.";
+pub const STALE_SNAPSHOT_ERROR: &str = "The snapshot does not match this source and query (they changed, or the snapshot is missing or from another call); nothing shown remains valid: run the restart call, page 1 without the snapshot.";
 
 /// A stale-snapshot row ends the page: the shared text, no `isPartial` and no
 /// `hasMore` (nothing of the shown result remains to read), no continuation
@@ -1306,6 +1306,8 @@ mod tests {
             );
         }
         assert!(!crate::response::pages::STALE_SNAPSHOT_ERROR.contains("next."));
+        // The next call: the row's one lead, `restart`.
+        assert!(crate::response::pages::STALE_SNAPSHOT_ERROR.contains("restart"));
     }
 
     /// A restart the tool did not build is the one restart owner's: page 1

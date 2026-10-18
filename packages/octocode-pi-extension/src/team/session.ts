@@ -7,6 +7,7 @@ import { storedText, visibleControls } from '../shared/sanitize.js';
 import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget } from './routing.js';
 import { AGENT_ID_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
 import { envFlag, ownNonce, SUBAGENT_ENV } from '../shared/env.js';
+import { onSecond } from '../shared/clock.js';
 import { interactive } from '../shared/interactive.js';
 import { parentGone, sameProcess, terminateSelf } from '../shared/process.js';
 import type { Lease, LeaseRequest, Member, SendOptions } from './model.js';
@@ -26,9 +27,7 @@ import type { Ask } from './asks.js';
 export type { TeamView } from './ticker.js';
 /** Refresh the agent's row at least this often so peers can tell it is alive (and its leases stay valid). */
 const HEARTBEAT_MS = 5_000;
-/** How often a subagent checks that the Pi process that started it still runs. */
-const PARENT_CHECK_MS = 1_000;
-/** Every this many parent checks the start time is compared too: a reused pid is noticed within that many seconds, and the event loop is not stalled by a `ps` every second. */
+/** Every this many parent checks (one a second, on the shared clock) the start time is compared too: a reused pid is noticed within that many seconds, and the event loop is not stalled by a `ps` every second. */
 const PARENT_START_EVERY = 15;
 /** Names drawn in turn when other processes keep taking them. */
 const JOIN_ATTEMPTS = 8;
@@ -84,7 +83,8 @@ export class Team {
   private readonly mail: Mail;
   private readonly delivery: Delivery;
   /** A subagent's check that its parent still runs: on from the session start, whether or not it joins the team. */
-  private parentWatch: NodeJS.Timeout | undefined;
+  /** Stops the parent check (a subagent only). */
+  private stopParentWatch: (() => void) | undefined;
   /** Subagents this session started that have finished: id → where their report went, for a later message to them. */
   private readonly finished = new Map<string, string>();
   /** Resumes a finished subagent that still lingers (set by the subagents domain); its receipt, else undefined. */
@@ -150,17 +150,16 @@ export class Team {
    */
   private watchParent(): void {
     const parent = this.env[PARENT_PID_ENV];
-    if (!parent || this.parentWatch) return;
+    if (!parent || this.stopParentWatch) return;
     let checks = 0;
-    this.parentWatch = setInterval(() => {
+    this.stopParentWatch = onSecond(() => {
       if (!parentProcessGone(parent, checks++ % PARENT_START_EVERY === 0)) return;
-      clearInterval(this.parentWatch);
-      this.parentWatch = undefined;
+      this.stopParentWatch?.();
+      this.stopParentWatch = undefined;
       // Where a signal ends the process outright (Windows) nothing runs after it: the row and reservations go now, not when a peer's sweep finds the pid dead.
       try { this.leave(); } catch { /* locked database: the sweep reaps the row */ }
       terminateSelf();
-    }, PARENT_CHECK_MS);
-    this.parentWatch.unref();
+    });
   }
 
   /** The database opens on first use, so a session that never collaborates never creates it. */
@@ -238,8 +237,8 @@ export class Team {
   /** Leave and let go of the database (session end; the process connection stays open for the next session). */
   stop(): void {
     try { this.leave(); } finally {
-      clearInterval(this.parentWatch);
-      this.parentWatch = undefined;
+      this.stopParentWatch?.();
+      this.stopParentWatch = undefined;
       this.db = undefined;
       this.peers?.close();
       this.peers = undefined;

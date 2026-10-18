@@ -93,16 +93,11 @@ def read(path):
 
 
 class DocumentsMixin:
-    def document_record(self, db, name, workspace=None):
-        scopes = self.shared_workspaces()
-        if workspace is not None:
-            workspace = str(Path(workspace).resolve())
-            if workspace not in scopes:
-                raise ValueError('Document workspace is outside this repository')
-            scopes = [workspace]
-        rows = query(db, 'SELECT a.data,d.workspace FROM documents d JOIN records a ON a.id=d.id WHERE d.workspace IN (SELECT value FROM json_each(?)) AND d.name=?', (json.dumps(scopes), name))
+    def document_record(self, db, name):
+        rows = query(db, 'SELECT a.data,d.workspace FROM documents d JOIN records a ON a.id=d.id WHERE d.workspace IN (SELECT value FROM json_each(?)) AND d.name=?', (json.dumps(self.shared_workspaces()), name))
         if len(rows) > 1:
-            raise ValueError('Ambiguous historical document name; set workspace to its origin: ' + _json([r['workspace'] for r in rows]))
+            # share_document keeps one name per repository; only a nonconforming SQL client can break it.
+            raise ValueError('Document name {} is registered in several worktrees: {}'.format(name, _json([r['workspace'] for r in rows])))
         return json.loads(rows[0]['data']) if rows else None
 
     def document_path(self, record):
@@ -110,20 +105,19 @@ class DocumentsMixin:
         path = Path(record['path'])
         if not path.is_absolute():
             path = Path(origin) / path
-        legacy = Path(origin) / '.octocode' / 'communication' / record['name']
-        shared = Path(self.coordination_scope) / 'octocode-communication' / record['name']
-        if path not in (legacy, shared):
+        stored = directory(origin, coordination=self.coordination_scope) / record['name']
+        if path != stored:
             raise ValueError('Document path is outside its registered storage')
-        folder = directory(origin) if path == legacy else directory(origin, coordination=self.coordination_scope)
-        return folder / record['name']
+        return stored
 
     @staticmethod
-    def same_document(record, path, content, metadata, reasoning):
+    def same_document(record, path, content, metadata, reasoning, supersedes):
         stored = copy.deepcopy(record.get('context'))
         if stored is not None:
             stored.pop('expiresAt', None)
         if (record['sha256'] != hashlib.sha256(content.encode('utf-8')).hexdigest()
-                or read(path) != content or stored != metadata or record.get('reasoning') != reasoning):
+                or read(path) != content or stored != metadata or record.get('reasoning') != reasoning
+                or record.get('supersedes') != supersedes):
             raise ValueError('Document is immutable or has changed on disk; publish a new name')
         return {'created': False, 'document': record}
 
@@ -137,13 +131,18 @@ class DocumentsMixin:
         if len(data) > MAX_BYTES:
             raise ValueError('Document exceeds 1 MiB')
         metadata = context_metadata(self.workspace, value)
+        supersedes = value.get('supersedes')
+        if supersedes == name:
+            raise ValueError('A document cannot supersede itself')
         folder = directory(self.workspace, True, self.coordination_scope)
         path = folder / name
         with read_transaction(self.db):
             self.known(session, True)
             record = self.document_record(self.db, name)
+            if record is None and supersedes is not None and self.document_record(self.db, supersedes) is None:
+                raise ValueError('supersedes must name a published document: ' + supersedes)
         if record is not None:
-            return self.same_document(record, self.document_path(record), content, metadata, reasoning)
+            return self.same_document(record, self.document_path(record), content, metadata, reasoning, supersedes)
         if os.path.lexists(path):
             raise ValueError('Unregistered document already exists; preserve it and publish a new name')
         fd, temp = tempfile.mkstemp(prefix='.document-', dir=folder)
@@ -156,7 +155,7 @@ class DocumentsMixin:
                 self.known(session, True)
                 record = self.document_record(self.db, name)
                 if record is not None:
-                    return self.same_document(record, self.document_path(record), content, metadata, reasoning)
+                    return self.same_document(record, self.document_path(record), content, metadata, reasoning, supersedes)
                 if os.path.lexists(path):
                     raise ValueError('Unregistered document already exists; preserve it and publish a new name')
                 # Same-directory link publication never exposes a partial file or overwrites.
@@ -164,6 +163,8 @@ class DocumentsMixin:
                 record = {'name': name, 'path': str(path) if self.coordination_scope != self.workspace else '.octocode/communication/' + name,
                           'author': session, 'reasoning': reasoning, 'bytes': len(data),
                           'sha256': hashlib.sha256(data).hexdigest()}
+                if supersedes is not None:
+                    record['supersedes'] = supersedes
                 if metadata is not None:
                     record['context'] = metadata
                     record['context']['expiresAt'] = _now() + metadata['ttlMs']
@@ -214,7 +215,7 @@ class DocumentsMixin:
     def read_document(self, session, value):
         self.known(session, True)
         name = document_name(value)
-        record = self.document_record(self.db, name, value.get('workspace'))
+        record = self.document_record(self.db, name)
         if record is None:
             candidates = query(self.db, 'SELECT name FROM documents WHERE workspace IN (SELECT value FROM json_each(?)) AND name>=? AND name<? ORDER BY name LIMIT 5', (json.dumps(self.shared_workspaces()), name + '.', name + '/'))
             raise ValueError("Unknown document '%s' in this repository. Use the exact published document.name, including its extension. Matching names (up to 5): %s. Read the document successfully before using its contents." % (name, _json([r['name'] for r in candidates])))

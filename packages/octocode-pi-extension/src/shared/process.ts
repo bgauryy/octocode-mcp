@@ -74,18 +74,42 @@ export function processStartTime(pid: number): string | undefined {
 export function processMatch(pid: unknown, started: string | null | undefined): 'same' | 'other' | 'unknown' {
   if (!processAlive(pid)) return 'other';
   if (!started) return 'unknown';
-  const now = /^\d+$/.test(started) ? processStartTime(pid as number) : psStart(pid as number, { ...process.env, LC_ALL: 'C' });
+  return compareStart(pid as number, started);
+}
+
+/** The start-time comparison of a live `pid` against a recorded `started` (one `ps` call). */
+function compareStart(pid: number, started: string): 'same' | 'other' | 'unknown' {
+  const now = /^\d+$/.test(started) ? processStartTime(pid) : psStart(pid, { ...process.env, LC_ALL: 'C' });
   return now === undefined ? 'unknown' : now === started ? 'same' : 'other';
 }
 
 /**
+ * How long `sameProcess` reuses a start-time comparison (a `ps` call): sweeps, `list`, `send` and lease checks ask about
+ * the same few processes often, and a pid reused inside this window is retired by the next sweep after it.
+ */
+export const VERDICT_TTL_MS = 30_000;
+const VERDICT_LIMIT = 256;
+const verdicts = new Map<string, { at: number; match: 'same' | 'other' | 'unknown' }>();
+
+/**
  * Whether `pid` may still be the process that recorded `started` (its `processStartTime`): alive, and not a later
  * process that got the pid. Lenient, for liveness: without a recorded or readable start time it is just `processAlive`
- * (an owner that cannot be judged keeps what it owns). Before signalling a process use `processMatch`, where unknown
- * is not a match.
+ * (an owner that cannot be judged keeps what it owns). Every caller shares one memo: a live pid's start-time comparison
+ * is reused for `VERDICT_TTL_MS` after `now` (ms), while a dead pid is seen at once (`kill -0` needs no `ps`). Before
+ * signalling a process use `processMatch`, which compares afresh and where unknown is not a match.
  */
-export function sameProcess(pid: unknown, started: string | null | undefined): boolean {
-  return processMatch(pid, started) !== 'other';
+export function sameProcess(pid: unknown, started: string | null | undefined, now = Date.now()): boolean {
+  if (!processAlive(pid)) return false;
+  if (!started) return true;
+  const key = `${pid as number} ${started}`;
+  let verdict = verdicts.get(key);
+  if (!verdict || now - verdict.at >= VERDICT_TTL_MS) {
+    verdict = { at: now, match: compareStart(pid as number, started) };
+    verdicts.delete(key);
+    verdicts.set(key, verdict);
+    if (verdicts.size > VERDICT_LIMIT) verdicts.delete(verdicts.keys().next().value!);
+  }
+  return verdict.match !== 'other';
 }
 
 /**

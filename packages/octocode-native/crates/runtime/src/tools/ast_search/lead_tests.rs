@@ -239,3 +239,46 @@ fn an_empty_match_reports_the_files_it_parsed_and_the_grammar() {
         );
     }
 }
+
+/// A match that found something still names the walks the defaults skipped
+/// for files of its grammar, with the lead that includes them: the matches
+/// listed are not the scope's matches.
+#[test]
+fn a_match_with_hits_names_the_skipped_walks_and_leads_to_them() {
+    let root = Fixture::new();
+    root.write("a.ts", "hit(1);\n");
+    root.write("dist/b.ts", "hit(2);\n");
+    let request =
+        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"hit($A)"});
+    let out = run(&root.0, request);
+    assert_eq!(out["matchCount"], json!(1), "{out}");
+    let warnings = out["warnings"].to_string();
+    assert!(
+        warnings.contains("typescript files were skipped as default-excluded"),
+        "{warnings}"
+    );
+    assert!(warnings.contains("dist/"), "{warnings}");
+    let lead = &out["next"]["includeSkipped"];
+    assert_eq!(lead["tool"], "astSearch", "{out}");
+    let retry = &lead["query"]["queries"][0];
+    assert_eq!(retry["defaultExcludes"], json!(false), "{out}");
+    let found = run(&root.0, retry.clone());
+    assert_eq!(found["matchCount"], json!(2), "{found}");
+    assert!(found.get("warnings").is_none(), "{found}");
+    assert!(found["next"].get("includeSkipped").is_none(), "{found}");
+}
+
+/// Nothing skipped, nothing said: no notice and no lead beside the hits.
+#[test]
+fn a_match_with_hits_and_nothing_skipped_has_no_skipped_notice() {
+    let root = Fixture::new();
+    root.write("a.ts", "hit(1);\n");
+    root.write("dist/readme.md", "hit(2);\n");
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"hit($A)"}),
+    );
+    assert_eq!(out["matchCount"], json!(1), "{out}");
+    assert!(out.get("warnings").is_none(), "{out}");
+    assert!(out["next"].get("includeSkipped").is_none(), "{out}");
+}

@@ -1,4 +1,5 @@
 pub(crate) mod fs_query;
+pub mod fs_resume;
 pub mod glob;
 pub(crate) mod pcre2_ranges;
 pub(crate) mod relevance;

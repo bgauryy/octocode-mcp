@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 pub use crate::contracts::tool_types::{
     LocalSearchQuery, LocalSearchQueryCaseMode, LocalSearchQueryMultiline, LocalSearchQueryRegex,
-    LocalSearchQueryResultView, LocalSearchQuerySort, LocalSearchQueryUnique,
+    LocalSearchQueryResultView, LocalSearchQuerySort, LocalSearchQueryUnique, MatchString,
 };
 
 /// The engine counts in `u32`; the wire contract owns the field set and its
@@ -43,6 +43,57 @@ impl LocalSearchQuery {
     /// (`a|b` finds that text; `regex:"rust"` runs it as a pattern).
     pub(crate) fn regex_mode(&self) -> LocalSearchQueryRegex {
         self.regex.unwrap_or(LocalSearchQueryRegex::Literal)
+    }
+
+    /// The text the search runs: the one `matchString`. A list is only ever
+    /// seen here after [`Self::normalized`] folded it into its alternation.
+    pub(crate) fn pattern(&self) -> &str {
+        match &self.match_string {
+            MatchString::String(one) => one.as_str(),
+            MatchString::Array(_) => unreachable!("a list matchString is normalized first"),
+        }
+    }
+
+    /// The query with a list `matchString` as the one regex query that finds
+    /// the same lines (`tools::match_list`): each entry literal text unless
+    /// `regex` names a dialect, each judged by `caseMode` on its own (smart:
+    /// an uppercase letter makes that entry sensitive). Everything after
+    /// this, leads and cursors included, sees an ordinary regex search that
+    /// runs as written. A single `matchString` is returned as is.
+    pub(crate) fn normalized(
+        &self,
+    ) -> Result<std::borrow::Cow<'_, Self>, crate::tools::result::ToolError> {
+        let MatchString::Array(list) = &self.match_string else {
+            return Ok(std::borrow::Cow::Borrowed(self));
+        };
+        let sensitive = |entry: &str| match self.case_mode {
+            LocalSearchQueryCaseMode::Smart => entry.chars().any(char::is_uppercase),
+            LocalSearchQueryCaseMode::Sensitive => true,
+            LocalSearchQueryCaseMode::Insensitive => false,
+        };
+        let dialect = match self.regex_mode() {
+            LocalSearchQueryRegex::Pcre2 => LocalSearchQueryRegex::Pcre2,
+            LocalSearchQueryRegex::Literal | LocalSearchQueryRegex::Rust => {
+                LocalSearchQueryRegex::Rust
+            }
+        };
+        let alternation = crate::tools::match_list::alternation(
+            list.iter().map(|entry| {
+                let text: &str = entry;
+                (text, sensitive(text))
+            }),
+            self.regex_mode() != LocalSearchQueryRegex::Literal,
+        );
+        let mut query = self.clone();
+        query.match_string = MatchString::String(alternation.parse().map_err(|_| {
+            crate::tools::result::ToolError::new(
+                "invalidInput",
+                "matchString: a list needs at least one entry.",
+            )
+        })?);
+        query.regex = Some(dialect);
+        query.case_mode = LocalSearchQueryCaseMode::Sensitive;
+        Ok(std::borrow::Cow::Owned(query))
     }
 
     /// The query with every value that means what the field's absence means

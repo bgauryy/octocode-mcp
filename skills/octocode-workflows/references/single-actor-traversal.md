@@ -28,6 +28,12 @@ flowchart TD
 
 ## Repair and completion
 
-The actor reports a proven boundary and focused evidence; the orchestrator decides authorized change sequencing and requeues affected callers, consumers, junctions, and scenarios after invalidation. Traversal is exhausted only when the BFS/DFS frontier is empty and every discovered surface is accounted for in the ledger. Full verification additionally requires source and live inventories to reconcile and every applicable row to be `verified` with its bounded scenario/configuration identity; `queued`, `failed`, `unverified`, or `stale` rows prevent that claim. “All checked” applies only to the declared inventory and scenarios, never a visited-file set or arbitrary sample.
+The actor reports a proven boundary and focused evidence; the orchestrator decides authorized change sequencing and requeues affected callers, consumers, junctions, and scenarios after invalidation. Stop condition and claims:
+
+| Claim | Holds only when |
+|---|---|
+| Traversal exhausted | The BFS/DFS frontier is empty and every discovered surface is accounted for in the ledger |
+| Full verification | Exhausted, source and live inventories reconcile, and every applicable row is `verified` with its bounded scenario/configuration identity; `queued`, `failed`, `unverified`, or `stale` rows prevent the claim |
+| “All checked” | It covers the declared inventory and scenarios, never a visited-file set or arbitrary sample |
 
 Next: apply [verification](verification.md) and return the domain result through the orchestrator.

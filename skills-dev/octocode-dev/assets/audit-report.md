@@ -13,7 +13,8 @@ Scope: <tools> · Mode: audit | audit+fix · Core rev: <sha> (dirty?) · Contrac
 ### <tool> — <lane> — <short title>
 - Status: confirmed | candidate · Severity: P1 | P2 | P3 · Owner: core | native | engine | cli | mcp | config | docs
 - Evidence: `<file:line>` · repro: `$OCTO <tool> '<json>'`
-- Expected vs observed: <one line each>
+- Given–When–Then: given <state>, when <call>, then expected <result> · observed <result>
+- Cause: <why, or unknown> · Affects: <CLI | MCP | both; what breaks, or unknown>
 - Fix: <applied change + files> | deferred — <reason>
 
 ## Cleanups applied

@@ -116,7 +116,7 @@ export async function liveConcurrency(options) {
     for (let wave = 1; wave <= waves; wave++) {
       const first = await Promise.all(workers.map(async (worker, index) => {
         const a = wave * 17 + index, b = wave * 11 + index;
-        const sent = await cli('send_message', { to: worker.session, body: `What is ${a} + ${b}? Reply with only the total.`, reasoning: 'Check persistent concurrent native messaging', key: `${nonce}-${wave}-${worker.vendor}-first`, replyRequired: true, wake: 'action' }, sender);
+        const sent = await cli('send_message', { to: worker.session, question: `What is ${a} + ${b}? Reply with only the total.`, reasoning: 'Check persistent concurrent native messaging', key: `${nonce}-${wave}-${worker.vendor}-first`, wake: 'action' }, sender);
         return { id: sent.id, recipient: worker.session, expected: String(a + b), sentAt: Date.now() };
       }));
       requests.push(...first);
@@ -125,7 +125,7 @@ export async function liveConcurrency(options) {
       const pendingDuringSecond = first.map(request => ({ id: request.id, recipient: request.recipient, stillPending: beforeSecond.deliveries.some(delivery => delivery.message === request.id && delivery.acknowledgedAt === null) }));
       const second = await Promise.all(workers.map(async (worker, index) => {
         const a = wave * 29 + index, b = wave * 13 + index;
-        const sent = await cli('send_message', { to: worker.session, body: `What is ${a} + ${b}? Reply with only the total.`, reasoning: 'Queue another cloud request while prior delivery is active', key: `${nonce}-${wave}-${worker.vendor}-second`, replyRequired: true, wake: 'action' }, sender);
+        const sent = await cli('send_message', { to: worker.session, question: `What is ${a} + ${b}? Reply with only the total.`, reasoning: 'Queue another cloud request while prior delivery is active', key: `${nonce}-${wave}-${worker.vendor}-second`, wake: 'action' }, sender);
         return { id: sent.id, recipient: worker.session, expected: String(a + b), sentAt: Date.now() };
       }));
       requests.push(...second);
@@ -144,7 +144,7 @@ export async function liveConcurrency(options) {
       process.stderr.write(`Concurrent wave ${wave}: ${verdict.passed ? 'pass' : 'FAIL'}\n`);
       if (wave === waves) continue;
       const turns = workers.map(worker => worker.events.filter(event => event.type === 'turn-completed').length);
-      const sentNotices = await Promise.all(workers.map(async worker => ({ id: (await cli('send_message', { to: worker.session, body: `Informational update: wave ${wave} finished.`, reasoning: 'Check quiet persistent delivery across heartbeat intervals', key: `${nonce}-${wave}-${worker.vendor}-passive`, replyRequired: false, wake: 'passive' }, sender)).id, recipient: worker.session })));
+      const sentNotices = await Promise.all(workers.map(async worker => ({ id: (await cli('send_message', { to: worker.session, body: `Informational update: wave ${wave} finished.`, reasoning: 'Check quiet persistent delivery across heartbeat intervals', key: `${nonce}-${wave}-${worker.vendor}-passive`, wake: 'passive' }, sender)).id, recipient: worker.session })));
       notices.push(...sentNotices);
       const idleStarted = Date.now();
       while (Date.now() - idleStarted < idleMs) {

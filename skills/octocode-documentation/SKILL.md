@@ -48,7 +48,7 @@ flowchart LR
 
 ## When verifying
 
-Done when: changed claims, paths, commands, links, and examples match their sources and style passes; report what stays unresolved.
+Definition of Done: changed claims, paths, commands, links, and examples match their sources and style passes; report what stays unresolved.
 
 ## Resources
 

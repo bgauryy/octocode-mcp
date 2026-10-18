@@ -30,7 +30,7 @@ Installers:
 
 ## Install
 
-- Readback: before any write, restate source, destinations, scope, authority, and done-when.
+- Check-back: before any write, restate source, destinations, scope, authority, and Definition of Done.
 - Normalize the source (`owner/repo/path`, GitHub tree or blob URL, local path); strip a trailing `SKILL.md`.
 - Resolve providers, per-provider scope (user, project, custom), project root, and mode from the request and session.
 - Read third-party scripts and hooks first (no separate approval).
@@ -51,16 +51,23 @@ Destinations (user under `<home>/`, project under `<repo>/`): claude `.claude/sk
 
 ## Fetch a remote skill
 
-1. Confirm intent: verbatim install or adapt.
-2. Normalize the source, resolve destinations, check conflicts ([Install](#install)).
-3. Inspect through `octocode-research`, then fetch: `npx -y octocode ghCloneRepo '{"queries":[{"owner":"OWNER","repo":"REPO","path":"PATH"}]}'` (`"ref":"<ref>"` for a branch or tag; no `path` for the whole repository); checkout at the result's `location.localPath`.
-4. Validate: `SKILL.md` with `name` and `description`.
-5. Safety-scan `SKILL.md`, scripts, and host hooks; flag risk before any write.
-6. Adapting: follow [SKILL.md](../SKILL.md); reuse only license-allowed patterns; cite the source.
-7. Write, verify with `test -f <dest>/SKILL.md`, and report per [output](../output.md#response).
+```mermaid
+flowchart TD
+  A[Confirm intent: verbatim install or adapt] --> B[Normalize source, resolve destinations, check conflicts as in Install]
+  B --> C[Inspect through octocode-research, then fetch]
+  C --> D{SKILL.md has name and description?}
+  D -- no --> X[Stop: invalid frontmatter, do not install]
+  D -- yes --> E[Safety-scan SKILL.md, scripts, host hooks; flag risk before any write]
+  E --> F{Intent}
+  F -- adapt --> G[Follow SKILL.md; reuse only license-allowed patterns; cite the source]
+  F -- verbatim --> H
+  G --> H[Write, verify with test -f dest/SKILL.md, report]
+```
+
+Fetch with `npx -y octocode ghCloneRepo '{"queries":[{"owner":"OWNER","repo":"REPO","path":"PATH"}]}'` (`"ref":"<ref>"` for a branch or tag; no `path` for the whole repository); checkout at the result's `location.localPath`. Report per [output](../output.md#response).
 
 - Never silently write or rename fetched scripts or hooks; surface missing or restrictive licenses.
-- Intent flips mid-flow: keep the cache, resume at step 5 or 6.
+- Intent flips mid-flow: keep the cache, resume at the safety scan or the adapt step.
 
 ## Sync a local skill to vendors
 
@@ -79,8 +86,10 @@ node scripts/skill-sync.mjs --list-vendors
 
 ## Recovery
 
-- Discovery, fetch, or source access fails: check path and access, try another surface or a source the request covers; report the gap.
-- Missing parent directory: create it if the request covers that destination.
-- Permission denied: report the path; offer another scope.
-- Partial failure: keep successes, report per destination, roll back only when asked.
-- Invalid frontmatter: do not install.
+| Failure | Action |
+|---|---|
+| Discovery, fetch, or source access fails | Check path and access, try another surface or a source the request covers; report the gap |
+| Missing parent directory | Create it if the request covers that destination |
+| Permission denied | Report the path; offer another scope |
+| Partial failure | Keep successes, report per destination, roll back only when asked |
+| Invalid frontmatter | Do not install |

@@ -24,6 +24,7 @@ pub(crate) mod local_fetch;
 pub(crate) mod local_search;
 pub(crate) mod lsp_search;
 pub(crate) mod match_keys;
+pub(crate) mod match_list;
 #[cfg(test)]
 mod module_boundaries;
 pub(crate) mod num;

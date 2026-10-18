@@ -71,14 +71,14 @@ try {
   call(workspace, database, 'unlock', { leaseId: handoff.lease.id }, b);
   result.checks.push('workspace discovery and conflicting lease handoff');
 
-  const request = { to: b, body: 'Confirm this work handoff', reasoning: 'Verify durable delivery across CLI and MCP', key: 'release-question', replyRequired: true, wake: 'action' };
+  const request = { to: b, question: 'Confirm this work handoff', reasoning: 'Verify durable delivery across CLI and MCP', key: 'release-question', wake: 'action' };
   const sent = call(workspace, database, 'send_message', request, a);
   assert.deepEqual(call(workspace, database, 'send_message', request, a), sent);
   const frames = [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'release-smoke', version: '1' } } },
     { jsonrpc: '2.0', method: 'notifications/initialized' },
     { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
-    { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'complete', arguments: { message: sent.id, reply: 'Handoff confirmed', reasoning: 'Complete the requested check' } } },
+    { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'complete', arguments: { message: sent.id, outcome:'done',reply:{conclusion:'Handoff confirmed'}, reasoning: 'Complete the requested check' } } },
   ];
   const responses = runRuntime(binary, ['mcp', '--tools', 'peers,send_message,complete', '--workspace', workspace, '--database', database, '--session', b], { input: frames.map(frame => JSON.stringify(frame)).join('\n') + '\n' }).trim().split('\n').map(line => JSON.parse(line));
   assert.equal(responses.length, 3);

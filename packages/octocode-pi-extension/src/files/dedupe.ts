@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { OCTOCODE_TOOL_PREFIX } from '../shared/octocode-tools.js';
 import { isRecord } from '../shared/util.js';
-import { clearedResults, contextMessages, plainText, toolCallArguments } from './reads.js';
+import { contextMessages, plainText, sessionCleared, toolCallArguments } from './reads.js';
 
 /**
  * Repeated reads: when a read returns exactly the text an earlier call with the same arguments returned, and that earlier
@@ -34,7 +34,7 @@ export function registerReadDedupe(pi: ExtensionAPI): void {
     if (text === undefined) return undefined;
     const messages = contextMessages(ctx);
     const calls = toolCallArguments(messages);
-    const cleared = clearedResults(ctx.sessionManager.getBranch());
+    const cleared = sessionCleared(ctx.sessionManager);
     for (const { message } of messages) {
       if (!isRecord(message) || message['role'] !== 'toolResult' || message['isError'] === true || message['toolName'] !== event.toolName) continue;
       const id = String(message['toolCallId']);

@@ -1,14 +1,11 @@
 //! The one directory-prune policy every local walk uses.
 //!
-//! Two modes share one set of names:
-//!
-//! * [`PruneMode::SyntaxVisible`] — structure and AST walks (`structureSearch`,
-//!   `astSearch`, `astRewrite`). Prunes dependency/build output, caches, VCS
-//!   metadata, and credential stores; keeps tool-config directories such as
-//!   `.github` or `.config`, whose workflows and scripts are real syntax.
-//! * [`PruneMode::SearchSafe`] — text search (`localSearch`). Everything
-//!   `SyntaxVisible` prunes plus the tool-config directories, where a text hit
-//!   is noise or leaks editor/CI state.
+//! Structure, text and AST walks (`structureSearch`, `localSearch`,
+//! `astSearch`, `astRewrite`) prune the same names: dependency/build output,
+//! caches, VCS metadata, and credential stores. Tool-config directories such
+//! as `.github` or `.config` are not on the list: their workflows and scripts
+//! are real text and syntax, and they are dot directories, so the walk
+//! reaches them only with `includeHidden`, in every tool alike.
 //!
 //! A caller `exclude` glob skips more paths; it never replaces the defaults.
 //! The engine walkers carry no default list of their own: they prune exactly
@@ -57,37 +54,18 @@ const CREDENTIAL_DIRECTORY_NAMES: &[&str] = &[
     ".password-store",
 ];
 
-/// Editor, CI, and package-manager configuration: pruned from text search only.
-const TOOL_CONFIG_DIRECTORY_NAMES: &[&str] = &[
-    ".github",
-    ".vscode",
-    ".devcontainer",
-    ".config",
-    ".cargo",
-    ".yarn",
-    ".idea",
-    ".vs",
-    ".history",
-];
-
 /// Which walk a prune list is for. See the module docs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PruneMode {
-    SearchSafe,
     SyntaxVisible,
 }
 
 impl PruneMode {
     /// The default directory names this mode prunes at any depth.
     pub fn defaults(self) -> impl Iterator<Item = &'static str> {
-        let tool_config: &[&str] = match self {
-            Self::SearchSafe => TOOL_CONFIG_DIRECTORY_NAMES,
-            Self::SyntaxVisible => &[],
-        };
         GENERATED_DIRECTORY_NAMES
             .iter()
             .chain(CREDENTIAL_DIRECTORY_NAMES)
-            .chain(tool_config)
             .copied()
     }
 
@@ -176,23 +154,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn search_safe_extends_syntax_visible_with_tool_config_only() {
-        let syntax = PruneMode::SyntaxVisible.defaults().collect::<Vec<_>>();
-        let search = PruneMode::SearchSafe.defaults().collect::<Vec<_>>();
-        assert!(syntax.iter().all(|name| search.contains(name)));
-        let search_only = search
-            .iter()
-            .filter(|name| !syntax.contains(name))
-            .copied()
-            .collect::<Vec<_>>();
-        assert_eq!(search_only, TOOL_CONFIG_DIRECTORY_NAMES);
+    fn the_prune_list_keeps_tool_config_and_source_like_names_walkable() {
+        let names = PruneMode::SyntaxVisible.defaults().collect::<Vec<_>>();
         for name in [".git", ".ssh", "node_modules", "target"] {
-            assert!(syntax.contains(&name), "{name}");
+            assert!(names.contains(&name), "{name}");
+        }
+        // Tool config is real text and syntax: `includeHidden` alone reaches it.
+        for name in [".github", ".vscode", ".config", ".cargo", ".yarn", ".idea"] {
+            assert!(
+                !names.contains(&name),
+                "{name} is walked with includeHidden"
+            );
         }
         for name in [
             "vendor", "output", "cache", "release", "tmp", "secrets", "private",
         ] {
-            assert!(!search.contains(&name), "{name} is routinely real source");
+            assert!(!names.contains(&name), "{name} is routinely real source");
         }
     }
 
@@ -204,24 +181,24 @@ mod tests {
             "*.ts".to_owned(),
             ".ssh/*".to_owned(),
         ];
-        let names = PruneMode::SearchSafe.directories_with_includes(true, &include);
+        let names = PruneMode::SyntaxVisible.directories_with_includes(true, &include);
         assert!(!names.iter().any(|name| name == "build"), "{names:?}");
         assert!(names.iter().any(|name| name == "dist"), "{names:?}");
         assert!(names.iter().any(|name| name == ".ssh"), "{names:?}");
         // A bare word reaches the include as `*word*` and `**/*word*/**`.
         let bare = crate::policy::include::include_globs(&["dist".to_owned()]);
-        let names = PruneMode::SearchSafe.directories_with_includes(true, &bare);
+        let names = PruneMode::SyntaxVisible.directories_with_includes(true, &bare);
         assert!(!names.iter().any(|name| name == "dist"), "{names:?}");
         assert!(names.iter().any(|name| name == "build"), "{names:?}");
         assert_eq!(
-            PruneMode::SearchSafe.directories_with_includes(true, &[]),
-            PruneMode::SearchSafe.directories(true)
+            PruneMode::SyntaxVisible.directories_with_includes(true, &[]),
+            PruneMode::SyntaxVisible.directories(true)
         );
     }
 
     #[test]
     fn default_excludes_false_prunes_nothing() {
-        assert!(PruneMode::SearchSafe.directories(false).is_empty());
+        assert!(PruneMode::SyntaxVisible.directories(false).is_empty());
         assert_eq!(
             PruneMode::SyntaxVisible.directories(true).len(),
             PruneMode::SyntaxVisible.defaults().count()

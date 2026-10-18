@@ -15,11 +15,11 @@ function fixture(t) {
   const other = cli('join', { name: 'other', vendor: 'raw' }).id;
   const send = (input, session = receiver) => cli('send_message', input, session);
   const complete = (input, session = receiver) => cli('complete', input, session);
-  const request = cli('send_message', { to: receiver, body: 'Review the change', reasoning: 'Need review before release', key: 'request', replyRequired: true }, sender);
+  const request = cli('send_message', { to: receiver, question: 'Review the change', reasoning: 'Need review before release', key: 'request' }, sender);
   const db = new DatabaseSync(database);
   t.after(() => db.close());
   const stamp = () => db.prepare('SELECT acknowledgedAt FROM deliveries WHERE message=? AND recipient=?').get(request.id, receiver).acknowledgedAt;
-  const reply = { message: request.id, reply: 'Reviewed; checks pass', reasoning: 'Return completed review' };
+  const reply = { message: request.id, outcome:'done',reply:{conclusion:'Reviewed; checks pass'}, reasoning: 'Return completed review' };
   return { cli, send, complete, db, sender, receiver, other, request, reply, stamp, workspace, database };
 }
 
@@ -29,7 +29,7 @@ test('complete reply commits final response and handling atomically; identical r
   const at=f.stamp();assert.equal(typeof at,'number');
   assert.deepEqual(f.complete(f.reply),sent);assert.equal(f.stamp(),at);
   assert.deepEqual(f.complete({message:f.request.id}),{completed:true,count:1});
-  assert.throws(()=>f.complete({...f.reply,reply:'Different result'}),/Final reply already stored with different content; use send_message for new work/);
+  assert.throws(()=>f.complete({...f.reply,outcome:'done',reply:{conclusion:'Different result'}}),/Final reply already stored with different content; use send_message for new work/);
   assert.throws(()=>f.complete({...f.reply,reasoning:'Different reason'}));
   assert.equal(f.db.prepare('SELECT count(*) n FROM messages WHERE sender=?').get(f.receiver).n,1);
   assert.equal(f.db.prepare("SELECT count(*) n FROM records WHERE type='delivery.acknowledged'").get().n,1);
@@ -39,19 +39,21 @@ test('complete reply commits final response and handling atomically; identical r
   assert.equal(f.db.prepare('SELECT acknowledgedAt FROM deliveries WHERE message=?').get(sent.id).acknowledgedAt,null,'Recipient still must handle the reply');
 });
 
-test('complete outcome is stored in reasoning with the reply unchanged, idempotent, and only valid with message and reply', t => {
+test('complete stores a BLUF answer with its outcome in reasoning, idempotent, and only valid with message, outcome and reply', t => {
   const f = fixture(t), body = id => f.db.prepare('SELECT body FROM messages WHERE id=?').get(id).body, why = id => f.db.prepare('SELECT reasoning FROM messages WHERE id=?').get(id).reasoning;
   for (const input of [
     { ...f.reply, outcome: 'needs-input' }, { ...f.reply, outcome: 'Done' }, { ...f.reply, outcome: 1 },
   ]) assert.throws(() => f.complete(input), /not an allowed value|invalid type/, JSON.stringify(input));
-  assert.throws(() => f.complete({ message: f.request.id, outcome: 'done' }), /outcome needs one message and its reply/);
-  assert.throws(() => f.complete({ messages: [f.request.id], outcome: 'done' }), /outcome needs one message and its reply/);
-  assert.throws(() => f.complete({ messages: [f.request.id], outcome: 'done', reply: 'Batch' }), /outcome needs one message and its reply/);
-  assert.throws(() => f.complete({ ...f.reply, outcome: 'done', reply: '  ' }), /Invalid reply: blank/);
+  assert.throws(() => f.complete({ message: f.request.id, outcome: 'done' }), /needs one message, its outcome and reply/);
+  assert.throws(() => f.complete({ messages: [f.request.id], outcome: 'done' }), /needs one message, its outcome and reply/);
+  assert.throws(() => f.complete({ messages: [f.request.id], outcome: 'done', reply:{conclusion:'Batch'} }), /needs one message, its outcome and reply/);
+  assert.throws(() => f.complete({ message: f.request.id, reply:{conclusion:'No outcome'} }), /needs one message, its outcome and reply/);
+  assert.throws(() => f.complete({ ...f.reply, outcome: 'done', reply:{conclusion:'  '} }), /Invalid reply\.conclusion: blank/);
+  assert.throws(() => f.complete({ ...f.reply, reply:{conclusion:'Fine',evidence:[{claim:'checked',source:'document:missing.md'}]} }), /cites unknown document missing\.md/);
   assert.equal(f.stamp(), null);
   const input = { ...f.reply, outcome: 'partial' }, sent = f.complete(input);
   assert.deepEqual(sent, { completed: true, count: 1, id: sent.id, recipients: 1 });
-  assert.equal(body(sent.id), 'Reviewed; checks pass', 'the reply body stays the exact answer');
+  assert.equal(body(sent.id), 'BLUF\nOutcome: partial\nConclusion: Reviewed; checks pass', 'the body is the rendered BLUF answer');
   assert.equal(why(sent.id), 'Outcome: partial; Return completed review');
   assert.deepEqual(f.complete(input), sent, 'identical retry returns the stored result');
   assert.throws(() => f.complete({ ...input, outcome: 'done' }), /Final reply already stored with different content/);
@@ -59,30 +61,31 @@ test('complete outcome is stored in reasoning with the reply unchanged, idempote
   assert.equal(f.db.prepare('SELECT count(*) n FROM messages WHERE sender=?').get(f.receiver).n, 1);
   const why2 = fixture(t), withWhy = why2.complete({ ...why2.reply, outcome: 'done', reasoning: 'Checks ran' });
   assert.equal(why2.db.prepare('SELECT reasoning FROM messages WHERE id=?').get(withWhy.id).reasoning, 'Outcome: done; Checks ran');
-  const plain = fixture(t), unchanged = plain.complete(plain.reply);
-  assert.equal(plain.db.prepare('SELECT body FROM messages WHERE id=?').get(unchanged.id).body, 'Reviewed; checks pass', 'reply without outcome is stored unchanged');
+  const full = fixture(t), rich = full.complete({ message: full.request.id, outcome: 'done', reply: { conclusion: 'Ship it', confidence: 'medium', assumptions: ['CI is green'], unknowns: ['Windows'], next: 'Tag the release' } });
+  assert.equal(full.db.prepare('SELECT body FROM messages WHERE id=?').get(rich.id).body, 'BLUF\nOutcome: done\nConclusion: Ship it\nConfidence: medium\nAssumptions:\n- CI is green\nUnknowns:\n- Windows\nNext: Tag the release');
+  assert.equal(full.db.prepare('SELECT kind FROM messages WHERE id=?').get(rich.id).kind, 'answer');
 });
 
-test('progress FYI leaves request pending; completion uses default purpose and no follow-up reply after silent completion', t => {
+test('progress FYI leaves request pending; completion reasoning is its outcome and no follow-up reply after silent completion', t => {
   const f=fixture(t);
-  f.send({to:f.sender,replyRequired:false,body:'Review ongoing',reasoning:'Progress update'});
+  f.send({to:f.sender,body:'Review ongoing',reasoning:'Progress update'});
   assert.equal(f.stamp(),null);
-  const sent=f.complete({message:f.request.id,reply:'Done'});
-  assert.equal(f.db.prepare('SELECT reasoning FROM messages WHERE id=?').get(sent.id).reasoning,'Complete received message');
-  assert.deepEqual(f.complete({message:f.request.id,reply:'Done'}),sent);
-  const second=f.cli('send_message',{to:f.receiver,body:'FYI',replyRequired:false,reasoning:'Context'},f.sender);
+  const sent=f.complete({message:f.request.id,outcome:'done',reply:{conclusion:'Done'}});
+  assert.equal(f.db.prepare('SELECT reasoning FROM messages WHERE id=?').get(sent.id).reasoning,'Outcome: done');
+  assert.deepEqual(f.complete({message:f.request.id,outcome:'done',reply:{conclusion:'Done'}}),sent);
+  const second=f.cli('send_message',{to:f.receiver,body:'FYI',reasoning:'Context'},f.sender);
   assert.deepEqual(f.complete({message:second.id}),{completed:true,count:1});
   assert.deepEqual(f.complete({message:second.id}),{completed:true,count:1});
-  assert.throws(()=>f.complete({message:second.id,reply:'Unrequested extra final response'}));
+  assert.throws(()=>f.complete({message:second.id,outcome:'done',reply:{conclusion:'Unrequested extra final response'}}));
 });
 
 test('complete rejects missing/foreign identities, old API and unsupported routing or reply knobs', t => {
   const f=fixture(t);
   for(const input of [
-    {}, {message:999999}, {message:f.request.id,reply:''}, {message:f.request.id,reasoning:'No reply'},
+    {}, {message:999999}, {message:f.request.id,outcome:'done',reply:{conclusion:''}}, {message:f.request.id,reasoning:'No reply'},
     {...f.reply,to:f.other}, {...f.reply,replyTo:f.request.id}, {...f.reply,body:'old'},
     {...f.reply,key:'caller-key'}, {...f.reply,wake:'passive'}, {...f.reply,ttlMs:1000},
-    {...f.reply,ackReply:true}, {...f.reply,session:f.other}, {messages:[f.request.id],reply:'Invalid batch reply'},
+    {...f.reply,ackReply:true}, {...f.reply,session:f.other}, {messages:[f.request.id],outcome:'done',reply:{conclusion:'Invalid batch reply'}},
     {messages:[f.request.id],reasoning:'Invalid batch reason'}, {message:f.request.id,messages:[f.request.id]},
   ]) assert.throws(()=>f.complete(input),JSON.stringify(input));
   assert.throws(()=>f.complete(f.reply,f.sender));
@@ -139,20 +142,21 @@ test('bound MCP exposes complete and rejects old tool/ackReply while completing 
   const rows=execFileSync(binary,['mcp','--tools','send_message,complete','--workspace',f.workspace,'--database',f.database,'--session',f.receiver],{input:frames,encoding:'utf8',timeout:10000}).trim().split('\n').map(JSON.parse);
   assert.deepEqual(rows[0].result.tools.map(x=>x.name),['send_message','complete']);
   assert.equal(rows[0].result.tools[0].inputSchema.properties.ackReply,undefined);
-  assert.equal(rows[0].result.tools[0].inputSchema.properties.replyRequired.type,'boolean');
+  assert.equal(rows[0].result.tools[0].inputSchema.properties.replyRequired,undefined,'the message kind decides whether an answer is owed');
+  assert.equal(rows[0].result.tools[0].inputSchema.properties.question.type,'string');
   for(const row of rows.slice(1,3))assert.ok(row.error||row.result?.isError);
   assert.equal(JSON.parse(rows[3].result.content[0].text).completed,true);assert.equal(typeof f.stamp(),'number');
 });
 
 test('required answers cannot be omitted individually or through a mixed completion batch',t=>{
   const f=fixture(t);
-  const notice=f.cli('send_message',{to:f.receiver,body:'FYI',reasoning:'Context only',replyRequired:false},f.sender);
+  const notice=f.cli('send_message',{to:f.receiver,body:'FYI',reasoning:'Context only'},f.sender);
   assert.throws(()=>f.complete({message:f.request.id}));
   assert.throws(()=>f.complete({messages:[notice.id,f.request.id]}));
   assert.equal(f.stamp(),null);
   assert.equal(f.db.prepare('SELECT acknowledgedAt FROM deliveries WHERE message=?').get(notice.id).acknowledgedAt,null);
   assert.equal(f.db.prepare("SELECT count(*) n FROM records WHERE type='delivery.acknowledged'").get().n,0);
-  f.send({to:f.sender,replyRequired:false,body:'Still reviewing',reasoning:'Partial work'});
+  f.send({to:f.sender,body:'Still reviewing',reasoning:'Partial work'});
   assert.throws(()=>f.complete({message:f.request.id}),'Partial reply is not a final answer');
   f.complete(f.reply);
   assert.deepEqual(f.complete({messages:[notice.id,f.request.id]}),{completed:true,count:2});
@@ -161,29 +165,29 @@ test('required answers cannot be omitted individually or through a mixed complet
 test('answers and notices cannot start reply loops; new work requires a new root request',t=>{
   const f=fixture(t),answer=f.complete(f.reply);
   assert.throws(()=>f.cli('send_message',{replyTo:answer.id,body:'Thanks; more details?',reasoning:'Reply loop'},f.sender));
-  assert.throws(()=>f.cli('complete',{message:answer.id,reply:'Thanks'},f.sender));
+  assert.throws(()=>f.cli('complete',{message:answer.id,outcome:'done',reply:{conclusion:'Thanks'}},f.sender));
   assert.deepEqual(f.cli('complete',{message:answer.id},f.sender),{completed:true,count:1});
-  const notice=f.cli('send_message',{to:f.receiver,body:'Notice',reasoning:'FYI',replyRequired:false},f.sender);
+  const notice=f.cli('send_message',{to:f.receiver,body:'Notice',reasoning:'FYI'},f.sender);
   assert.throws(()=>f.send({replyTo:notice.id,body:'Unasked answer',reasoning:'Loop'}));
-  assert.throws(()=>f.complete({message:notice.id,reply:'Unasked answer'}));
+  assert.throws(()=>f.complete({message:notice.id,outcome:'done',reply:{conclusion:'Unasked answer'}}));
   assert.deepEqual(f.complete({message:notice.id}),{completed:true,count:1});
-  const next=f.cli('send_message',{to:f.receiver,body:'Please investigate a new issue',reasoning:'New work',replyRequired:true},f.sender);
-  assert.equal(f.complete({message:next.id,reply:'Investigated'}).completed,true);
+  const next=f.cli('send_message',{to:f.receiver,question:'Please investigate a new issue',reasoning:'New work'},f.sender);
+  assert.equal(f.complete({message:next.id,outcome:'done',reply:{conclusion:'Investigated'}}).completed,true);
 });
 
 test('reply policy is immutable across keyed retries and replies cannot demand another answer',t=>{
-  const f=fixture(t),input={to:f.receiver,body:'Required review',reasoning:'Need evidence',key:'policy',replyRequired:true};
+  const f=fixture(t),input={to:f.receiver,question:'Required review',reasoning:'Need evidence',key:'policy'};
   const first=f.cli('send_message',input,f.sender);
   assert.equal(f.cli('send_message',{...input},f.sender).id,first.id);
-  assert.throws(()=>f.cli('send_message',{...input,replyRequired:false},f.sender));
-  const {replyRequired:_omitted,...unmarked}=input;
-  assert.throws(()=>f.cli('send_message',unmarked,f.sender),/Message key reused with different content/,'an omitted flag means FYI, not the request already stored');
-  const notice={...input,body:'FYI',key:'notice',replyRequired:false};
+  const {question,...rest}=input;
+  assert.throws(()=>f.cli('send_message',{...rest,body:question},f.sender),/Message key reused with different content/,'the same key as an FYI is not the request already stored');
+  const notice={...rest,body:'FYI',key:'notice'};
   assert.equal(f.cli('send_message',notice,f.sender).id,f.cli('send_message',notice,f.sender).id);
-  assert.throws(()=>f.cli('send_message',{...notice,replyRequired:true},f.sender));
-  assert.throws(()=>f.send({replyTo:first.id,body:'Partial',reasoning:'Progress',replyRequired:true}));
-  for(const value of ['true',0,null])assert.throws(()=>f.cli('send_message',{...input,key:`invalid-${value}`,replyRequired:value},f.sender));
-  const partial=f.send({to:f.sender,body:'Partial',reasoning:'Progress',replyRequired:false});
+  const {body:_fyi,...unbodied}=notice;
+  assert.throws(()=>f.cli('send_message',{...unbodied,question:'FYI'},f.sender),/Message key reused with different content/);
+  assert.throws(()=>f.send({replyTo:first.id,question:'Partial',reasoning:'Progress'}));
+  for(const value of [true,false,'true',0,null])assert.throws(()=>f.cli('send_message',{...input,key:`invalid-${value}`,replyRequired:value},f.sender),/additional properties/);
+  const partial=f.send({to:f.sender,body:'Partial',reasoning:'Progress'});
   assert.equal(f.cli('inbox',{message:partial.id},f.sender).items[0].replyRequired,false);
 });
 
@@ -192,7 +196,7 @@ test('reply policy is explicit boolean in inbox, hooks and entity reads; only an
   f.cli('subscribe',{topics:['facts']},f.receiver);
   const topic=f.cli('send_message',{topic:'facts',body:'Topic fact',reasoning:'Inform subscribers'},f.sender);
   const broadcast=f.cli('notify_all',{body:'Announcement',reasoning:'Inform peers'},f.sender);
-  const notice=f.cli('send_message',{to:f.receiver,body:'Direct FYI',reasoning:'Context',replyRequired:false},f.sender);
+  const notice=f.cli('send_message',{to:f.receiver,body:'Direct FYI',reasoning:'Context'},f.sender);
   const expected=new Map([[f.request.id,true],[topic.id,false],[broadcast.id,false],[notice.id,false]]);
   const inbox=f.cli('inbox',{},f.receiver).items;
   for(const item of inbox){assert.equal(typeof item.replyRequired,'boolean');assert.equal(item.replyRequired,expected.get(item.id));}
@@ -208,14 +212,14 @@ test('reply policy is explicit boolean in inbox, hooks and entity reads; only an
 
 test('SQL cannot bypass required answers, reply policy or immutable sender intent',t=>{
   const f=fixture(t);
-  const partial=f.send({to:f.sender,replyRequired:false,body:'Still reviewing',reasoning:'Partial progress'});
+  const partial=f.send({to:f.sender,body:'Still reviewing',reasoning:'Partial progress'});
   const before=f.db.prepare('SELECT count(*) n FROM records').get().n;
   assert.throws(()=>f.db.prepare('UPDATE deliveries SET acknowledgedAt=? WHERE message=? AND recipient=?').run(Date.now(),f.request.id,f.receiver));
   assert.equal(f.stamp(),null);assert.equal(f.db.prepare('SELECT count(*) n FROM records').get().n,before);
-  const notice=f.cli('send_message',{to:f.receiver,body:'FYI only',reasoning:'Inform',replyRequired:false},f.sender);
+  const notice=f.cli('send_message',{to:f.receiver,body:'FYI only',reasoning:'Inform'},f.sender);
   const count=f.db.prepare('SELECT count(*) n FROM messages').get().n;
   const audits=f.db.prepare('SELECT count(*) n FROM records').get().n;
-  const insert=f.db.prepare('INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,replyTo,replyRequired) VALUES(?,?,?,?,?,?,?,?)');
+  const insert=f.db.prepare("INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,replyTo,replyRequired,kind) VALUES(?,?,?,?,?,?,?,?,'answer')");
   assert.throws(()=>insert.run(f.receiver,f.sender,'Reply to FYI','sql-notice',Date.now()+60000,'Bypass',notice.id,0));
   assert.throws(()=>insert.run(f.receiver,f.sender,'Reply requesting reply','sql-loop',Date.now()+60000,'Bypass',f.request.id,1));
   assert.throws(()=>f.db.prepare('UPDATE messages SET replyRequired=0 WHERE id=?').run(f.request.id));

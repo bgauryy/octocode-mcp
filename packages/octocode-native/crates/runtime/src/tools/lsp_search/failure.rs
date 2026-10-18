@@ -30,6 +30,11 @@ const TIMEOUT_TIP: &str = "Retry once (the server keeps indexing between calls);
 const RETRY_OR_FALL_BACK: &str =
     "Retry once; if it persists, re-anchor from localFetch source or use astSearch/localSearch.";
 
+/// The fix for a C-family file clangd cannot build an AST for: tell clangd
+/// how this file is compiled. Retrying without that repeats the failure; with
+/// it, the next call restarts the stale server by itself.
+const INVALID_AST_HINT: &str = "Give clangd a compile command (compile_commands.json, compile_flags.txt or .clangd); the next call reloads it.";
+
 impl LspFailure {
     pub(super) fn invalid_query(message: impl Into<String>) -> Self {
         Self {
@@ -143,6 +148,9 @@ impl LspFailure {
                     hint: RETRY_OR_FALL_BACK,
                     lexical_fallback: false,
                 },
+                ErrorCode::UnknownErrorCode if rpc.is_invalid_ast() => {
+                    Self::project_not_configured(message)
+                }
                 ErrorCode::InvalidParams | ErrorCode::InvalidRequest | ErrorCode::ParseError => {
                     Self {
                         code: "requestFailed",
@@ -169,6 +177,19 @@ impl LspFailure {
             value["next"]["findReferences"] = continuation(references);
         }
         value
+    }
+
+    /// clangd holds no AST for the file: its compile command is missing or
+    /// cannot be turned into a compiler invocation. Asking again repeats the answer; only
+    /// project setup changes it, and the next call picks that up.
+    fn project_not_configured(message: String) -> Self {
+        Self {
+            code: "missingConfiguration",
+            message,
+            retryable: false,
+            hint: INVALID_AST_HINT,
+            lexical_fallback: false,
+        }
     }
 
     fn request_failed(message: String) -> Self {
@@ -426,6 +447,62 @@ pub(super) fn mark_diagnostics_unpublished(row: &mut Value, query: &LspSearchQue
             .collect::<Vec<_>>()
     );
     partial_with_retry(row, query, "diagnosticsNotPublished", &[]);
+}
+
+/// Partial reason of an empty answer on a line where the server reports an
+/// error: its analysis of that line may have dropped what was asked about
+/// (clang without the CUDA SDK drops every `kernel<<<…>>>(…)` launch).
+pub(super) const ANCHOR_LINE_ERROR: &str = "anchorLineError";
+
+/// Mark an empty row partial when an error-severity diagnostic (published
+/// shape, see `ops::diagnostic_items`) covers its one-based anchor `line`:
+/// the warning names the first such error and counts the rest, and
+/// `next.diagnostics` lists them all. Any other row is left as is.
+pub(super) fn mark_anchor_line_errors(row: &mut Value, diagnostics: &Value, line: u32) {
+    if row.get("kind").and_then(Value::as_str) != Some("empty") {
+        return;
+    }
+    let line = u64::from(line);
+    let errors = super::render::as_array(diagnostics)
+        .into_iter()
+        .filter(|item| item.get("severity").and_then(Value::as_str) == Some("error"))
+        .filter(|item| {
+            let start = item
+                .pointer("/displayRange/startLine")
+                .and_then(Value::as_u64);
+            let end = item
+                .pointer("/displayRange/endLine")
+                .and_then(Value::as_u64);
+            matches!((start, end), (Some(start), Some(end)) if start <= line && line <= end)
+        })
+        .collect::<Vec<_>>();
+    let Some(first) = errors.first() else {
+        return;
+    };
+    // A diagnostic's first line is its claim; later lines are notes and
+    // stay in the full list behind `next.diagnostics`.
+    let message = first
+        .get("message")
+        .and_then(Value::as_str)
+        .and_then(|message| message.lines().next())
+        .unwrap_or_default();
+    let source = first
+        .get("source")
+        .and_then(Value::as_str)
+        .map(|source| format!(" ({source})"))
+        .unwrap_or_default();
+    let more = match errors.len() - 1 {
+        0 => String::new(),
+        1 => ", plus 1 more error".to_owned(),
+        n => format!(", plus {n} more errors"),
+    };
+    let warning = format!(
+        "The language server reports an error on line {line}: {message}{source}{more}. Its analysis of this line is incomplete, so empty is not absence."
+    );
+    crate::tools::paging::mark_partial(row, ANCHOR_LINE_ERROR, &[warning]);
+    if let Some(path) = row.get("path").and_then(Value::as_str) {
+        row["next"]["diagnostics"] = continuation(json!({"operation": "diagnostic", "path": path}));
+    }
 }
 
 /// Flag a row as incomplete with a machine-readable reason, human warnings,
@@ -949,7 +1026,7 @@ fn near_names(path: &str, source: &str, name: &str, hint: Option<u32>) -> Vec<(S
 /// that spells the name is in the answer (`textOnlyFiles == 0`), such a
 /// reason is moot and is not flagged. Cfg-gated code can hide sites inside
 /// listed files, so file agreement never clears it.
-pub(super) const FILE_LEVEL_REASONS: [&str; 8] = [
+pub(super) const FILE_LEVEL_REASONS: [&str; 9] = [
     "inferredProject",
     "importerScanCapped",
     "importerScanFailed",
@@ -957,6 +1034,7 @@ pub(super) const FILE_LEVEL_REASONS: [&str; 8] = [
     "noCompileDatabase",
     super::server_coverage::BUILD_SCRIPTS_REASON,
     super::server_coverage::OUTSIDE_INCLUDE_REASON,
+    super::server_coverage::SHARED_MODULE_REASON,
     super::server_coverage::DYNAMIC_REASON,
 ];
 /// File-level reasons that are fixed per-request caps (a terminal limit).

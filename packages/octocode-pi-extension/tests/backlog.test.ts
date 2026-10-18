@@ -481,7 +481,7 @@ describe('/octocode backlog', () => {
     expect(sent.message).toContain('The form hangs.');
     expect(sent.message).toContain('from: B1');
     expect(sent.message).toContain('Mark it done only after verifying its goal');
-    expect(sent.message).toContain('If blocked, record the blocker instead.');
+    expect(sent.message).toContain('If blocked, record the blocker as SBAR instead.');
     expect(sent.message).toContain('Follow existing permissions');
     expect(storeFor(fs.realpathSync(t.cwd)).get('B1')).toMatchObject({ state: 'ongoing', assignee: 'session-test' });
     await t.command.handler('do B1', fakeCtx({ cwd: t.cwd, hasUI: false, idle: false }));

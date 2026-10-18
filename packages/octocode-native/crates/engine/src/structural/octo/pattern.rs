@@ -9,10 +9,11 @@ use super::matching::{
     CandidatePlan, CaptureEnv, ExecutionError, Found, children, named_children, node_text,
     parse_tree, parse_tree_with_deadline, raw_range, visit_named,
 };
+use super::recovery::Recovery;
 use crate::structural::kinds::named_kind_id;
-use crate::structural::language::{AgLanguage, Expando};
+use crate::structural::language::{AgLanguage, Expando, WRAP_MARKER};
 use crate::structural::metavars::{
-    MetaVar, ambiguous_function_body_capture, key_value_pair_capture, meta_from_node,
+    MetaVar, ambiguous_function_body_captures, key_value_pair_capture, meta_from_node,
     minimum_candidate_nodes, tag_name_capture,
 };
 use crate::text::utf8_offsets::LineIndex;
@@ -48,6 +49,84 @@ pub(super) struct CompiledPattern {
     tree: Option<Tree>,
     special: Option<SpecialPattern>,
     candidate_plan: CandidatePlan,
+    context: Option<PatternContext>,
+}
+
+/// The parse context a pattern compiled in, in ast-grep's contextual pattern
+/// form: the pattern text as parsed (terminator, synthetic wrapper,
+/// disambiguating `;`) with `$` metavariables intact, and the kind of the
+/// node it names. `None` when the pattern parsed as written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatternContext {
+    pub context: String,
+    pub selector: String,
+}
+
+/// A pattern's parse text in both spellings: `source`, with metavariables
+/// substituted for the grammar, and `raw`, with their `$` sigils. The
+/// substitution maps one character to one, so the same edit at the same
+/// character index keeps them aligned.
+#[derive(Clone)]
+struct PatternText {
+    source: String,
+    raw: String,
+}
+
+impl PatternText {
+    fn new(lang: &AgLanguage, pattern: &str) -> Self {
+        Self {
+            source: lang.preprocess_pattern(pattern).into_owned(),
+            raw: lang.wrap_class(pattern).into_owned(),
+        }
+    }
+
+    fn plain(lang: &AgLanguage, pattern: &str) -> Self {
+        Self {
+            source: lang.preprocess_rewrite_pattern(pattern).into_owned(),
+            raw: pattern.to_owned(),
+        }
+    }
+
+    fn is_terminated(&self) -> bool {
+        self.source.trim_end().ends_with([';', '}'])
+    }
+
+    fn terminated(&self) -> Self {
+        self.map(|text| format!("{text};"))
+    }
+
+    fn map(&self, edit: impl Fn(&str) -> String) -> Self {
+        Self {
+            source: edit(&self.source),
+            raw: edit(&self.raw),
+        }
+    }
+
+    /// Insert `ch` at byte `offset` of `source`, and at the same character
+    /// index of `raw`.
+    fn insert(&mut self, offset: usize, ch: char) {
+        let index = self.source[..offset].chars().count();
+        let raw_offset = self
+            .raw
+            .char_indices()
+            .nth(index)
+            .map_or(self.raw.len(), |(byte, _)| byte);
+        self.source.insert(offset, ch);
+        self.raw.insert(raw_offset, ch);
+    }
+}
+
+/// The first node of `kind` in pre-order: the node ast-grep's contextual
+/// pattern selects.
+fn first_of_kind<'a>(root: Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        if node.kind() == kind {
+            return Some(node);
+        }
+        pending.extend(children(node).into_iter().rev());
+    }
+    None
 }
 
 enum SpecialPattern {
@@ -76,6 +155,7 @@ impl CompiledPattern {
                     capture: capture.to_owned(),
                 }),
                 candidate_plan: CandidatePlan::from_kinds(JSX_TAG_KINDS.map(str::to_owned)),
+                context: None,
             });
         }
 
@@ -92,6 +172,7 @@ impl CompiledPattern {
                     value_capture: value_capture.to_owned(),
                 }),
                 candidate_plan: CandidatePlan::from_kind("pair"),
+                context: None,
             });
         }
 
@@ -100,31 +181,33 @@ impl CompiledPattern {
                 "structural pattern exceeds 64000 byte limit",
             ));
         }
-        let mut source = lang.preprocess_pattern(pattern).into_owned();
-        let mut tree = parse_tree(&language, &source)?;
+        let mut text = PatternText::new(lang, pattern);
+        let mut tree = parse_tree(&language, &text.source)?;
         // The C# class wrap gives member patterns (methods, properties) real
         // body context, but an expression or statement (`Helper($A)`,
         // `Log($A);`) is not a class member and fails there. Fall back to the
         // plain snippet, whose top-level `global_statement` wrapper
         // `effective_pattern_root` unwraps.
         if lang.class_wraps() {
-            let mut plain = lang.preprocess_rewrite_pattern(pattern).into_owned();
-            let mut plain_tree = parse_tree(&language, &plain)?;
-            if !plain.trim_end().ends_with([';', '}']) {
+            let mut plain = PatternText::plain(lang, pattern);
+            let mut plain_tree = parse_tree(&language, &plain.source)?;
+            if !plain.is_terminated() {
                 // A bare call needs a terminator to be a statement.
-                let terminated = format!("{plain};");
-                let terminated_tree = parse_tree(&language, &terminated)?;
-                if !effective_pattern_root(terminated_tree.root_node(), &terminated).has_error() {
+                let terminated = plain.terminated();
+                let terminated_tree = parse_tree(&language, &terminated.source)?;
+                if !effective_pattern_root(terminated_tree.root_node(), &terminated.source)
+                    .has_error()
+                {
                     plain = terminated;
                     plain_tree = terminated_tree;
                 }
             }
-            let plain_root = effective_pattern_root(plain_tree.root_node(), &plain);
+            let plain_root = effective_pattern_root(plain_tree.root_node(), &plain.source);
             // `local_function_statement` is the top-level artifact of a
             // member-shaped snippet (`public int $NAME(...) { ... }`): keep
             // the class context for it and whenever the plain parse fails.
             if !plain_root.has_error() && plain_root.kind() != "local_function_statement" {
-                source = plain;
+                text = plain;
                 tree = plain_tree;
             }
         }
@@ -137,33 +220,67 @@ impl CompiledPattern {
         // does not parse. The statement wrapper unwraps, so `$A;` is `$A`.
         // Complete constructs and unrelated shapes retain their original tree.
         if let Some(kind) = lang.terminated_fragment_kind()
-            && !source.trim_end().ends_with([';', '}'])
+            && !text.is_terminated()
         {
-            let contextual_source = format!("{source};");
-            let contextual_tree = parse_tree(&language, &contextual_source)?;
+            let contextual = text.terminated();
+            let contextual_tree = parse_tree(&language, &contextual.source)?;
             let contextual_root =
-                effective_pattern_root(contextual_tree.root_node(), &contextual_source);
-            let plain_fails = effective_pattern_root(tree.root_node(), &source).has_error();
+                effective_pattern_root(contextual_tree.root_node(), &contextual.source);
+            let plain_fails = effective_pattern_root(tree.root_node(), &text.source).has_error();
             if !contextual_root.has_error() && (contextual_root.kind() == kind || plain_fails) {
-                source = contextual_source;
+                text = contextual;
                 tree = contextual_tree;
             }
         }
-        if let Some(offset) = ambiguous_function_body_capture(
-            effective_pattern_root(tree.root_node(), &source),
-            &source,
+        // A statement only parses cleanly inside a function body (see
+        // `AgLanguage::c_family`): reparse a snippet that fails
+        // alone as the sole statement of a synthetic function, terminated if
+        // it needs it. Declarations, which parse at top level, keep their tree.
+        if lang.is_c_family() && effective_pattern_root(tree.root_node(), &text.source).has_error()
+        {
+            let statements = std::iter::once(text.clone())
+                .chain((!text.is_terminated()).then(|| text.terminated()));
+            for statement in statements {
+                let wrapped = statement.map(|statement| lang.wrap_in_function_body(statement));
+                let wrapped_tree = parse_tree(&language, &wrapped.source)?;
+                let wrapped_root =
+                    effective_pattern_root(wrapped_tree.root_node(), &wrapped.source);
+                if !wrapped_root.has_error()
+                    && !is_wrap_marker_function(wrapped_root, &wrapped.source)
+                {
+                    text = wrapped;
+                    tree = wrapped_tree;
+                    break;
+                }
+            }
+        }
+        let ambiguous_bodies = ambiguous_function_body_captures(
+            effective_pattern_root(tree.root_node(), &text.source),
+            &text.source,
             lang.expando(),
-        ) {
-            let mut contextual_source = source.clone();
-            contextual_source.insert(offset, ';');
-            let contextual_tree = parse_tree(&language, &contextual_source)?;
-            if effective_pattern_root(contextual_tree.root_node(), &contextual_source).kind()
-                == "function_definition"
-            {
-                source = contextual_source;
+        );
+        if !ambiguous_bodies.is_empty() {
+            let mut contextual = text.clone();
+            for offset in ambiguous_bodies.iter().rev() {
+                contextual.insert(*offset, ';');
+            }
+            let contextual_tree = parse_tree(&language, &contextual.source)?;
+            let contextual_root =
+                effective_pattern_root(contextual_tree.root_node(), &contextual.source);
+            let resolved = ambiguous_function_body_captures(
+                contextual_root,
+                &contextual.source,
+                lang.expando(),
+            )
+            .is_empty();
+            let no_new_errors = !contextual_root.has_error()
+                || effective_pattern_root(tree.root_node(), &text.source).has_error();
+            if resolved && no_new_errors {
+                text = contextual;
                 tree = contextual_tree;
             }
         }
+        let PatternText { source, raw } = text;
         let root = effective_pattern_root(tree.root_node(), &source);
         if root.is_error() {
             return Err(CompileError::grammar(
@@ -182,11 +299,21 @@ impl CompiledPattern {
                 "invalid structural pattern: it has {top_level} top-level nodes, but a pattern matches one node. Search for one statement, or use a rule with `has`/`inside` to relate them."
             )));
         }
-        let candidate_plan = if meta_from_node(root, &source, lang.expando()).is_some() {
+        let is_meta = meta_from_node(root, &source, lang.expando()).is_some();
+        let candidate_plan = if is_meta {
             CandidatePlan::Any
         } else {
             CandidatePlan::from_kind(root.kind())
         };
+        // A pattern parsed in context is its root node: the first node of
+        // that kind in the context, so a context + kind selector names it.
+        let context = (raw != pattern
+            && !is_meta
+            && first_of_kind(tree.root_node(), root.kind()) == Some(root))
+        .then(|| PatternContext {
+            context: raw,
+            selector: root.kind().to_owned(),
+        });
         Ok(Self {
             language,
             expando: lang.expando(),
@@ -194,6 +321,7 @@ impl CompiledPattern {
             tree: Some(tree),
             special: None,
             candidate_plan,
+            context,
         })
     }
 
@@ -222,6 +350,11 @@ impl CompiledPattern {
         })
     }
 
+    /// See [`PatternContext`].
+    pub(super) fn context(&self) -> Option<&PatternContext> {
+        self.context.as_ref()
+    }
+
     pub(super) fn is_special(&self) -> bool {
         self.special.is_some()
     }
@@ -238,12 +371,16 @@ impl CompiledPattern {
         &self,
         content: &str,
         deadline: Instant,
+        recovery: &Recovery,
         found: &mut Found<'_>,
     ) -> Result<(), ExecutionError> {
         let Some(special) = &self.special else {
             return Ok(());
         };
         let tree = parse_tree_with_deadline(&self.language, content, deadline)?;
+        if recovery.hides_match(&tree, content) {
+            found.mark_recovered();
+        }
 
         // One match per node span.
         let mut seen = HashSet::new();
@@ -650,14 +787,20 @@ fn key_value_nodes(candidate: Node<'_>) -> Option<(Node<'_>, Node<'_>)> {
     }
 }
 
-/// Synthetic class name `preprocess_pattern` wraps every C# pattern in — see
-/// `AgLanguage::class_wrap`. Real user patterns essentially never target a
-/// class literally named this, so matching on it by name (rather than by
-/// kind, like the other wrapper cases below) is safe: it only unwraps
-/// *our own* synthetic wrapper, never a real `class $NAME { ... }` pattern
-/// whose outer class_declaration the user actually wants to match.
-pub(super) const CSHARP_WRAP_MARKER: &str = "__OctoWrap";
+/// Whether `node` is the synthetic C-family function a statement pattern is
+/// parsed inside (see `AgLanguage::c_family`), named [`WRAP_MARKER`].
+fn is_wrap_marker_function(node: Node<'_>, source: &str) -> bool {
+    node.kind() == "function_definition"
+        && node
+            .child_by_field_name("declarator")
+            .and_then(|declarator| declarator.child_by_field_name("declarator"))
+            .is_some_and(|name| node_text(name, source) == WRAP_MARKER)
+}
 
+/// The node a pattern matches: its parse with every synthetic or
+/// single-child wrapper removed. Wrappers we add are recognised by
+/// [`WRAP_MARKER`] (rather than by kind, like the grammar's own wrappers), so
+/// a real `class $NAME { ... }` or function pattern keeps its outer node.
 pub(super) fn effective_pattern_root<'a>(mut node: Node<'a>, source: &str) -> Node<'a> {
     loop {
         let named = named_children(node);
@@ -665,15 +808,26 @@ pub(super) fn effective_pattern_root<'a>(mut node: Node<'a>, source: &str) -> No
             node = named[0];
             continue;
         }
-        // C#'s synthetic wrapper class (see CSHARP_WRAP_MARKER doc above):
-        // unwrap `class __OctoWrap { <member> }` down to the single real
-        // member, giving it real class-body context (a bare `public int
-        // Foo(...) { ... }` parsed standalone isn't valid C# at all — no
-        // top-level member/method syntax exists outside a type body).
+        // C-family synthetic function: unwrap `void __OctoWrap(void) {
+        // <statement> }` down to its single statement.
+        if is_wrap_marker_function(node, source)
+            && let Some(body) = node.child_by_field_name("body")
+        {
+            let body_named = named_children(body);
+            if body_named.len() == 1 {
+                node = body_named[0];
+                continue;
+            }
+        }
+        // C#'s synthetic wrapper class: unwrap `class __OctoWrap { <member> }`
+        // down to the single real member, giving it real class-body context
+        // (a bare `public int Foo(...) { ... }` parsed standalone isn't valid
+        // C# at all — no top-level member/method syntax exists outside a
+        // type body).
         if node.kind() == "class_declaration" {
             let is_wrapper = node
                 .child_by_field_name("name")
-                .is_some_and(|n| node_text(n, source) == CSHARP_WRAP_MARKER);
+                .is_some_and(|n| node_text(n, source) == WRAP_MARKER);
             if is_wrapper && let Some(body) = node.child_by_field_name("body") {
                 let body_named = named_children(body);
                 if body_named.len() == 1 {

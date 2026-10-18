@@ -1,6 +1,6 @@
 # Local database protocol
 
-Load for storage, unified record queries, SQL clients, or migration. The CLI, MCP, hooks and native adapters share one SQLite protocol. Initialize through `join`; conforming SQL clients must preserve its transactions and invariants.
+Load for storage, unified record queries, or SQL clients. The CLI, MCP, hooks and native adapters share one SQLite protocol. Initialize through `join`; conforming SQL clients must preserve its transactions and invariants.
 
 ## Identity and discovery
 
@@ -8,7 +8,7 @@ Default: `<OCTOCODE_HOME or ~/.octocode>/agents-communication/communication.sqli
 `workspaces(workspace,coordinationScope)` maps Git workspaces to the canonical common directory.
 Non-Git projects use the workspace itself as scope. Linked worktrees share coordination; independent clones remain separate. `db info` inspects without creating storage; `schema` exposes canonical SQL and fingerprints.
 
-Application ID is 1329678147; schema version is 6. Every open checks the exact schema fingerprint. A v1/v2/v3/v4/v5 store requires explicit migration; unrecognized schemas remain unchanged. Python 3.9+, SQLite 3.42+ **with FTS5** are required. New stores use WAL only on patched SQLite (3.51.3+, 3.50.7–3.50.x, 3.44.6–3.44.x); existing WAL requires a patched writer. The runtime keeps existing journal modes.
+Application ID is 1329678147; schema version is 7. Every open checks the exact schema fingerprint; any other database is refused unchanged (use a fresh `--database`). Python 3.9+, SQLite 3.42+ **with FTS5** are required. New stores use WAL only on patched SQLite (3.51.3+, 3.50.7–3.50.x, 3.44.6–3.44.x); existing WAL requires a patched writer. The runtime keeps existing journal modes.
 
 ## Active database registry
 
@@ -29,18 +29,16 @@ The writer creates the entry when a store opens for writing, rewrites it at most
 All retained events share this envelope:
 
 ```json
-{"recordId":42,"path":"/absolute/workspace","from":"agent-uuid","to":"recipient-uuid","type":"message","timestamp":1791187200000,"branch":"feature/unified","data":{"messageId":17,"body":"Review the change","reasoning":"Resolve review before handoff","wake":"action","replyRequired":true,"ttlMs":3600000,"expiresAt":1791190800000}}
+{"recordId":42,"path":"/absolute/workspace","from":"agent-uuid","to":"recipient-uuid","type":"message","timestamp":1791187200000,"branch":"feature/unified","data":{"messageId":17,"kind":"question","body":"Review the change?","reasoning":"Resolve review before handoff","wake":"action","replyRequired":true,"ttlMs":3600000,"expiresAt":1791190800000}}
 ```
 
 `path` is the canonical **workspace**, not a file path. `from`, `type`, `timestamp` and `data` are mandatory; `to` is always present (null for shared records). `branch` is optional. Time is integer Unix milliseconds. `recordId` (column `id`) identifies the record and orders pagination; mail handling uses **data.messageId**, leases use **data.leaseId**. File/context paths belong inside `data`. `from` is an exact DB identity, never a display name or vendor session ID.
 
 `records` is the append-only event history. Its columns are the envelope plus internal `entityId` and retry `key`; neither internal field leaks into fetched envelopes. Triggers append operational events in the same transaction as their transition. `sessions`, `leases`, `lease_waits`, `messages`, `deliveries`, `dispatches`, `subscriptions`, `attachments`, `documents`, and peer-directory caches remain operational state/indexes: they enforce presence, uniqueness, expiry, replies and delivery tokens. They are not alternate generic APIs. Immutable `messages` owns authoritative bodies; fetch resolves that reference into `data`. FTS stores derived searchable content and indexes. No event-log replay is needed for a hot inbox check.
 
-`catalog.json` is the single owner of the 25 record types. `schema types --compact` lists every type's required and optional fields and its writer; `schema type <name>` returns its data schema, event meaning, routing, validated example and suggested fetch filter, without opening a database. Coordination events (`coordinate.in`, `.update`, `.profile`, `.out`) carry a full identity and presence snapshot, and lease events a full path, kind and deadline snapshot, so no second lookup is needed. Clock expiry or a crash creates no `coordinate.out`; use `peers` for current presence.
+`catalog.json` is the single owner of the 26 record types. `schema types --compact` lists every type's required and optional fields and its writer; `schema type <name>` returns its data schema, event meaning, routing, validated example and suggested fetch filter, without opening a database. Coordination events (`coordinate.in`, `.update`, `.profile`, `.out`) carry a full identity and presence snapshot, and lease events a full path, kind and deadline snapshot, so no second lookup is needed. Clock expiry or a crash creates no `coordinate.out`; use `peers` for current presence.
 
-Current schemas describe v6 writers. Migrated v1–v5 payloads remain exactly as originally recorded; missing historical fields are unknown. In particular, old out/profile events may have no vendor/name and old host.context data may be empty. Migration does not fill them from today's identity or rewrite their chronology.
-
-`record {type:"memory",data:{content:"…"}}` or `record {type:"event",data:{name:"checkpoint",...}}` appends without messaging/waking anyone. `to` optionally limits visibility; null shares with the repository coordination scope. Input may set optional `branch` (null suppresses the session default) and sender/type-scoped retry `key`. Generic JSON remains intact, including nulls, booleans and nested fields; data is limited to 16384 UTF-8 bytes. Operational types require their dedicated validated transitions. Custom records are append-only; expiry in memory is metadata, not automatic deletion or filtering.
+`record {type:"memory",data:{content:"…"}}`, `record {type:"event",data:{name:"…",...}}` or `record {type:"checkpoint",data:{goal,next,...}}` appends without messaging/waking anyone; `binding` and `resume` return the latest checkpoint (Checkpoint–resume). `to` optionally limits visibility; null shares with the repository coordination scope. Input may set optional `branch` (null suppresses the session default) and sender/type-scoped retry `key`. Generic JSON remains intact, including nulls, booleans and nested fields; data is limited to 16384 UTF-8 bytes. Operational types require their dedicated validated transitions. Custom records are append-only; expiry in memory is metadata, not automatic deletion or filtering.
 
 ## Smart fetch
 
@@ -57,7 +55,7 @@ Results contain `items`, fixed `through` high-water ID, and executable `next.com
 
 Mail and delivery/dispatch history is visible only to the sender and the recipients captured at send time, including topic/broadcast mail. Targeted memories/events are visible to author/recipient. Shared records and coordination metadata use repository scope; lease ownership stays in the current worktree. An expired bound identity may inspect history; writes require live presence. Inaccessible records yield no rows. Identity strings are routing data; a process with trusted-user filesystem access can read or replace SQLite directly.
 
-`current:true` restricts dispatch history to each recipient/message's latest attempt whose token and state still match live dispatch state. Pi recovery combines it with `type:"dispatch.staged"`, the recipient's `from` ID and `where.transport`. Completed or superseded attempts never replay. CLI/MCP discovery carries type-specific data schemas; MCP/Pi derive retry keys from stable tool-call IDs when omitted.
+`current:true` restricts dispatch history to each recipient/message's latest attempt whose token and state still match live dispatch state. Pi recovery combines it with `type:"dispatch.staged"`, the recipient's `from` ID and `where.transport`. Completed or superseded attempts never replay. CLI/MCP discovery carries type-specific data schemas; MCP/Pi derive idempotency keys from stable tool-call IDs when omitted.
 
 ### Lookup indexes
 
@@ -84,29 +82,27 @@ Join creates a UUID and 60-second presence. It captures the current Git branch w
 
 ## Required intent
 
-New mail, leases and documents require nonblank `reasoning`, at most 512 UTF-8 bytes. Immutable intent (purpose, plus done-when for mail), not a reasoning transcript. Retry keys require unchanged payload/routing. Generic events/memories use their typed data contract.
+New mail, leases and documents require nonblank `reasoning`, at most 512 UTF-8 bytes. Immutable purpose, not a reasoning transcript. Idempotency keys require unchanged payload/routing. Generic events/memories use their typed data contract.
 
 ## Path leases
 
 Paths resolve through real filesystem ancestors and stay inside the case-preserving workspace. Comparison uses pinned Unicode 16 NFD(casefold(NFD(component))) keys; exact, ancestor-tree and descendant-range lookups are indexed. Only `ok:true` from lock/atomic lock_many grants ownership; a bundle conflict acquires none. Leases need both live owner and live expiry. TTL is 1000–600000 ms; renew/unlock check exact ID, owner, presence and expiry. False renewal requires reacquisition. `locks` reports live state; `presence:expired/all` reports retained operational rows, while fetch includes removed lease events. `check_paths`/`check_write` are read-only checks, never acquisition. Reservations and optional guards are advisory and do not fence OS/shell writes. Coordinate contested paths and keep useful independent work moving; release leases no longer needed.
 
-`lock`/`lock_many` with `wait:true` queue a conflicting request in `lease_waits` (one per identity, 10 minutes, holding nothing) and send each blocking owner a passive notice. Unlock, leave, resume, prune, heartbeat and every lock first grant waits, oldest first, whose targets are all free, in the same transaction; the grant inserts the leases and sends the waiter an action-wake "Lease granted" message from itself. A silently expired lease therefore passes to the next waiter at the next heartbeat or lock by any identity. A live wait reserves its paths: a newcomer's `lock`, or a younger wait, on an overlapping path conflicts with it and queues behind it. A wait is refused when a blocking owner already waits, directly or transitively, for a lease the requester holds. A set wait holds none of its set until every path is free. Leave and resume drop the identity's wait; the waiter's own direct lock of an overlapping path ends it.
+`lock`/`lock_many` with `wait:true` queue a conflicting request in `lease_waits` (one per identity, 10 minutes, holding nothing) and send each blocking owner an SBAR blocker notice. Unlock, leave, resume, prune, heartbeat and every lock first grant waits, oldest first, whose targets are all free, in the same transaction; the grant inserts the leases and sends the waiter an action-wake Delta update (`Lease granted: …`) from itself. A silently expired lease therefore passes to the next waiter at the next heartbeat or lock by any identity. A live wait reserves its paths: a newcomer's `lock`, or a younger wait, on an overlapping path conflicts with it and queues behind it. A wait is refused when a blocking owner already waits, directly or transitively, for a lease the requester holds. A set wait holds none of its set until every path is free. Leave and resume drop the identity's wait; the waiter's own direct lock of an overlapping path ends it.
 
 ## Shared handoff documents
 
 Publish at most 1 MiB UTF-8 with `share_document`.
 New Git documents use `<git-common-dir>/octocode-communication/`; non-Git documents use `<workspace>/.octocode/communication/`.
-Repository-authorized reads retain existing document paths and verify their hashes.
-If historical names collide, set `read_document.workspace` to the author’s actual worktree.
-Read continuations preserve that origin selector. Context items retain their originating workspace and branch. Names are immutable lowercase filenames without traversal; identical retries retain metadata, revisions use new names. Content lives on disk once; the document record owns hash/bytes/path/author/context. Publication uses a synced temp file and no-clobber link followed by DB registration. A crash may leave an unregistered file; preserve it. `read_document` verifies all bytes/hash and returns aligned UTF-8 byte pages. `context` indexes live path/branch notes with explicit scanned coverage and continuations. Preserve files separately from DB snapshots.
+Repository-authorized reads verify the stored path and hash; a name is unique per repository scope. Context items retain their originating workspace and branch. Names are immutable lowercase filenames without traversal; identical retries retain metadata, revisions use new names, and `supersedes` links an ADR revision to the published document it replaces. Content lives on disk once; the document record owns hash/bytes/path/author/context. Publication uses a synced temp file and no-clobber link followed by DB registration. A crash may leave an unregistered file; preserve it. `read_document` verifies all bytes/hash and returns aligned UTF-8 byte pages. `context` indexes live path/branch notes with explicit scanned coverage and continuations. Preserve files separately from DB snapshots.
 
 ## Messages and notifications
 
-Send validates live author and exactly one direct ID or topic, then commits immutable mail and fixed delivery recipients atomically. Direct targets can be offline but must share `coordinationScope`. Topics and notify_all snapshot active peers (sender excluded); later joins get no backfill. The tools default to an FYI; request and wake defaults are in [SERVICE_PROTOCOL.md](SERVICE_PROTOCOL.md#delivery-scheduling-and-subscriptions). The `messages` column defaults match them (`replyRequired` 0, `wake` passive), so a raw SQL insert that omits both is an FYI too; a request sets `replyRequired` 1, and `wake` action when it must wake. Correlation is optional ASCII conversationId; final replies inherit it. Inbox is the convenience pending-mail projection; fetch incoming returns the unified shape. Message TTL is 1000–86400000 ms and retries never refresh it.
+Send validates live author and exactly one direct ID or topic, then commits immutable mail and fixed delivery recipients atomically. Direct targets can be offline but must share `coordinationScope`. Topics and notify_all snapshot active peers (sender excluded); later joins get no backfill. Each message has one `kind` (note, question, task, decision, blocker, handoff, delta, checkback, issue, answer) and its protocol `slots` JSON; the body is rendered from the slots. A CHECK ties kind to policy: question, task, decision and handoff are exactly the `replyRequired` 1 kinds, and `answer` is exactly the rows with `replyTo`. Wake defaults are in [SERVICE_PROTOCOL.md](SERVICE_PROTOCOL.md#delivery-scheduling-and-subscriptions). The column defaults (`kind` note, `replyRequired` 0, `wake` passive) make a raw SQL insert that omits them an FYI; a request sets its kind and `replyRequired` 1, and `wake` action when it must wake. Correlation is optional ASCII conversationId; final replies inherit it. Inbox is the convenience pending-mail projection; fetch incoming returns the unified shape. Message TTL is 1000–86400000 ms and retries never refresh it.
 
 ### Atomic final reply
 
-`complete {message:ID,reply:"answer"}` commits the final direct answer and parent acknowledgement atomically, with reserved idempotency key complete:ID. Use **data.messageId** from a fetched/hook envelope. Changed retries fail and all errors roll back. Progress uses a new FYI, not replyTo. Silent complete handles 1–100 unique received IDs atomically.
+`complete {message:ID,outcome,reply:{conclusion,...}}` commits the final direct BLUF answer (kind `answer`) and parent acknowledgement atomically, with the request's effects (check-back gate, RACI informed copies, handoff lease transfer), with reserved idempotency key complete:ID. Use **data.messageId** from a fetched/hook envelope. Changed retries fail and all errors roll back. Progress uses a new `delta`, not replyTo. Silent complete handles 1–100 unique received IDs atomically.
 
 ### Reply requirements
 
@@ -114,7 +110,7 @@ Required requests need a final answer; informational messages forbid replies. Ke
 
 ## One-time delivery and host hooks
 
-Attach binds an existing host session; one owner stages a bounded batch/token in SQLite before external I/O. Success records submitted; failure records uncertain. Neither means acknowledgement. Hooks/native adapters deliver the same record envelope; ordinary empty checks use indexed state and data-version fast paths. Staged/submitted/uncertain attempts never auto-replay; inspect recipient/health before explicit retry_delivery, which resets staged or uncertain attempts only and refuses submitted ones (the host accepted them). Raw recovery can always fetch pending mail. Host budget overflow preserves each envelope with `data.messageId` and `data.bodyOmitted:true`; `data.next.command`/`data.next.input` reaches the intact payload unchanged with the current binding. Pi confirms persisted host-ledger receipts; generic hooks record output submission only. Setup, trust and supported events: [HOST_SETUP.md](HOST_SETUP.md), [HOST_HOOKS.md](HOST_HOOKS.md). Native wake/receipts: [SERVICE_PROTOCOL.md](SERVICE_PROTOCOL.md).
+Attach binds an existing host session; one owner stages a bounded batch/token in SQLite before external I/O. Success records submitted; failure records uncertain. Neither means acknowledgement. Hooks/native adapters deliver the same record envelope; ordinary empty checks use indexed state and data-version fast paths. Staged/submitted/uncertain attempts never auto-replay; inspect recipient/health before explicit retry_delivery, which resets staged or uncertain attempts only and refuses submitted ones (the host accepted them). It is a bounded retry: after the first, each waits a 2 s doubling backoff (`retryAfterMs`); after 3 it returns `exhausted` and sends the sender one SBAR blocker (key `retry-exhausted:MESSAGE:RECIPIENT`). Budget deferrals do not count. Raw recovery can always fetch pending mail. Host budget overflow preserves each envelope with `data.messageId` and `data.bodyOmitted:true`; `data.next.command`/`data.next.input` reaches the intact payload unchanged with the current binding. Pi confirms persisted host-ledger receipts; generic hooks record output submission only. Setup, trust and supported events: [HOST_SETUP.md](HOST_SETUP.md), [HOST_HOOKS.md](HOST_HOOKS.md). Native wake/receipts: [SERVICE_PROTOCOL.md](SERVICE_PROTOCOL.md).
 
 ## Records and usage
 
@@ -122,13 +118,4 @@ Record triggers preserve operational changes atomically, including conforming SQ
 
 ## Cleanup and conformance
 
-Prune removes up to 100 expired leases per workspace transaction with continuation; expiry does not authorize deleting records/mail. Compact reclaims reusable pages without deleting evidence. Export publishes a verified no-clobber full DB snapshot (all workspaces); document files need separate preservation. Stop workers before restore or migration; never replace a live DB or mix unrelated WAL files. Owner lock files contain no data and are excluded from snapshots.
-
-V1–V5 migration, with all old clients stopped:
-
-```sh
-comm db migrate '{"backup":"/absolute/new-backup.sqlite"}'
-```
-
-Only the pinned v1–v5 fingerprints are accepted. The command holds a writer lock, makes and verifies a private no-clobber backup, and verifies fingerprint/integrity/foreign keys in one transaction. V1 converts every event to an envelope preserving IDs/state/keys/document references and rebuilds search indexes; v2–v5 replace triggers and add missing tables (v4 gains `lease_waits`) without rewriting historical records. Every source version also gets the v6 `messages` column defaults (FYI: `replyRequired` 0, `wake` passive) by rebuilding `messages` (SQLite cannot alter a default, and defensive builds refuse an in-place schema edit): every row is copied with its id and the id sequence is kept, so every stored message keeps the reply policy and wake it was sent with.
-The migration adds workspace coordination mappings without changing retained record IDs or origin paths. Failure rolls back; a published backup may remain. V1 had no branch metadata, so those migrated records omit branch. Restart clients on v6; no legacy API aliases or mixed-schema clients are supported. Keep the backup and document files. Missing historical identity fields stay unknown; no migration invents old snapshots.
+Prune removes up to 100 expired leases per workspace transaction with continuation; expiry does not authorize deleting records/mail. Compact reclaims reusable pages without deleting evidence. Export publishes a verified no-clobber full DB snapshot (all workspaces); document files need separate preservation. Stop workers before restore; never replace a live DB or mix unrelated WAL files. Owner lock files contain no data and are excluded from snapshots.

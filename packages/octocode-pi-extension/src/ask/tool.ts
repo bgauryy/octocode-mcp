@@ -71,7 +71,7 @@ export function registerAskUser(pi: ExtensionAPI): void {
     label: 'Ask user',
     description:
       'Ask the user for preferences or facts that tools cannot discover and that change your next step. Batch related, self-contained questions in one call. ' +
-      'Give 2-4 choices when the answers are known (omit options for free text), with a supported recommendation first labelled \' (Recommended)\'; the UI always adds a write-in field, so do not add "Other".',
+      'Decision request: 2-4 options when known (none for free text), a supported recommendation first labelled \' (Recommended)\'; the UI always adds a write-in field, so do not add "Other".',
     promptSnippet: 'Ask the user a question only they can answer',
     parameters: Type.Object({
       questions: Type.Array(

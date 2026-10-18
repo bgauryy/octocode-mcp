@@ -108,6 +108,37 @@ describe('team delivery efficiency', () => {
     } finally { team.stop(); store.close(); }
   });
 
+  it('runs no query while the database is unchanged since a read that found nothing waiting, and reads again after any write', () => {
+    const store = TeamStore.open(tmp(), path.join(tmp(), 'team.sqlite'));
+    try {
+      store.save(member('recipient'));
+      const inbox = new Inbox();
+      const send = vi.fn(() => true);
+      const queries = [vi.spyOn(store, 'waiting'), vi.spyOn(store, 'waitingThrough'), vi.spyOn(store, 'pending')];
+      const asked = () => queries.reduce((total, spy) => total + spy.mock.calls.length, 0);
+      inbox.deliver(store, 'recipient', send);
+      expect(asked()).toBe(1);
+      for (let i = 0; i < 50; i++) inbox.deliver(store, 'recipient', send);
+      expect(asked()).toBe(1);
+      expect(send).not.toHaveBeenCalled();
+      // Another process writes mail: the stamp moves, the inbox reads, and hands it over.
+      store.send('sender', ['recipient'], 'new mail', { replyRequired: false });
+      inbox.deliver(store, 'recipient', send);
+      expect(send).toHaveBeenCalledTimes(1);
+      // A refused batch is offered again on the next tick, with the database unchanged.
+      const refuse = vi.fn(() => false);
+      const second = new Inbox();
+      second.deliver(store, 'recipient', refuse);
+      second.deliver(store, 'recipient', refuse);
+      expect(refuse).toHaveBeenCalledTimes(2);
+      // A reset forgets what it knew of the database.
+      const before = asked();
+      inbox.reset();
+      inbox.deliver(store, 'recipient', send);
+      expect(asked()).toBeGreaterThan(before);
+    } finally { store.close(); }
+  });
+
   it('tolerates a recipient departing between its waiting count and batch read', () => {
     const store = TeamStore.open(tmp(), path.join(tmp(), 'team.sqlite'));
     try {

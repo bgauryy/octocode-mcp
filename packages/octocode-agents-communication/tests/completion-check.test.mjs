@@ -13,7 +13,7 @@ function fixture(t){
  call('attach',{transport:'claude',endpoint:join(workspace,'unused.sock'),vendorSession:'native-recipient'},b);
  const db=new DatabaseSync(database);t.after(()=>{db.close();rmSync(workspace,{recursive:true,force:true});});
  const event={hook_event_name:'Stop',stop_hook_active:false,session_id:'native-recipient',cwd:workspace};
- const send=(wake='action')=>call('send_message',{to:b,body:'DO NOT REPLAY THIS BODY',reasoning:'Complete requested review',replyRequired:wake==='action',wake},a).id;
+ const send=(wake='action')=>call('send_message',{to:b,[wake==='action'?'question':'body']:'DO NOT REPLAY THIS BODY',reasoning:'Complete requested review',wake},a).id;
  const offer=()=>{call('attach',{transport:'raw'},b);call('hook',{format:'json'},b);call('attach',{transport:'claude',endpoint:join(workspace,'unused.sock'),vendorSession:'native-recipient'},b);};
  return {call,a,b,db,event,send,workspace,offer};
 }

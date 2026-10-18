@@ -1236,11 +1236,106 @@ fn skipped_paths_are_not_repeated_on_the_match_page_axis() {
     assert_eq!(rows, ["a.txt:1", "a.txt:2", "b.txt:1", "b.txt:2"]);
 }
 
+/// `includeHidden` alone reaches every dot directory that is not generated
+/// output or ignored: the tool-config directories (`.github`, `.vscode`) are
+/// no longer behind `defaultExcludes` as well, as in structureSearch. A dot
+/// directory a `.gitignore` rule names stays disclosed as ignored, behind
+/// `includeIgnored`.
+#[test]
+fn include_hidden_alone_reaches_hidden_directories_that_are_not_ignored_or_generated() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::create_dir(root.path().join(".git")).expect("repository");
+    fs::write(root.path().join(".gitignore"), ".octocode/\n").expect("rules");
+    for file in [
+        "src/a.txt",
+        ".agents/notes.md",
+        ".github/workflows/ci.yml",
+        ".vscode/settings.json",
+        ".octocode/tmp/scratch.txt",
+    ] {
+        let path = root.path().join(file);
+        fs::create_dir_all(path.parent().expect("parent")).expect("dir");
+        fs::write(path, "needle\n").expect("hit");
+    }
+    let (policy, security) = policy_for(root.path());
+    let search = |fields: serde_json::Value| {
+        let request = ls_query(
+            serde_json::json!({"path": root.path(), "matchString": "needle"}),
+            None,
+        );
+        let request = ls_query(fields, Some(&request));
+        let result =
+            execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+                .expect("search");
+        serde_json::to_value(&result).expect("result")
+    };
+    let paths = |body: &serde_json::Value| {
+        let mut paths = body["files"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|file| file["path"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        paths.sort_unstable();
+        paths
+    };
+    assert_eq!(paths(&search(serde_json::json!({}))), ["src/a.txt"]);
+    let hidden = search(serde_json::json!({"includeHidden": true}));
+    assert_eq!(
+        paths(&hidden),
+        [
+            ".agents/notes.md",
+            ".github/workflows/ci.yml",
+            ".vscode/settings.json",
+            "src/a.txt"
+        ],
+        "{hidden}"
+    );
+    // What `includeHidden` leaves out is disclosed with the one flag that
+    // reaches it, not silently.
+    let causes = hidden["skippedPaths"]["entries"]
+        .as_array()
+        .expect("entries")
+        .iter()
+        .filter_map(|entry| entry["cause"].as_str())
+        .collect::<Vec<_>>();
+    assert!(causes.contains(&"ignored"), "{hidden}");
+    let lead = &hidden["next"]["includeSkipped"]["query"]["queries"][0];
+    assert_eq!(lead["includeIgnored"], true, "{hidden}");
+    assert!(lead.get("defaultExcludes").is_none(), "{hidden}");
+}
+
+/// Outside a git work tree the default prune names its directories by name:
+/// `includeHidden` alone still reaches the tool-config ones (`.github`,
+/// `.vscode`), while generated dot directories (`.cache`) stay pruned.
+#[test]
+fn include_hidden_alone_reaches_tool_config_directories_outside_a_repository() {
+    let root = tempfile::tempdir().expect("fixture");
+    for file in [".github/ci.yml", ".vscode/settings.json", ".cache/c.txt"] {
+        let path = root.path().join(file);
+        fs::create_dir_all(path.parent().expect("parent")).expect("dir");
+        fs::write(path, "needle\n").expect("hit");
+    }
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path(), "matchString": "needle", "includeHidden": true}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None, None)
+        .expect("search");
+    let mut paths = result
+        .files
+        .iter()
+        .map(|f| f.path.as_str())
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+    assert_eq!(paths, [".github/ci.yml", ".vscode/settings.json"]);
+}
+
 /// A search with hits still discloses the dot entries it left out, and its
-/// one `includeSkipped` lead lifts every cause on the way: a dot directory
-/// the default prune also names (`.github` outside a git work tree) needs
-/// `includeHidden` and `defaultExcludes:false` together, and following the
-/// lead reaches the hit there.
+/// one `includeSkipped` lead lifts the cause on the way: the one flag
+/// `includeHidden` reaches a dot directory the text search once pruned by
+/// default too (`.github`), and following the lead reaches the hit there.
 #[test]
 fn a_search_with_hits_discloses_hidden_entries_and_its_lead_reaches_them() {
     let root = tempfile::tempdir().expect("fixture");
@@ -1281,7 +1376,7 @@ fn a_search_with_hits_discloses_hidden_entries_and_its_lead_reaches_them() {
     );
     let lead = body["next"]["includeSkipped"]["query"]["queries"][0].clone();
     assert_eq!(lead["includeHidden"], true, "{body}");
-    assert_eq!(lead["defaultExcludes"], false, "{body}");
+    assert!(lead.get("defaultExcludes").is_none(), "{body}");
     let retried = ls_query(lead, None);
     let all = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None, None)
         .expect("lead");

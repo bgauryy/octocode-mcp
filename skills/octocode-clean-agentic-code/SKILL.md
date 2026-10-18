@@ -24,12 +24,12 @@ flowchart LR
 1. Scope: requested paths and result; reuse existing authorization; ask only about effects outside it.
 2. Inspect candidates, contracts, consumers. Hypothesis test each: claim (redundant), strongest rival (live reference, entrypoint, config, dynamic or external use), distinguishing check (semantic references prove identity; topology gives leads; empty search proves nothing), result (confirmed: batch it; unresolved: defer; dismissed: keep).
 3. Remove proven redundancy in reviewable batches, one owner per duplicate; update callers and links; regenerate lockfiles and derived artifacts with their generator.
-4. Verify: run relevant checks, read results, repair introduced failures only from a changed diagnosis, keep coverage thresholds; done when they pass and unrun checks are named. If evidence cannot distinguish a safe repair: revert the batch, report a [Handoff (SBAR)](references/agent-defects.md#escalation-protocol) blocker.
+4. Verify: Definition of Done = relevant checks run and read, coverage thresholds kept, checks pass, unrun checks named. Bounded retry: repair an introduced failure only from a changed diagnosis. If evidence cannot distinguish a safe repair: revert the batch, report an [SBAR](references/agent-defects.md#escalation-protocol) blocker.
 
 ## Judgment calls
 
 - Bug fix or design change → explain; continue only within authorized scope, preserving outcomes and contracts (instructions too).
-- Error masking, stubs, test or grader gaming → report; never delete the symptom, weaken a check, or widen a mask.
+- Error masking, stubs, test or grader gaming → report as an [SBAR](references/agent-defects.md#escalation-protocol); never delete the symptom, weaken a check, or widen a mask.
 - File size or pattern match alone → a lead, not a verdict.
 - Text or config read by a runtime, parser, or external user → keep until that contract deliberately changes.
 - Secret → redact, report for rotation; removing the reference does not fix it.

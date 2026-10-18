@@ -72,7 +72,7 @@ test('native Codex submits action and passive peer data during an active turn ex
   const receiver = f.call('join', {name: 'receiver', vendor: 'codex'}).id;
   f.call('attach', {transport: 'codex', endpoint: server.endpoint, vendorSession: 'existing'}, receiver);
   for (const wake of ['passive', 'action']) {
-    const sent = f.call('send_message', {to: receiver, body: `${wake}-while-tool-running`, wake, replyRequired: false, reasoning: 'Verify active native delivery'}, f.sender);
+    const sent = f.call('send_message', {to: receiver, body: `${wake}-while-tool-running`, wake, reasoning: 'Verify active native delivery'}, f.sender);
     const result = JSON.parse((await exec(binary, f.args('dispatch', {}, receiver), {timeout: 10000})).stdout);
     assert.equal(result.submitted, 1);
     const delivery = server.requests.filter(row => row.method === (wake === 'action' ? 'turn/start' : 'thread/inject_items')).at(-1);
@@ -114,7 +114,7 @@ if(r.method==='turn/start')result={turn:{id:'held-active-turn',status:'inProgres
     const ready = stdout.split('\n').filter(Boolean).map(JSON.parse).find(row => row.type === 'ready');
     assert.ok(ready, stderr);
     for (const wake of ['passive', 'action']) {
-      const body = `${wake}-during-busy`, sent = f.call('send_message', {to: ready.session, body, wake, replyRequired: false, reasoning: 'Verify managed active delivery'}, f.sender);
+      const body = `${wake}-during-busy`, sent = f.call('send_message', {to: ready.session, body, wake, reasoning: 'Verify managed active delivery'}, f.sender);
       await until(() => db.prepare('SELECT state FROM dispatches WHERE message=?').get(sent.id)?.state === 'submitted');
       const delivery = requests().find(row => JSON.stringify(row.params).includes(body));
       assert.ok(delivery, `${body} must reach the process while its original turn is still active`);

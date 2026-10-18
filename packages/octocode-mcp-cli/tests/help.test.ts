@@ -358,6 +358,13 @@ describe('help contract', () => {
       required: ['body'], oneOf: [{ required: ['to'] }, { required: ['topic'] }], additionalProperties: false,
     }, run: input => input });
     expect(commandHelp(spec, send)).toContain('--body "value" --to "value"');
+    const composed = defineCommand({ name: 'compose', description: 'Compose', inputSchema: {
+      type: 'object', properties: { to: { type: 'string' }, topic: { type: 'string' }, note: { type: 'string' }, task: { type: 'object', title: 'Task contract', properties: { goal: { type: 'string' } }, required: ['goal'] } },
+      allOf: [{ oneOf: [{ required: ['to'] }, { required: ['topic'] }] }, { oneOf: [{ required: ['note'] }, { required: ['task'] }] }], additionalProperties: false,
+    }, run: input => input });
+    const composedHelp = commandHelp(spec, composed);
+    expect(composedHelp).toContain('--to "value" --note "value"');
+    expect(composedHelp).toContain('Task contract');
     const explicit = defineCommand({ name: 'example', description: 'Example', inputSchema: {
       type: 'object', properties: { text: { type: 'string', pattern: '^chosen$' }, force: { type: 'boolean', default: false } }, required: ['text'],
       examples: [{ text: 'invalid' }, { text: 'chosen', force: true }],

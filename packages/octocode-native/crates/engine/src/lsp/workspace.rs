@@ -80,6 +80,12 @@ pub struct PackageIncludes {
     /// Literal `include!` targets outside the package directory (lexically
     /// normalized): never loaded, whatever the build context.
     pub outside: Vec<PathBuf>,
+    /// Package files that declare the scanned file as a module (`mod x;`,
+    /// or `#[path = "…"] mod x;`). Two or more compile it into several
+    /// crates (a bench and a test sharing a support file); rust-analyzer
+    /// analyzes it as part of one, so uses in the others' copies are not
+    /// references of the symbol it answers for.
+    pub declared_by: Vec<PathBuf>,
     /// The scan stopped at its file bound: more includes may exist.
     pub has_more: bool,
 }
@@ -99,6 +105,7 @@ pub fn cargo_package_includes(file: &Path, limit: usize) -> Option<PackageInclud
                 || !entry.path().join(CARGO_MANIFEST).is_file()
         })
         .build();
+    let anchor = crate::text::lexical(file);
     let mut includes = PackageIncludes::default();
     let mut visited = 0;
     for entry in walker.flatten() {
@@ -131,8 +138,76 @@ pub fn cargo_package_includes(file: &Path, limit: usize) -> Option<PackageInclud
                 }
             }
         }
+        if declares_module(path, &text, &anchor) {
+            includes.declared_by.push(path.to_path_buf());
+        }
     }
     Some(includes)
+}
+
+/// Whether `text` (the source of `path`) declares `anchor` as a module, by
+/// its `#[path = "…"]` (relative to `path`'s directory) or by Cargo's
+/// layout: `mod x;` names `x.rs` or `x/mod.rs` under `path`'s directory
+/// (a crate root or `mod.rs`) or under its own stem directory (any other
+/// file). Line comments are skipped; inline `mod x { … }` names no file.
+fn declares_module(path: &Path, text: &str, anchor: &Path) -> bool {
+    let Some(directory) = path.parent() else {
+        return false;
+    };
+    let stem_directory = path.file_stem().map(|stem| directory.join(stem));
+    let mut attribute_path: Option<&str> = None;
+    for line in text.lines() {
+        let code = line.split("//").next().unwrap_or(line).trim();
+        if code.is_empty() {
+            continue;
+        }
+        if let Some(rest) = code.strip_prefix("#[path") {
+            attribute_path = rest
+                .trim_start()
+                .strip_prefix('=')
+                .and_then(|value| value.trim_start().strip_prefix('"'))
+                .and_then(|value| value.split('"').next());
+            continue;
+        }
+        if code.starts_with("#[") {
+            continue;
+        }
+        let declared = module_declaration(code);
+        let pending = attribute_path.take();
+        let Some(name) = declared else {
+            continue;
+        };
+        let named = match pending {
+            Some(target) => crate::text::lexical(&directory.join(target)) == anchor,
+            None => std::iter::once(directory.to_path_buf())
+                .chain(stem_directory.clone())
+                .any(|base| {
+                    crate::text::lexical(&base.join(format!("{name}.rs"))) == anchor
+                        || crate::text::lexical(&base.join(name).join("mod.rs")) == anchor
+                }),
+        };
+        if named {
+            return true;
+        }
+    }
+    false
+}
+
+/// The module name of an out-of-line declaration `[pub[(…)]] mod name;`.
+fn module_declaration(code: &str) -> Option<&str> {
+    let rest = match code.strip_prefix("pub") {
+        Some(rest) => {
+            let rest = rest.trim_start();
+            match rest.strip_prefix('(') {
+                Some(scoped) => scoped.split_once(')')?.1.trim_start(),
+                None => rest,
+            }
+        }
+        None => code,
+    };
+    let name = rest.strip_prefix("mod ")?.trim().strip_suffix(';')?.trim();
+    let name = name.strip_prefix("r#").unwrap_or(name);
+    (!name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')).then_some(name)
 }
 
 /// What an `include!` reads: a build-script value (`env!`, possibly in a
@@ -401,6 +476,49 @@ mod tests {
         assert_eq!(with_script.generated, vec![lib.clone()]);
         assert_eq!(with_script.outside, outside);
         assert!(capped.has_more);
+    }
+
+    /// A support file two crate roots declare by `#[path]` is declared
+    /// twice; a file one module tree declares, once; comments and inline
+    /// modules declare nothing.
+    #[test]
+    fn package_includes_name_the_files_declaring_the_anchor() {
+        let package = TmpDir::new();
+        for dir in ["src/a", "benches/support", "tests"] {
+            fs::create_dir_all(package.join(dir)).expect("dir");
+        }
+        fs::write(package.join("Cargo.toml"), b"[package]\nname = \"p\"\n").expect("manifest");
+        let support = package.join("benches/support/frozen.rs");
+        fs::write(&support, b"pub fn frozen() {}\n").expect("support");
+        let bench = package.join("benches/graph.rs");
+        fs::write(
+            &bench,
+            b"#[path = \"support/frozen.rs\"]\nmod frozen;\nfn main() {}\n",
+        )
+        .expect("bench");
+        let test = package.join("tests/graph.rs");
+        fs::write(
+            &test,
+            b"#[path = \"../benches/support/frozen.rs\"]\n#[allow(dead_code)]\npub(crate) mod frozen;\n",
+        )
+        .expect("test");
+        let lib = package.join("src/lib.rs");
+        fs::write(&lib, b"pub mod a;\n// mod b;\nmod inline { }\n").expect("lib");
+        let a = package.join("src/a/mod.rs");
+        fs::write(&a, b"pub mod b;\n").expect("a");
+        let b = package.join("src/a/b.rs");
+        fs::write(&b, b"pub fn bee() {}\n").expect("b");
+        let declared = |file: &Path| {
+            let mut found = cargo_package_includes(file, 100)
+                .expect("package")
+                .declared_by;
+            found.sort();
+            found
+        };
+        assert_eq!(declared(&support), vec![bench, test]);
+        assert_eq!(declared(&a), vec![lib.clone()]);
+        assert_eq!(declared(&b), vec![a]);
+        assert_eq!(declared(&lib), Vec::<PathBuf>::new());
     }
 
     #[test]

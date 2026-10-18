@@ -49,14 +49,14 @@ test('npm archive runs through npx outside the repository with CLI and MCP commu
   try {
     const tools = await client.listTools();
     assert.equal(tools.tools.length, 18);
-    const sent = launch('send_message', '--to', receiver.id, '--body', 'CLI to packed MCP', '--reasoning', 'Verify installed interfaces', '--reply-required', 'true', '--session', agent.id, ...flags);
+    const sent = launch('send_message', '--to', receiver.id, '--question', 'CLI to packed MCP', '--reasoning', 'Verify installed interfaces', '--session', agent.id, ...flags);
     const inbox = await client.callTool({ name: 'inbox', arguments: {} });
     assert.notEqual(inbox.isError, true);
     assert.equal(JSON.parse(inbox.content[0].text).items[0].id, sent.id);
-    const completed = await client.callTool({ name: 'complete', arguments: { message: sent.id, reply: 'Packed MCP to CLI' } });
+    const completed = await client.callTool({ name: 'complete', arguments: { message: sent.id, outcome:'done',reply:{conclusion:'Packed MCP to CLI'} } });
     assert.notEqual(completed.isError, true);
     const reply = launch('inbox', '--session', agent.id, ...flags).items[0];
-    assert.equal(reply.body, 'Packed MCP to CLI');
+    assert.equal(reply.body, 'BLUF\nOutcome: done\nConclusion: Packed MCP to CLI');
     assert.equal(reply.replyTo, sent.id);
     launch('complete', '--message', String(reply.id), '--session', agent.id, ...flags);
   } finally { await client.close(); }

@@ -131,16 +131,13 @@ def run(argv=None):
         if action == 'info':
             _arity(rest, 1, 1)
             return output(database.inspect(database.path(args.database), args.workspace))
-        if action not in ('retention', 'compact', 'export', 'migrate'):
-            raise ValueError('Use db info, db protocol, db export, db retention, db compact, or db migrate')
+        if action not in ('retention', 'compact', 'export'):
+            raise ValueError('Use db info, db protocol, db export, db retention, or db compact')
         if action == 'export':
             _arity(rest, 2, 2)
         value = parse_json(rest[1] if len(rest) == 2 else '{}')
         catalog.command('db ' + action, value)
         path = database.path(args.database)
-        if action == 'migrate':
-            from .migration import migrate
-            return output(migrate(path, Path(value['backup'])))
         if action == 'export':
             return output(database.export(path, Path(catalog.text(value, 'path'))))
         from . import retention

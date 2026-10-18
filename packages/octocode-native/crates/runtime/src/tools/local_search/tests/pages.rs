@@ -1631,6 +1631,12 @@ fn an_include_that_matches_no_file_says_so() {
     assert_eq!(body["filesScanned"], 0, "{body}");
     let hint = body["hints"][0].as_str().expect("scope hint");
     assert!(hint.contains("include/exclude matched no file"), "{hint}");
+    // The next call is named, and the row carries it.
+    assert!(hint.contains("viewTree"), "{hint}");
+    assert_eq!(
+        body["next"]["viewTree"]["tool"], "structureSearch",
+        "{body}"
+    );
     assert!(
         hint.chars().count() <= 120,
         "clipped by the response stage: {hint}"

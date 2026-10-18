@@ -13,7 +13,7 @@ pub(super) fn check_pattern(query: &LocalSearchQuery) -> Result<(), ToolError> {
     let mode = query.regex_mode();
     if query.multiline == LocalSearchQueryMultiline::Off
         && octocode_engine::portable::matches_line_break(
-            &query.match_string,
+            query.pattern(),
             mode == LocalSearchQueryRegex::Literal,
         )
     {
@@ -23,7 +23,7 @@ pub(super) fn check_pattern(query: &LocalSearchQuery) -> Result<(), ToolError> {
         return Ok(());
     }
     let checked = octocode_engine::portable::validate_text_pattern(
-        &query.match_string,
+        query.pattern(),
         false,
         query.regex_mode() == LocalSearchQueryRegex::Pcre2,
     );
@@ -32,7 +32,7 @@ pub(super) fn check_pattern(query: &LocalSearchQuery) -> Result<(), ToolError> {
     } else {
         Err(invalid_regex(
             query,
-            regex_error_message(&query.match_string, checked.error.as_deref()),
+            regex_error_message(query.pattern(), checked.error.as_deref()),
         ))
     }
 }
@@ -91,7 +91,7 @@ fn line_break_pattern(query: &LocalSearchQuery) -> ToolError {
             "invalidPattern",
             format!(
                 "matchString `{}` matches a line break; lines are searched one at a time unless multiline:\"on\".",
-                query.match_string.replace('\n', "\\n")
+                query.pattern().replace('\n', "\\n")
             ),
         )
     }
@@ -163,20 +163,20 @@ pub(super) fn invalid_regex(query: &LocalSearchQuery, message: String) -> ToolEr
     // alternative escaped finds every anchor. The message names the pattern
     // and the reason; the repaired query is the one lead.
     let mut hints = Vec::new();
-    if only_pcre2_compiles([query.match_string.as_str()], pcre2) {
+    if only_pcre2_compiles([query.pattern()], pcre2) {
         // A backreference or lookaround the Rust engine lacks: the same
         // search under PCRE2 is the repair.
         repaired["regex"] = json!("pcre2");
-    } else if let Some(text) = close_unclosed_group(&query.match_string, pcre2) {
+    } else if let Some(text) = close_unclosed_group(query.pattern(), pcre2) {
         // Closing guesses the group's end; the text as written is the other
         // reading.
         hints.push(format!(
             "The repair reads matchString as `{text}`; regex:\"literal\" matches it as written."
         ));
         repaired["matchString"] = json!(text);
-    } else if let Some(text) = repair_alternation(&query.match_string, pcre2) {
+    } else if let Some(text) = repair_alternation(query.pattern(), pcre2) {
         repaired["matchString"] = json!(text);
-    } else if reads_as_text(&query.match_string, &message) {
+    } else if reads_as_text(query.pattern(), &message) {
         repaired["regex"] = json!("literal");
     } else {
         // Well-formed regex syntax the engine refused (a size limit, an

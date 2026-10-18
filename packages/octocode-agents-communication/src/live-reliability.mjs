@@ -99,30 +99,30 @@ async function runFlow(flow, { vendor, model, python, binary, timeout }) {
     const initialMessages = rows().messages.map(row => row.id);
     if (flow === 'qa') {
       const before = events.filter(event => event.type === 'turn-completed').length;
-      const notice = cli('send_message', { to: 'eval-worker', body: 'Informational update: the sample batch contains 4 red items and 9 blue items.', reasoning: 'Share sample data for the next task', replyRequired: false, wake: 'passive' }, sender).id;
+      const notice = cli('send_message', { to: 'eval-worker', body: 'Informational update: the sample batch contains 4 red items and 9 blue items.', reasoning: 'Share sample data for the next task', wake: 'passive' }, sender).id;
       await pause(2000);
       const passiveTurns = events.filter(event => event.type === 'turn-completed').length - before;
-      const request = cli('send_message', { to: 'eval-worker', body: 'How many items are in the sample batch described in the informational update? Reply with only the total number.', reasoning: 'Obtain the total for the sample batch', replyRequired: true, wake: 'action' }, sender).id;
+      const request = cli('send_message', { to: 'eval-worker', question: 'How many items are in the sample batch described in the informational update? Reply with only the total number.', reasoning: 'Obtain the total for the sample batch', wake: 'action' }, sender).id;
       await wait(() => rows().deliveries.filter(row => [notice, request].includes(row.message) && row.acknowledgedAt !== null).length === 2, 'completion and acknowledgements');
       Object.assign(result, gradeCollaboration({ ...rows(), request, notice, sender, receiver: worker, expected: '13', passiveTurns, initialMessages }));
     } else if (flow === 'lock-handoff') {
       const owner = cli('join', { name: 'api-owner', vendor: 'generic' }).id; keepAlive.push(owner);
       const lease = cli('lock', { path: 'src/api.ts', reasoning: 'Owner is finishing an API edit', ttlMs: 600000 }, owner).lease;
-      const request = cli('send_message', { to: 'eval-worker', body: 'Acquire an edit lease on src/api.ts with the lock tool, then reply with only the word LOCKED. Do not edit any file. If another agent holds it, coordinate with that owner and retry after it releases.', reasoning: 'Verify cooperative lease handoff', replyRequired: true, wake: 'action' }, sender).id;
+      const request = cli('send_message', { to: 'eval-worker', question: 'Acquire an edit lease on src/api.ts with the lock tool, then reply with only the word LOCKED. Do not edit any file. If another agent holds it, coordinate with that owner and retry after it releases.', reasoning: 'Verify cooperative lease handoff', wake: 'action' }, sender).id;
       let releasedAt = null;
       await wait(() => rows().messages.some(row => row.sender === worker && row.target === owner), 'worker asking the lease owner');
       const ask = rows().messages.find(row => row.sender === worker && row.target === owner);
       // The runtime grants a queued waiter inside the unlock transaction.
       releasedAt = Date.now(); cli('unlock', { leaseId: lease.id }, owner);
-      if (ask.replyRequired) cli('complete', { message: ask.id, reply: 'Released src/api.ts; go ahead.' }, owner);
-      else { cli('complete', { message: ask.id }, owner); cli('send_message', { to: worker, body: 'Released src/api.ts; go ahead.', reasoning: 'Hand off the released lease', replyRequired: false, wake: 'action' }, owner); }
+      if (ask.replyRequired) cli('complete', { message: ask.id, outcome:'done',reply:{conclusion:'Released src/api.ts; go ahead.'} }, owner);
+      else { cli('complete', { message: ask.id }, owner); cli('send_message', { to: worker, body: 'Released src/api.ts; go ahead.', reasoning: 'Hand off the released lease', wake: 'action' }, owner); }
       await wait(() => rows().deliveries.some(row => row.message === request && row.acknowledgedAt !== null), 'worker completing the request');
       Object.assign(result, gradeHandoff({ ...rows(), request, owner, worker, releasedAt, expected: 'LOCKED' }));
     } else {
       const code = 'CODE-' + randomUUID().slice(0, 8).toUpperCase();
       const filler = Array.from({ length: 600 }, (_, i) => `Line ${i + 1}: routine evidence that does not answer the question.`).join('\n');
       cli('share_document', { name: 'handoff-evidence.md', content: `${filler}\nFinal line: the release code is ${code}.\n`, reasoning: 'Large evidence for a paged read' }, sender);
-      const request = cli('send_message', { to: 'eval-worker', body: 'Read the shared document handoff-evidence.md completely (follow every next page) and reply with only the release code stated on its final line.', reasoning: 'Verify paged evidence reads', replyRequired: true, wake: 'action' }, sender).id;
+      const request = cli('send_message', { to: 'eval-worker', question: 'Read the shared document handoff-evidence.md completely (follow every next page) and reply with only the release code stated on its final line.', reasoning: 'Verify paged evidence reads', wake: 'action' }, sender).id;
       await wait(() => rows().deliveries.some(row => row.message === request && row.acknowledgedAt !== null), 'worker completing the request');
       Object.assign(result, gradePagedRead({ ...rows(), request, worker, expected: code }));
     }

@@ -244,6 +244,48 @@ fn an_unfiltered_listing_lead_lifts_every_counted_cause() {
     }
 }
 
+/// `includeHidden` alone lists the hidden directories (`.agents`, `.github`)
+/// in both operations. A hidden directory a `.gitignore` rule names stays
+/// counted as ignored, and the lead names the one flag that reaches it.
+#[test]
+fn include_hidden_alone_lists_hidden_directories_and_leads_to_the_ignored_ones() {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+    std::fs::write(root.0.join(".gitignore"), ".octocode/\n").expect("gitignore");
+    for file in [
+        "src/lib.rs",
+        ".agents/notes.md",
+        ".github/ci.yml",
+        ".octocode/scratch.md",
+    ] {
+        let path = root.0.join(file);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("dir");
+        std::fs::write(path, "x\n").expect("file");
+    }
+    for operation in ["tree", "files"] {
+        let out = run(
+            &root.0,
+            json!({"operation":operation,"path":root.0,"maxDepth":3,"includeHidden":true}),
+        )
+        .expect("listing");
+        let listing = out.to_string();
+        for listed in ["notes.md", "ci.yml", "lib.rs"] {
+            assert!(
+                listing.contains(listed),
+                "{operation} lacks {listed}: {out}"
+            );
+        }
+        assert!(!listing.contains("scratch.md"), "{operation}: {out}");
+        assert_eq!(out["summary"]["ignored"], 1, "{operation}: {out}");
+        assert!(out["summary"].get("hidden").is_none(), "{operation}: {out}");
+        let lead = out["next"]["includeSkipped"]["query"]["queries"][0].clone();
+        assert_eq!(lead["includeIgnored"], true, "{operation}: {out}");
+        assert!(lead.get("defaultExcludes").is_none(), "{operation}: {out}");
+        let all = run(&root.0, lead).expect("lead");
+        assert!(all.to_string().contains("scratch.md"), "{operation}: {all}");
+    }
+}
+
 /// A path-ordered listing is the walk order, so the walk stops once the
 /// requested limit is filled instead of scanning the whole tree.
 #[test]

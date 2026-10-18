@@ -18,7 +18,17 @@ One release line ships in lockstep at one version `<v>` (rows 2–5). Core keeps
 | 8 | Homebrew `bgauryy/octocode/octocode` | **The native binary** for macOS and Linux, no Node (downloads the row-2 tarballs) | git: tap repo `bgauryy/homebrew-octocode` | `node skills-dev/octocode-dev/scripts/dev.mjs brew:formula` renders `packages/octocode-native/homebrew/octocode.rb` (sha256 of the registry bytes; refuses when the host platform's published binary does not report `octocode <v>`) | copy it to `Formula/octocode.rb` in the tap repo; `brew audit --strict --online bgauryy/octocode/octocode`; push the tap | `brew install bgauryy/octocode/octocode && brew test bgauryy/octocode/octocode` |
 | 9 | VS Code extension `bgauryy.octocode-mcp-vscode` | Editor extension; writes `octocode-mcp@latest` into MCP configs | VS Code Marketplace | `vscode:prepublish` builds | `packages/octocode-vscode`: `yarn run publish` (`vsce publish`, publisher `bgauryy`) | `npx -y @vscode/vsce@3.9.2 show bgauryy.octocode-mcp-vscode` |
 
-Order: 1 → `prepublish --fix` + `yarn install` → 2 → 3 → 4 → 5 → 6, 7, 8, 9. Each row depends on the rows above it existing on npm. The Pi extension publishes only after row 4.
+```mermaid
+flowchart LR
+  r1["1 core"] --> pp["prepublish --fix + yarn install"] --> r2["2 platform packages"] --> r3["3 octocode-native"] --> r4["4 octocode-mcp"] --> r5["5 octocode"]
+  r5 --> r6["6 Codex plugin"]
+  r5 --> r7["7 Claude plugin"]
+  r5 --> r8["8 Homebrew"]
+  r5 --> r9["9 VS Code extension"]
+  r4 -.-> pi["Pi extension: after row 4"]
+```
+
+Each row depends on the rows above it existing on npm.
 
 Row 8 has not shipped yet: the tap still serves the old Node-based 2.0.0 formula, so user docs do not offer `brew install` until it does.
 

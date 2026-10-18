@@ -43,8 +43,9 @@ Paths in the vectors are workspace-relative and use `/`.
 
 The two systems share the word "message" but not its state machine, so there are no message vectors:
 
-- The package records `replyRequired` (default true), `conversationId`, per-recipient `acknowledgedAt`, and wake
-  `dispatches` that a vendor adapter performs.
+- The package records a protocol `kind` that fixes `replyRequired` (requests: question, task, decision, handoff; the
+  default is an FYI), `conversationId`, per-recipient `acknowledgedAt`, and wake `dispatches` that a vendor adapter
+  performs.
 - Pi's messages carry `reply_required` (default false), a recipient's `delivered_at` when its model is called with
   the message, `completed_at` on an answer, and `dead_at` / `notified_at` for dead letters; it wakes an idle agent
   itself.

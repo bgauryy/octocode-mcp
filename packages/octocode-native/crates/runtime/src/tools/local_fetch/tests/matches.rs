@@ -703,6 +703,41 @@ fn matches_on_minified_lines_default_to_byte_windows() {
         r.warnings
     );
 }
+/// An explicit `contextLines` on a minified line still starts the match
+/// window at the hit: neighbouring whole lines cannot be shown without the
+/// line's kilobytes, so the window is the hit's bytes and `next.wholeLines`
+/// reads the whole line. Only `contextLines:0` asks for the matched line itself,
+/// paged from its start.
+#[test]
+fn an_explicit_context_on_a_minified_line_still_windows_the_hit() {
+    let t = Fixture::new();
+    let p = t.0.join("bundle.min.js");
+    let filler = "x".repeat(30_000);
+    fs::write(&p, format!("{filler}needle{filler}\nshort line\n")).expect("fixture");
+    let paths = Paths(t.0.clone());
+    let mut req = q(&p);
+    req.match_string = Some("needle".parse().expect("match string"));
+    for context in [1, 5] {
+        req.context_lines = Some(context);
+        let r = fetch(&req, &paths);
+        let content = r.content.as_deref().expect("content");
+        assert!(content.len() < 1_000, "{} bytes", content.len());
+        assert!(content.contains("needle"), "{content:?}");
+        assert!(
+            content.starts_with("... [29800 bytes omitted] ...\n"),
+            "{content:?}"
+        );
+        let next = r.next.expect("next");
+        assert!(next.whole_lines.is_some(), "{next:?}");
+        assert!(next.continue_window.is_none(), "{next:?}");
+    }
+    req.context_lines = Some(0);
+    let whole = fetch(&req, &paths);
+    let content = whole.content.as_deref().expect("content");
+    assert!(content.starts_with("xxxx"), "the line from its start");
+    assert!(!content.contains("omitted"), "{content:.80}");
+    assert!(whole.next.expect("next").continue_window.is_some());
+}
 #[test]
 fn missing_files_in_a_sparse_checkout_say_so() {
     let t = Fixture::new();

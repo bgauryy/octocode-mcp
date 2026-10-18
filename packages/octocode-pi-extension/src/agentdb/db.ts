@@ -77,6 +77,16 @@ export function openAgentDb(file?: string, env: NodeJS.ProcessEnv = process.env)
   }
 }
 
+/** A cheap change marker for the database file and its WAL: a write by any process moves it. Constant for a file that does not exist. */
+export function dbStamp(file: string): string {
+  return [file, `${file}-wal`]
+    .map((entry) => {
+      const stat = fs.statSync(entry, { throwIfNoEntry: false });
+      return stat ? `${stat.mtimeMs}:${stat.size}` : '-';
+    })
+    .join('|');
+}
+
 /** SQLITE_NOTADB (26): the file has no SQLite header. */
 const isNotADatabase = (error: unknown) => (error as { errcode?: number } | null)?.errcode === 26;
 

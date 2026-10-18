@@ -35,8 +35,8 @@ test('MCP explicit tool selection reduces discovery and refuses hidden tools', t
   const full = JSON.parse(f.run(['schema']).stdout).tools;
   assert.deepEqual(JSON.parse(f.run(['schema', 'tools', '--tools', 'complete,send_message,peers']).stdout), rows[0].result.tools);
   assert.ok(Buffer.byteLength(JSON.stringify(rows[0].result.tools)) < Buffer.byteLength(JSON.stringify(full)) / 2);
-  // 18 KiB: complete field descriptions plus annotations; profiles reduce discovery cost.
-  assert.ok(Buffer.byteLength(JSON.stringify(full)) <= 18432, 'default tools/list stays within its token budget');
+  // 20 KiB: protocol slot schemas, field descriptions and annotations; profiles reduce discovery cost.
+  assert.ok(Buffer.byteLength(JSON.stringify(full)) <= 20480, 'default tools/list stays within its token budget');
   const leases = JSON.parse(f.run(['locks', '--session', session]).stdout);
   assert.equal(leases.items.length, 0);
 });

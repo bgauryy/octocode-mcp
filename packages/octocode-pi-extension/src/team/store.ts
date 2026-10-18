@@ -1,8 +1,8 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { openAgentDb, sharedAgentDb, type AgentDb } from '../agentdb/db.js';
+import { dbStamp, openAgentDb, sharedAgentDb, type AgentDb } from '../agentdb/db.js';
 import { agentDbPath, canonicalPath, repoKey } from '../shared/home.js';
-import { processAlive, sameProcess } from '../shared/process.js';
+import { sameProcess } from '../shared/process.js';
 import { HOUR_MS } from '../shared/util.js';
 import { EditLog } from './edits.js';
 import { num, type Row } from '../agentdb/rows.js';
@@ -47,27 +47,6 @@ export const LEASE_MS = 90_000;
 const MESSAGE_RETENTION_MS = 24 * HOUR_MS;
 export const INBOX_BATCH_SIZE = 32;
 const PRUNE_INTERVAL_MS = 60_000;
-
-/** How long a start-time comparison (a `ps` call) is reused: `list` and `send` run often, and a pid reused inside this window is retired by `sweep` anyway. */
-const VERDICT_TTL_MS = 30_000;
-const verdicts = new Map<string, { at: number; running: boolean }>();
-
-/**
- * Whether the process a row names still runs, by the rule `sweep` and `join` use (`sameProcess`: alive and not a later
- * process that got the pid), so `list` and `send` never treat a reused pid as a live agent. A dead pid is judged without
- * `ps`; a live one's start-time comparison is cached.
- */
-function running(pid: number, started: string | undefined, now: number): boolean {
-  if (!processAlive(pid)) return false;
-  if (!started) return true;
-  const key = `${pid} ${started}`;
-  const cached = verdicts.get(key);
-  if (cached && now - cached.at < VERDICT_TTL_MS) return cached.running;
-  const same = sameProcess(pid, started);
-  verdicts.set(key, { at: now, running: same });
-  if (verdicts.size > 256) verdicts.delete(verdicts.keys().next().value!);
-  return same;
-}
 
 /** A member has not heartbeat for `STALE_MS`: its process may only be stalled, so it is hidden but keeps its mail and row. */
 const stale = (seenAt: number, now: number): boolean => now - seenAt > STALE_MS;
@@ -152,6 +131,11 @@ export class TeamStore {
 
   private transaction<T>(work: () => T): T {
     return this.agent.transaction(work);
+  }
+
+  /** Moves whenever any process writes the database file (`dbStamp`): equal stamps mean a read would answer as it did. */
+  stamp(): string {
+    return dbStamp(this.agent.file);
   }
 
   /** Runs background work with a short busy wait, so a database held by another process never freezes this one. */
@@ -279,7 +263,7 @@ export class TeamStore {
   sweep(now = Date.now()): void {
     const rows = this.db.prepare('SELECT id, pid, started FROM agents').all() as Row[];
     for (const row of rows) {
-      if (!sameProcess(num(row['pid']), text(row['started']))) this.reap(String(row['id']), { pid: num(row['pid']), started: text(row['started']) }, now);
+      if (!sameProcess(num(row['pid']), text(row['started']), now)) this.reap(String(row['id']), { pid: num(row['pid']), started: text(row['started']) }, now);
     }
   }
 
@@ -323,7 +307,7 @@ export class TeamStore {
          FROM agents a WHERE a.workspace = ? ORDER BY a.joined_at, a.id`,
       )
       .all(this.workspace) as Row[];
-    const live = rows.map(toMember).filter((member) => !stale(member.updatedAt, now) && running(member.pid, member.started, now));
+    const live = rows.map(toMember).filter((member) => !stale(member.updatedAt, now) && sameProcess(member.pid, member.started, now));
     const held = this.leases(now);
     return live.map((member) => {
       const locks = held.filter((lease) => lease.owner === member.id).map((lease) => (lease.kind === 'tree' ? `${lease.path}/` : lease.path));
@@ -335,7 +319,7 @@ export class TeamStore {
   private reachable(): Set<string> {
     const rows = this.db.prepare('SELECT id, pid, started FROM agents WHERE workspace = ?').all(this.workspace) as Row[];
     const now = Date.now();
-    return new Set(rows.filter((row) => running(num(row['pid']), text(row['started']), now)).map((row) => String(row['id'])));
+    return new Set(rows.filter((row) => sameProcess(num(row['pid']), text(row['started']), now)).map((row) => String(row['id'])));
   }
 
   // ── messages ──────────────────────────────────────────────────────────────
@@ -501,7 +485,7 @@ export class TeamStore {
   /** Retires a lease owner that is gone (it has no row, or its process died or was replaced); whether it was. */
   private retireOwner(owner: string, now: number): boolean {
     const judged = this.processOf(owner);
-    if (judged && sameProcess(judged.pid, judged.started)) return false;
+    if (judged && sameProcess(judged.pid, judged.started, now)) return false;
     return this.reap(owner, judged, now);
   }
 

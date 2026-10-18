@@ -339,10 +339,11 @@ pub(super) fn collect_rust_paths(
 }
 
 /// A file-inclusion macro (`include!`, `include_str!`, `include_bytes!`)
-/// whose one argument is a plain string literal: an `include` import of
-/// that path, which the linker resolves against this file's directory. A
-/// computed path (`concat!(env!("OUT_DIR"), …)`) names no file and is
-/// skipped.
+/// whose one argument is a plain string literal: an import of that path,
+/// which the linker resolves against this file's directory. `include!`
+/// splices code (`include`); `include_str!` and `include_bytes!` embed the
+/// file as data (`include-data`). A computed path
+/// (`concat!(env!("OUT_DIR"), …)`) names no file and is skipped.
 pub(super) fn collect_rust_include(
     node: Node<'_>,
     content: &str,
@@ -353,9 +354,11 @@ pub(super) fn collect_rust_include(
         .child_by_field_name("macro")
         .and_then(|name| node_text(name, content))
         .map(|name| name.rsplit("::").next().unwrap_or(name).trim());
-    if !matches!(name, Some("include" | "include_str" | "include_bytes")) {
-        return;
-    }
+    let import_kind = match name {
+        Some("include") => "include",
+        Some("include_str" | "include_bytes") => "include-data",
+        _ => return,
+    };
     let mut cursor = node.walk();
     let Some(arguments) = node
         .named_children(&mut cursor)
@@ -382,7 +385,7 @@ pub(super) fn collect_rust_include(
         id: format!("include:{specifier}:{line}:{}", acc.imports.len()),
         specifier,
         line,
-        import_kind: "include".to_owned(),
+        import_kind: import_kind.to_owned(),
         local_name: None,
         imported_name: None,
         imported_range: None,

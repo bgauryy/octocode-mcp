@@ -226,14 +226,15 @@ fn validate_dimensions(width: usize, height: usize) -> Result<(), Classification
 
 fn check(context: &ExecutionContext) -> Result<(), ClassificationError> {
     context.check().map_err(|stop| {
+        let (code, hint) = if matches!(stop, crate::runtime::ExecutionError::Cancelled) {
+            ("cancelled", crate::response::rows::CANCELLED_HINT)
+        } else {
+            ("timeout", "Retry with more time.")
+        };
         failure(
-            if matches!(stop, crate::runtime::ExecutionError::Cancelled) {
-                "cancelled"
-            } else {
-                "timeout"
-            },
+            code,
             "The call stopped before the images were captured.",
-            "Retry only if the judgment is still needed.",
+            hint,
         )
     })
 }

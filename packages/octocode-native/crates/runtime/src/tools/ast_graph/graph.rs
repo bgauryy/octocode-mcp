@@ -668,7 +668,10 @@ impl FileLink<'_, '_> {
         let rust = self.lang == Linker::Rust;
         // `include!("path")` splices that file into this one: the path is
         // relative to this file and its items share this file's namespace.
-        let include = rust && i.import_kind == "include";
+        // `include_str!`/`include_bytes!` resolve the same way but embed
+        // data, so they share no names.
+        let splice = rust && i.import_kind == "include";
+        let include = splice || rust && i.import_kind == "include-data";
         let target = if include {
             join_within_root(dirname(&self.file), &i.specifier)
                 .filter(|target| self.inputs.known.contains(target))
@@ -714,7 +717,7 @@ impl FileLink<'_, '_> {
                 kind = super::edges::PYTHON_LAZY_IMPORT;
             }
             self.edge(t, kind, i.line)?;
-            if i.imported_name.as_deref() == Some("*") || self.lang == Linker::CFamily || include {
+            if i.imported_name.as_deref() == Some("*") || self.lang == Linker::CFamily || splice {
                 self.b.namespace_targets.insert(t.clone());
             }
         }

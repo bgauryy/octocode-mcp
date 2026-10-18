@@ -120,6 +120,9 @@ pub(crate) fn has_recovery(value: &Value) -> bool {
     false
 }
 
+/// The one recovery for a cancelled call, on every tool and stage.
+pub(crate) const CANCELLED_HINT: &str = "Retry only if the result is still needed and what cancelled it changed; otherwise report the cancellation.";
+
 /// The one recovery table for the `errorCode` values every tool shares
 /// (provider kinds, policy, locks, input). A tool answers only for the codes
 /// it alone emits (`ToolOutput::error_hint`); any other code gets the tool's
@@ -137,7 +140,7 @@ pub(crate) fn error_code_hint(tool: ToolId, code: &str) -> Option<&'static str> 
         "timeout" | "transport" | "server" | "lockTimeout" => {
             "Retry once; if it persists, narrow scope and verify provider availability."
         }
-        "cancelled" => "Retry only if the operation is still needed.",
+        "cancelled" => CANCELLED_HINT,
         "responseTooLarge" => "Narrow the requested scope.",
         "redirectDenied" => "Use the canonical allowed host and repository.",
         "decode" => "Retry once; report a provider response incompatibility if it persists.",

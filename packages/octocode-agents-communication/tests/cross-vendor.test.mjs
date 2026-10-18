@@ -19,13 +19,13 @@ test('Claude, Grok, Codex and Pi share typed requests, topics, documents and que
   assert.equal(call('read_document', { name: doc }, agents.claude).content, 'API review evidence');
   for (const [index, vendor] of vendors.entries()) {
     const sender = agents[vendor], recipient = agents[vendors[(index + 1) % vendors.length]];
-    const request = call('send_message', { to: recipient, body: `Review ${doc}`, key: `review-api-${vendor}`, replyRequired: true, conversationId: 'api-review' }, sender);
+    const request = call('send_message', { to: recipient, question: `Review ${doc}`, key: `review-api-${vendor}`, conversationId: 'api-review' }, sender);
     assert.equal(call('hook', { format: 'json' }, recipient).action, true);
     const received = call('fetch', { incoming: true, type: 'message' }, recipient).items[0];
     assert.equal(received.data.messageId, request.id);
     assert.ok(Number.isSafeInteger(received.recordId) && !Object.hasOwn(received, 'id'));
     assert.equal(received.data.replyRequired, true);
-    const reply = call('complete', { message: received.data.messageId, reply: 'Reviewed API; evidence is complete' }, recipient);
+    const reply = call('complete', { message: received.data.messageId, outcome:'done',reply:{conclusion:'Reviewed API; evidence is complete'} }, recipient);
     const answer = call('fetch', { incoming: true, type: 'message' }, sender).items[0];
     assert.equal(answer.data.messageId, reply.id);
     assert.equal(answer.data.replyTo, request.id);
@@ -52,7 +52,7 @@ test('Claude, Grok, Codex and Pi share typed requests, topics, documents and que
   assert.equal(call(conflict.next.command, conflict.next.input, agents.grok).queued, true);
   assert.equal(call('lock', { path: 'src/api/new.ts', wait: true }, agents.pi).queued, true);
   assert.equal(call('check_write', { paths: [{ path: 'src/api/new.ts' }] }, agents.codex).ok, true);
-  const granted = session => call('inbox', {}, session).items.filter(item => item.body.startsWith('Lease granted'));
+  const granted = session => call('inbox', {}, session).items.filter(item => item.kind === 'delta' && item.body.includes('- Lease granted'));
   call('unlock', { leaseId: leased.lease.id }, agents.codex);
   assert.equal(granted(agents.grok).length, 1, 'the oldest waiter (Grok) is granted on release');
   assert.equal(granted(agents.pi).length, 0);

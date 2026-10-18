@@ -24,11 +24,14 @@ Then run the rows you need, for example `clone rust tokio-rs/tokio facc6fc`. If 
 | csharp | JamesNK/Newtonsoft.Json | 52fa3ae | C# |
 | scala | typelevel/cats | 4a2ea73 | Scala |
 | asm | libjpeg-turbo/libjpeg-turbo | 03c9a9d | Assembly |
+| cuda | NVIDIA/cutlass | 78e4622 | CUDA (optional; see below) |
 | huge-ts | microsoft/vscode | 43dd9070 | huge-repo suites (optional) |
 | huge-go | kubernetes/kubernetes | 6c1c7702 | huge-repo suites (optional) |
 | huge-java | elastic/elasticsearch | 9438d0a6 | huge-repo suites (optional) |
 | huge-rust | rust-lang/rust | b373574ee | huge-repo suites (optional) |
 | huge-cpp | pytorch/pytorch | 03943c7 | huge-repo suites (optional) |
 | huge-c | torvalds/linux | fd179f8a0 | huge-repo suites (optional) |
+
+`cuda` has no compile database. Without one, `lspSearch` runs clangd with CUDA host-only fallback flags (`-xcuda --cuda-host-only`), so `.cu` and `.cuh` files get an AST. Without a CUDA SDK, CUDA builtins (`__global__`, `blockIdx`) stay unresolved and project headers resolve only relative to the including file. For full semantics, add a `compile_commands.json` or `compile_flags.txt` to `cuda/`: lspSearch restarts an idle clangd when one appears or changes (see `packages/octocode-native/docs/engine/LSP_SERVER_LIFECYCLE.md`).
 
 The first 12 cover every grammar and are what the harness suites (`harness/*.mjs`) need (about 5 GB with the huge ones). Language servers are optional: suites record `serverUnavailable` rather than fail.

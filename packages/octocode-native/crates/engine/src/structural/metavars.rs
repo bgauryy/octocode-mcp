@@ -59,9 +59,29 @@ pub(super) enum MetaVar<'a> {
 }
 
 /// C++ can parse `{ $$$BODY }` after a function declarator as an initializer
-/// list. A statement terminator disambiguates only this sole-capture body;
-/// ordinary variable initializers and concrete expression lists stay untouched.
-pub(super) fn ambiguous_function_body_capture(
+/// list, at the pattern root or nested (`template <...> void f() { $$$B }`
+/// wraps the declaration in a `template_declaration`). Returns the end offset
+/// of every such sole-capture body, in source order: a statement terminator
+/// there disambiguates it. Ordinary variable initializers and concrete
+/// expression lists stay untouched.
+pub(super) fn ambiguous_function_body_captures(
+    root: Node<'_>,
+    source: &str,
+    expando: Expando,
+) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        if let Some(offset) = ambiguous_function_body_capture(node, source, expando) {
+            offsets.push(offset);
+        }
+        pending.extend(named_children(node));
+    }
+    offsets.sort_unstable();
+    offsets
+}
+
+fn ambiguous_function_body_capture(
     root: Node<'_>,
     source: &str,
     expando: Expando,

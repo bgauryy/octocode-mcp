@@ -27,8 +27,12 @@ const WINDOW_LINES: usize = 5_000;
 /// windows (contract `localFetch.semanticPolicy.streamedHeadLines`).
 const STREAMED_HEAD_LINES: usize = crate::tools::id::local_fetch_policy::STREAMED_HEAD_LINES;
 /// Bytes one streamed window holds; a longer window is cut at a line end or,
-/// for a single giant line, mid-line with a warning.
-const WINDOW_BYTES: usize = 4 * 1024 * 1024;
+/// for a single giant line, mid-line: its byte pages start the window at
+/// their own offset, so the rest of the line is the next window.
+pub(super) const WINDOW_BYTES: usize = 4 * 1024 * 1024;
+/// View bytes a byte page's window keeps behind the page: the page finds its
+/// line's start and its secret-scan margin there, as in an in-memory read.
+const BYTE_LOOKBEHIND: usize = 1024 * 1024;
 /// Line prefix kept for private-key marker detection outside the window.
 const MARKER_PREFIX_BYTES: usize = 256;
 
@@ -36,13 +40,51 @@ struct Streamed {
     digest: String,
     total_lines: usize,
     window: Vec<u8>,
-    /// First and last (1-based) lines actually held in `window`.
+    /// First and last (1-based) lines `window` holds bytes of.
     first: usize,
     last: usize,
     key_lines: usize,
-    clipped_line: Option<usize>,
+    /// Where `window` starts in the requested lines' bytes, and how many
+    /// bytes those lines have (key blocks replaced): the byte view a
+    /// window of any size is a part of.
+    origin: ByteOrigin,
     /// The source holds a NUL byte: binary, whatever its head showed.
     binary: bool,
+}
+
+/// The lines one streamed window asks for.
+#[derive(Clone, Copy)]
+struct Want {
+    first: usize,
+    last: usize,
+    /// Bytes of those lines the window skips before it holds any: a byte
+    /// page starts its window behind its own offset ([`BYTE_LOOKBEHIND`]).
+    from: usize,
+    /// A byte page: later pages of the same lines resume inside them
+    /// ([`RangeView`]).
+    byte_page: bool,
+}
+
+#[cfg(test)]
+impl Want {
+    fn lines(first: usize, last: usize) -> Self {
+        Self {
+            first,
+            last,
+            from: 0,
+            byte_page: false,
+        }
+    }
+
+    /// A byte page of lines `first..=last` whose window starts at `from`.
+    fn bytes(first: usize, last: usize, from: usize) -> Self {
+        Self {
+            first,
+            last,
+            from,
+            byte_page: true,
+        }
+    }
 }
 
 fn is_marker(head: &[u8], edge: &str) -> bool {
@@ -52,38 +94,91 @@ fn is_marker(head: &[u8], edge: &str) -> bool {
 }
 
 /// The requested lines of one window kept while a source streams past:
-/// byte-capped, with every line inside a private-key block replaced.
+/// byte-capped, with every line inside a private-key block replaced. The
+/// bytes seen are counted whole, so the view's size is known whatever the
+/// window holds.
 struct Held {
     first: usize,
     last: usize,
+    /// Bytes of the requested lines still to skip before the window starts
+    /// (moved on to the next character boundary).
+    from: usize,
     window: Vec<u8>,
+    /// The requested lines' byte `window` starts at.
+    base: usize,
+    /// The first line `window` holds bytes of.
+    window_first: Option<usize>,
+    /// Bytes of the requested lines seen so far, key blocks replaced.
+    view_pos: usize,
+    /// `view_pos` at the current line's start.
+    line_view_start: usize,
     /// Offset of the current line in `window`.
     line_start: usize,
     held_last: usize,
     key_lines: usize,
-    clipped_line: Option<usize>,
+    /// Requested lines inside a private-key block, held or not.
+    inside_lines: usize,
+    /// The line the window is cut inside: it is the window's only line.
+    cut_line: Option<usize>,
     full: bool,
 }
 
 impl Held {
-    fn new(first: usize, last: usize) -> Self {
+    fn new(want: Want) -> Self {
         Self {
-            first,
-            last,
+            first: want.first,
+            last: want.last,
+            from: want.from,
             window: Vec::new(),
+            base: 0,
+            window_first: None,
+            view_pos: 0,
+            line_view_start: 0,
             line_start: 0,
-            held_last: first.saturating_sub(1),
+            held_last: want.first.saturating_sub(1),
             key_lines: 0,
-            clipped_line: None,
+            inside_lines: 0,
+            cut_line: None,
             full: false,
         }
     }
 
     /// Take one piece of `line` (up to and including its newline, if any).
     fn push(&mut self, piece: &[u8], line: usize) {
-        if !(self.first..=self.last).contains(&line) || self.full {
+        if !(self.first..=self.last).contains(&line) {
             return;
         }
+        let start = self.view_pos;
+        self.view_pos += piece.len();
+        self.hold(start, piece, line);
+    }
+
+    /// Keep `bytes`, which sit at `start` of the requested lines' bytes,
+    /// from the window's first byte on.
+    fn hold(&mut self, start: usize, bytes: &[u8], line: usize) {
+        if self.full {
+            return;
+        }
+        let mut skip = self.from.saturating_sub(start);
+        if self.window.is_empty() && self.from > 0 {
+            // The window starts on a whole character: a continuation byte
+            // belongs to the character before it.
+            while bytes
+                .get(skip)
+                .is_some_and(|byte| byte & 0b1100_0000 == 0b1000_0000)
+            {
+                skip += 1;
+            }
+        }
+        if skip >= bytes.len() {
+            self.from = start + skip;
+            return;
+        }
+        if self.window.is_empty() {
+            self.base = start + skip;
+            self.window_first = Some(line);
+        }
+        let piece = &bytes[skip..];
         let room = WINDOW_BYTES.saturating_sub(self.window.len());
         if piece.len() <= room {
             self.window.extend_from_slice(piece);
@@ -91,8 +186,9 @@ impl Held {
         }
         self.window.extend_from_slice(&piece[..room]);
         if self.line_start == 0 {
-            // One line larger than the whole window: keep its head and say so.
-            self.clipped_line = Some(line);
+            // One line larger than the whole window: keep its head; the
+            // rest of it is a later byte window.
+            self.cut_line = Some(line);
             if let Err(error) = std::str::from_utf8(&self.window)
                 && error.error_len().is_none()
             {
@@ -107,24 +203,35 @@ impl Held {
 
     /// Close `line`, replacing it when it sits `inside` a private-key block.
     fn finish(&mut self, line: usize, inside: bool) {
-        let held = self.full && self.clipped_line != Some(line);
-        if (self.first..=self.last).contains(&line) && !held {
+        let held = self.full && self.cut_line != Some(line);
+        if (self.first..=self.last).contains(&line) {
             if inside {
-                self.window.truncate(self.line_start);
-                self.window
-                    .extend_from_slice(crate::security::key_fragment_placeholder().as_bytes());
-                self.window.push(b'\n');
-                self.key_lines += 1;
-                if self.clipped_line == Some(line) {
-                    self.clipped_line = None;
+                self.inside_lines += 1;
+                // The view counts the placeholder, not the key's bytes.
+                let placeholder = format!("{}\n", crate::security::key_fragment_placeholder());
+                self.view_pos = self.line_view_start + placeholder.len();
+                if !held {
+                    self.window.truncate(self.line_start);
+                    if self.window.is_empty() {
+                        self.window_first = None;
+                    }
+                    if self.cut_line == Some(line) {
+                        self.cut_line = None;
+                        self.full = false;
+                    }
+                    self.hold(self.line_view_start, placeholder.as_bytes(), line);
+                    self.key_lines += 1;
                 }
             }
-            self.held_last = line;
+            if !held {
+                self.held_last = line;
+            }
         }
-        if self.clipped_line == Some(line) {
+        if self.cut_line == Some(line) {
             self.held_last = line;
         }
         self.line_start = self.window.len();
+        self.line_view_start = self.view_pos;
     }
 }
 
@@ -142,14 +249,11 @@ struct WindowLines {
 }
 
 impl WindowLines {
-    /// The windows of `spans`, streamed from a line start where the
+    /// The windows of `wants`, streamed from a line start where the
     /// private-key block state is `block`.
-    fn new(spans: &[(usize, usize)], block: KeyBlockState) -> Self {
+    fn new(wants: &[Want], block: KeyBlockState) -> Self {
         Self {
-            held: spans
-                .iter()
-                .map(|&(first, last)| Held::new(first, last))
-                .collect(),
+            held: wants.iter().map(|&want| Held::new(want)).collect(),
             head: Vec::new(),
             block,
             shape: LineShapeScan::default(),
@@ -185,6 +289,126 @@ impl WindowLines {
         }
         self.head.clear();
         self.shape = LineShapeScan::default();
+    }
+
+    /// Whether every window is full: no later byte adds to one.
+    fn full(&self) -> bool {
+        self.held.iter().all(|held| held.full)
+    }
+
+    /// Close full windows of a range no key block reaches without reading
+    /// on: the lines past them change no window, only the view's size,
+    /// `total`, and a cut window's line, which closes as its only line.
+    fn settle(&mut self, total: usize) {
+        for held in &mut self.held {
+            held.view_pos = total;
+            if let Some(line) = held.cut_line {
+                held.held_last = line;
+            }
+        }
+    }
+
+    /// The window's state before the piece of `line` at source `offset`, as
+    /// a [`ViewPoint`] of its range, when it is [`VIEW_POINT_BYTES`] past
+    /// the last one.
+    fn mark(&self, points: &mut Vec<ViewPoint>, line: usize, offset: u64) {
+        let [held] = self.held.as_slice() else {
+            return;
+        };
+        if !(held.first..=held.last).contains(&line)
+            || points
+                .last()
+                .is_some_and(|point| held.view_pos < point.view + VIEW_POINT_BYTES)
+        {
+            return;
+        }
+        points.push(ViewPoint {
+            view: held.view_pos,
+            offset,
+            line,
+            line_view_start: held.line_view_start,
+            head: self.head.clone(),
+            block: self.block,
+            shape: self.shape,
+            inside_lines: held.inside_lines,
+        });
+    }
+
+    /// The window of `want` resumed at `point`: the state a pass from the
+    /// range's start leaves there while its window is still empty.
+    fn resumed(want: Want, point: &ViewPoint) -> Self {
+        let mut lines = Self::new(&[want], point.block);
+        lines.head.clone_from(&point.head);
+        lines.shape = point.shape;
+        for held in &mut lines.held {
+            held.view_pos = point.view;
+            held.line_view_start = point.line_view_start;
+            held.held_last = point.line - 1;
+            // Before the window every replaced line counts.
+            held.key_lines = point.inside_lines;
+            held.inside_lines = point.inside_lines;
+        }
+        lines
+    }
+}
+
+/// View bytes between two [`ViewPoint`]s: a later byte page of a range
+/// streams about this much before its window.
+const VIEW_POINT_BYTES: usize = 1024 * 1024;
+
+/// A place inside one range's byte view where a later byte page resumes:
+/// the source offset of a piece and the state the range's bytes before it
+/// leave (line, private-key block, marker head and line shape).
+#[derive(Clone, Debug)]
+struct ViewPoint {
+    /// Bytes of the range's view before the piece.
+    view: usize,
+    offset: u64,
+    line: usize,
+    /// `view` at `line`'s start.
+    line_view_start: usize,
+    /// `line`'s leading bytes before the piece.
+    head: Vec<u8>,
+    block: KeyBlockState,
+    shape: LineShapeScan,
+    /// Range lines inside a private-key block before the piece.
+    inside_lines: usize,
+}
+
+/// One byte-paged range's view, learned on a pass that read all of it: its
+/// size, whether a private-key block reaches it, and a [`ViewPoint`] about
+/// every [`VIEW_POINT_BYTES`]. A later byte page of the range on the same
+/// source version resumes at the point before its window and, when no key
+/// block reaches the range, stops once its window is full.
+#[derive(Debug)]
+struct RangeView {
+    stamp: octocode_engine::graph::SourceStamp,
+    total: usize,
+    keyed: bool,
+    points: Vec<ViewPoint>,
+}
+
+impl RangeView {
+    /// The last point at or before view byte `from`.
+    fn resume_at(&self, from: usize) -> Option<&ViewPoint> {
+        let at = self.points.partition_point(|point| point.view <= from);
+        self.points.get(at.checked_sub(1)?)
+    }
+}
+
+/// Range views of streamed sources by canonical path and line range.
+static RANGE_VIEWS: octocode_io::memo::Memo<(std::path::PathBuf, usize, usize), RangeView> =
+    octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
+        max_entries: 16,
+        max_weight: 4 * 1024 * 1024,
+        keep_newest: false,
+    });
+
+/// The one byte page `wants` asks for, if that is all it asks for.
+fn byte_page(wants: &[Want]) -> Option<Want> {
+    match wants {
+        [want] if want.byte_page => Some(*want),
+        _ => None,
     }
 }
 
@@ -239,6 +463,8 @@ struct LineSink<'a, C: CancellationCheck> {
     offset: u64,
     /// The checkpoints a whole pass records ([`StreamIndex`]).
     checkpoints: Option<Vec<Checkpoint>>,
+    /// The view points a byte page's first pass records ([`RangeView`]).
+    points: Option<Vec<ViewPoint>>,
     binary: bool,
     cancel: &'a C,
 }
@@ -263,6 +489,9 @@ impl<C: CancellationCheck> std::io::Write for LineSink<'_, C> {
                 Some(index) => (&rest[..=index], true),
                 None => (rest, false),
             };
+            if let Some(points) = self.points.as_mut() {
+                self.lines.mark(points, self.line, self.offset);
+            }
             rest = &rest[piece.len()..];
             self.offset += piece.len() as u64;
             self.pending = !newline;
@@ -281,6 +510,20 @@ impl<C: CancellationCheck> std::io::Write for LineSink<'_, C> {
 }
 
 impl<C: CancellationCheck> LineSink<'_, C> {
+    /// The view of the byte page's range once a pass read all of it.
+    fn range_view(&mut self) -> Option<RangeView> {
+        let points = self.points.take()?;
+        let [held] = self.lines.held.as_slice() else {
+            return None;
+        };
+        Some(RangeView {
+            stamp: octocode_engine::graph::SourceStamp::default(),
+            total: held.view_pos,
+            keyed: held.inside_lines > 0,
+            points,
+        })
+    }
+
     /// The held windows once the stream ends, with the source's totals.
     fn windows(self, digest: &str, total_lines: usize, binary: bool) -> Vec<Streamed> {
         self.lines
@@ -289,11 +532,14 @@ impl<C: CancellationCheck> LineSink<'_, C> {
             .map(|held| Streamed {
                 digest: digest.to_owned(),
                 total_lines,
-                window: held.window,
-                first: held.first,
+                first: held.window_first.unwrap_or(held.first),
                 last: held.held_last.min(total_lines),
                 key_lines: held.key_lines,
-                clipped_line: held.clipped_line,
+                origin: ByteOrigin {
+                    base: held.base,
+                    total: held.view_pos,
+                },
+                window: held.window,
                 binary,
             })
             .collect()
@@ -308,20 +554,21 @@ fn seek(mut file: &std::fs::File, offset: u64) -> Result<(), String> {
 
 /// Stream the opened source once from its start: hash all bytes, count
 /// lines like `line_count`, and keep lines `first..=last` (1-based) of every
-/// requested window. The handle is the one the read opened and stat'ed (never
+/// requested window, from its byte `from` on. The handle is the one the read opened and stat'ed (never
 /// a reopen by path, which a swapped path could turn into a FIFO).
 fn stream(
     source: &std::fs::File,
-    spans: &[(usize, usize)],
+    wants: &[Want],
     cancel: &impl CancellationCheck,
-) -> Result<(Vec<Streamed>, StreamIndex), String> {
+) -> Result<(Vec<Streamed>, StreamIndex, Option<RangeView>), String> {
     seek(source, 0)?;
     let mut sink = LineSink {
-        lines: WindowLines::new(spans, KeyBlockState::default()),
+        lines: WindowLines::new(wants, KeyBlockState::default()),
         line: 1,
         pending: false,
         offset: 0,
         checkpoints: Some(Vec::new()),
+        points: byte_page(wants).map(|_| Vec::new()),
         binary: false,
         cancel,
     };
@@ -342,45 +589,82 @@ fn stream(
         binary: sink.binary,
         checkpoints: sink.checkpoints.take().unwrap_or_default(),
     };
+    let view = sink.range_view();
     Ok((
         sink.windows(&index.digest, total_lines, index.binary),
         index,
+        view,
     ))
 }
 
-/// The windows of `spans` from the source `index` describes: streamed from
-/// the checkpoint before the first window through the last, with the
-/// index's digest and totals (the source is not hashed again).
+/// The windows of `wants` from the source `index` describes, with the
+/// index's digest and totals (the source is not hashed again): streamed
+/// from the checkpoint before the first window through the last, or, for
+/// a byte page whose range `view` is known, from the view point before its
+/// window, until the window is full when no key block reaches the range.
+/// Returns the range's view when this pass learned it.
 fn stream_indexed(
     source: &std::fs::File,
-    spans: &[(usize, usize)],
+    wants: &[Want],
     cancel: &impl CancellationCheck,
     index: &StreamIndex,
-) -> Result<Vec<Streamed>, String> {
-    let first = spans.iter().map(|span| span.0).min().unwrap_or(1);
-    let last = spans.iter().map(|span| span.1).max().unwrap_or(0);
-    let at = index
-        .checkpoints
-        .partition_point(|point| point.line <= first)
-        .saturating_sub(1);
-    let point = index.checkpoints.get(at).copied().unwrap_or(Checkpoint {
-        line: 1,
-        offset: 0,
-        block: KeyBlockState::default(),
-    });
-    seek(source, point.offset)?;
-    let mut sink = LineSink {
-        lines: WindowLines::new(spans, point.block),
-        line: point.line,
-        pending: false,
-        offset: point.offset,
-        checkpoints: None,
-        binary: false,
-        cancel,
+    view: Option<&RangeView>,
+) -> Result<(Vec<Streamed>, Option<RangeView>), String> {
+    let first = wants.iter().map(|want| want.first).min().unwrap_or(1);
+    let last = wants.iter().map(|want| want.last).max().unwrap_or(0);
+    let page = byte_page(wants);
+    let resume = page
+        .zip(view)
+        .and_then(|(want, view)| view.resume_at(want.from).map(|point| (want, point)));
+    let mut sink = if let Some((want, point)) = resume {
+        seek(source, point.offset)?;
+        LineSink {
+            lines: WindowLines::resumed(want, point),
+            line: point.line,
+            pending: point.view > point.line_view_start,
+            offset: point.offset,
+            checkpoints: None,
+            points: None,
+            binary: false,
+            cancel,
+        }
+    } else {
+        let at = index
+            .checkpoints
+            .partition_point(|point| point.line <= first)
+            .saturating_sub(1);
+        let point = index.checkpoints.get(at).copied().unwrap_or(Checkpoint {
+            line: 1,
+            offset: 0,
+            block: KeyBlockState::default(),
+        });
+        seek(source, point.offset)?;
+        LineSink {
+            lines: WindowLines::new(wants, point.block),
+            line: point.line,
+            pending: false,
+            offset: point.offset,
+            checkpoints: None,
+            points: page.filter(|_| view.is_none()).map(|_| Vec::new()),
+            binary: false,
+            cancel,
+        }
     };
+    // Past a full window of a range no key block reaches, no byte changes
+    // the window: the view's size is known.
+    let settled = view.filter(|view| page.is_some() && !view.keyed);
     let mut block = vec![0_u8; 64 * 1024];
     let mut reader = source;
     while sink.line <= last {
+        if let Some(view) = settled
+            && sink.lines.full()
+        {
+            sink.lines.settle(view.total);
+            return Ok((
+                sink.windows(&index.digest, index.total_lines, index.binary),
+                None,
+            ));
+        }
         let read = match std::io::Read::read(&mut reader, &mut block) {
             Ok(0) => break,
             Ok(read) => read,
@@ -392,10 +676,35 @@ fn stream_indexed(
     if sink.pending && sink.line <= last {
         sink.lines.finish(sink.line);
     }
-    Ok(sink.windows(&index.digest, index.total_lines, index.binary))
+    let learned = sink.range_view();
+    Ok((
+        sink.windows(&index.digest, index.total_lines, index.binary),
+        learned,
+    ))
 }
 
-/// The windows of `spans` from `source` at `path`: from the source's index
+/// Keep a byte page's range view for later pages of the source version
+/// `stamp`.
+fn remember_view(
+    path: &Path,
+    wants: &[Want],
+    view: Option<RangeView>,
+    stamp: octocode_engine::graph::SourceStamp,
+) {
+    let (Some(want), Some(mut view)) = (byte_page(wants), view) else {
+        return;
+    };
+    view.stamp = stamp;
+    let weight = view.points.len() * (std::mem::size_of::<ViewPoint>() + MARKER_PREFIX_BYTES);
+    RANGE_VIEWS.insert(
+        (path.to_path_buf(), want.first, want.last),
+        view,
+        weight,
+        None,
+    );
+}
+
+/// The windows of `wants` from `source` at `path`: from the source's index
 /// while `stamp` (the handle's settled stamp, taken before the read) still
 /// matches it, else by one whole pass, which indexes a source whose stamp
 /// held through the pass.
@@ -403,26 +712,43 @@ fn read_windows(
     source: &std::fs::File,
     path: &Path,
     stamp: Option<octocode_engine::graph::SourceStamp>,
-    spans: &[(usize, usize)],
+    wants: &[Want],
     cancel: &impl CancellationCheck,
 ) -> Result<Vec<Streamed>, String> {
+    let unchanged = |stamp: &octocode_engine::graph::SourceStamp| {
+        source
+            .metadata()
+            .ok()
+            .as_ref()
+            .and_then(crate::tools::source::cache_stamp)
+            == Some(*stamp)
+    };
     if let Some(stamp) = stamp
         && let Some(hit) = INDEXES.get(path)
         && hit.value.stamp == stamp
     {
-        return stream_indexed(source, spans, cancel, &hit.value);
+        let view = byte_page(wants)
+            .and_then(|want| RANGE_VIEWS.get(&(path.to_path_buf(), want.first, want.last)))
+            .filter(|view| view.value.stamp == stamp);
+        let (windows, learned) = stream_indexed(
+            source,
+            wants,
+            cancel,
+            &hit.value,
+            view.as_ref().map(|view| &*view.value),
+        )?;
+        if learned.is_some() && unchanged(&stamp) {
+            remember_view(path, wants, learned, stamp);
+        }
+        return Ok(windows);
     }
-    let (windows, mut index) = stream(source, spans, cancel)?;
-    let unchanged = source
-        .metadata()
-        .ok()
-        .as_ref()
-        .and_then(crate::tools::source::cache_stamp);
-    if let Some(stamp) = stamp.filter(|stamp| unchanged == Some(*stamp)) {
+    let (windows, mut index, view) = stream(source, wants, cancel)?;
+    if let Some(stamp) = stamp.filter(|stamp| unchanged(stamp)) {
         index.stamp = stamp;
         let weight =
             index.checkpoints.len() * std::mem::size_of::<Checkpoint>() + index.digest.len();
         INDEXES.insert(path.to_path_buf(), index, weight, None);
+        remember_view(path, wants, view, stamp);
     }
     Ok(windows)
 }
@@ -524,7 +850,8 @@ fn streamed_warning(len: u64) -> String {
 #[derive(Clone, Copy)]
 struct WindowSpan {
     first: usize,
-    /// The window's last line: the request's, capped at [`WINDOW_LINES`].
+    /// The window's last line: the request's, capped at [`WINDOW_LINES`]
+    /// unless the window is a byte page, which pages the range's bytes.
     last: usize,
     /// The request's last line.
     requested_last: usize,
@@ -533,6 +860,23 @@ struct WindowSpan {
     origin: usize,
     /// A line chunk (offset + length, no `ranges`) rather than a range.
     chunked: bool,
+    /// The range's bytes the window skips: a byte page's offset less its
+    /// lookbehind ([`BYTE_LOOKBEHIND`]).
+    from: usize,
+    /// A byte page of a range: it reads at its byte offset, however many
+    /// lines (or bytes of one line) come before it.
+    byte_page: bool,
+}
+
+impl WindowSpan {
+    fn want(&self) -> Want {
+        Want {
+            first: self.first,
+            last: self.last,
+            from: self.from,
+            byte_page: self.byte_page,
+        }
+    }
 }
 
 fn window_span(q: &LocalFetchQuery) -> WindowSpan {
@@ -562,9 +906,19 @@ fn window_span(q: &LocalFetchQuery) -> WindowSpan {
             )
         }
     };
+    let byte_page = !chunked && q.unit == Some(WindowUnit::Bytes);
     WindowSpan {
         first,
-        last: requested_last.min(first + WINDOW_LINES - 1),
+        last: if byte_page {
+            requested_last
+        } else {
+            requested_last.min(first + WINDOW_LINES - 1)
+        },
+        from: if byte_page {
+            q.offset().unwrap_or(0).saturating_sub(BYTE_LOOKBEHIND)
+        } else {
+            0
+        },
         requested_last,
         origin: if chunked {
             1
@@ -572,6 +926,7 @@ fn window_span(q: &LocalFetchQuery) -> WindowSpan {
             q.start_line().unwrap_or(first)
         },
         chunked,
+        byte_page,
     }
 }
 
@@ -587,10 +942,10 @@ struct Opened<'a> {
 impl Opened<'_> {
     fn windows(
         &self,
-        spans: &[(usize, usize)],
+        wants: &[Want],
         cancel: &impl CancellationCheck,
     ) -> Result<Vec<Streamed>, String> {
-        read_windows(self.file, self.path, self.stamp, spans, cancel)
+        read_windows(self.file, self.path, self.stamp, wants, cancel)
     }
 }
 
@@ -607,7 +962,7 @@ fn stream_window(
     let (path, len) = (source.path, source.len);
     // One span streams exactly one window.
     let streamed = source
-        .windows(&[(span.first, span.last)], cancel)
+        .windows(&[span.want()], cancel)
         .and_then(|mut windows| windows.pop().ok_or_else(|| "no window streamed".to_owned()));
     match streamed {
         Ok(streamed) => serve_window(
@@ -634,6 +989,7 @@ fn serve_window(
         requested_last,
         origin,
         chunked,
+        byte_page,
         ..
     } = span;
     if let Some(expected) = q.snapshot.as_deref()
@@ -666,7 +1022,12 @@ fn serve_window(
     if (!chunked && first > requested_last.min(total))
         || (chunked && (first > total.max(1) || (total == 0 && first > 1)))
     {
-        return past_end_row(q, &streamed, read_total, len);
+        return past_end_row(q, &streamed, WindowUnit::Lines, read_total, len);
+    }
+    // A byte offset past the range's last byte, which no window holds.
+    let offset = q.offset().unwrap_or(0);
+    if byte_page && offset > 0 && offset >= streamed.origin.total {
+        return past_end_row(q, &streamed, WindowUnit::Bytes, streamed.origin.total, len);
     }
     let held_last = streamed.last.max(streamed.first);
     let mut window_query = q.clone();
@@ -683,7 +1044,8 @@ fn serve_window(
         window_query.unit = None;
     } else if q.unit != Some(WindowUnit::Bytes) {
         // A range's line offset started the window; a byte offset pages
-        // *within* it (the in-window continuation below carries it).
+        // the range's bytes, which the window holds from `origin.base`
+        // (`SourceFacts::byte_origin` places the page).
         window_query.offset = None;
     }
     let mut result = process_fetched_content(
@@ -694,7 +1056,8 @@ fn serve_window(
             modified,
             window: None,
             first_page_bytes: None,
-            interior: streamed.first > 1,
+            interior: streamed.first > 1 || streamed.origin.base > 0,
+            byte_origin: Some(streamed.origin),
         },
         security,
         cancel,
@@ -729,7 +1092,7 @@ fn serve_window(
         q,
         &mut result,
         &streamed,
-        chunked,
+        span,
         (served.1 < last).then_some(served.1 + 1 - origin),
     );
     // A line page pages the read's own lines (the file's for a chunk, the
@@ -748,6 +1111,12 @@ fn serve_window(
         page.has_more = end < last;
         page.next_offset = page.has_more.then_some(end + 1 - origin);
         page.resume_line = None;
+    }
+    // A byte page pages the bytes of the lines its window was cut from.
+    if let Some(page) = result.pagination.as_mut()
+        && page.unit == WindowUnit::Bytes
+    {
+        page.total_lines = span.last.min(total) + 1 - span.first;
     }
     result
 }
@@ -783,11 +1152,8 @@ fn fetch_ranges(
         .collect::<Vec<_>>();
     // One pass over the file holds every range's window: the digest and
     // line count are the file's, not the range's.
-    let spans = ones
-        .iter()
-        .map(|(_, span)| (span.first, span.last))
-        .collect::<Vec<_>>();
-    let streamed = match source.windows(&spans, cancel) {
+    let wants = ones.iter().map(|(_, span)| span.want()).collect::<Vec<_>>();
+    let streamed = match source.windows(&wants, cancel) {
         Ok(streamed) => streamed,
         Err(error) => return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", error),
     };
@@ -952,18 +1318,24 @@ fn read_bounded(q: &LocalFetchQuery) -> NextCalls {
     }
 }
 
-/// A line offset past the end of the read's `read_total` lines: nothing
-/// returned, in the shape an in-memory read gives the same offset
-/// ([`super::executor::past_end`]), with the file's own facts.
+/// An offset past the end of the read's `read_total` `unit`s (lines, or the
+/// bytes of its lines): nothing returned, in the shape an in-memory read
+/// gives the same offset ([`super::executor::past_end`]), with the file's
+/// own facts.
 fn past_end_row(
     q: &LocalFetchQuery,
     streamed: &Streamed,
+    unit: WindowUnit,
     read_total: usize,
     len: u64,
 ) -> LocalFetchResult {
     let mut warnings = Vec::new();
-    let next = super::executor::past_end(q, read_total, WindowUnit::Lines, &mut warnings);
+    let next = super::executor::past_end(q, read_total, unit, &mut warnings);
     let offset = q.offset().unwrap_or(0);
+    let (total_lines, total_bytes) = match unit {
+        WindowUnit::Lines => (read_total, usize_of(len)),
+        WindowUnit::Bytes => (streamed.last + 1 - streamed.first, read_total),
+    };
     LocalFetchResult {
         path: q.path.to_string(),
         source_sha256: Some(streamed.digest.clone()),
@@ -975,12 +1347,12 @@ fn past_end_row(
         returned_bytes: Some(0),
         returned_lines: Some(0),
         pagination: Some(Pagination {
-            unit: WindowUnit::Lines,
+            unit,
             offset,
             length: 0,
             window: q.window_length().unwrap_or(WINDOW_LINES),
-            total_lines: read_total,
-            total_bytes: usize_of(len),
+            total_lines,
+            total_bytes,
             has_more: false,
             next_offset: None,
             resume_line: None,
@@ -1011,28 +1383,22 @@ fn map_to_file(result: &mut LocalFetchResult, streamed: &Streamed, len: u64) {
             streamed.key_lines
         ));
     }
-    if let Some(line) = streamed.clipped_line {
-        result.warnings.push(format!(
-            "Line {line} exceeds {}MB; only a prefix up to {}MB is retained. The suffix is beyond this read limit; split the line outside localFetch to read it.",
-            WINDOW_BYTES / (1024 * 1024),
-            WINDOW_BYTES / (1024 * 1024)
-        ));
-        result.terminal_limit(PartialReason::StreamedLineSizeLimit);
-    }
 }
 
 /// The read's next page. A line page continues the read itself at
 /// `next_offset` (counted in the read's own lines: the file's for a
 /// `chunked` read, the range's otherwise), so the next window starts where
 /// the page ended and the offset never resets at a window boundary. A byte
-/// page inside one long line continues within the window it was cut from.
+/// page continues in the bytes of the lines its window was cut from (its
+/// offset counts from their start, as an in-memory read's does).
 fn continue_window(
     q: &LocalFetchQuery,
     result: &mut LocalFetchResult,
     streamed: &Streamed,
-    chunked: bool,
+    span: WindowSpan,
     next_offset: Option<usize>,
 ) {
+    let chunked = span.chunked;
     let snapshot = streamed.digest.parse().ok();
     let inner = result
         .next
@@ -1042,12 +1408,9 @@ fn continue_window(
         && inner.query.unit == Some(WindowUnit::Bytes)
     {
         inner.query.path = q.path.clone();
-        inner.query.set_line_span(
-            streamed.first,
-            q.end_line()
-                .unwrap_or(streamed.total_lines)
-                .min(streamed.total_lines),
-        );
+        inner
+            .query
+            .set_line_span(span.first, span.last.min(streamed.total_lines));
         inner.query.snapshot = snapshot;
         return;
     }
@@ -1096,12 +1459,12 @@ mod tests {
         let file = temp(b"a\nb\n");
         let source = opened(file.path());
         std::io::Read::read(&mut &source, &mut [0_u8; 3]).expect("sample");
-        let (windows, _) = stream(&source, &[(1, 2)], &NeverCancel).expect("stream");
+        let (windows, ..) = stream(&source, &[Want::lines(1, 2)], &NeverCancel).expect("stream");
         assert_eq!(windows[0].window, b"a\nb\n");
     }
 
     fn stream_one(path: &Path, first: usize, last: usize) -> Streamed {
-        stream(&opened(path), &[(first, last)], &NeverCancel)
+        stream(&opened(path), &[Want::lines(first, last)], &NeverCancel)
             .expect("stream")
             .0
             .pop()
@@ -1115,9 +1478,9 @@ mod tests {
         let file = temp(
             b"a\n-----BEGIN RSA PRIVATE KEY-----\nSECRET\n-----END RSA PRIVATE KEY-----\nb\nc\n",
         );
-        let (windows, _) = stream(
+        let (windows, ..) = stream(
             &opened(file.path()),
-            &[(1, 1), (3, 3), (5, 6)],
+            &[Want::lines(1, 1), Want::lines(3, 3), Want::lines(5, 6)],
             &NeverCancel,
         )
         .expect("stream");
@@ -1269,7 +1632,7 @@ mod tests {
         }
         let file = temp(b"a\nb\n");
         assert_eq!(
-            stream(&opened(file.path()), &[(1, 2)], &Cancelled)
+            stream(&opened(file.path()), &[Want::lines(1, 2)], &Cancelled)
                 .map(drop)
                 .err()
                 .as_deref(),
@@ -1354,7 +1717,7 @@ mod tests {
         let stamp = crate::tools::source::cache_stamp(&meta);
         assert!(stamp.is_some(), "the platform stamps files");
         let path = file.path().canonicalize().expect("canonical");
-        let spans = [(4_100, 4_120), (39_990, 40_000)];
+        let spans = [Want::lines(4_100, 4_120), Want::lines(39_990, 40_000)];
         let whole = Blocks(Default::default());
         let first = read_windows(&source, &path, stamp, &spans, &whole).expect("first");
         let indexed = Blocks(Default::default());
@@ -1446,24 +1809,135 @@ mod tests {
         assert_eq!(result.error_code.as_deref(), Some("binaryFileUnsupported"));
     }
 
+    /// The reference for one byte page: a whole pass, no index.
+    fn whole_pass(source: &std::fs::File, want: Want) -> Streamed {
+        stream(source, &[want], &NeverCancel)
+            .expect("stream")
+            .0
+            .pop()
+            .expect("window")
+    }
+
+    fn assert_same_window(a: &Streamed, b: &Streamed) {
+        assert_eq!(a.window, b.window);
+        assert_eq!(
+            (a.first, a.last, a.key_lines, a.origin.base, a.origin.total),
+            (b.first, b.last, b.key_lines, b.origin.base, b.origin.total)
+        );
+        assert_eq!((&a.digest, a.total_lines), (&b.digest, b.total_lines));
+    }
+
+    /// Byte pages of one giant line, once the source is indexed, read about
+    /// one window each wherever their offset sits, and hold what a whole
+    /// pass holds: the window, its place in the line and the line's size.
     #[test]
-    fn a_giant_single_line_is_clipped_not_buffered() {
+    fn a_late_byte_page_costs_what_an_early_one_does() {
+        let line: Vec<u8> = (0..6 * WINDOW_BYTES)
+            .map(|at| b'a' + u8::try_from(at % 26).expect("letter"))
+            .collect();
+        let file = temp(&line);
+        let source = opened(file.path());
+        let stamp = crate::tools::source::cache_stamp(&source.metadata().expect("meta"));
+        let path = file.path().canonicalize().expect("canonical");
+        let page = |from: usize| Want::bytes(1, 1, from);
+        let whole = Blocks(Default::default());
+        read_windows(&source, &path, stamp, &[page(0)], &whole).expect("index");
+        let whole = whole.0.into_inner();
+        let mut costs = Vec::new();
+        for from in [0, WINDOW_BYTES, 5 * WINDOW_BYTES - 7] {
+            let blocks = Blocks(Default::default());
+            let paged = read_windows(&source, &path, stamp, &[page(from)], &blocks)
+                .expect("page")
+                .pop()
+                .expect("window");
+            assert_same_window(&paged, &whole_pass(&source, page(from)));
+            costs.push(blocks.0.into_inner());
+        }
+        // A page reads its window and at most one view-point gap before it
+        // (64 KiB copy blocks, one partial block each), wherever it starts.
+        let bound = (WINDOW_BYTES + VIEW_POINT_BYTES) / (64 * 1024) + 2;
+        assert!(
+            costs.iter().all(|&cost| cost <= bound) && bound * 3 < whole,
+            "pages {costs:?}, bound {bound}, whole pass {whole} blocks"
+        );
+    }
+
+    /// Byte pages of a many-line range no key block reaches match a whole
+    /// pass wherever they start: mid-line, on a line start, or past the
+    /// range's last byte.
+    #[test]
+    fn byte_pages_over_many_lines_match_a_whole_pass() {
+        let text: String = (0..40)
+            .map(|line| format!("{}\n", "q".repeat(150_000 + line * 7_919)))
+            .collect();
+        let file = temp(text.as_bytes());
+        let source = opened(file.path());
+        let stamp = crate::tools::source::cache_stamp(&source.metadata().expect("meta"));
+        let path = file.path().canonicalize().expect("canonical");
+        let page = |from: usize| Want::bytes(3, 38, from);
+        read_windows(&source, &path, stamp, &[page(0)], &NeverCancel).expect("index");
+        let line_start = text
+            .split_inclusive('\n')
+            .take(9)
+            .map(str::len)
+            .sum::<usize>();
+        for from in [0, 1, 999_999, line_start, 2 * WINDOW_BYTES + 3, text.len()] {
+            let paged = read_windows(&source, &path, stamp, &[page(from)], &NeverCancel)
+                .expect("page")
+                .pop()
+                .expect("window");
+            assert_same_window(&paged, &whole_pass(&source, page(from)));
+        }
+    }
+
+    /// A range a private-key block reaches pages exactly as a whole pass
+    /// does: the key lines stay replaced and counted, and the view keeps
+    /// the placeholder's size.
+    #[test]
+    fn byte_pages_over_a_key_block_match_a_whole_pass() {
+        let mut text = "x".repeat(3 * WINDOW_BYTES);
+        text.push('\n');
+        text.push_str(
+            "-----BEGIN RSA PRIVATE KEY-----\nSECRETSECRETSECRET\n-----END RSA PRIVATE KEY-----\n",
+        );
+        text.push_str(&"y".repeat(2 * WINDOW_BYTES));
+        text.push('\n');
+        let file = temp(text.as_bytes());
+        let source = opened(file.path());
+        let stamp = crate::tools::source::cache_stamp(&source.metadata().expect("meta"));
+        let path = file.path().canonicalize().expect("canonical");
+        let page = |from: usize| Want::bytes(1, 5, from);
+        read_windows(&source, &path, stamp, &[page(0)], &NeverCancel).expect("index");
+        for from in [0, 2 * WINDOW_BYTES, 3 * WINDOW_BYTES, 4 * WINDOW_BYTES + 50] {
+            let paged = read_windows(&source, &path, stamp, &[page(from)], &NeverCancel)
+                .expect("page")
+                .pop()
+                .expect("window");
+            assert_same_window(&paged, &whole_pass(&source, page(from)));
+            assert!(!String::from_utf8_lossy(&paged.window).contains("SECRET"));
+        }
+    }
+
+    #[test]
+    fn a_giant_single_line_is_cut_to_a_window_not_buffered() {
         let big = vec![b'z'; WINDOW_BYTES + 10];
         let file = temp(&big);
         let streamed = stream_one(file.path(), 1, 1);
         assert_eq!(streamed.total_lines, 1);
-        assert_eq!(streamed.clipped_line, Some(1));
         assert!(streamed.window.len() <= WINDOW_BYTES + 1);
+        // The window is a part of the line's bytes: the view is all of them.
+        assert_eq!(streamed.origin.base, 0);
+        assert_eq!(streamed.origin.total, big.len());
     }
 
     #[test]
-    fn clipping_a_utf8_line_keeps_only_complete_source_characters() {
+    fn cutting_a_utf8_line_keeps_only_complete_source_characters() {
         let text = format!("€{}", "🙂".repeat(WINDOW_BYTES / 4 + 1));
         let file = temp(text.as_bytes());
         let streamed = stream_one(file.path(), 1, 1);
         let prefix = std::str::from_utf8(&streamed.window).expect("complete UTF-8");
         assert!(text.starts_with(prefix));
         assert_eq!(prefix.len(), WINDOW_BYTES - 1);
-        assert_eq!(streamed.clipped_line, Some(1));
+        assert_eq!(streamed.origin.total, text.len());
     }
 }

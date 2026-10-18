@@ -59,12 +59,18 @@ Where each part of [the protocol](../../../docs/OCTOCODE_PROTOCOL.md) lives. Nat
 
 ## Contract pipeline
 
-1. **Author** in core: Zod schema, description, instructions, limits.
-2. **Build core**, then run `yarn contracts:regen` at the repo root. It refreshes the `file:` copy of core (`yarn install`) and runs `@octocodeai/config generate:tool-contract`, the only generator. It needs `cargo install cargo-typify --version 0.8.0 --locked`.
-3. **Output** lands in `packages/octocode-config/contract/` and `src/contracts/toolTypes.generated.ts`. It is committed and never hand-edited. `check:tool-contract` fails when it is stale.
-4. **Rebuild native** (`yarn workspace @octocodeai/octocode-native build:dev`). `crates/runtime/build.rs` embeds `contract/` in place and fails on a fingerprint mismatch.
+```mermaid
+flowchart TD
+  A["Author in core: Zod schema, description, instructions, limits"] --> B[Build core]
+  B --> C["yarn contracts:regen at the repo root: refreshes the file: copy of core (yarn install), then runs @octocodeai/config generate:tool-contract, the only generator"]
+  C --> D["Output: packages/octocode-config/contract/ and src/contracts/toolTypes.generated.ts; committed, never hand-edited; check:tool-contract fails when it is stale"]
+  D --> E["Rebuild native: yarn workspace @octocodeai/octocode-native build:dev; crates/runtime/build.rs embeds contract/ in place"]
+  E --> F{Fingerprint matches?}
+  F -- yes --> G[Native serves the contract]
+  F -- no --> H[build.rs fails: regenerate and rebuild]
+```
 
-Until native is rebuilt, the MCP server refuses to start and CLI `schema` refuses to describe tools. `OCTOCODE_ALLOW_CONTRACT_DRIFT=1` downgrades that to a warning outside production. Release order: [RELEASE.md](RELEASE.md).
+Regeneration needs `cargo install cargo-typify --version 0.8.0 --locked`. Until native is rebuilt, the MCP server refuses to start and CLI `schema` refuses to describe tools. `OCTOCODE_ALLOW_CONTRACT_DRIFT=1` downgrades that to a warning outside production. Release order: [RELEASE.md](RELEASE.md).
 
 ### Adding a tool field
 
@@ -138,7 +144,7 @@ Install the prebuilt binaries once: `cargo binstall cargo-nextest cargo-deny car
 | cargo-mutants | `cargo mutants --in-diff <diff>` or `-f <file>` | `.cargo/mutants.toml` | occasionally, on changed code |
 | bacon | `bacon`, `bacon clippy`, `bacon test`, `bacon test-engine` | `bacon.toml` | edit loop |
 
-`scripts/test-rust-selections.cjs` reads the package and feature selections from `test:rust`; `coverage:rust` and `dev.mjs check:dev-unify` use it, and a script test keeps the `bacon.toml` test jobs equal to them. Library crates set `doctest = false`: nextest runs no doctests, and `shear` fails if one appears.
+`scripts/test-rust-selections.cjs` reads the package and feature selections from `test:rust`; `coverage:rust` uses it, and a script test keeps the `bacon.toml` test jobs equal to them. Library crates set `doctest = false`: nextest runs no doctests, and `shear` fails if one appears.
 
 ## Development environment variables
 

@@ -33,17 +33,17 @@ Skill map: solid edges are the flow; each dotted edge names the trigger that loa
 
 ## Rules
 - Read the real `Cargo.toml`, `src/` layout, and target code before advising; match the crate's edition, MSRV, and conventions.
-- FRAME: name the requested behavior, constraint, owning crate, and success check. Inside Octocode, load `octocode-dev` first.
-- COMPARE only an unresolved choice: compare the existing approach with one viable alternative. State evidence, cost, and a counterexample. Test the smallest unknown that can change the decision; mark unmeasured claims. Broader scope exploration routes to `octocode-brainstorming`.
-- Prefer std or an already-present dependency. Verify a new crate's maintenance, license, and API against upstream source (`octocode-research`), not registry stars.
-- Anchor idiom/API claims to the official canon (API Guidelines, Reference) and name it; crate behavior comes from upstream source.
+- FRAME as a Task contract: objective (the requested behavior), constraints (the axis, owning crate, authorization), Definition of Done (the success check). Inside Octocode, load `octocode-dev` first.
+- COMPARE only an unresolved choice, recorded as an ADR: context, the existing approach against one viable alternative, decision, consequences (evidence, cost, a counterexample). Test the smallest unknown that can change the decision; mark unmeasured claims as unknowns. Broader scope exploration routes to `octocode-brainstorming`.
+- Prefer std or an already-present dependency. Claim–evidence for a new crate: maintenance, license, and API each beside an upstream source link (`octocode-research`), not registry stars.
+- Claim–evidence for idiom/API claims: cite the official canon (API Guidelines, Reference) by name; crate behavior comes from upstream source.
 - Format on the edit. `cargo clippy` is the handoff gate (`references/testing-and-tooling.md`). Never hand-argue a lint clippy decides.
 - Never change observable behavior while cleaning up; behavior-preserving cleanup belongs to `octocode-clean-agentic-code`.
 - No performance claim without a `--release` benchmark or profile. `unsafe` only for a proven need, each block with a written safety invariant.
-- Stay within the requested axis. Adding a dependency, bumping MSRV/edition, or touching a lockfile needs explicit consent.
+- Stay within the requested axis. Adding a dependency, bumping MSRV/edition, or touching a lockfile needs explicit consent: ask it as a Decision request ([output.md](output.md)).
 - Public tool types and limits follow the repository's contract generator. Native owns execution and response policy; host adapters convert values.
 - Bound work without losing evidence: return a complete page and executable continuation. Disclose terminal limits; never silently clip results.
-- VERIFY: use the repository's build and test commands. After native changes, rebuild hosts and exercise the actual CLI or fresh MCP.
+- VERIFY against the Definition of Done: the repository's build and test commands pass. After native changes, rebuild hosts and exercise the actual CLI or fresh MCP.
 
 ## Related
 `octocode-dev`: Octocode build and contract pipeline · `octocode-research`: source evidence · `octocode-brainstorming`: unresolved scope and feasibility · `octocode-architect`: boundary decisions · `octocode-clean-agentic-code`: cleanup · `octocode-roast`: smell inventory · `octocode-eval-benchmark`: measure a change · `octocode-skills`: change this folder.

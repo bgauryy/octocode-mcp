@@ -215,6 +215,16 @@ fn follow_windows(
     start: Value,
     budgets: &[Duration],
 ) -> (Vec<Vec<String>>, usize) {
+    let (outs, time_cuts) = follow_outputs(root, start, budgets);
+    (outs.iter().map(listed_entries).collect(), time_cuts)
+}
+
+/// [`follow_windows`], keeping each window's whole response.
+fn follow_outputs(
+    root: &std::path::Path,
+    start: Value,
+    budgets: &[Duration],
+) -> (Vec<Value>, usize) {
     let mut windows = Vec::new();
     let mut time_cuts = 0;
     let mut query = start;
@@ -229,7 +239,6 @@ fn follow_windows(
         };
         let out = within_checked(root, query.clone(), budget, cancel);
         assert_row_contract(ToolId::StructureSearch, &query, &out);
-        windows.push(listed_entries(&out));
         assert!(
             out["next"].get("nextPage").is_none(),
             "a fixture window is one page: {out}"
@@ -237,15 +246,15 @@ fn follow_windows(
         time_cuts += usize::from(out["next"].get("continueWalk").is_some());
         let next = out["next"]
             .get("continueWalk")
-            .or_else(|| out["next"].get("expandScan"));
+            .or_else(|| out["next"].get("expandScan"))
+            .map(|next| next["query"]["queries"][0].clone());
+        let terminal = out.get("terminalLimit").is_some();
+        windows.push(out);
         let Some(next) = next else {
-            assert!(
-                out.get("terminalLimit").is_none(),
-                "the chain ended on a terminal limit: {out}"
-            );
+            assert!(!terminal, "the chain ended on a terminal limit");
             return (windows, time_cuts);
         };
-        query = next["query"]["queries"][0].clone();
+        query = next;
     }
 }
 
@@ -414,4 +423,194 @@ fn a_resumed_window_does_not_count_the_withheld_and_hidden_entries_it_replays() 
     query["walkOffset"] = json!(4);
     let resumed = within(&root.0, query, Duration::from_secs(3600));
     assert!(resumed["summary"].get("hidden").is_none(), "{resumed}");
+}
+
+/// What a window's page says its walk left out: entries `.gitignore` hid, dot
+/// entries skipped, and entries the path policy withheld.
+fn left_out(out: &Value) -> (u64, u64, u64) {
+    let count = |key| out["summary"][key].as_u64().unwrap_or(0);
+    let withheld = out["warnings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|warning| warning.contains("withheld"))
+        .map(|warning| {
+            warning
+                .split(|c: char| !c.is_ascii_digit())
+                .find_map(|digits| digits.parse::<u64>().ok())
+                .expect("the notice counts the entries")
+        })
+        .sum();
+    (count("ignored"), count("hidden"), withheld)
+}
+
+/// A walk's windows count what the walk left out once between them: a window
+/// that ends at its `maxEntries`-th row leaves the entries after it to the
+/// window that resumes there, and neither counts them twice. (A window
+/// widened by `expandScan` walks the same walk again, so it is no resume:
+/// only chains of `continueWalk` windows add up.)
+#[test]
+fn windows_count_what_the_walk_left_out_once_whatever_the_timing() {
+    let big = UNSPENT;
+    let small = STEP * 8 / 3;
+    // Budgets that span several entries past `maxEntries` rows cut a window
+    // at its rows, with entries left out after the last of them.
+    let (long, longer) = (STEP * 6, STEP * 11);
+    let schedules: [&[Duration]; 6] = [
+        &[small],
+        &[big, small, big],
+        &[small, big],
+        &[long],
+        &[longer],
+        &[long, longer, small],
+    ];
+    for operation in ["tree", "files"] {
+        let root = Fixture::new();
+        root.write(".git/HEAD", "ref: refs/heads/main\n");
+        root.write(".gitignore", "*.log\n");
+        for index in 0..6 {
+            root.write(&format!("s{index}.rs"), "fn f() {}\n");
+            root.write(&format!("s{index}.log"), "x\n");
+            root.write(&format!("s{index}.pem"), "x\n");
+            root.write(&format!("t{index}/.hidden"), "x\n");
+            root.write(&format!("t{index}/u.rs"), "fn f() {}\n");
+        }
+        let start = json!({"operation": operation, "path": root.0, "includeHidden": false});
+        let whole = left_out(&run(&root.0, start.clone()).expect("whole"));
+        assert!(
+            whole.0 > 0 && whole.1 > 0 && whole.2 > 0,
+            "{operation}: the fixture leaves out all three: {whole:?}"
+        );
+        let (mut time_cuts, mut chains) = (0, 0);
+        for max_entries in [2, 4] {
+            for budgets in schedules {
+                let mut start = start.clone();
+                start["maxEntries"] = json!(max_entries);
+                let (outs, cuts) = follow_outputs(&root.0, start, budgets);
+                time_cuts += cuts;
+                let resumes = outs[..outs.len() - 1]
+                    .iter()
+                    .all(|out| out["next"].get("continueWalk").is_some());
+                if !resumes {
+                    continue;
+                }
+                chains += 1;
+                let summed = outs.iter().map(left_out).fold((0, 0, 0), |sum, window| {
+                    (sum.0 + window.0, sum.1 + window.1, sum.2 + window.2)
+                });
+                assert_eq!(
+                    summed,
+                    whole,
+                    "{operation} maxEntries {max_entries} {budgets:?}: counted once across {} windows",
+                    outs.len()
+                );
+            }
+        }
+        assert!(time_cuts > 0, "{operation}: no window was cut by time");
+        assert!(chains > 0, "{operation}: no chain of resumed windows");
+    }
+}
+
+/// Takes its time at every entry and counts how many entries it saw.
+struct Counting(std::sync::atomic::AtomicUsize);
+
+impl CancellationCheck for Counting {
+    fn check(&self) -> Result<(), String> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+fn deep_tree() -> Fixture {
+    let root = Fixture::new();
+    for dir in 0..10 {
+        for file in 0..10 {
+            root.write(&format!("d{dir}/f{file}.rs"), "fn f() {}\n");
+        }
+    }
+    root
+}
+
+/// The first window of a walk cut by time: its entries, the query that
+/// resumes it and the offset that query names.
+fn first_cut(root: &Fixture, operation: &str) -> (Vec<String>, Value, u64) {
+    let query = rows(operation, &root.0);
+    let out = within_checked(&root.0, query, STEP * 40, &Slow);
+    let next = out["next"]["continueWalk"]["query"]["queries"][0].clone();
+    let at = next["walkOffset"].as_u64().expect("the walk was cut");
+    (listed_entries(&out), next, at)
+}
+
+fn checks(root: &Fixture, query: &Value) -> usize {
+    let counting = Counting(std::sync::atomic::AtomicUsize::new(0));
+    within_checked(&root.0, query.clone(), UNSPENT, &counting);
+    counting.0.into_inner()
+}
+
+/// A resumed window does not replay the entries before its offset: it
+/// continues where the window it resumes stopped, so a deep resume costs what
+/// its own entries cost.
+#[test]
+fn a_resumed_window_does_not_replay_the_entries_before_its_offset() {
+    for operation in ["files", "tree"] {
+        let root = deep_tree();
+        let whole = checks(&root, &rows(operation, &root.0));
+        let (_, resume, at) = first_cut(&root, operation);
+        assert!(at >= 10, "{operation}: the first window went deep: {at}");
+        let resumed = checks(&root, &resume);
+        assert!(
+            resumed + at as usize <= whole + 2,
+            "{operation}: resumed at {at} saw {resumed} entries of a walk of {whole}: it replayed"
+        );
+    }
+}
+
+/// A resume whose tree changed since the window it continues (an entry
+/// created in a directory the walk is inside) replays instead, and lists
+/// every entry once.
+#[test]
+fn a_resumed_window_of_a_changed_tree_replays_and_lists_every_entry_once() {
+    for operation in ["files", "tree"] {
+        let root = deep_tree();
+        let whole = {
+            let mut all = listed_entries(&run(&root.0, rows(operation, &root.0)).expect("whole"));
+            all.sort();
+            all
+        };
+        let (first, resume, _) = first_cut(&root, operation);
+        // Sorts after every entry of the walk, so after the cut.
+        std::thread::sleep(Duration::from_millis(30));
+        root.write("zzz.rs", "fn f() {}\n");
+        let mut chained = Vec::new();
+        let mut query = resume;
+        loop {
+            assert!(chained.len() < 200, "{operation}: the walk never finishes");
+            let out = within_checked(&root.0, query.clone(), UNSPENT, &NeverCancel);
+            chained.extend(listed_entries(&out));
+            match out["next"].get("continueWalk") {
+                Some(next) => query = next["query"]["queries"][0].clone(),
+                None => break,
+            }
+        }
+        // The resumed windows list what the first window did not, plus the
+        // newcomer, once each.
+        let mut rest = chained.clone();
+        rest.sort();
+        rest.dedup();
+        assert_eq!(rest.len(), chained.len(), "{operation}: a repeat");
+        assert!(
+            chained.iter().any(|path| path.ends_with("zzz.rs")),
+            "{operation}: the newcomer is listed"
+        );
+        let mut joined = first;
+        joined.extend(
+            chained
+                .iter()
+                .filter(|path| !path.ends_with("zzz.rs"))
+                .cloned(),
+        );
+        joined.sort();
+        assert_eq!(joined, whole, "{operation}: every entry exactly once");
+    }
 }

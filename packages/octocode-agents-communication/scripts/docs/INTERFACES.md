@@ -34,19 +34,19 @@ Presence flags take no value; other boolean flags require `true` or `false`. Fol
 
 ```sh
 npx -y @octocodeai/octocode-agents-communication /cli join \
-  --name reviewer --vendor generic --workspace-root /absolute/project \
+  --name reviewer --vendor generic --workspace /absolute/project \
   --database /absolute/shared/communication.sqlite --json
 
 npx -y @octocodeai/octocode-agents-communication /cli subscribe \
   --topics '["api","review"]' --session EXACT_DB_AGENT_ID \
-  --workspace-root /absolute/project --database /absolute/shared/communication.sqlite --json
+  --workspace /absolute/project --database /absolute/shared/communication.sqlite --json
 ```
 
 For large documents or shell-sensitive JSON, use `-` to read stdin:
 
 ```sh
 npx -y @octocodeai/octocode-agents-communication /cli share_document - \
-  --session EXACT_DB_AGENT_ID --workspace-root /absolute/project \
+  --session EXACT_DB_AGENT_ID --workspace /absolute/project \
   --database /absolute/shared/communication.sqlite --json < /absolute/evidence-input.json
 ```
 
@@ -57,10 +57,7 @@ Streaming operations emit their own frames; they append no synthetic result afte
 
 ## Select the workspace
 
-For CLI calls, `--workspace-root` selects the invocation checkout (`--workspace` is also accepted). The MCP server and the direct Python launcher take `--workspace`.
-The `read_document` operation can select a historical origin checkout with `--origin-workspace`.
-Its JSON input retains the canonical `workspace` field.
-The origin checkout must belong to the same repository scope.
+`--workspace` selects the invocation checkout for the CLI, the MCP server and the direct Python launcher.
 
 ## Own the lifecycle
 

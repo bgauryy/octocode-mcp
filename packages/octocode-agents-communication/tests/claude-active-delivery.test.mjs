@@ -74,7 +74,7 @@ setInterval(() => { if (received && fs.existsSync(release)) finish(); }, 20);
   const recipient = events().find(event => event.type === 'ready').session;
   const call = jsonCall(binary, workspace, database, {stdio:'pipe'});
   const sender = call('join', {name:'reviewer',vendor:'raw'}).id;
-  const send = (body, wake = 'action') => call('send_message', {to:recipient,body,key:body,reasoning:'Verify native managed delivery',replyRequired:false,wake}, sender).id;
+  const send = (body, wake = 'action') => call('send_message', {to:recipient,body,key:body,reasoning:'Verify native managed delivery',wake}, sender).id;
   const state = message => {
     const db = new DatabaseSync(database, {readOnly:true});
     try {

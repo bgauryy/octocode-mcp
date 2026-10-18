@@ -1,5 +1,6 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { BranchIndex, type BranchSource } from '../shared/branch-index.js';
 import { CACHE_RETENTION_ENV, envFlag, SUBAGENT_ENV } from '../shared/env.js';
 import { interactive } from '../shared/interactive.js';
 import { isRecord } from '../shared/util.js';
@@ -116,9 +117,8 @@ export function warmingDecision(
 ): CacheWarmingDecisionEventResult | undefined {
   if (!interactive(ctx, isSubagent)) return event.action === 'stop' ? undefined : { action: 'stop' };
   if (event.continuationProbability >= 1 || ttlMs === undefined) return undefined;
-  const branch = ctx.sessionManager.getBranch();
-  const since = lastReplyAt(branch);
-  const q = since === undefined ? undefined : idleContinuation(idleGaps(branch), now - since, ttlMs);
+  const { replyAt, gaps } = cacheClock(ctx.sessionManager);
+  const q = replyAt === undefined ? undefined : idleContinuation(gaps, now - replyAt, ttlMs);
   if (q === undefined) return undefined;
   const action = q * event.missCost > event.warmCost ? 'warm' : 'stop';
   return action === event.action ? undefined : { action };
@@ -135,43 +135,43 @@ export function idleContinuation(gaps: readonly number[], idleMs: number, ttlMs:
   return survivors.filter((gap) => gap > idleMs + ttlMs / 10 && gap <= idleMs + ttlMs).length / survivors.length;
 }
 
+/** What the cache clock reads off a branch: its last reply and refresh, and the idle gaps. */
+interface ClockState {
+  /** When the last reply was requested (its idle start). */
+  replyAt: number | undefined;
+  /** The latest refresh by Pi's warmer (a `usage` entry of kind `cache_warm`, which reads the same prefix and so restarts the entry's lifetime). */
+  warmAt: number;
+  /** Idle gaps: from a finished run's last reply to the next user prompt, in ms. */
+  gaps: number[];
+  /** When the run that just ended finished, until the next user prompt. */
+  finished: number | undefined;
+}
+
+function noteClock(state: ClockState, entry: unknown): void {
+  const { type, kind, timestamp, message } = entry as { type?: string; kind?: string; timestamp?: string; message?: { role?: string; timestamp?: number; stopReason?: string } };
+  if (type === 'usage') {
+    const at = kind === 'cache_warm' && typeof timestamp === 'string' ? Date.parse(timestamp) : Number.NaN;
+    if (at > state.warmAt) state.warmAt = at;
+    return;
+  }
+  if (type !== 'message' || typeof message?.timestamp !== 'number') return;
+  if (message.role === 'assistant') {
+    state.replyAt = message.timestamp;
+    state.finished = message.stopReason === 'stop' ? message.timestamp : undefined;
+  } else if (message.role === 'user' && state.finished !== undefined) {
+    state.gaps.push(message.timestamp - state.finished);
+    state.finished = undefined;
+  }
+}
+
+const clockIndex = new BranchIndex<ClockState>(() => ({ replyAt: undefined, warmAt: Number.NEGATIVE_INFINITY, gaps: [], finished: undefined }), noteClock);
+
 /**
- * When the session's prompt cache entry was last used: its last reply, or a later refresh by Pi's warmer (a `usage`
- * entry of kind `cache_warm`, which reads the same prefix and so restarts its lifetime). Undefined without a reply.
+ * The prompt cache's clock on the session's branch, resumed rather than rescanned (`BranchIndex`): `replyAt`, when the
+ * last reply was requested; `useAt`, when the entry was last used, the later of that reply and a refresh by Pi's warmer
+ * (undefined without a reply); `gaps`, the idle gaps (read-only).
  */
-export function lastCacheUseAt(branch: readonly unknown[]): number | undefined {
-  const reply = lastReplyAt(branch);
-  if (reply === undefined) return undefined;
-  let latest = reply;
-  for (const entry of branch) {
-    const { type, kind, timestamp } = entry as { type?: string; kind?: string; timestamp?: string };
-    const at = type === 'usage' && kind === 'cache_warm' && typeof timestamp === 'string' ? Date.parse(timestamp) : Number.NaN;
-    if (at > latest) latest = at;
-  }
-  return latest;
-}
-
-/** When the session's last reply was requested (its idle start), or undefined without one. */
-function lastReplyAt(branch: readonly unknown[]): number | undefined {
-  for (let index = branch.length - 1; index >= 0; index--) {
-    const message = (branch[index] as { type?: string; message?: { role?: string; timestamp?: number } }).message;
-    if ((branch[index] as { type?: string }).type === 'message' && message?.role === 'assistant' && typeof message.timestamp === 'number') return message.timestamp;
-  }
-  return undefined;
-}
-
-/** Idle gaps in a session branch: from a finished run's last reply to the next user prompt, in ms. */
-function idleGaps(branch: readonly unknown[]): number[] {
-  const gaps: number[] = [];
-  let finished: number | undefined;
-  for (const entry of branch) {
-    const message = (entry as { type?: string; message?: { role?: string; timestamp?: number; stopReason?: string } }).message;
-    if ((entry as { type?: string }).type !== 'message' || typeof message?.timestamp !== 'number') continue;
-    if (message.role === 'assistant') finished = message.stopReason === 'stop' ? message.timestamp : undefined;
-    else if (message.role === 'user' && finished !== undefined) {
-      gaps.push(message.timestamp - finished);
-      finished = undefined;
-    }
-  }
-  return gaps;
+export function cacheClock(session: BranchSource): { replyAt: number | undefined; useAt: number | undefined; gaps: readonly number[] } {
+  const { replyAt, warmAt, gaps } = clockIndex.read(session);
+  return { replyAt, useAt: replyAt === undefined ? undefined : Math.max(replyAt, warmAt), gaps };
 }

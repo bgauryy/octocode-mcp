@@ -47,10 +47,16 @@ fn oversized_line_end(
     (line_end - line_start > line_page_bytes && line_end < bytes.len()).then_some((line_end, line))
 }
 
-/// A byte page's default size: [`LINE_PAGE_BYTES`], never over the line
-/// page budget, so a byte page fits wherever a line page does.
+/// Fewest bytes a byte page defaults to. A narrow response window (a few
+/// rows sharing a small `responseLength`) shrinks the line page budget, but
+/// a byte page cut to the window's half would take thousands of calls to
+/// walk one line; the response pager splits an oversized row losslessly.
+pub(super) const MIN_BYTE_PAGE: usize = 4_096;
+
+/// A byte page's default size: [`LINE_PAGE_BYTES`], or the line page budget
+/// when that is smaller, and never under [`MIN_BYTE_PAGE`].
 fn byte_page(line_page_bytes: usize) -> usize {
-    line_page_bytes.clamp(1, LINE_PAGE_BYTES)
+    line_page_bytes.clamp(MIN_BYTE_PAGE, LINE_PAGE_BYTES)
 }
 
 /// The 1-based line holding byte `offset` of `content`.

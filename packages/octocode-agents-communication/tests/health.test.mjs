@@ -28,7 +28,7 @@ test('health stays read-only under a writer, omits bodies, and treats passive wa
   assert.ok(!JSON.stringify(health).includes('private-context-never-in-health'));
   assert.equal(f.db.prepare('SELECT count(*) n FROM records').get().n,audit);
   assert.equal(f.db.prepare('SELECT acknowledgedAt FROM deliveries').get().acknowledgedAt,null);
-  f.call('send_message',{to:f.b,body:'New action',replyRequired:true,reasoning:'Distinguish pending work from a fault'},f.a);
+  f.call('send_message',{to:f.b,question:'New action',reasoning:'Distinguish pending work from a fault'},f.a);
   const pending=f.call('health');assert.equal(pending.status,'pending');assert.equal(pending.counts.attention,0);
 });
 test('health reports uncertain, stalled and expired action work without replay or missing fanout pages',t=>{
@@ -42,13 +42,13 @@ test('health reports uncertain, stalled and expired action work without replay o
   assert.notEqual(second.issues[0].recipient,first.issues[0].recipient);
   assert.deepEqual([first.issues[0].issue,second.issues[0].issue].sort(),['stalledOffer','uncertain']);
   assert.equal(f.db.prepare('SELECT count(*) n FROM dispatches').get().n,2);
-  const old=f.call('send_message',{to:f.b,body:'Expired work',replyRequired:true,reasoning:'Keep failed work visible',ttlMs:1000},f.a);
+  const old=f.call('send_message',{to:f.b,question:'Expired work',reasoning:'Keep failed work visible',ttlMs:1000},f.a);
   f.db.prepare('UPDATE messages SET expiresAt=0 WHERE id=?').run(old.id);
   assert.ok(f.call('health').issues.some(row=>row.message===old.id&&row.issue==='expiredAction'));
 });
 test('health separates stale handling from offline recipients and isolates workspaces',t=>{
   const f=fixture(t);
-  const message=f.call('send_message',{to:f.b,body:'Please handle',replyRequired:true,reasoning:'Inspect submitted vs handled'},f.a);
+  const message=f.call('send_message',{to:f.b,question:'Please handle',reasoning:'Inspect submitted vs handled'},f.a);
   f.db.prepare("INSERT INTO dispatches(message,recipient,token,transport,state,attemptedAt,submittedAt) VALUES(?,?,?,'raw','submitted',?,?)").run(message.id,f.b,'receipt',Date.now()-10000,Date.now()-10000);
   assert.equal(f.call('health',{staleAfterMs:1000}).issues[0].issue,'overdueHandling');
   f.db.prepare('UPDATE sessions SET expiresAt=0 WHERE id=?').run(f.b);
@@ -66,7 +66,7 @@ test('health rejects invalid limits and never creates a missing DB',t=>{
 test('health flags an ownerless staged offer promptly but not one held by a live delivery owner',async t=>{
   const f=fixture(t);
   f.call('attach',{transport:'raw'},f.b);
-  const message=f.call('send_message',{to:f.b,body:'Offered then crashed',replyRequired:true,reasoning:'Surface stranded offers'},f.a);
+  const message=f.call('send_message',{to:f.b,question:'Offered then crashed',reasoning:'Surface stranded offers'},f.a);
   f.db.prepare("INSERT INTO dispatches(message,recipient,token,transport,state,attemptedAt) VALUES(?,?,?,'hook:grok','staged',?)").run(message.id,f.b,'crashed',Date.now()-31000);
   const orphan=f.call('health');
   assert.equal(orphan.status,'attention');assert.equal(orphan.issues[0].issue,'stalledOffer');

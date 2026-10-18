@@ -18,6 +18,8 @@ Every acceptance run covers the shared contract and the tool-specific behavior:
 - `schema` `variants` and `rules`;
 - collection, content, and whole-response continuations and required recovery in `next`, optional guidance strings in `hints`, and typed terminal limits.
 
+Write each behavior check as Given–When–Then: given a fixture, configuration, and surface (CLI, MCP, or both), when the public call runs, then the observable result (rows, `next`, `hints`, diagnostics, exit code) matches the contract. A failed check is a 5W2H defect record: what, where (`path:line`), when (the reproducing call), who or what it affects, why, how to fix, how much; `unknown` for a slot nobody verified.
+
 ## Inspect the surface being tested
 
 After you build the CLI, run from the monorepo root:
@@ -106,7 +108,7 @@ Test only controls the public operation supports.
 ## Record release evidence
 
 - Follow `<repo>/AGENTS.md` and [DEVELOPMENT.md](DEVELOPMENT.md#build-test-lint); release gates are in [RELEASE.md](RELEASE.md).
-- Record check status per `../references/fix-and-verify.md`. A documentation fix is not a runtime improvement.
-- Separate fixtures from live providers, supported routes from installed servers, and host builds from native-target coverage.
-- Keep open defects in a dated acceptance artifact with reproducible evidence; remove an entry when its regression and real tool check pass.
+- Definition of Done for an acceptance run: each check is recorded per `../references/fix-and-verify.md` (status, command, scope). A documentation fix is not a runtime improvement.
+- Claim–evidence: separate fixtures from live providers, supported routes from installed servers, and host builds from native-target coverage; each claim names the run that supports it.
+- Keep open defects (5W2H records) in a dated acceptance artifact with reproducible evidence; remove an entry when its regression and real tool check pass.
 - A historical score or backlog entry is not release acceptance; never claim all environments passed.

@@ -4,7 +4,7 @@ Load when the task class, mode, proof bar, read span, or multi-pass plan is uncl
 
 Skip stages a known anchor answers; a lookup is a direct read.
 
-| Class | Done when |
+| Class | Definition of Done |
 |---|---|
 | bug | supported contract violated, lobby root-cause rule holds, regression check exists |
 | feature | consumers, acceptance tests, and a compatibility decision set |
@@ -64,14 +64,20 @@ Report per [output](../output.md#response).
 ## Campaigns
 
 - Loop: `frame one question → cheapest call that can change the answer → observe status → learn → next call`.
-- Start: set corpus, question, mode, surfaces, budget, done-when; check reach ([octocode](octocode.md)). Measure claims resolved, not calls.
+- Start: set corpus, question, mode, surfaces, and a Stop condition (done when the class's Definition of Done holds; escalate when the budget is spent or a prerequisite is missing); check reach ([octocode](octocode.md)). Measure claims resolved, not calls.
 - Ledger: goal, anchors (paths, lines, ids, refs, `next.*`/`hints`; never invented), open hypothesis tests (rivals, cheapest distinguishing check), tried shapes.
-- Direct research may pursue independent directions sequentially. When an orchestrator selects a multi-actor workflow, it assigns only directions with distinct observations, keeps one ledger and the merged verdict, and gives each actor an authorized brief (intent): purpose, done-when, constraints, return shape (`claim, evidence, verdict, confidence` per finding). Actors pick the domain method and return evidence; they do not select more actors. Disagreement is evidence; the orchestrator re-checks each load-bearing anchor. See [workflow composition](../../octocode-workflows/references/composition.md).
+- Direct research may pursue independent directions sequentially. When an orchestrator selects a multi-actor workflow, it assigns only directions with distinct observations, keeps one ledger and the merged verdict, and gives each actor an authorized Task contract: objective (purpose), constraints, output (`claim, evidence, verdict, confidence` per finding), and a Definition of Done. Actors pick the domain method and return evidence; they do not select more actors. Disagreement is evidence; the orchestrator re-checks each load-bearing anchor. See [workflow composition](../../octocode-workflows/references/composition.md).
 - At decision boundaries and when stopping, report per [output](../output.md#response), naming verification and open gaps (unresolved alternatives, exhausted budgets, missing prerequisites).
 
 ## Handoff
 
-- Handoff (SBAR): situation (question, scope/ref), background (checks run), assessment (evidence, confidence, gaps), request (next).
+Pick the protocol by what the receiver must do:
+
+| Situation | Protocol | Slots |
+|---|---|---|
+| Blocked, or the next step needs someone else's evidence, decision, or action | SBAR | situation (question, scope/ref), background (checks run), assessment (evidence, confidence, gaps), request (next) |
+| Unfinished work moves to another actor or session | Handoff packet | current state (question, scope/ref, checks run), evidence (anchors), blockers (gaps), next action, constraints, next-call ids (`next.*` calls copied unchanged) |
+
 - Durable handoff (authorized, or [output](../output.md#saved-report) says save): the saved report; no evidence records.
 - Machine consumer: save `<report-stem>.evidence.jsonl` beside the report with the header's `status` and `confidence` values; summarize in chat and link it:
 

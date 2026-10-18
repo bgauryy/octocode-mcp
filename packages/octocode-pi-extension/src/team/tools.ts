@@ -168,7 +168,7 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
       'Send steering, a question or evidence to a live agent in this repository, or to every agent in your session tree. Delivery is queued: a busy recipient reads it at its next step, and you are told if it left unread. ' +
       'A finished subagent that lingers (its report says so, and for how long) resumes with your message; one that does not takes no more messages, so give it a new `agent` task. A long message arrives as its start plus the path of a file with the full text.',
     promptSnippet: 'Message a subagent or teammate',
-    promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker, a decision or evidence. Make it self-contained and skip acknowledgements and completion pings (final reports arrive automatically).'],
+    promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker (SBAR), a decision request, or evidence as a delta update. Make it self-contained and skip acknowledgements and completion pings (final reports arrive automatically).'],
     parameters: Type.Object({
       to: Type.Optional(Type.String({ description: 'Agent id, role, "parent" or "all" (your session tree). Omit it when replyTo is set: the message goes to the sender of that message' })),
       message: Type.String({ description: 'The message text' }),

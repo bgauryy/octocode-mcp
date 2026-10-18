@@ -26,7 +26,7 @@ const RELAY_MAX_DIALOGS = 10;
 const RELAY_WINDOW_MS = 60_000;
 
 /** What the parent says to a child it stops asking about. The child's own deny-with-a-note path carries it to the model. */
-export const RELAY_LIMIT_NOTE = `Not run: this subagent sent more than ${RELAY_MAX_DIALOGS} approval dialogs within a minute, so the rest of that minute is denied without asking the user. Do not retry now; report it to your parent as a blocker.`;
+export const RELAY_LIMIT_NOTE = `Not run: this subagent sent more than ${RELAY_MAX_DIALOGS} approval dialogs within a minute, so the rest of that minute is denied without asking the user. Do not retry now; report it to your parent as SBAR.`;
 
 /** The part of the parent's permission state a relay uses. */
 interface RelayPermission {

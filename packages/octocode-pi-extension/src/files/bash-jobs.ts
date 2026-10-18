@@ -242,7 +242,7 @@ export async function reapOrphanJobs(dirs: readonly string[]): Promise<OrphanJob
   const entries: Array<{ file: string; record: JobRecord | undefined }> = [];
   for (const dir of dirs) {
     try {
-      releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER, (original) => original.endsWith(RECORD_SUFFIX));
+      await releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER, (original) => original.endsWith(RECORD_SUFFIX));
       for (const name of fs.readdirSync(dir)) if (name.endsWith(RECORD_SUFFIX)) entries.push({ file: path.join(dir, name), record: readRecord(path.join(dir, name)) });
     } catch {
       continue;

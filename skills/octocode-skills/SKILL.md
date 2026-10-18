@@ -35,7 +35,7 @@ Add a field or file only for a real consumer.
 | References | Optional detail. First line "Load when <trigger>."; "Next:" last only if the flow continues; flow or decision table only for branching. |
 | Resources table | When, Read, Why; routes every reference and runnable script, grouped by consumer when large; no unused files or duplicate guidance. |
 | Scripts and hooks | Real task logic only (fetch, render, transform, contract checks); environment lookup and judgment stay in instructions; no thin aliases, fixed-phrase graders, or hooks without a demonstrated event. |
-| `output.md` | Usable formats; one authored artifact when it serves; exact fields only for a real downstream consumer. Save to `<workspace>/.octocode/<skill-name>/<YYYY-MM-DD>-<slug>.md` (or a same-named folder with a primary file), scratch and captures to its `tmp/`. Ends with `## Saved report` (header, when to save, render, `--manifest`), whose shared lines `skill-review.mjs` checks. |
+| `output.md` | Usable formats; one authored artifact when it serves; exact fields only for a real downstream consumer. Name a catalog protocol for any output, handoff, or brief ([Write style](#write-style)). Save to `<workspace>/.octocode/<skill-name>/<YYYY-MM-DD>-<slug>.md` (or a same-named folder with a primary file), scratch and captures to its `tmp/`. Ends with `## Saved report` (header, when to save, render, `--manifest`), whose shared lines `skill-review.mjs` checks. |
 | Related skills | "Use `<skill>` when ..."; conditional, never a required chain. |
 | `README.md` | Purpose, where to start, output, setup; links the lobby, never copies its rules. |
 | Configuration | Real dependencies only: each variable, when required, `<HOME>/.octocode/.env`. Check: `npx octocode config check KEY`; `npx octocode config get KEY` only when needed, secrets undisplayed; home: `npx octocode config home`. No bundled env reader. |
@@ -44,6 +44,7 @@ Add a field or file only for a real consumer.
 
 - "When <condition>, <action>"; "because" only when not obvious.
 - Link a rule's owner; never restate it.
+- Outputs, handoffs, and briefs a skill asks for: name a protocol from the [catalog](../octocode-agentic-prompts/references/protocols.md#catalog) (BLUF, Handoff packet, SBAR, Task contract, Delta update) with slots in the receiver's words; never restate its shape.
 - Short bullets and decision tables over paragraphs.
 - No personas, all caps, consumer-less word or count limits, research URLs, dates, or run anecdotes; official spec links may stay.
 - Deliverables: requested content, rationale, citations, substantive measurements, limitations, in one sectioned document; no transcripts, bookkeeping, run or session IDs, receipts, worker rosters, timestamps, author or status tables, or diaries, including ones templates and renderers add; source dates or versions only where they set applicability.
@@ -54,7 +55,7 @@ Add a field or file only for a real consumer.
 2. Run `node <this-skill>/scripts/skill-review.mjs <skill-or-collection-dir>`; confirm shipped files are reachable from the lobby and packaged (a local ignored file can hide a broken install).
 3. Test activation with realistic requests written before editing (varied phrasing, implicit intent, neighbor near-misses, no-skill requests); fix the intent boundary, not keywords. Quick: a small model routes them from names and descriptions (finds confusions; scores above the host). Measured: unused requests through the target host ([skill-activation](../octocode-eval-benchmark/references/skill-activation.md)); record misses and false triggers.
 4. Edit the smallest owning surface: findings for a review, fixes plus verification for an improvement; preserve meaningful contracts, useful scripts, concurrent work.
-5. Done when: the structural check and changed-script checks pass, commands match live help, standalone install works; report checks not run.
+5. Definition of Done: the structural check and changed-script checks pass, commands match live help, standalone install works; report checks not run.
 
 ## Rate
 

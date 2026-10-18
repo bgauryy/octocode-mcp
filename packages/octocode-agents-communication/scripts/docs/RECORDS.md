@@ -14,25 +14,26 @@ Every entity and event uses `{recordId,path,from,to,type,timestamp,branch?,data}
 
 `npx -y @octocodeai/octocode-agents-communication /cli schema types --compact --json` lists all types and fields; `schema type message --json` returns one schema, its meaning and an example. These discovery commands take no workspace, database or session flags, so call them without the bound `comm` helper.
 
-Current writers emit full coordination and lease snapshots; migrated history keeps its original data, and absent historical fields are unknown. In and out records describe the same worktree agent with the same name and vendor. A crash creates no out record; use `peers` for current liveness.
+Writers emit full coordination and lease snapshots. In and out records describe the same worktree agent with the same name and vendor. A crash creates no out record; use `peers` for current liveness.
 
 ## Type summary
 
 | Record types | `data` fields (`?` optional) | Writer |
 | --- | --- | --- |
 | `coordinate.in`, `coordinate.update`, `coordinate.profile`, `coordinate.out` | name, vendor, vendorSession?, task, status, expiresAt | join/resume, heartbeat, set_status, leave |
-| `message` | messageId, body, ttlMs, expiresAt, reasoning, wake, replyRequired, key?, topic?, conversationId?, replyTo?; oversized delivered references add bodyOmitted? and next? | send_message, notify_all, complete |
+| `message` | messageId, kind, body, ttlMs, expiresAt, reasoning, wake, replyRequired, key?, topic?, conversationId?, replyTo?; oversized delivered references add bodyOmitted? and next? | send_message, notify_all, complete |
 | `lease.acquired`, `lease.renewed`, `lease.removed` | leaseId, path, kind, expiresAt, reasoning | lock/lock_many, renew/heartbeat, unlock/leave/prune |
 | `subscription.added`, `subscription.removed` | topic | subscribe/leave |
 | `attachment.created`, `attachment.updated` | transport, endpoint (nullable) | attach |
 | `delivery.created`, `delivery.claimed`, `delivery.acknowledged` | messageId; claimed also has owner | send/fanout, delivery owner, complete |
 | `dispatch.staged`, `dispatch.submitted`, `dispatch.uncertain`, `dispatch.ready` | messageId, token, transport, error? (nullable) | dispatch/bridge, retry_delivery |
-| `document` | name, path, author, bytes, sha256, reasoning, context? {summary, path?, kind?, branch?, ttlMs?, expiresAt?} | share_document |
+| `document` | name, path, author, bytes, sha256, reasoning, supersedes? (ADR link), context? {summary, path?, kind?, branch?, ttlMs?, expiresAt?} | share_document |
 | `usage` | key, scope, model?, inputTokens?, outputTokens?, cachedInputTokens?, contextTokens?, cacheWriteTokens? | record_usage |
 | `host.context` | generation, vendor | hook/host integration |
 | `host.inbound` | vendor, permissionMode, crossSessionInbound? | Claude hook |
 | `memory` | content, tags?, scopePath?, expiresAt?, arbitrary additional fields | record |
 | `event` | name, arbitrary additional fields | record |
+| `checkpoint` | goal, next, done?, inProgress?, openQuestions?, files? | record; `binding` and `resume` return the latest |
 
 ## Find the deciding records
 
@@ -53,6 +54,7 @@ agent fetch '{"type":"memory","search":"API compatibility","branch":"feature/api
 agent fetch '{"type":"dispatch.uncertain","where":{"messageId":17},"current":true}'
 agent record '{"type":"memory","key":"api-fact-1","data":{"content":"API keeps the existing response shape","tags":["api"],"source":"src/api.ts"}}'
 agent record '{"type":"event","data":{"name":"review.finished","result":{"checks":["API smoke"],"owner":"api-reviewer"}}}'
+agent record '{"type":"checkpoint","data":{"goal":"Review API","done":["src/api.ts"],"next":"Review tests/api.ts"}}'
 ```
 
 `incoming:true` reads pending mail for the bound recipient; start a new scan from zero at a later boundary. Reads never acknowledge or reply. `current:true` selects the current dispatch state and token during delivery investigation.
@@ -63,6 +65,6 @@ Call each `next.command` with `next.input` unchanged and the same binding until 
 
 ## Write generic records
 
-`record` accepts only `memory` or `event`, with at most 16,384 UTF-8 bytes of JSON data. Optional `to`, `branch` and `key` control visibility, history and unchanged retries. Operational records come only from their dedicated commands. Record writes notify no one; send a message when another owner must act.
+`record` accepts only `memory`, `event` or `checkpoint`, with at most 16,384 UTF-8 bytes of JSON data. Optional `to`, `branch` and `key` control visibility, history and unchanged retries. Operational records come only from their dedicated commands. Record writes notify no one; send a message when another owner must act.
 
 Exact database and client rules: [database protocol](DB.md).

@@ -109,6 +109,7 @@ fn workspace_policy(root: &Path) -> crate::policy::path::PathPolicy {
 }
 
 mod blocks_and_paths;
+mod long_lines;
 mod matches;
 
 /// A cold symbols view parses its source once: the outline and the

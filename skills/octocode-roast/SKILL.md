@@ -21,7 +21,7 @@ Critique code sharply; prove each finding and give a repair path.
 
 1. **Target**: named files, directories, symbols, or lines; else a requested diff or branch; whole repo only on request or approval.
 2. **Inspect**: structure, search, semantics, reachability, affected scope.
-3. **Inventory**: rank with [sin-catalog](references/sin-catalog.md); if the list buries the decision, show the top and summarize the rest. Finding shape:
+3. **Inventory**: rank with [sin-catalog](references/sin-catalog.md); if the list buries the decision, show the top and summarize the rest. Finding shape (5W2H: what = title and mechanism, where = `path:line`, how much = Impact, how = Repair):
 
    ```text
    {severity}. {title} — `path:line`
@@ -39,7 +39,8 @@ Critique code sharply; prove each finding and give a repair path.
 
 Monorepo or many risk categories: split only independent domains (security, architecture, performance) with no shared mutable state. Direct work may go sequentially. In an orchestrated workflow, the orchestrator selects the actors and owns one finding ledger, ranking, and repairs; actors do not recursively delegate.
 
-- Brief (intent): one domain, done-when, exact paths; return Outcome (done, partial, failed), scope, findings in the finding shape, non-findings (risky patterns checked), limits (missing tools, unreadable paths); the actor picks the method.
+- Task contract per actor: objective: one domain; inputs: exact paths; output: the reply below; Definition of Done: the checks that close that domain; the actor picks the method.
+- Actor reply (BLUF): Outcome (done, partial, failed) first, then scope, findings in the finding shape (claim–evidence: each beside its `path:line`), non-findings (risky patterns checked), limits (missing tools, unreadable paths).
 - Orchestrator: dedupe as actor evidence returns; verify load-bearing claims; own ranking, autopsy, repairs.
 
 ## Resources

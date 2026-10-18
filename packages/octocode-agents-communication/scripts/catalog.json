@@ -128,7 +128,7 @@
           "task": {
             "type": "string",
             "maxLength": 256,
-            "description": "Current task visible to peers."
+            "description": "Task shown to peers."
           },
           "status": {
             "enum": [
@@ -137,7 +137,7 @@
               "blocked",
               "unknown"
             ],
-            "description": "Current presence status visible to peers."
+            "description": "Status shown to peers."
           }
         },
         "minProperties": 1,
@@ -207,13 +207,13 @@
     },
     {
       "name": "peers",
-      "description": "List live peers with exact IDs, worktrees, branches, tasks and status. Follow next.",
+      "description": "List live peers: exact IDs, worktrees, branches, tasks, status. Follow next.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "after": {
             "type": "string",
-            "description": "Exclusive continuation cursor copied from next.input; keep the same filters."
+            "description": "Cursor from next.input; keep filters."
           }
         },
         "additionalProperties": false
@@ -232,7 +232,7 @@
     },
     {
       "name": "send_message",
-      "description": "Send to one recipient or topic. FYI by default. Set replyRequired:true for a question or request you need answered: it wakes the recipient, who answers with complete.",
+      "description": "One protocol message; exactly one kind field. Requests, answered via complete: question, task, decision, handoff. FYIs: body, blocker (wakes), delta, checkback (to the task sender), issue (unknown if unverified).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -246,11 +246,245 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Subscribed topic; mutually exclusive with to."
+            "description": "Subscribed topic; excludes to."
           },
           "body": {
+            "$ref": "#/$defs/body"
+          },
+          "question": {
             "$ref": "#/$defs/body",
-            "description": "Requests and blockers use SBAR: situation, background, assessment, request."
+            "description": "Question text."
+          },
+          "task": {
+            "type": "object",
+            "title": "Task contract",
+            "properties": {
+              "objective": {
+                "type": "string"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "constraints": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "output": {
+                "type": "string"
+              },
+              "done": {
+                "type": "string",
+                "title": "Definition of Done",
+                "description": "Observable checks, e.g. Given-When-Then."
+              },
+              "budget": {
+                "type": "string",
+                "description": "Limits, stop and escalation; at exhaustion complete partial."
+              },
+              "checkBack": {
+                "type": "boolean",
+                "description": "Recipient checks back before work."
+              },
+              "informed": {
+                "$ref": "#/$defs/informed"
+              }
+            },
+            "required": [
+              "objective",
+              "output",
+              "done"
+            ],
+            "additionalProperties": false
+          },
+          "decision": {
+            "type": "object",
+            "title": "Decision request",
+            "properties": {
+              "question": {
+                "type": "string"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 2
+              },
+              "tradeoffs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "recommendation": {
+                "type": "string"
+              },
+              "default": {
+                "type": "string",
+                "description": "Applies if unanswered by expiry."
+              },
+              "informed": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "question",
+              "options",
+              "recommendation",
+              "default"
+            ],
+            "additionalProperties": false
+          },
+          "handoff": {
+            "type": "object",
+            "title": "Handoff packet",
+            "properties": {
+              "state": {
+                "type": "string"
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              },
+              "blockers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "next": {
+                "type": "string"
+              },
+              "leases": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "Your lease IDs, moved to the recipient on done."
+              }
+            },
+            "required": [
+              "state",
+              "next"
+            ],
+            "additionalProperties": false
+          },
+          "blocker": {
+            "type": "object",
+            "title": "SBAR",
+            "properties": {
+              "situation": {
+                "type": "string"
+              },
+              "background": {
+                "type": "string"
+              },
+              "assessment": {
+                "type": "string"
+              },
+              "recommendation": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "situation",
+              "background",
+              "assessment",
+              "recommendation"
+            ],
+            "additionalProperties": false
+          },
+          "delta": {
+            "type": "object",
+            "title": "Delta update",
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "blockers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "next": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "changes"
+            ],
+            "additionalProperties": false
+          },
+          "checkback": {
+            "type": "object",
+            "title": "Check-back",
+            "properties": {
+              "request": {
+                "type": "integer",
+                "description": "Task message ID."
+              },
+              "objective": {
+                "type": "string"
+              },
+              "done": {
+                "type": "string",
+                "title": "Definition of Done"
+              }
+            },
+            "required": [
+              "request",
+              "objective",
+              "done"
+            ],
+            "additionalProperties": false
+          },
+          "issue": {
+            "type": "object",
+            "title": "5W2H",
+            "properties": {
+              "what": {
+                "type": "string"
+              },
+              "where": {
+                "type": "string"
+              },
+              "when": {
+                "type": "string"
+              },
+              "who": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              },
+              "how": {
+                "type": "string"
+              },
+              "howMuch": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "what",
+              "where",
+              "when",
+              "who",
+              "why",
+              "how",
+              "howMuch"
+            ],
+            "additionalProperties": false
           },
           "key": {
             "$ref": "#/$defs/key"
@@ -259,34 +493,81 @@
             "$ref": "#/$defs/ttlMs"
           },
           "reasoning": {
-            "$ref": "#/$defs/reasoning",
-            "description": "Intent: purpose and done-when; ≤512 UTF-8 bytes."
+            "$ref": "#/$defs/reasoning"
           },
           "wake": {
             "$ref": "#/$defs/wake"
           },
           "conversationId": {
             "$ref": "#/$defs/conversationId"
-          },
-          "replyRequired": {
-            "type": "boolean",
-            "description": "true: a request; the recipient answers with complete {message, reply}. false (default): an FYI; no answer, no reply."
           }
         },
         "required": [
-          "body",
           "reasoning"
         ],
         "additionalProperties": false,
-        "oneOf": [
+        "allOf": [
           {
-            "required": [
-              "to"
+            "oneOf": [
+              {
+                "required": [
+                  "to"
+                ]
+              },
+              {
+                "required": [
+                  "topic"
+                ]
+              }
             ]
           },
           {
-            "required": [
-              "topic"
+            "oneOf": [
+              {
+                "required": [
+                  "body"
+                ]
+              },
+              {
+                "required": [
+                  "question"
+                ]
+              },
+              {
+                "required": [
+                  "task"
+                ]
+              },
+              {
+                "required": [
+                  "decision"
+                ]
+              },
+              {
+                "required": [
+                  "handoff"
+                ]
+              },
+              {
+                "required": [
+                  "blocker"
+                ]
+              },
+              {
+                "required": [
+                  "delta"
+                ]
+              },
+              {
+                "required": [
+                  "checkback"
+                ]
+              },
+              {
+                "required": [
+                  "issue"
+                ]
+              }
             ]
           }
         ]
@@ -305,7 +586,7 @@
     },
     {
       "name": "notify_all",
-      "description": "Broadcast to live repository peers excluding sender. Defaults to passive/no reply; no backfill.",
+      "description": "FYI to live repository peers except you; no backfill.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -319,18 +600,13 @@
             "$ref": "#/$defs/ttlMs"
           },
           "reasoning": {
-            "$ref": "#/$defs/reasoning",
-            "description": "Intent: purpose and done-when; ≤512 UTF-8 bytes."
+            "$ref": "#/$defs/reasoning"
           },
           "wake": {
             "$ref": "#/$defs/wake"
           },
           "conversationId": {
             "$ref": "#/$defs/conversationId"
-          },
-          "replyRequired": {
-            "type": "boolean",
-            "description": "true: a request; the recipient answers with complete {message, reply}. false (default): an FYI; no answer, no reply."
           }
         },
         "required": [
@@ -360,12 +636,12 @@
           "after": {
             "type": "integer",
             "minimum": 0,
-            "description": "Exclusive continuation cursor copied from next.input; keep the same filters."
+            "description": "Cursor from next.input; keep filters."
           },
           "message": {
             "type": "integer",
             "minimum": 1,
-            "description": "Exact message ID."
+            "description": "Message ID."
           }
         },
         "additionalProperties": false,
@@ -390,14 +666,14 @@
     },
     {
       "name": "complete",
-      "description": "Complete requests with message+outcome+reply; handled FYIs with message/messages only. Keep unfinished work pending; retry unchanged.",
+      "description": "Requests: message+outcome+reply. Handled FYIs: message/messages only. Leave unfinished work pending; retry unchanged.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "message": {
             "type": "integer",
             "exclusiveMinimum": 0,
-            "description": "Exact message ID."
+            "description": "Message ID."
           },
           "messages": {
             "type": "array",
@@ -408,11 +684,46 @@
             "minItems": 1,
             "maxItems": 100,
             "uniqueItems": true,
-            "description": "Message IDs to complete without a reply."
+            "description": "Handled FYI IDs; no reply."
           },
           "reply": {
-            "$ref": "#/$defs/body",
-            "description": "Final answer."
+            "type": "object",
+            "title": "BLUF",
+            "description": "Facts as evidence, apart from assumptions and unknowns.",
+            "properties": {
+              "conclusion": {
+                "type": "string"
+              },
+              "confidence": {
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ]
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              },
+              "assumptions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "unknowns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "next": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "conclusion"
+            ],
+            "additionalProperties": false
           },
           "outcome": {
             "type": "string",
@@ -423,7 +734,7 @@
               "refused",
               "canceled"
             ],
-            "description": "Final status; needs message and reply. Prefixes the stored reasoning; the reply stays exact."
+            "description": "Final status; needs message and reply."
           },
           "reasoning": {
             "$ref": "#/$defs/reasoning",
@@ -445,7 +756,8 @@
         ],
         "dependentRequired": {
           "reply": [
-            "message"
+            "message",
+            "outcome"
           ],
           "outcome": [
             "message",
@@ -505,7 +817,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path within the repository; export paths must be absolute."
+            "description": "Repository path."
           },
           "kind": {
             "type": "string",
@@ -513,20 +825,20 @@
               "file",
               "tree"
             ],
-            "description": "File or whole directory tree scope."
+            "description": "file or whole tree."
           },
           "ttlMs": {
             "type": "integer",
             "minimum": 1000,
             "maximum": 600000,
-            "description": "Lifetime in milliseconds; renew before expiry."
+            "description": "Lifetime in ms; renew before expiry."
           },
           "reasoning": {
             "$ref": "#/$defs/reasoning"
           },
           "wait": {
             "type": "boolean",
-            "description": "Wait for conflicting leases instead of failing immediately."
+            "description": "Queue behind conflicts instead of failing."
           }
         },
         "required": [
@@ -560,7 +872,7 @@
             "type": "integer",
             "minimum": 1000,
             "maximum": 600000,
-            "description": "Lifetime in milliseconds; renew before expiry."
+            "description": "Lifetime in ms; renew before expiry."
           }
         },
         "required": [
@@ -1170,20 +1482,20 @@
             "items": {
               "$ref": "#/$defs/pathTarget"
             },
-            "description": "Path targets to check or lease as one operation."
+            "description": "Paths leased atomically."
           },
           "ttlMs": {
             "type": "integer",
             "minimum": 1000,
             "maximum": 600000,
-            "description": "Lifetime in milliseconds; renew before expiry."
+            "description": "Lifetime in ms; renew before expiry."
           },
           "reasoning": {
             "$ref": "#/$defs/reasoning"
           },
           "wait": {
             "type": "boolean",
-            "description": "Wait for conflicting leases instead of failing immediately."
+            "description": "Queue behind conflicts instead of failing."
           }
         },
         "required": [
@@ -1206,7 +1518,7 @@
     },
     {
       "name": "share_document",
-      "description": "Publish immutable UTF-8 evidence with hash and optional context. Retry unchanged; revisions need a new name.",
+      "description": "Publish immutable UTF-8 evidence with hash and optional context. Retry unchanged; revise under a new name with supersedes.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1215,12 +1527,12 @@
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[a-z0-9][a-z0-9._-]*$",
-            "description": "Stable agent or document name."
+            "description": "Exact document name."
           },
           "content": {
             "type": "string",
             "maxLength": 1048576,
-            "description": "Complete UTF-8 evidence document."
+            "description": "UTF-8 document text."
           },
           "context": {
             "type": "object",
@@ -1229,14 +1541,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 320,
-                "description": "Short context summary for discovery."
+                "description": "One useful fact for discovery."
               },
               "path": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096,
                 "default": ".",
-                "description": "Path within the repository; export paths must be absolute."
+                "description": "Repository path."
               },
               "kind": {
                 "type": "string",
@@ -1245,30 +1557,37 @@
                   "tree"
                 ],
                 "default": "tree",
-                "description": "File or whole directory tree scope."
+                "description": "file or whole tree."
               },
               "branch": {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 255,
-                "description": "Git branch associated with this entry."
+                "description": "Git branch."
               },
               "ttlMs": {
                 "type": "integer",
                 "minimum": 1000,
                 "maximum": 604800000,
                 "default": 86400000,
-                "description": "Lifetime in milliseconds; renew before expiry."
+                "description": "Discovery lifetime in ms."
               }
             },
             "required": [
               "summary"
             ],
             "additionalProperties": false,
-            "description": "Optional discovery context for the evidence document."
+            "description": "Discovery note."
           },
           "reasoning": {
             "$ref": "#/$defs/reasoning"
+          },
+          "supersedes": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$",
+            "description": "ADR: the published name this revises."
           }
         },
         "required": [
@@ -1292,7 +1611,7 @@
     },
     {
       "name": "read_document",
-      "description": "Read an exact name and verify its hash. Use workspace for historical name collisions. Follow next.",
+      "description": "Read an exact name and verify its hash. Follow next.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1301,25 +1620,19 @@
             "minLength": 1,
             "maxLength": 128,
             "pattern": "^[a-z0-9][a-z0-9._-]*$",
-            "description": "Stable agent or document name."
+            "description": "Exact document name."
           },
           "offset": {
             "type": "integer",
             "minimum": 0,
             "maximum": 1048576,
-            "description": "Byte offset copied from next.input."
+            "description": "Byte offset from next.input."
           },
           "limit": {
             "type": "integer",
             "minimum": 4,
             "maximum": 16384,
-            "description": "Maximum items or bytes per page; follow next for remaining evidence."
-          },
-          "workspace": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096,
-            "description": "Origin checkout for name collisions; same repository."
+            "description": "Page size; follow next."
           }
         },
         "required": [
@@ -1350,30 +1663,30 @@
             "minLength": 1,
             "maxLength": 4096,
             "default": ".",
-            "description": "Path within the repository; export paths must be absolute."
+            "description": "Repository path."
           },
           "branch": {
             "type": "string",
             "minLength": 1,
             "maxLength": 255,
-            "description": "Git branch associated with this entry."
+            "description": "Git branch."
           },
           "after": {
             "type": "integer",
             "minimum": 0,
-            "description": "Exclusive continuation cursor copied from next.input; keep the same filters."
+            "description": "Cursor from next.input; keep filters."
           },
           "through": {
             "type": "integer",
             "minimum": 0,
-            "description": "Inclusive snapshot upper bound copied from next.input."
+            "description": "Snapshot bound from next.input."
           },
           "limit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 20,
             "default": 10,
-            "description": "Maximum items or bytes per page; follow next for remaining evidence."
+            "description": "Page size; follow next."
           }
         },
         "additionalProperties": false
@@ -1405,60 +1718,60 @@
               "reflog"
             ],
             "default": "files",
-            "description": "Git activity view to read."
+            "description": "Activity view."
           },
           "limit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 100,
             "default": 20,
-            "description": "Maximum items or bytes per page; follow next for remaining evidence."
+            "description": "Page size; follow next."
           },
           "path": {
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path within the repository; export paths must be absolute."
+            "description": "Repository path."
           },
           "pathRegex": {
             "type": "string",
             "minLength": 1,
             "maxLength": 512,
-            "description": "Regular expression filtering repository paths."
+            "description": "Path regex."
           },
           "sinceMs": {
             "type": "integer",
             "minimum": 0,
-            "description": "Inclusive lower timestamp in epoch milliseconds; excludes withinMs."
+            "description": "Inclusive start, epoch ms; excludes withinMs."
           },
           "untilMs": {
             "type": "integer",
             "minimum": 0,
-            "description": "Inclusive upper timestamp in epoch milliseconds."
+            "description": "Inclusive end, epoch ms."
           },
           "withinMs": {
             "type": "integer",
             "minimum": 1,
             "maximum": 31536000000,
-            "description": "Look back this many milliseconds; excludes sinceMs."
+            "description": "Look back ms; excludes sinceMs."
           },
           "scanLimit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 2000,
             "default": 200,
-            "description": "Maximum scanned entries per page; continue for remaining coverage."
+            "description": "Entries scanned per page; follow next."
           },
           "after": {
             "type": "integer",
             "minimum": 0,
             "maximum": 1000000,
-            "description": "Exclusive continuation cursor copied from next.input; keep the same filters."
+            "description": "Cursor from next.input; keep filters."
           },
           "snapshot": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$",
-            "description": "Snapshot fingerprint copied from next.input."
+            "description": "From next.input."
           }
         },
         "additionalProperties": false,
@@ -1757,7 +2070,7 @@
         "properties": {
           "after": {
             "type": "string",
-            "description": "Exclusive continuation cursor copied from next.input; keep the same filters."
+            "description": "Cursor from next.input; keep filters."
           },
           "presence": {
             "type": "string",
@@ -1766,18 +2079,18 @@
               "expired",
               "all"
             ],
-            "description": "Presence filter for leases."
+            "description": "Owner presence."
           },
           "owner": {
             "type": "string",
             "minLength": 1,
-            "description": "Exact owner ID or unambiguous name."
+            "description": "Owner ID or name."
           },
           "path": {
             "type": "string",
             "minLength": 1,
             "maxLength": 4096,
-            "description": "Path within the repository; export paths must be absolute."
+            "description": "Repository path."
           },
           "kind": {
             "type": "string",
@@ -1785,7 +2098,7 @@
               "file",
               "tree"
             ],
-            "description": "File or whole directory tree scope."
+            "description": "file or whole tree."
           }
         },
         "additionalProperties": false
@@ -1824,7 +2137,7 @@
     },
     {
       "name": "fetch",
-      "description": "Fetch typed repository history with filters/search and origins. Mail is participant-only; incoming reads pending mail. Follow next.",
+      "description": "Typed repository history with filters, search and origins; mail is participant-only. Follow next.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1832,13 +2145,13 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740991,
-            "description": "Exact record ID to read."
+            "description": "Record ID."
           },
           "type": {
             "type": "string",
             "minLength": 1,
             "maxLength": 128,
-            "description": "Record type to read or append."
+            "description": "Record type."
           },
           "types": {
             "type": "array",
@@ -1850,62 +2163,62 @@
             "minItems": 1,
             "maxItems": 32,
             "uniqueItems": true,
-            "description": "Record types to include; excludes type."
+            "description": "Record types; excludes type."
           },
           "from": {
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Exact sender identity filter."
+            "description": "Sender ID."
           },
           "to": {
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Exact peer ID or unambiguous name; mutually exclusive with topic."
+            "description": "Recipient ID or name."
           },
           "branch": {
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Git branch associated with this entry."
+            "description": "Git branch."
           },
           "since": {
             "type": "integer",
             "minimum": 0,
-            "description": "Inclusive lower timestamp in epoch milliseconds."
+            "description": "Inclusive start, epoch ms."
           },
           "until": {
             "type": "integer",
             "minimum": 0,
-            "description": "Inclusive upper timestamp in epoch milliseconds."
+            "description": "Inclusive end, epoch ms."
           },
           "after": {
             "type": "integer",
             "minimum": 0,
-            "description": "Exclusive continuation cursor copied from next.input; keep the same filters."
+            "description": "Cursor from next.input; keep filters."
           },
           "through": {
             "type": "integer",
             "minimum": 0,
-            "description": "Inclusive snapshot upper bound copied from next.input."
+            "description": "Snapshot bound from next.input."
           },
           "limit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 100,
             "default": 100,
-            "description": "Maximum items or bytes per page; follow next for remaining evidence."
+            "description": "Page size; follow next."
           },
           "incoming": {
             "type": "boolean",
-            "description": "Read pending incoming participant mail."
+            "description": "Only pending mail to you."
           },
           "search": {
             "type": "string",
             "minLength": 1,
             "maxLength": 256,
-            "description": "Literal text to find in record data."
+            "description": "Words or \"phrases\" in data."
           },
           "where": {
             "type": "object",
@@ -1918,11 +2231,11 @@
                 "null"
               ]
             },
-            "description": "Exact scalar data-field filters combined with AND."
+            "description": "Scalar data.field filters, ANDed."
           },
           "current": {
             "type": "boolean",
-            "description": "Latest dispatch state/token per recipient/message."
+            "description": "Latest dispatch per recipient/message."
           }
         },
         "additionalProperties": false,
@@ -1947,7 +2260,7 @@
     },
     {
       "name": "record",
-      "description": "Append memory/event JSON with bound identity/time. Other types use dedicated writers.",
+      "description": "Append memory, event or checkpoint JSON. Other types use dedicated writers.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1955,9 +2268,10 @@
             "type": "string",
             "enum": [
               "memory",
-              "event"
+              "event",
+              "checkpoint"
             ],
-            "description": "Record type to read or append."
+            "description": "Record type."
           },
           "to": {
             "type": "string",
@@ -1971,12 +2285,12 @@
               "null"
             ],
             "maxLength": 256,
-            "description": "Git branch associated with this entry."
+            "description": "Git branch."
           },
           "data": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Typed record data; inspect schema type for the selected type."
+            "description": "Data per schema type <type>."
           },
           "key": {
             "$ref": "#/$defs/key"
@@ -1989,36 +2303,6 @@
         "additionalProperties": false
       },
       "usage": "record [json] --session <id>",
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "openWorldHint": false
-      },
-      "cliFlags": [
-        "workspace",
-        "database",
-        "session"
-      ]
-    },
-    {
-      "name": "db migrate",
-      "description": "Explicitly migrate a recognized v1/v2/v3/v4/v5 store to v6 after stopping old clients. Requires an absolute new backup path; verifies a no-clobber snapshot before any schema change, preserves all history and rolls back errors.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "backup": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4096,
-            "description": "Absolute new backup path; existing files are never overwritten."
-          }
-        },
-        "required": [
-          "backup"
-        ],
-        "additionalProperties": false
-      },
-      "usage": "db migrate [json]",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -2197,19 +2481,19 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 16384,
-      "description": "Complete message text delivered durably."
+      "description": "FYI text."
     },
     "key": {
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "description": "Stable idempotency key; reuse only for unchanged input."
+      "description": "Idempotency key; reuse only for unchanged input."
     },
     "ttlMs": {
       "type": "integer",
       "minimum": 1000,
       "maximum": 86400000,
-      "description": "Lifetime in milliseconds; renew before expiry."
+      "description": "Lifetime in ms; renew before expiry."
     },
     "reasoning": {
       "type": "string",
@@ -2223,14 +2507,14 @@
         "action",
         "passive"
       ],
-      "description": "action wakes the recipient now; passive waits for its next turn. Default: action if replyRequired, else passive."
+      "description": "action: wake now; passive: next turn. Default action for requests and blocker."
     },
     "conversationId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9._:-]+$",
-      "description": "Shared conversation identifier for related messages."
+      "description": "Thread ID shared by related messages."
     },
     "topics": {
       "maxItems": 32,
@@ -2265,7 +2549,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096,
-          "description": "Workspace-relative file/tree; default workspace root."
+          "description": "Workspace-relative path."
         },
         "kind": {
           "type": "string",
@@ -2274,14 +2558,14 @@
             "tree"
           ],
           "default": "file",
-          "description": "File or whole directory tree scope."
+          "description": "file or whole tree."
         }
       },
       "required": [
         "path"
       ],
       "additionalProperties": false,
-      "description": "Repository path and file/tree scope."
+      "description": "Path target."
     },
     "coordinateData": {
       "type": "object",
@@ -2439,6 +2723,33 @@
       "required": [
         "messageId"
       ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "path:line, URL, commit or document:NAME"
+          }
+        },
+        "required": [
+          "claim",
+          "source"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "informed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Peers copied on the answer (RACI Informed)."
     }
   },
   "recordTypes": [
@@ -2529,19 +2840,32 @@
       "dataSchema": {
         "type": "object",
         "properties": {
+          "kind": {
+            "enum": [
+              "note",
+              "question",
+              "task",
+              "decision",
+              "blocker",
+              "handoff",
+              "delta",
+              "checkback",
+              "issue",
+              "answer"
+            ]
+          },
           "body": {
             "$ref": "#/$defs/body"
           },
           "key": {
             "$ref": "#/$defs/key",
-            "description": "Optional retry key; complete: prefix is reserved."
+            "description": "Optional idempotency key; complete: prefix is reserved."
           },
           "ttlMs": {
             "$ref": "#/$defs/ttlMs"
           },
           "reasoning": {
-            "$ref": "#/$defs/reasoning",
-            "description": "Intent: purpose and done-when; ≤512 UTF-8 bytes."
+            "$ref": "#/$defs/reasoning"
           },
           "wake": {
             "$ref": "#/$defs/wake"
@@ -2551,7 +2875,7 @@
           },
           "replyRequired": {
             "type": "boolean",
-            "description": "Answer required; default false (FYI). Set true for a question or request."
+            "description": "Set by kind: question, task, decision and handoff are requests."
           },
           "messageId": {
             "type": "integer",
@@ -2612,7 +2936,8 @@
               "expiresAt",
               "reasoning",
               "wake",
-              "replyRequired"
+              "replyRequired",
+              "kind"
             ],
             "properties": {
               "bodyOmitted": {
@@ -2635,7 +2960,8 @@
       },
       "example": {
         "messageId": 17,
-        "body": "Review storage",
+        "kind": "question",
+        "body": "Is storage reviewed?",
         "ttlMs": 60000,
         "expiresAt": 1791187260000,
         "reasoning": "Review before handoff",
@@ -2988,6 +3314,9 @@
               "summary"
             ],
             "additionalProperties": false
+          },
+          "supersedes": {
+            "type": "string"
           }
         },
         "additionalProperties": false,
@@ -3237,6 +3566,70 @@
       "fetch": {
         "type": "event"
       }
+    },
+    {
+      "type": "checkpoint",
+      "writer": "record",
+      "description": "Checkpoint-resume state for continuing work after an interruption; resume and binding return your latest.",
+      "dataSchema": {
+        "type": "object",
+        "properties": {
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "done": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inProgress": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1
+          },
+          "openQuestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "goal",
+          "next"
+        ],
+        "additionalProperties": false
+      },
+      "example": {
+        "goal": "Typed message protocols",
+        "done": [
+          "schema v7"
+        ],
+        "inProgress": [
+          "catalog"
+        ],
+        "next": "Wire store.send",
+        "files": [
+          "scripts/catalog.json"
+        ]
+      },
+      "routing": "author → optional agent/*; default repository-shared",
+      "fetch": {
+        "type": "checkpoint"
+      }
     }
   ],
   "recordEnvelope": {
@@ -3287,6 +3680,5 @@
       "data"
     ],
     "additionalProperties": false
-  },
-  "recordHistory": "dataSchema describes current v6 output. Migrated v1–v5 events retain their original partial payloads; absent historical fields are unknown, not filled from current state."
+  }
 }

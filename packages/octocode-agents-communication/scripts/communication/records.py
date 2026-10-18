@@ -26,7 +26,7 @@ def envelope(row):
     return result
 
 
-PAYLOAD = "CASE WHEN r.type='message' THEN json_set(r.data,'$.body',m.body,'$.expiresAt',m.expiresAt,'$.ttlMs',m.ttlMs) ELSE r.data END"
+PAYLOAD = "CASE WHEN r.type='message' THEN json_set(r.data,'$.kind',m.kind,'$.body',m.body,'$.expiresAt',m.expiresAt,'$.ttlMs',m.ttlMs) ELSE r.data END"
 SELECT = 'SELECT r.id,r.path,r."from",r."to",r.type,r.timestamp,r.branch,' + PAYLOAD + ' AS data FROM records r LEFT JOIN messages m ON r.type=\'message\' AND m.id=CAST(r.entityId AS INTEGER)'
 # Mail history is visible only to its author and the recipients fixed at send time.
 # Custom targeted records use the same author/recipient rule; NULL means workspace-shared.

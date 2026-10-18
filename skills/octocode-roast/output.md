@@ -19,7 +19,7 @@ next: <the one next action for whoever continues, in the imperative>
 ---
 ```
 
-Follow the header with the `#` title and a lead paragraph that states the answer. Put findings under `## Findings` in one table, most severe first, then add `## Fix order`:
+Follow the header with the `#` title and a lead paragraph that states the answer. Put findings under `## Findings` in one table, most severe first, then add `## Fix order` (rows as in [redemption options](references/redemption-flow.md#checkpoint): #1 = do now):
 
 | # | Location | Finding and mechanism | Consequence | Severity | Confidence | Repair |
 |---|---|---|---|---|---|---|

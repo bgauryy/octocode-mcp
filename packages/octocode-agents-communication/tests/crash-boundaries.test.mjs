@@ -63,12 +63,12 @@ function setup(t, name) {
     db.close();
     rmSync(workspace, { recursive: true, force: true });
   });
-  const sent = call('send_message', { to: receiver.id, body: `crash:${name}`, key: 'request', replyRequired: true, conversationId: name }, sender.id);
+  const sent = call('send_message', { to: receiver.id, question: `crash:${name}`, key: 'request', conversationId: name }, sender.id);
   const receipt = () => db.prepare('SELECT * FROM dispatches WHERE message=? AND recipient=?').get(sent.id, receiver.id);
   const delivery = () => db.prepare('SELECT * FROM deliveries WHERE message=? AND recipient=?').get(sent.id, receiver.id);
   const pause = async (boundary, kill = true) => {
     const marker = join(workspace, 'paused.json');
-    const command = boundary === 'during-complete' ? args('complete', { message: sent.id, reply: `answer:${name}`, outcome: 'done' }, receiver.id) : args('dispatch', {}, receiver.id);
+    const command = boundary === 'during-complete' ? args('complete', { message: sent.id, reply:{conclusion:`answer:${name}`}, outcome: 'done' }, receiver.id) : args('dispatch', {}, receiver.id);
     const process = child(boundary, marker, command);
     await waitFor(() => existsSync(marker), { message: `Production boundary ${boundary} not reached` });
     const checkpoint = JSON.parse(readFileSync(marker, 'utf8'));
@@ -80,8 +80,8 @@ function setup(t, name) {
   const health = async expected => { await sleep(1050); const state = call('health', { staleAfterMs: 1000 }); if (expected) assert.ok(state.issues.some(issue => issue.message === sent.id && issue.issue === expected), JSON.stringify(state)); return state; };
   const inspect = () => { call('binding', {}, receiver.id); return call('fetch', { current: true }, receiver.id); };
   const noReplay = () => { const before = frames().length; assert.equal(call('dispatch', {}, receiver.id).submitted, 0); assert.equal(call('dispatch', {}, receiver.id).submitted, 0); assert.equal(frames().length, before); };
-  const unrelated = async () => { call('attach', { transport: 'claude', endpoint, vendorSession: 'healthy-session' }, healthy.id); const next = call('send_message', { to: healthy.id, body: `healthy:${name}`, key: 'healthy', replyRequired: true }, sender.id); assert.equal(call('dispatch', {}, healthy.id).submitted, 1); await waitFor(() => frames().some(row => row.frame.message?.content.includes(`healthy:${name}`))); const reply = call('complete', { message: next.id, reply: `healthy-answer:${name}` }, healthy.id); assert.equal(reply.completed, true); };
-  const complete = () => { const input = { message: sent.id, reply: `answer:${name}`, outcome: 'done' }; const first = call('complete', input, receiver.id); assert.equal(first.completed, true); assert.equal(call('complete', input, receiver.id).id, first.id); assert.throws(() => call('complete', { ...input, reply: 'conflicting answer' }, receiver.id), /different content/); const answer = db.prepare('SELECT * FROM messages WHERE replyTo=?').all(sent.id); assert.equal(answer.length, 1); assert.equal(answer[0].conversationId, name); assert.equal(answer[0].target, sender.id); assert.ok(delivery().acknowledgedAt); return first; };
+  const unrelated = async () => { call('attach', { transport: 'claude', endpoint, vendorSession: 'healthy-session' }, healthy.id); const next = call('send_message', { to: healthy.id, question: `healthy:${name}`, key: 'healthy' }, sender.id); assert.equal(call('dispatch', {}, healthy.id).submitted, 1); await waitFor(() => frames().some(row => row.frame.message?.content.includes(`healthy:${name}`))); const reply = call('complete', { message: next.id, outcome:'done',reply:{conclusion:`healthy-answer:${name}`} }, healthy.id); assert.equal(reply.completed, true); };
+  const complete = () => { const input = { message: sent.id, reply:{conclusion:`answer:${name}`}, outcome: 'done' }; const first = call('complete', input, receiver.id); assert.equal(first.completed, true); assert.equal(call('complete', input, receiver.id).id, first.id); assert.throws(() => call('complete', { ...input, reply:{conclusion:'conflicting answer'} }, receiver.id), /different content/); const answer = db.prepare('SELECT * FROM messages WHERE replyTo=?').all(sent.id); assert.equal(answer.length, 1); assert.equal(answer[0].conversationId, name); assert.equal(answer[0].target, sender.id); assert.ok(delivery().acknowledgedAt); return first; };
   return { ...evidence, evidence, call, sender, receiver, healthy, db, server, recoveryOwner, pause, health, inspect, noReplay, unrelated, complete, stop, receipt, delivery, frames, sent, endpoint, name };
 }
 
@@ -129,7 +129,7 @@ test('explicit unchanged raw attach recovers completed orphan stages before fres
   assert.equal(f.call('hook', { format: 'json', deferConfirm: true }, f.receiver.id).items.length, 0);
   assert.equal(f.call('retry_delivery', { message: f.sent.id, reason: 'Already handled' }, f.receiver.id).ready, false);
   const baseline = f.call('health', { staleAfterMs: 1000 });
-  const pending = f.call('send_message', { to: f.healthy.id, body: 'unrelated-pending', key: 'health-pending', replyRequired: true }, f.sender.id);
+  const pending = f.call('send_message', { to: f.healthy.id, question: 'unrelated-pending', key: 'health-pending' }, f.sender.id);
   const health = await f.health();
   assert.equal(health.counts.uncertain, 0);
   assert.equal(health.counts.queuedAction, baseline.counts.queuedAction + 1);

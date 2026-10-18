@@ -52,7 +52,7 @@ Use Workflow's [AST/LSP techniques](../octocode-workflows/references/ast-lsp-wor
 | When | Do |
 |---|---|
 | Scope, flow, symbol identity, runtime impact, or measurement unresolved | Report a candidate, not a defect. |
-| Public-contract rewire, cross-package move, schema/storage migration, delete, or rename | Ask first unless that exact scope is authorized. |
+| Public-contract rewire, cross-package move, schema/storage migration, delete, or rename | Ask first unless that exact scope is authorized, as a Decision request: options, tradeoffs, recommendation, default if no answer. |
 | Cleanup beyond the change | Clean only what the change caused or touches; broader refactoring needs evidence, an acceptance sensor, authorization. |
 | Bookkeeping | Update only what the repo contract requires (docs, manifests, versions, lockfiles, changelogs, snapshots); regenerate derived files, never hand-edit. |
 | Reachable path unimplemented | Fail explicitly; tests prove outcomes, not calls. |

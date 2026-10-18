@@ -7,10 +7,9 @@
   "bugs": "https://github.com/bgauryy/octocode/issues",
   "dependencies": {
     "@modelcontextprotocol/server": "^2.3.1",
-    "@octocodeai/octocode-core": "20.0.1",
+    "@octocodeai/octocode-core": "21.0.1",
     "@octocodeai/octocode-native": "20.2.0",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2",
-    "zod": "^4.6.7"
+    "@typescript/native-preview": "7.0.0-dev.20260707.2"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -24,7 +23,8 @@
     "typescript": "^6.0.3",
     "typescript-language-server": "^6.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.4",
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": "^24.15.0"

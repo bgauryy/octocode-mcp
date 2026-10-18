@@ -7,7 +7,7 @@ explicit alternatives; a restart never authorizes replay of uncertain messages.
 
 ```sh
 npx -y @octocodeai/octocode-agents-communication /cli health '{"staleAfterMs":300000,"limit":25}' \
-  --workspace-root /absolute/repo --database /absolute/communication.sqlite
+  --workspace /absolute/repo --database /absolute/communication.sqlite
 ```
 
 `health` opens an existing DB read-only (no session needed, readable during a WAL
@@ -19,7 +19,7 @@ means queued/submitted work without a fault. Passive mail waiting for action is 
 
 | Issue | Operator response |
 | --- | --- |
-| `uncertain` | Inspect the actual recipient and dispatch token before any explicit retry |
+| `uncertain` | Inspect the actual recipient and dispatch token before any explicit retry; `retry_delivery` honors `retryAfterMs` and stops at 3 retries (`exhausted`), notifying the sender |
 | `expiredAction` | Inspect delivery and the recipient before issuing a new request; submitted work may still be in progress. The sender receives a notice on its next heartbeat |
 | `offlineRecipient` | Check recipient and delivery owner; resume without reviving old leases |
 | `stalledOffer` | Inspect the offering process and the recipient before recovery |
@@ -38,12 +38,12 @@ flowchart LR
   H[Read health and all issue pages] --> I[Inspect current token and recipient]
   I --> R[Recipient reads full stored message]
   R --> D{Work handled?}
-  D -- yes --> C[Recipient completes according to replyRequired]
+  D -- yes --> C[Recipient completes: requests with outcome and BLUF reply, FYIs without]
   D -- no --> P[Keep work pending]
   P --> T[Inspect before any explicit delivery retry]
 ```
 
-For a failed Pi send/record, follow [retry keys](WORKFLOW.md#intent-limits-and-retries).
+For a failed Pi send/record, follow [idempotency keys](WORKFLOW.md#purpose-limits-and-retries).
 
 Leave releases pending claims without acknowledging mail. Resume also discards stale claims and leases.
 Staged/submitted/uncertain dispatches remain: inspect `health`, current dispatch records, and the actual recipient.
@@ -70,7 +70,7 @@ After confirming completion, explicitly attach the existing binding while no del
 
 ```sh
 npx -y @octocodeai/octocode-agents-communication /cli attach '{"transport":"raw"}' \
-  --session <owned-session-id> --workspace-root /absolute/repo \
+  --session <owned-session-id> --workspace /absolute/repo \
   --database /absolute/communication.sqlite
 ```
 

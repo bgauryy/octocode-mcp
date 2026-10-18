@@ -25,6 +25,82 @@ fn workspace_symbols_are_flat_named_and_one_based() {
     );
 }
 
+/// An empty answer on a line the server itself failed to analyze is not
+/// absence: the row is partial and names that error. Errors on other lines,
+/// warnings, and answers with results are left alone.
+#[test]
+fn an_empty_row_names_the_server_error_on_its_anchor_line() {
+    let q = query(serde_json::json!({
+        "operation": "definition", "path": "/repo/k.cu",
+        "symbolName": "scale", "line": 7
+    }));
+    let (diagnostics, _) = diagnostic_items(Some(serde_json::json!([
+        {"severity": 1, "source": "clang", "message": "Use of undeclared identifier 'cudaConfigureCall'\n\nnote: here",
+            "range": {"start": {"line": 6, "character": 2}, "end": {"line": 6, "character": 7}}},
+        {"severity": 1, "message": "Unknown type name 'dim3'",
+            "range": {"start": {"line": 5, "character": 0}, "end": {"line": 7, "character": 1}}},
+        {"severity": 2, "message": "unused variable",
+            "range": {"start": {"line": 6, "character": 0}, "end": {"line": 6, "character": 1}}},
+        {"severity": 1, "message": "elsewhere",
+            "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 1}}}
+    ])));
+    let mut row = empty(
+        &q,
+        "noLocations",
+        "definitionProvider returned no locations",
+        true,
+    );
+    mark_anchor_line_errors(&mut row, &diagnostics, 7);
+    assert_eq!(row["isPartial"], true, "{row}");
+    assert_eq!(
+        row["partialReasons"],
+        serde_json::json!(["anchorLineError"]),
+        "{row}"
+    );
+    let warnings = row["warnings"].as_array().expect("warnings");
+    assert_eq!(warnings.len(), 1, "{row}");
+    let warning = warnings[0].as_str().expect("text");
+    // The first error on the line, whole (its first line), with its source;
+    // the other error spanning the line is counted.
+    assert!(warning.contains("line 7"), "{warning}");
+    assert!(
+        warning.contains("Use of undeclared identifier 'cudaConfigureCall' (clang)"),
+        "{warning}"
+    );
+    assert!(warning.contains("1 more error"), "{warning}");
+    assert!(!warning.contains("note: here"), "{warning}");
+    assert!(
+        !warning.contains("unused variable") && !warning.contains("elsewhere"),
+        "{warning}"
+    );
+    // The whole list stays one call away.
+    let lead = &row["next"]["diagnostics"];
+    assert_eq!(lead["tool"], "lspSearch", "{row}");
+    assert_eq!(
+        lead["query"]["queries"][0],
+        serde_json::json!({"operation": "diagnostic", "path": "/repo/k.cu"}),
+        "{row}"
+    );
+    crate::contracts::validate_output("lspSearch", &public_row(&row))
+        .expect("the marked empty row satisfies the output contract");
+
+    // No error on the anchor line: the row is untouched.
+    let mut clean = empty(
+        &q,
+        "noLocations",
+        "definitionProvider returned no locations",
+        true,
+    );
+    let before = clean.clone();
+    mark_anchor_line_errors(&mut clean, &diagnostics, 4);
+    assert_eq!(clean, before);
+    // A row with results is never marked.
+    let mut found = serde_json::json!({"kind": "definition", "matches": [{"path": "/repo/k.cu"}]});
+    let before = found.clone();
+    mark_anchor_line_errors(&mut found, &diagnostics, 7);
+    assert_eq!(found, before);
+}
+
 #[test]
 fn empty_diagnostics_carry_no_read_recovery_and_symbol_reads_are_matched() {
     let q = query(
@@ -99,6 +175,47 @@ fn engine_errors_map_to_typed_failures_not_one_unavailable_code() {
     let other = LspFailure::from(engine_error("boom"));
     assert_eq!((other.code, other.retryable), ("requestFailed", true));
     assert!(timeout.message.contains("timed out"));
+}
+
+/// clangd answers `invalid AST` (-32001) for a file it holds no compile
+/// command for. Asking again repeats it, so it is a typed setup failure whose
+/// hint names the project files that fix it, not a retryable generic one;
+/// any other -32001 stays what it was.
+#[test]
+fn clangd_invalid_ast_is_a_non_retryable_setup_failure_naming_the_fix() {
+    use octocode_engine::error::{Error, RpcError};
+    let rpc = |message: &str| {
+        LspFailure::from(Error::rpc(RpcError::from_value(serde_json::json!({
+            "code": -32001,
+            "message": message
+        }))))
+    };
+    let invalid = rpc("invalid AST");
+    assert_eq!(
+        (invalid.code, invalid.retryable, invalid.lexical_fallback),
+        ("missingConfiguration", false, false)
+    );
+    assert!(!invalid.hint.contains("Retry once"), "{}", invalid.hint);
+    for fix in ["compile_commands.json", "compile_flags.txt", ".clangd"] {
+        assert!(invalid.hint.contains(fix), "{fix}: {}", invalid.hint);
+    }
+    assert!(
+        invalid.message.contains("invalid AST"),
+        "{}",
+        invalid.message
+    );
+
+    let other = rpc("something else broke");
+    assert_eq!((other.code, other.retryable), ("requestFailed", true));
+    let other_code = LspFailure::from(Error::rpc(RpcError::from_value(serde_json::json!({
+        "code": -32603,
+        "message": "invalid AST"
+    }))));
+    assert_eq!(
+        (other_code.code, other_code.retryable),
+        ("requestFailed", true),
+        "only clangd's -32001 is the invalid-AST answer"
+    );
 }
 
 /// A failure's tip names only fields the caller's query can carry: the

@@ -2,6 +2,14 @@
 
 Load when a run errors or returns nothing. Why: Change the failing cause before retrying. Match the symptom. Common classes: consent wall, bot/CDN challenge, stale session, framework-controlled input, thin JS shell (run `actionability-diagnostics`, then scraping diagnostics).
 
+## Bounded retry
+
+The one retry rule for failed steps, timeouts and cancellations:
+
+1. Inspect first: read the saved state and capture of the failed step. A mutation (click, type, submit, navigation with side effects) that failed, timed out or was cancelled mid-flight has an uncertain outcome until the state shows whether it applied.
+2. Retry only after the cause changed (the fix from a table below, a refreshed ref, a longer deadline) and only a step the state shows did not apply. Never repeat an uncertain mutation automatically.
+3. Stop after one changed retry of the same step. If it fails again, report the blocker as an SBAR (see Next, at the end).
+
 ## Launch and session
 
 | Symptom | Fix |
@@ -35,4 +43,4 @@ Load when a run errors or returns nothing. Why: Change the failing cause before 
 | Zero DNS/TCP/TLS timings | Warm cache: `Network.clearBrowserCache` before navigating |
 | FCP is null | Read paint entries after the final navigation settles; don't mix CDP lifecycle and `performance.now()` clocks |
 
-Next: static fallback → `octocode-scraping`; otherwise report the persistent blocker.
+Next: static fallback → `octocode-scraping`. If a blocker persists, report it as an SBAR: situation (target, symptom, failing step), background (attempts made and their capture paths), assessment (cause, or unresolved), recommendation (static fallback, or the user action needed).

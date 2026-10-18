@@ -187,7 +187,7 @@ fn budget_error(stop: BudgetStop) -> ClassificationError {
         BudgetStop::Cancelled => ClassificationError::new(
             "cancelled",
             "Classification request was cancelled.",
-            "Retry only if this evaluation is still needed.",
+            crate::response::rows::CANCELLED_HINT,
         ),
         BudgetStop::Deadline => ClassificationError::new(
             "timeout",
@@ -288,7 +288,7 @@ fn denied(reason: GateDenied) -> ClassificationError {
         GateDenied::Cancelled => ClassificationError::new(
             "cancelled",
             "Classification request was cancelled.",
-            "Retry only if this evaluation is still needed.",
+            crate::response::rows::CANCELLED_HINT,
         ),
         GateDenied::Deadline => ClassificationError::new(
             "timeout",

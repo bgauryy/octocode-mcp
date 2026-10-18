@@ -164,6 +164,68 @@ fn match_reports_files_skipped_without_a_grammar() {
     assert!(out.get("isPartial").is_none(), "{out}");
 }
 
+/// `language` restricts the scope to that language's files: a file of no
+/// grammar (or of another one) was never in it, so it is not a skipped file
+/// and no warning names it, while the same walk without `language` does.
+#[test]
+fn match_with_language_does_not_report_files_outside_its_scope() {
+    let root = Fixture::new();
+    for name in NAMED_FILES {
+        root.write(name, SCRIPT);
+    }
+    root.write("CMakeLists.txt", "project(x)\n");
+    let query = |extra: Value| {
+        let mut row =
+            json!({"operation":"match","path":root.0,"rule":"kind: function_declaration"});
+        row.as_object_mut()
+            .expect("row")
+            .extend(extra.as_object().expect("extra").clone());
+        run(&root.0, row).expect("match")
+    };
+    let restricted = query(json!({"language":"typescript"}));
+    assert_eq!(restricted["matchCount"], 1, "{restricted}");
+    assert!(restricted.get("warnings").is_none(), "{restricted}");
+    assert!(restricted.get("isPartial").is_none(), "{restricted}");
+    let unrestricted = query(json!({}));
+    let warning = unrestricted["warnings"][0].as_str().expect("warning");
+    assert!(warning.starts_with("4 files skipped"), "{warning}");
+    assert!(warning.contains("CMakeLists.txt"), "{warning}");
+}
+
+/// A templated declaration's `startLine` is its `template <…>` header (C++
+/// and CUDA), a decorated Python one's first decorator; `line` stays on the
+/// name and `endLine` at the end.
+#[test]
+fn symbols_start_at_the_template_or_decorator_header() {
+    let root = Fixture::new();
+    let cases = [
+        (
+            "k.cuh",
+            "// doc\ntemplate<typename T>\n__global__ void\nkernel(T x) {\n}\n",
+            json!({"symbolName":"kernel","kind":"function","line":4,"endLine":5,"startLine":2,"docStartLine":1}),
+        ),
+        (
+            "k.cpp",
+            "template <typename T>\nstruct S {\n};\n",
+            json!({"symbolName":"S","kind":"struct","line":2,"endLine":3,"startLine":1}),
+        ),
+        (
+            "k.py",
+            "@dec\n@dec2(1)\ndef foo():\n    pass\n",
+            json!({"symbolName":"foo","kind":"function","line":3,"endLine":4,"startLine":1}),
+        ),
+    ];
+    for (name, source, expected) in cases {
+        let file = root.0.join(name);
+        std::fs::write(&file, source).expect("source");
+        let out = run(&root.0, json!({"operation":"symbols","path":file})).expect("symbols");
+        let row = &out["symbols"][0];
+        for (field, value) in expected.as_object().expect("expected") {
+            assert_eq!(&row[field], value, "{name}.{field}: {out}");
+        }
+    }
+}
+
 /// Symbols of a file no extractor reads is `symbolsUnsupported` whether it
 /// has an unknown extension or none, never an empty outline; the hint leads
 /// to `language` / `languageGlobs`.

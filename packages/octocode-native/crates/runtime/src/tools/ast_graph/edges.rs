@@ -10,6 +10,8 @@ pub(super) const PYTHON_LAZY_IMPORT: &str = "python-lazy-import";
 pub(super) const PYTHON_IMPORT: &str = "python-import";
 pub(super) const DYNAMIC_IMPORT: &str = "dynamic-import";
 pub(super) const RUST_PATH: &str = "rust-path";
+/// `include_str!`/`include_bytes!`: the target is embedded as data.
+pub(super) const RUST_INCLUDE_DATA: &str = "rust-include-data";
 
 /// When the import an edge records takes effect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,6 +29,10 @@ pub(super) enum Load {
     CompileTime,
     /// Module structure (a Rust `mod` declaration): not a dependency.
     ModuleTree,
+    /// Never as code: the target is embedded as text or bytes. A build
+    /// input (its dependents rebuild), but it adds no names and closes no
+    /// dependency cycle.
+    Data,
 }
 
 /// Every edge kind with its [`Load`].
@@ -49,6 +55,7 @@ const KINDS: &[(&str, Load)] = &[
     ("java-same-package", Load::CompileTime),
     ("c-include", Load::CompileTime),
     (RUST_MODULE, Load::ModuleTree),
+    (RUST_INCLUDE_DATA, Load::Data),
 ];
 
 /// The [`Load`] of edge `kind`. A kind outside the table (a store edge
@@ -84,6 +91,7 @@ mod tests {
         }
         assert_eq!(load("static-import"), Load::Eager);
         assert_eq!(load(PYTHON_LAZY_IMPORT), Load::Deferred);
+        assert_eq!(load(RUST_INCLUDE_DATA), Load::Data);
         assert_eq!(load("unparsed-target"), Load::CompileTime);
     }
 }

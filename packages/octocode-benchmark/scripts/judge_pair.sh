@@ -18,6 +18,8 @@ CAMP="$(cd "$1" && pwd)"; A="$2"; B="$3"; PASS="$4"; Q="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG="$(cd "$HERE/.." && pwd)"
 REF="$PKG/docs"
+# The judge prompt's identity: verdicts under different texts are different judge versions.
+PROMPT_VERSION="$(cat "$REF/judging.md" "$REF/example-verdict.md" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:12])')"
 DIR="$CAMP/judge/$A~$B"
 QDIR="external/questions"; [ "${A#local-}" = "$A" ] || QDIR="local/datasets/core-v1"
 QUESTION_DIR="${QUESTION_DIR:-$PKG/$QDIR}"
@@ -127,7 +129,7 @@ cd "$DIR"
 if [ "${JUDGE_RUNNER:-pi}" = codex ]; then
   CODEX="${CODEX_BIN:-$(command -v codex || echo /Applications/Codex.app/Contents/Resources/codex-cli/bin/codex)}"
   MODEL="${JUDGE_MODEL:-gpt-5.5}"
-  echo "runner=codex model=$MODEL codex=$("$CODEX" --version 2>/dev/null)" > "$DIR/JUDGE.txt"
+  echo "runner=codex model=$MODEL codex=$("$CODEX" --version 2>/dev/null) prompt=$PROMPT_VERSION" > "$DIR/JUDGE.txt"
   USED="${JUDGE_ATTEMPTS_USED:-0}"
   case "$USED" in 0|1|2) ;; *) echo "Judge attempt budget exhausted or invalid" >&2; exit 2 ;; esac
   READ_ARGS=()
@@ -176,7 +178,7 @@ for name in ('auth.json', 'models.json'):
         (target / name).symlink_to((source / name).resolve())
 (target / 'settings.json').write_text('{}\n')
 PYAGENT
-  echo "runner=pi model=${JUDGE_MODEL:-gpt-5.5} provider=${JUDGE_PROVIDER:-guy-provider-openai}" > "$DIR/JUDGE.txt"
+  echo "runner=pi model=${JUDGE_MODEL:-gpt-5.5} provider=${JUDGE_PROVIDER:-guy-provider-openai} prompt=$PROMPT_VERSION" > "$DIR/JUDGE.txt"
   (cd "$WORKDIR" && PI_CODING_AGENT_DIR="$WORKDIR/agent" perl -e 'alarm shift; exec @ARGV' "${JUDGE_TIMEOUT:-600}" pi -p --mode json --no-session \
     --no-context-files --no-extensions --no-skills --no-prompt-templates --no-themes --no-mcp --offline \
     --provider "${JUDGE_PROVIDER:-guy-provider-openai}" --model "${JUDGE_MODEL:-gpt-5.5}" --tools bash,read \

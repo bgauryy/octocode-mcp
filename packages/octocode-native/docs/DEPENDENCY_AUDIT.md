@@ -45,7 +45,7 @@ Every direct dependency of the native crates and the job it owns. A passing unus
 | `libc` (Unix) | Process-group and low-level lifecycle controls |
 | `apple-native-keyring-store` (macOS), `zbus-secret-service-keyring-store` (Linux), `windows-native-keyring-store` (Windows) | OS credential stores |
 | `windows-sys` (Windows) | File-handle confinement and job-object process controls |
-| `hyper`, `hyper-util`, `bitflags`, `fastrand`, `slab` (optional, `dev-unify` feature) | Unify development feature sets; `node skills-dev/octocode-dev/scripts/dev.mjs check:dev-unify` verifies they still do |
+| `hyper`, `hyper-util`, `bitflags`, `fastrand`, `slab` (optional, `dev-unify` feature) | Unify development feature sets |
 | `tempfile`, `wiremock` (development) | Filesystem and provider integration tests |
 | `serde`, `serde_json` (build) | `build.rs` renders the configuration and tool-identity Rust from the `@octocodeai/config` contracts and embeds the tool contract |
 

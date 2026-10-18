@@ -85,9 +85,9 @@ Capability depends on host version and endpoint, not vendor name. Use a verified
 
 ## Durable conversation
 
-Message input: direct target or exact topic, body, sender-scoped idempotency key, required `reasoning` (intent: purpose and done-when, not a reasoning transcript), expiry, wake intent, and optional root `conversationId`. `replyTo` is output-only: `complete` sets it on final answers. A body holds a question, decision, blocker or result in the shapes the [operating guide](../../OPERATING.md#send-and-handle-messages) defines (SBAR, review comment, outcome-first reply, readback); large context goes in an immutable document referenced by name and byte range.
+Message input: direct target or exact topic, exactly one protocol kind field ([kinds](../../OPERATING.md#send-and-handle-messages)), sender-scoped idempotency key, required `reasoning` (purpose, not a reasoning transcript), expiry, optional wake override, and optional root `conversationId`. The runtime stores the kind and its slots and renders the body, so every adapter carries the same text. `replyTo` is output-only: `complete` sets it on final answers. Large context goes in an immutable document cited as `document:NAME` evidence.
 
-Replies inherit the parent's nullable conversation; only `complete` creates them, and final answers, batch handling (1–100 IDs, atomic) and the `complete:<ID>` retry key follow [DB.md](DB.md#atomic-final-reply). Completion needs a live bound identity and never renews presence or leases. New questions and progress FYIs use `send_message`; progress names an explicit recipient, sets `replyRequired:false`, reuses the `conversationId`, and never completes work.
+Replies inherit the parent's nullable conversation; only `complete` creates them, and final answers, batch handling (1–100 IDs, atomic) and the `complete:<ID>` idempotency key follow [DB.md](DB.md#atomic-final-reply). Completion needs a live bound identity and never renews presence or leases. New requests and progress use `send_message`; progress is a `delta` (or a `checkback`) to an explicit recipient, reuses the `conversationId`, and never completes work.
 
 ### Lifecycle and receipts
 
@@ -114,11 +114,11 @@ stateDiagram-v2
 | `complete` | Recipient reports handling or no action needed | Agreement, approval or correct side effect |
 | Reply/result | New immutable correlated content | Completion of another task |
 
-Staged/submitted/uncertain attempts are never replayed on timeout ([DB.md](DB.md#one-time-delivery-and-host-hooks)). Inspect receipts and the recipient before `retry_delivery`; it never resends a `submitted` attempt. Only Pi reconciles its own staged tokens, against its complete durable host ledger.
+Staged/submitted/uncertain attempts are never replayed on timeout ([DB.md](DB.md#one-time-delivery-and-host-hooks)). Inspect receipts and the recipient before `retry_delivery`; it never resends a `submitted` attempt and is bounded (3 retries with backoff, then one SBAR to the sender; [DB.md](DB.md#one-time-delivery-and-host-hooks)). Only Pi reconciles its own staged tokens, against its complete durable host ledger.
 
 ## Delivery scheduling and subscriptions
 
-The wake defaults to `action` when `replyRequired` is true (and for the answer that `complete` sends), else `passive`. Use passive for FYIs. On Claude and Grok, passive mail is delivered at the recipient's next hook or turn, not pushed. Wake schedules; it does not request a reply. `replyRequired` (carried unchanged by every adapter) determines the completion contract: required requests need a final answer; FYIs and answers accept acknowledgement without a reply. An unblocking answer can be actionable without requiring another answer. Action stays within the recipient's authorized task.
+The wake defaults to `action` for requests (question, task, decision, handoff), blockers and the answer that `complete` sends, else `passive`. Use passive for FYIs. On Claude and Grok, passive mail is delivered at the recipient's next hook or turn, not pushed. Wake schedules; it does not request a reply. `replyRequired` (carried unchanged by every adapter) determines the completion contract: required requests need a final answer; FYIs and answers accept acknowledgement without a reply. An unblocking answer can be actionable without requiring another answer. Action stays within the recipient's authorized task.
 
 Managed workers wait for eligible action mail, then take bounded pending mail in one turn. Startup carries only the assigned task; queued mail stays unstaged until that turn completes. Passive-only mail starts no inference. Managed Claude/Codex workers check their durable inbox every 100 ms, even during active turns: Claude through an owned Unix inbox socket that marks peer origin, Codex through the same named tool-output items as native delivery. Initial assignments stay user inputs. Attached adapters keep native scheduling (table above); native host policy stays authoritative. Pi defers while busy and suppresses nested wake during a starting turn; identity, heartbeat and passive context never request a turn.
 

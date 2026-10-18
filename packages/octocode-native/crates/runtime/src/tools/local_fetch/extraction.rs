@@ -603,8 +603,11 @@ fn match_extract(
     // `selected` maps each emitted view line to its source line; omission
     // markers between non-adjacent windows map to OMISSION_LINE.
     let (mut text, mut selected) = windows_text(lines, &ranges);
+    // `contextLines:0` asks for the matched lines themselves, whole; any
+    // other context cannot show neighbouring lines of a minified line
+    // without its kilobytes, so the hit's bytes are the window.
     let long_lines = !q.block()
-        && q.context_lines().is_none()
+        && q.context_lines() != Some(0)
         && hits
             .iter()
             .any(|line| lines[line - 1].len() > LONG_LINE_BYTES);
@@ -626,7 +629,7 @@ fn match_extract(
     }
     if long_lines {
         warnings.push(format!(
-            "longMatchedLines: a matched line exceeds {LONG_LINE_BYTES} bytes (minified source), so each match is shown with {LONG_LINE_CONTEXT_BYTES} bytes of context; `... [N bytes omitted] ...` marks gaps."
+            "longMatchedLines: a matched line exceeds {LONG_LINE_BYTES} bytes (minified source), so each match is shown with {LONG_LINE_CONTEXT_BYTES} bytes of context and no neighbouring lines (`contextLines:0` returns the matched lines whole); `... [N bytes omitted] ...` marks gaps."
         ));
         next.whole_lines = whole_lines_lead(q);
     }
@@ -717,23 +720,11 @@ pub(super) fn search_lead(
             row
         }
         many => {
-            let alternation = many
-                .iter()
-                .map(|pattern| {
-                    let flag = if q.case_sensitive_for(pattern) {
-                        ""
-                    } else {
-                        "i"
-                    };
-                    let source = if q.is_regex() {
-                        (*pattern).to_owned()
-                    } else {
-                        regex::escape(pattern)
-                    };
-                    format!("(?{flag}:{source})")
-                })
-                .collect::<Vec<_>>()
-                .join("|");
+            let alternation = crate::tools::match_list::alternation(
+                many.iter()
+                    .map(|pattern| (*pattern, q.case_sensitive_for(pattern))),
+                q.is_regex(),
+            );
             serde_json::json!({
                 "path": path,
                 "matchString": alternation,

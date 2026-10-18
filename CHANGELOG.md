@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed — localSearch `matchString` list; one hidden-folder flag (2026-10-18)
+- **`localSearch` `matchString` takes a list**, as `localFetch` does: up to 10
+  texts, any of which a line may hold. Each entry is literal unless `regex` is
+  set, and `caseMode:"smart"` judges each on its own. A list runs as the one
+  regex alternation that finds the same lines (`next.*` leads carry it).
+- **`includeHidden` alone reaches tool-config dot directories** (`.github`,
+  `.vscode`, `.config`, `.agents`, …) in `localSearch`, as in `structureSearch`;
+  text search no longer prunes them by name. A dot directory a `.gitignore`
+  rule names (`.octocode/`) also needs `includeIgnored`; the result discloses
+  it and its `includeSkipped` lead carries the flag. Generated dot directories
+  (`.cache`, `.venv`, …) and credential stores stay excluded.
+
 ### Removed — internal limits are no longer settings (2026-10-15)
 - **Timeouts, retries, waits, page size, caches, concurrency and selection
   budgets are code constants**, not `.env` or `.octocoderc` settings:

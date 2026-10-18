@@ -440,7 +440,8 @@ describe('Team ticker', () => {
       expect(existsSync(db)).toBe(false);
 
       b.team.join('peer');
-      expect(vi.getTimerCount()).toBe(2);
+      // The second ticker shares the first one's timer: every ticker runs on the one clock.
+      expect(vi.getTimerCount()).toBe(1);
       vi.advanceTimersByTime(1_000);
       expect(seen).toHaveBeenCalledTimes(2);
       expect(a.team.view.members.map((m) => m.id)).toContain(b.team.id);

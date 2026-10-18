@@ -63,7 +63,7 @@ Supply chain and credentials (verify):
 
 ## Escalation protocol
 
-1. Handoff (SBAR), even on cleanup-only requests: situation (file, line, class, exact failure disguised); background (correct behavior, callers depending on the current one); assessment (blast radius via `octocode-research`); request (fix through normal development).
+1. SBAR blocker, even on cleanup-only requests: situation (file, line, class, exact failure disguised); background (correct behavior, callers depending on the current one); assessment (blast radius via `octocode-research`); recommendation (request a fix through normal development).
 2. Keep it out of every batch, approved ones included.
 3. Confirmed test-integrity finding → clean the test per [tests](tests.md) only after the bug is fixed.
 

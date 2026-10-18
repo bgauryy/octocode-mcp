@@ -13,11 +13,11 @@ Each example runs after you replace IDs, paths and placeholders. For every optio
 | `resume` | Reuse an expired identity of the same vendor; reacquire leases. | `agent resume '{"vendor":"claude"}'` |
 | `leave` | Finish a lifecycle this process owns; release leases/subscriptions/claims. | `agent leave` |
 | `peers` | Find live collaborators and exact recipient IDs. | `agent peers` |
-| `send_message` | Ask one peer or publish to a subscribed topic. | `agent send_message '{"to":"api-reviewer","body":"Situation: API changed. Request: review src/api.ts for compatibility risks.","reasoning":"Resolve compatibility; done when risks are listed","replyRequired":true}'` |
-| `notify_all` | A relevant announcement to current active peers. | `agent notify_all '{"body":"API review is ready","reasoning":"Coordinate review","replyRequired":false}'` |
+| `send_message` | One protocol message (exactly one kind field) to a peer or subscribed topic. | `agent send_message '{"to":"api-reviewer","task":{"objective":"Review src/api.ts for compatibility risks","inputs":["src/api.ts"],"output":"List of risks","done":"Given the diff, when reviewed, then each risk cites path:line"},"reasoning":"Resolve compatibility before release"}'` |
+| `notify_all` | A relevant FYI to current active peers. | `agent notify_all '{"body":"API review is ready","reasoning":"Coordinate review"}'` |
 | `inbox` | Read pending unexpired deliveries; optionally one message. | `agent inbox '{"message":17}'` |
 | `inbox wait` | Explicitly wait for pending mail; does not renew presence or acknowledge it. | `agent inbox wait '{"timeoutMs":1000}'` |
-| `complete` | Handle a request with an outcome and final reply, or acknowledge read FYIs. | `agent complete '{"message":17,"outcome":"done","reply":"Checked; evidence: ..."}'` |
+| `complete` | Answer a request with an outcome and BLUF reply, or acknowledge read FYIs. | `agent complete '{"message":17,"outcome":"done","reply":{"conclusion":"No breaking change","evidence":[{"claim":"Signature unchanged","source":"src/api.ts:42"}]}}'` |
 | `subscribe` | Replace the topics this identity receives. | `agent subscribe '{"topics":["api"]}'` |
 | `lock` | Reserve one file or subtree before editing; `wait:true` queues on conflict. | `agent lock '{"path":"src/api.ts","kind":"file","reasoning":"Implement reviewed API change"}'` |
 | `lock_many` | Reserve up to 32 distinct paths atomically; conflicts grant none. `wait:true` queues the set until every path is free. | `agent lock_many '{"paths":[{"path":"src/api.ts"},{"path":"tests/api.ts"}],"reasoning":"Change API and its tests"}'` |
@@ -37,13 +37,13 @@ Each example runs after you replace IDs, paths and placeholders. For every optio
 | `completion-check` | Optional Claude Stop recovery guard; host supplies stop-event JSON. | `agent completion-check - < /absolute/stop-event.json` |
 | `mcp` | Expose bound tools to a host; managed mode owns lifecycle. | `comm mcp --managed --name reviewer --vendor claude --tools review` |
 | `run` | Launch a requested new worker, not message delivery. | `comm run --vendor codex --model HOST_MODEL --prompt 'Review the API' --tools review` |
-| `share_document` | Store immutable larger evidence with optional contextual summary. | `agent share_document '{"name":"api-review.md","content":"Evidence...","reasoning":"Preserve review","context":{"summary":"API compatibility review","path":"src/api.ts"}}'` |
+| `share_document` | Store immutable larger evidence with optional contextual summary; an ADR revision names the document it supersedes. | `agent share_document '{"name":"api-review.md","content":"Evidence...","reasoning":"Preserve review","context":{"summary":"API compatibility review","path":"src/api.ts"}}'` |
 | `read_document` | Verify hash and read document pages, following every continuation. | `agent read_document '{"name":"api-review.md","offset":0,"limit":4096}'` |
 | `context` | Discover live path/branch notes; follow next even on an empty page. | `agent context '{"path":"src/api.ts","branch":"feature/api"}'` |
 | `activity` | Read Git files/commits/reflog evidence; not edit ownership. | `comm activity '{"view":"files","limit":20}'` |
 | `record_usage` | Record measured request/turn/cumulative usage without inventing missing counts. | `agent record_usage '{"key":"api-turn-1","scope":"turn","model":"HOST_MODEL","inputTokens":120,"outputTokens":40}'` |
 | `fetch` | Query the unified typed history or pending incoming mail efficiently. | `agent fetch '{"type":"event","where":{"name":"review.finished"},"limit":20}'` |
-| `record` | Save generic JSON memory/events; does not notify or mutate operational state. | `agent record '{"type":"memory","data":{"content":"Verified API behavior","tags":["api"]}}'` |
+| `record` | Save generic JSON memory/events or a checkpoint (`type:"checkpoint"`, returned by `binding` and `resume`); does not notify or mutate operational state. | `agent record '{"type":"memory","data":{"content":"Verified API behavior","tags":["api"]}}'` |
 | `health` | Read delivery issues without creating storage or exposing bodies. | `comm health '{"staleAfterMs":300000,"limit":20}'` |
 | `prune` | Remove expired leases in batches of 100; preserve audit history. | `comm prune` |
 | `view` | Open a loopback read-only dashboard; Ctrl-C stops it. | `comm view '{"open":true}'` |
@@ -52,7 +52,6 @@ Each example runs after you replace IDs, paths and placeholders. For every optio
 | `db export` | Snapshot the entire DB/WAL to a new absolute file; documents need separate backup. | `comm db export '{"path":"/absolute/new-backup.sqlite"}'` |
 | `db retention` | Inspect aged-record counts/pages across workspaces; deletes nothing. | `comm db retention '{"limit":100}'` |
 | `db compact` | Explicit storage maintenance with VACUUM; retains all records. | `comm db compact` |
-| `db migrate` | Upgrade recognized v1/v2/v3/v4/v5 storage to v6 with a new backup, after stopping old clients. | `comm db migrate '{"backup":"/absolute/new-pre-migration.sqlite"}'` |
 | `skill` | Read the detailed operating guide through the CLI. | `comm skill` |
 | `schema` | Discover the catalog or one command; record types use unbound `schema types` / `schema type`. | `comm schema send_message` |
 | `schema tools` | Inspect tool definitions for a profile or explicit list. | `comm schema tools --tools messaging` |

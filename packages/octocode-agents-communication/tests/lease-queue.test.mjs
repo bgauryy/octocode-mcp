@@ -30,7 +30,7 @@ test('a conflict suggests queueing; a queued waiter is granted on unlock and wok
   assert.equal(f.call('unlock', { leaseId: lease.id }, a).released, true);
   assert.equal(f.holder('a.ts'), 'b');
   const [granted] = f.call('inbox', {}, b).items;
-  assert.match(granted.body, /^Lease granted: a\.ts \(lease \d+\)/);
+  assert.match(granted.body, /^Delta update\nChanges:\n- Lease granted: a\.ts \(lease \d+\)/);
   assert.equal(granted.wake, 'action');
   assert.equal(granted.replyRequired, false);
   assert.equal(f.db.prepare('SELECT count(*) n FROM lease_waits').get().n, 0);
@@ -94,7 +94,7 @@ test('a queued set wait reserves its paths: a third agent cannot take one as it 
   assert.equal(f.call('lock', { path: 'a.ts' }, carol).ok, false);
   f.call('unlock', { leaseId: x.id }, bob);
   assert.deepEqual([f.holder('a.ts'), f.holder('b.ts')], ['alice', 'alice']);
-  assert.match(f.mail(alice).at(-1), /^Lease granted: a\.ts \(lease \d+\), b\.ts/);
+  assert.match(f.mail(alice).at(-1), /^Delta update\nChanges:\n- Lease granted: a\.ts \(lease \d+\), b\.ts/);
 });
 
 test('the reservation is first-come: later waiters queue behind it and unrelated paths stay free', t => {

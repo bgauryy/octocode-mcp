@@ -96,6 +96,12 @@ impl ProgressTracker {
         let _ = self.count_tx.send(active.len());
     }
 
+    /// `true` while any progress token (or rust-analyzer's non-quiescent
+    /// status) is open: the server says it is working.
+    pub(crate) fn has_active(&self) -> bool {
+        *self.count_rx.borrow() > 0
+    }
+
     /// rust-analyzer `experimental/serverStatus`: `quiescent:false` is treated
     /// as one open progress token and `quiescent:true` as its end, so readiness
     /// waits for rust-analyzer's own "done loading" signal as well as for

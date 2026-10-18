@@ -233,6 +233,7 @@ fn row_ids(body: &serde_json::Value) -> Vec<String> {
 }
 
 mod binaries;
+mod match_list;
 mod pages;
 mod scope;
 mod secrets;

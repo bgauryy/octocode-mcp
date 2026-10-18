@@ -27,7 +27,7 @@ A few sentences or bullets: answer, verified evidence, strongest caveat, confide
 
 ## Checkpoints
 
-Each phase, overwrite `<run>/state.md` with every field current:
+Each phase, overwrite `<run>/state.md`, a Checkpoint–resume record (goal as the question, done as the phase, next, files as ledgers, plus the expected answer, hypotheses, and interim answer), with every field current:
 
 ```markdown
 # <question>
@@ -48,7 +48,13 @@ Respond with the framing before or instead of a full brief: the user's view in o
 
 ## Saved report
 
-Save and render a comparison of two or more directions, or any result the user or project instructions (such as `AGENTS.md`) ask to save; a short single-direction answer stays in chat. Path: `<workspace>/.octocode/octocode-brainstorming/<YYYY-MM-DD>-<slug>.md`, where `<workspace>` is the repository root, else the current directory, never inside an existing `.octocode/`. A user-named path wins; a harness or subagent scratch folder (`.octocode/tmp/`) does not, so save here and link from scratch notes.
+| Result | Where it goes |
+|---|---|
+| Comparison of two or more directions, or any result the user or project instructions (such as `AGENTS.md`) ask to save | Save and render at the user-named path if given, else the default path below |
+| Short single-direction answer | Chat |
+| A harness or subagent scratch folder (`.octocode/tmp/`) | Never the destination: save at the default path and link from scratch notes |
+
+Default path: `<workspace>/.octocode/octocode-brainstorming/<YYYY-MM-DD>-<slug>.md`, where `<workspace>` is the repository root, else the current directory, never inside an existing `.octocode/`.
 
 Start the file with this header, one value per line: `status` (one listed word) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`).
 

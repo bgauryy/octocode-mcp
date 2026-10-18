@@ -18,15 +18,22 @@ fn capped_incompatible_grammar_preserves_partial_coverage_and_reaches_later_gram
             .expect("query")
             .extend(selector.as_object().expect("selector").clone());
         let first = run(&root.0, query).expect("bounded grammar coverage");
+        // The window is partial because of its cut; the python file the
+        // rule does not compile in is outside the rule's scope, named in a
+        // warning, not a compile failure.
         assert_eq!(first["isPartial"], true, "{first}");
+        let reasons = first["partialReasons"].as_array().expect("cuts");
+        assert!(!reasons.contains(&json!("compileFailed")), "{first}");
+        assert!(reasons.contains(&json!("maxFiles")), "{first}");
         assert!(
-            first["partialReasons"]
-                .as_array()
-                .expect("cuts")
-                .contains(&json!("compileFailed")),
+            !first["diagnostics"].to_string().contains("a.py"),
             "{first}"
         );
-        assert!(first["diagnostics"].to_string().contains("a.py"), "{first}");
+        let warning = first["warnings"][0].as_str().expect("warning");
+        assert!(
+            warning.starts_with("The query does not apply to python (1 file: "),
+            "{first}"
+        );
         let next = first["next"]["expandScan"]["query"]["queries"][0].clone();
         assert!(next.is_object(), "{first}");
         assert!(next.get("language").is_none(), "{next}");
@@ -126,7 +133,7 @@ fn capped_incompatible_grammar_preserves_partial_coverage_and_reaches_later_gram
 }
 
 #[test]
-fn a_final_incompatible_scan_window_keeps_earlier_valid_hits_and_terminal_coverage() {
+fn a_final_window_of_an_inapplicable_grammar_is_whole_and_names_it() {
     let root = Fixture::new();
     root.write("a.ts", "export function target() { return 2; }\n");
     root.write("z.py", "def ordinary():\n    return 1\n");
@@ -141,12 +148,15 @@ fn a_final_incompatible_scan_window_keeps_earlier_valid_hits_and_terminal_covera
     assert!(next.is_object(), "{first}");
     let last = run(&root.0, next).expect("last grammar cannot invalidate earlier hits");
     assert_eq!(last["matchCount"], 0, "{last}");
-    assert_eq!(last["isPartial"], true, "{last}");
+    // The walk met a grammar that compiles the rule (the earlier window's),
+    // so the python file is outside what the rule applies to: the final
+    // window is whole and names it.
+    assert!(last.get("isPartial").is_none(), "{last}");
+    assert!(last.get("terminalLimit").is_none(), "{last}");
+    assert!(last.get("diagnostics").is_none(), "{last}");
+    let warning = last["warnings"][0].as_str().expect("warning");
     assert!(
-        last["partialReasons"]
-            .as_array()
-            .expect("cuts")
-            .contains(&json!("compileFailed")),
+        warning.starts_with("The query does not apply to python (1 file: "),
         "{last}"
     );
     assert!(last["next"].get("expandScan").is_none(), "{last}");

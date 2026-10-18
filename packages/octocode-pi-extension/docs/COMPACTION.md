@@ -268,6 +268,8 @@ lifetime ([Retention](CONTEXT-AND-COST.md#retention)) it is rewritten anyway, so
 smaller. `clearColdResults` runs in the `context` handler before *every* request, including one after a long tool. The cache
 was last used at the last assistant reply or a later `cache_warm` refresh.
 
+Building a request does not rescan the branch. The cache's last use, its idle gaps and the cleared results are folds over the session's entries, kept per session (`BranchIndex`, `cacheClock`, `sessionCleared`) and resumed at the entries added since the previous request: an unchanged branch costs no entry visit, and `k` new entries cost about `2k` (`tests/compaction-branch-work`). A branch that does not continue the last one (another leaf after `/tree`, a compaction that moved the path) is folded again from its start. What stays linear: Pi's own `getBranch()` walk from the leaf, the request's messages (`applyClearedResults`, `stripStaleThinking`), and on a cold request that clears something, the context projection (`buildSessionProjection`).
+
 ```mermaid
 flowchart TD
   R["context event, every request"] --> K{"lifetime known, reply exists, idle past lifetime?"}
@@ -416,6 +418,6 @@ To compact on a token budget instead of near the window, set a per-model reserve
 ## Tests
 
 Under `tests/`: `compaction-shared-summary`, `compaction-summary`, `compaction`, `compaction-saved-results`;
-`compaction-restore`, `compaction-clearing`, `compaction-thinking`, `compaction-images`, `compaction-policy`, `compaction-pacing`; `archive`,
+`compaction-restore`, `compaction-clearing`, `compaction-branch-work` (entry visits, by a `type` that counts its reads), `compaction-thinking`, `compaction-images`, `compaction-policy`, `compaction-pacing`; `archive`,
 `compaction-archive`, `history`, `archive-tool` (scope, read access, paging, the tool, session record, fork lineage); `subagent-events`, `subagent-child-record`; `e2e` › `compaction` (a real Pi session with a scripted
 provider, through the fallback chain).

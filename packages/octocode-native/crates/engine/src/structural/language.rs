@@ -2,8 +2,14 @@ use std::borrow::Cow;
 
 use tree_sitter::Language as TSLanguage;
 
-use crate::signatures::languages::LanguageEntry;
+use crate::signatures::languages::{LanguageEntry, is_c_family_extension};
 use crate::text::file_extension::JS_TS_EXTENSIONS;
+
+/// Name of the synthetic class (C#) or function (C family) a pattern is
+/// parsed inside when it needs member or statement context. Real code
+/// essentially never declares this name, so `effective_pattern_root` can
+/// unwrap the wrapper by name without swallowing a user's own declaration.
+pub(super) const WRAP_MARKER: &str = "__OctoWrap";
 
 /// Stand-in identifier character substituted for a `$`-sigil metavar so the
 /// selected Tree-sitter grammar accepts the pattern as valid source.
@@ -35,6 +41,15 @@ pub(super) struct AgLanguage {
     /// `method_declaration`. Wrapping in a throwaway class gives the parser
     /// real member context. `true` for `.cs` only.
     class_wrap: bool,
+    /// A C-family grammar (C, C++, CUDA). Its statements are only valid
+    /// inside a function body. At top level the grammars reject some outright
+    /// and reshape others through error recovery: a CUDA launch
+    /// `k<<<g, b>>>(x);` becomes a `parameter_pack_expansion` with a MISSING
+    /// `...`, which matches no real launch. A pattern that does not parse
+    /// cleanly alone is reparsed as the sole statement of a synthetic
+    /// function. Its `#define` bodies are re-parsed as source too (see
+    /// `macro_bodies`).
+    c_family: bool,
     /// Optional terminator context for fragments whose grammar otherwise treats
     /// a bare call/declaration as an error or a selector. The compiler accepts
     /// the contextual parse only when it produces this exact node kind.
@@ -47,6 +62,7 @@ impl AgLanguage {
             ts: entry.language.clone(),
             expando: Expando::for_ext(ext),
             class_wrap: ext == "cs",
+            c_family: is_c_family_extension(ext),
             terminated_fragment_kind: terminated_fragment_kind_for_ext(ext),
         }
     }
@@ -64,6 +80,16 @@ impl AgLanguage {
         self.class_wrap
     }
 
+    /// Whether this is a C-family grammar (see `c_family`).
+    pub(super) fn is_c_family(&self) -> bool {
+        self.c_family
+    }
+
+    /// `statement` as the sole statement of the synthetic function.
+    pub(super) fn wrap_in_function_body(&self, statement: &str) -> String {
+        format!("void {WRAP_MARKER}(void) {{ {statement} }}")
+    }
+
     pub(super) fn terminated_fragment_kind(&self) -> Option<&'static str> {
         self.terminated_fragment_kind
     }
@@ -76,11 +102,19 @@ impl AgLanguage {
     }
 
     pub(super) fn preprocess_pattern<'query>(&self, query: &'query str) -> Cow<'query, str> {
-        let substituted = self.preprocess_rewrite_pattern(query);
+        match self.preprocess_rewrite_pattern(query) {
+            Cow::Borrowed(text) => self.wrap_class(text),
+            Cow::Owned(text) => Cow::Owned(self.wrap_class(&text).into_owned()),
+        }
+    }
+
+    /// `text` inside the synthetic class, when this grammar parses patterns
+    /// in one (see `class_wrap`).
+    pub(super) fn wrap_class<'text>(&self, text: &'text str) -> Cow<'text, str> {
         if self.class_wrap {
-            Cow::Owned(format!("class __OctoWrap {{ {substituted} }}"))
+            Cow::Owned(format!("class {WRAP_MARKER} {{ {text} }}"))
         } else {
-            substituted
+            Cow::Borrowed(text)
         }
     }
 }
@@ -91,9 +125,8 @@ impl AgLanguage {
 fn terminated_fragment_kind_for_ext(ext: &str) -> Option<&'static str> {
     match ext {
         "java" => Some("method_invocation"),
-        "rs" | "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "go" => {
-            Some("call_expression")
-        }
+        "rs" | "go" => Some("call_expression"),
+        ext if is_c_family_extension(ext) => Some("call_expression"),
         _ => None,
     }
 }
@@ -105,7 +138,7 @@ fn terminated_fragment_kind_for_ext(ext: &str) -> Option<&'static str> {
 pub(super) fn primary_expando_for_ext(ext: &str) -> char {
     match ext {
         ext if ext == "java" || JS_TS_EXTENSIONS.contains(&ext) => '$',
-        "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx" | "cu" | "cuh" => '\u{10000}',
+        ext if is_c_family_extension(ext) => '\u{10000}',
         "asm" | "assembly" | "s" => 'Q',
         _ => '\u{00b5}',
     }

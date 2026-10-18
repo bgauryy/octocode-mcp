@@ -18,11 +18,17 @@ fits the task (e.g. `rust-best-practices`). Edit source docs, never build copies
 
 ## How it fits together
 
-Tool schemas, descriptions, instructions and limits are authored in
-`@octocodeai/octocode-core`, in the sibling repo `../octocode-mcp-host`. The private
-`@octocodeai/config` package generates the tool contract from it. The native runtime embeds that
-contract, then validates, executes, secures and shapes every tool. The MCP server, CLI launcher
-and VS Code extension are thin adapters with no tool logic.
+```mermaid
+flowchart LR
+  core["@octocodeai/octocode-core in ../octocode-mcp-host: tool schemas, descriptions, instructions, limits"]
+  config["@octocodeai/config (private): generates the tool contract"]
+  native["Native runtime: embeds the contract; validates, executes, secures and shapes every tool"]
+  core --> config --> native
+  native -- N-API addon --> mcp[MCP server]
+  native -- octocode binary --> cli[CLI launcher]
+```
+
+The MCP server, CLI launcher and VS Code extension are thin adapters with no tool logic.
 
 ## Working rules
 
@@ -37,6 +43,10 @@ and VS Code extension are thin adapters with no tool logic.
   and piece of logic.
 - Don't run `git commit` (a background process runs `git add -A` and a person owns commits) or
   `git stash` (it hides other sessions' work; compare with `git show <rev>:<path>`).
+- Communicate in known protocols: issues and tasks in 5W2H, results BLUF with claim–evidence,
+  blockers as SBAR, delegation as a task contract with a Definition of Done. Separate facts,
+  assumptions and unknowns; never present a guess as a fact. The rest, rated by fit:
+  [protocol catalog](skills/octocode-agentic-prompts/references/protocols.md#catalog).
 
 ## Packages
 
@@ -92,13 +102,15 @@ Without `setup`, `@octocodeai/octocode-core` resolves from npm at the version pi
 
 Change rules:
 
-- After changing core: build it, run `yarn contracts:regen` here, rebuild native, then rebuild
-  consumers ([contract pipeline](skills-dev/octocode-dev/docs/DEVELOPMENT.md#contract-pipeline)).
+```mermaid
+flowchart LR
+  C[Core change] --> B[Build core] --> R["yarn contracts:regen here"] --> N[Rebuild native] --> U[Rebuild consumers]
+  X[Native change] --> N2["Rebuild native and the affected interface"] --> S["Restart any running MCP server: it serves the old contract"] --> E["Exercise $OCTO config --json, $OCTO schema, real tool calls"]
+```
+
+- Core pipeline details: [contract pipeline](skills-dev/octocode-dev/docs/DEVELOPMENT.md#contract-pipeline).
   Declare and implement each new field in
   `packages/octocode-native/crates/runtime/src/contracts/field-effect-coverage.json`.
-- After a native change: rebuild native and the affected interface, restart any running MCP
-  server (it serves the old contract), then exercise `$OCTO config --json`, `$OCTO schema` and
-  real tool calls.
 - Don't hand-edit `packages/octocode-config/contract/` or `toolTypes.generated.ts`, and don't
   hand-write wire types (Zod/TypeScript copies or serde query/result structs).
 - A contract fingerprint mismatch means regenerate and rebuild; don't override it with
@@ -121,8 +133,8 @@ them over shell reads: `localSearch` instead of `rg`/`grep`, `localFetch` instea
 `structureSearch` instead of `ls`/`find`, and `astSearch`/`lspSearch` for symbols. Follow every
 `next.*` page or name what stays unread; `hints.*` are optional leads. Graph and AST edges are
 candidates: confirm callers with `lspSearch` before claiming code is unused. When a tool has a bad
-default, a misleading hint or a missing continuation, report it to the user instead of working
-around it silently.
+default, a misleading hint or a missing continuation, report it to the user in 5W2H instead of working around it silently; write "unknown" for any
+slot you have not verified.
 
 ## Release
 

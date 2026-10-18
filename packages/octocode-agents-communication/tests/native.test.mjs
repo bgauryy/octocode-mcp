@@ -24,7 +24,7 @@ function start(context,args,input){return new Promise((resolve,reject)=>{const c
 
 test('inspection, discovery and rejected commands do not create storage',t=>{
  const f=fixture(t);assert.equal(invoke(f,['db','info']).exists,false);
- assert.equal(invoke(f,['schema','types']).length,25);
+ assert.equal(invoke(f,['schema','types']).length,26);
  for(const args of [['unknown'],['peers'],['join','{"name":"bad"}'],['heartbeat','--session','missing']])assert.throws(()=>invoke(f,args));
  assert.equal(existsSync(dirname(f.database)),false);
 });
@@ -57,7 +57,7 @@ test('CLI typed history, subscriptions, delivery status and generic resume',t=>{
  assert.throws(()=>call('entity','set','session',b.id,'{"name":"bad"}'));
  call('subscribe','{"topics":["build","build"]}');
  assert.equal(call('fetch','{"type":"subscription.added"}').items[0].data.topic,'build');
- const sent=call('send_message',JSON.stringify({to:b.id,body:'hello',key:'one',replyRequired:false}));
+ const sent=call('send_message',JSON.stringify({to:b.id,body:'hello',key:'one'}));
  assert.equal(call('fetch',JSON.stringify({type:'message',from:a.id})).items.length,1);
  assert.equal(call('fetch',JSON.stringify({type:'delivery.acknowledged',where:{messageId:sent.id}})).items.length,0);
  invoke(f,['complete',JSON.stringify({message:sent.id}),'--session',b.id]);
@@ -138,7 +138,7 @@ test('copied skill runs outside the repo with no Node, Cargo or vendor executabl
   try{return JSON.parse(execFileSync('/bin/sh',[runner,...args],{cwd:f.workspace,env,encoding:'utf8',stdio:['pipe','pipe','pipe'],timeout:60000,maxBuffer:1024*1024}));}
   catch(error){t.diagnostic(JSON.stringify({phase:'copied-skill-launcher',command:args[0],elapsedMs:Date.now()-started,code:error.code,signal:error.signal,stderr:error.stderr?.toString().slice(-2000)}));throw error;}
  };
- assert.equal(run('--help').implementation,'Python');assert.equal(run('schema','types').length,25);
+ assert.equal(run('--help').implementation,'Python');assert.equal(run('schema','types').length,26);
  assert.ok(run('skill').instructions.includes('scripts/agents-communication'));
  assert.equal(run('skill').instructions,readFileSync(join(standalone,'OPERATING.md'),'utf8'));
  // The compact skill routes setup, hooks and the command catalog to portable references.

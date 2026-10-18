@@ -1200,7 +1200,11 @@ fn collect_statement(stmt: &Statement, li: &SpanPositions, out: &mut Vec<Documen
         Statement::ExportDeclaration(_) | Statement::ExportDefaultDeclaration(_)
     ) {
         let span = li.range(stmt.span());
-        if let Some(symbol) = out.get_mut(first) {
+        // A decorator list written before `export` belongs to the class, so
+        // the declaration starts at whichever of the two comes first.
+        if let Some(symbol) = out.get_mut(first)
+            && span.start < symbol.range.start
+        {
             symbol.range.start = span.start;
         }
         if out.len() > first
@@ -1480,10 +1484,17 @@ fn class_symbol(class: &Class, li: &SpanPositions) -> Option<DocumentSymbol> {
             _ => {}
         }
     }
+    // The decorator list is part of the class even when it is written before
+    // `export`, outside the class node's own span.
+    let start = class
+        .decorators
+        .iter()
+        .map(|decorator| decorator.span.start)
+        .fold(class.span.start, u32::min);
     Some(container(
         id.name.as_str(),
         kind::CLASS,
-        class.span,
+        Span::new(start, class.span.end),
         id.span,
         children,
         li,

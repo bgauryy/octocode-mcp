@@ -301,6 +301,15 @@ pub struct FileSystemQueryOptions {
     /// `time_budget` starts after them, so a resumed walk always inspects
     /// new entries.
     pub skip_entries: Option<u32>,
+    /// Where the walk `skip_entries` resumes stood. When it was made by a
+    /// walk of the same shape at exactly that position, the resumed walk
+    /// continues from it and replays nothing; otherwise it is ignored and
+    /// the walk replays as above.
+    pub resume: Option<crate::search::fs_resume::WalkCursor>,
+    /// Keep a [`FileSystemQueryResult::window_cursor`] at the listed entry
+    /// this many entries into the walk (the root entry is none), for a
+    /// window that ends there ([`FileSystemQueryResult::end_at`]).
+    pub window_rows: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -327,7 +336,7 @@ pub struct FileSystemEntry {
     pub walk_position: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FileSystemQueryResult {
     pub entries: Vec<FileSystemEntry>,
     pub total_discovered: u32,
@@ -349,6 +358,40 @@ pub struct FileSystemQueryResult {
     /// Entries the walk inspected, in walk order, `skip_entries` included:
     /// the `skip_entries` that resumes at the first uninspected entry.
     pub walk_position: u32,
+    /// What the walk counted, by position: [`Self::end_at`] recounts from it.
+    pub tally: crate::search::fs_resume::WalkTally,
+    /// Where a walk cut by time stood: its `time_cut` entry is the next one
+    /// a resume inspects. `None` when the walk was not cut, or after
+    /// [`Self::end_at`] moved the end elsewhere.
+    pub cursor: Option<crate::search::fs_resume::WalkCursor>,
+    /// Where the walk stood at the entry `window_rows` named.
+    pub window_cursor: Option<crate::search::fs_resume::WalkCursor>,
+}
+
+impl FileSystemQueryResult {
+    /// End the window at `position`: only the entries through it, and only
+    /// what the walk counted through it, so a walk resumed at `position`
+    /// (`skip_entries`) counts the rest once. The cursor is the one kept at
+    /// that position, if any.
+    pub fn end_at(&mut self, position: u32) {
+        self.entries.retain(|entry| entry.walk_position <= position);
+        // A walk cut by time stored every match it found (it stopped before
+        // its entry limit), so the entries are the matches.
+        self.total_discovered = u32::try_from(self.entries.len()).unwrap_or(u32::MAX);
+        self.was_capped = false;
+        let totals = self.tally.through(position);
+        self.skipped = totals.skipped;
+        self.permission_denied = totals.permission_denied;
+        self.ignored = totals.ignored;
+        self.pruned_dirs = totals.pruned_dirs;
+        self.walk_position = position;
+        let window = self.window_cursor.take();
+        let end = self.cursor.take();
+        self.cursor = [window, end]
+            .into_iter()
+            .flatten()
+            .find(|cursor| cursor.position() == position);
+    }
 }
 
 // ── graph scan types ─────────────────────────────────────────────────────────

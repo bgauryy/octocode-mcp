@@ -4,7 +4,13 @@ Task content only; no probe output or process metadata. Plain text or Markdown w
 
 ## Response
 
-BLUF: answer and confidence first, then evidence (exact source anchors), limits (material coverage gaps), next check only if needed. Decisions add verdict, risk, verification; a root cause adds cause, affected contract, fix, verification; a refactor adds mode and tier, invariants, changes, and verification commands with exit codes.
+BLUF with Claim–evidence: answer and confidence first, then each claim beside its exact source anchor, limits (material coverage gaps), next check only if needed. Add by result kind:
+
+| Result | Adds |
+|---|---|
+| Decision | verdict, risk, verification |
+| Root cause | cause, affected contract, fix, verification |
+| Refactor | mode and tier, invariants, changes, and verification commands with exit codes |
 
 ## Saved result
 
@@ -25,7 +31,7 @@ next: <the one next action for whoever continues, in the imperative>
 ---
 ```
 
-Follow the header with the `#` title and a lead paragraph that states the answer. Always include, in this order, `## Answer` (the direct answer and its confidence), `## Scope` (repositories, refs, and paths covered), `## Evidence` (exact source anchors), `## Gaps` (unread or unproven parts), and `## Checks` (what ran and its result). Add `## Next` only when something is pending.
+Follow the header with the `#` title and a lead paragraph that states the answer. Always include, in this order, `## Answer` (the direct answer and its confidence), `## Scope` (repositories, refs, and paths covered), `## Evidence` (Claim–evidence: each claim beside its exact source anchor; only what the sources show), `## Gaps` (Facts–assumptions–unknowns: unread or unproven parts, and any assumption marked as one), and `## Checks` (what ran and its result). Add `## Next` only when something is pending.
 
 Date the file name with `date +%F`, never from memory; one report = one `.md` file. Render, fix every `warning:` line, and reply with a short summary and the `.html` and `.md` paths:
 

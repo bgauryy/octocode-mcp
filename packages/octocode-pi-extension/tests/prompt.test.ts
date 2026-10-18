@@ -102,6 +102,30 @@ describe('prompt', () => {
     expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: true })).not.toContain('one word');
   });
 
+  it('owns the work order as one flow and issues, causes as named protocols, once each', () => {
+    for (const input of [
+      { octocode: true, profiles: [], canDelegate: true },
+      { octocode: false, profiles: [], canDelegate: false, canWrite: true },
+      { octocode: false, profiles: [], canDelegate: false, canWrite: false },
+    ]) {
+      const prompt = octocodePrompt(input);
+      expect(prompt.match(/```mermaid\nflowchart LR\n/g)).toHaveLength(1);
+      expect(prompt.match(/Hypothesis test: likely cause vs strongest rival/g)).toHaveLength(1);
+      expect(prompt.match(/in 5W2H, where = path:line/g)).toHaveLength(1);
+      expect(prompt).toContain('never fill one by guessing');
+      expect(prompt).toContain('--> W[' + (input.canWrite === false ? 'Investigate' : 'Smallest complete change') + ']');
+    }
+    const child = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: true });
+    expect(child).toContain('`sendMessage` your parent the blocker as SBAR, or a decision request with your recommendation when it must choose');
+    expect(child).toContain('a partial or blocked report is a handoff packet');
+    expect(child).toContain('keep it as a checkpoint');
+    for (const prompt of [child, octocodePrompt({ octocode: false, profiles: [], canDelegate: true })]) {
+      expect(prompt.match(/Separate facts, assumptions and unknowns/g)).toHaveLength(1);
+      expect(prompt.match(/until the Definition of Done is met/g)).toHaveLength(1);
+      expect(prompt.match(/- BLUF: lead with the result/g)).toHaveLength(1);
+    }
+  });
+
   it('tells the main session which coordination system reaches whom', () => {
     const root = octocodePrompt({ octocode: false, profiles: [], canDelegate: true });
     expect(root).toContain('- Inside a Pi team use `coordinate`, `sendMessage` and `agent`; use the agents-communication tools only to reach agents outside Pi (Claude Code, Codex, other hosts); Pi honors their file locks.');

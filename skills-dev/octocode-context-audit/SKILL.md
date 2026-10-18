@@ -11,9 +11,11 @@ routes: use `octocode-skills` for skill fixes.
 
 Every session pays for its always-loaded context before the first task token. This skill measures that cost, compares it with real use, and ranks what to cut.
 
-Flow: `RUN → READ REPORT → FIX high first → RE-RUN and compare totals`.
+Flow, as PDCA: `Plan: RUN → READ REPORT` · `Do: FIX high first` · `Check: RE-RUN and compare totals against the baseline` · `Act: keep or revert each fix`.
+The baseline is the first run's `context-audit.json`. A re-run into the same `--out` overwrites it, so give the re-run a different `--out` (or copy the baseline first).
 
 ## Run
+[scripts/context-audit.mjs](scripts/context-audit.mjs) does the whole audit:
 ```bash
 node <skill>/scripts/context-audit.mjs --workspace <repo> [--days 30] [--all-projects] [--no-probe] [--out DIR] [--json]  # run when auditing
 ```
@@ -38,4 +40,4 @@ Budgets are review points (≈ 4 chars per token), not failures. Cursor/other-cl
 4. For unused or error-prone tools, check routing text and schemas with `octocode-agentic-prompts` before deleting — zero calls in a short window is a candidate, not proof.
 
 ## Output
-One report in the directory on the `output:` line. `context-audit.html` is the document a person reads. `context-audit.json` sits beside it because an agent reads the json. Do not add a third file.
+Follow [output.md](output.md): a BLUF reply with each `high` finding in 5W2H, and one saved report.

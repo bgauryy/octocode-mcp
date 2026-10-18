@@ -49,7 +49,7 @@ The agent owns decisions: inspect the current page, choose the control whose obs
 
 CDP parameters can reference earlier results: `{"$step": 2, "pointer": "/result/objectId"}`. Event references use `{"$event":"trace","pointer":"/stream"}` after a matching event. These replace custom glue code for object handles, trace streams, console/network/worker events and chained protocol commands. Subscribe before triggering the event; inspect the installed schema for required enable commands. Stream artifacts disclose their observation boundary and preserve every event, including those that did not match the wait predicate.
 
-A trace flow can use `listen Tracing.tracingComplete` → `cdp Tracing.start` with `transferMode: ReturnAsStream` → `cdp Tracing.end` → `waitEvent` → `readStream` using the event's `/stream`. Every chunk through EOF is saved in order. Decode base64-encoded data per chunk, otherwise UTF-8, then concatenate the bytes. Application-specific algorithms can still require custom logic. On a command timeout the flow stops and reports uncertain mutation outcome; inspect state before retrying.
+A trace flow can use `listen Tracing.tracingComplete` → `cdp Tracing.start` with `transferMode: ReturnAsStream` → `cdp Tracing.end` → `waitEvent` → `readStream` using the event's `/stream`. Every chunk through EOF is saved in order. Decode base64-encoded data per chunk, otherwise UTF-8, then concatenate the bytes. Application-specific algorithms can still require custom logic. On a command timeout the flow stops and reports uncertain mutation outcome; retry per [bounded retry](recovery.md#bounded-retry).
 
 ## Query before paging
 

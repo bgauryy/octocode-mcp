@@ -972,9 +972,20 @@ async fn client_with_fake_server(
     BufReader<tokio::io::DuplexStream>,
     tokio::io::DuplexStream,
 ) {
+    client_with_fake_server_for(ts_config(), client_to_server).await
+}
+
+async fn client_with_fake_server_for(
+    config: JsLanguageServerConfig,
+    client_to_server: usize,
+) -> (
+    NativeLspClient,
+    BufReader<tokio::io::DuplexStream>,
+    tokio::io::DuplexStream,
+) {
     let (client_w, server_r) = tokio::io::duplex(client_to_server);
     let (server_w, client_r) = tokio::io::duplex(64 * 1024);
-    let client = NativeLspClient::new(ts_config());
+    let client = NativeLspClient::new(config);
     let connection = JsonRpcConnection::new(
         client_r,
         client_w,
@@ -984,6 +995,7 @@ async fn client_with_fake_server(
             workspace_folders: json!([]),
         },
         Arc::clone(&client.inner.progress),
+        None,
     );
     *client.inner.connection.lock().await = Some(Arc::new(connection));
     (client, BufReader::new(server_r), server_w)
@@ -1006,6 +1018,81 @@ async fn read_client_frame(reader: &mut BufReader<tokio::io::DuplexStream>) -> V
     let mut body = vec![0; length.expect("Content-Length")];
     reader.read_exact(&mut body).await.expect("body");
     serde_json::from_slice(&body).expect("json")
+}
+
+fn clangd_config(root: &Path, language_id: &str) -> JsLanguageServerConfig {
+    JsLanguageServerConfig {
+        command: "clangd".into(),
+        args: None,
+        workspace_root: root.to_string_lossy().into_owned(),
+        language_id: Some(language_id.into()),
+        initialization_options: None,
+        env: None,
+        max_memory_mb: None,
+        source: Default::default(),
+    }
+}
+
+/// clangd reads a file's compile command at its first `didOpen` and never
+/// again, ignoring `workspace/didChangeWatchedFiles` for these files: the
+/// client reports the change so the pool can replace it.
+#[test]
+fn a_clangd_client_reports_a_compile_database_changed_after_it_opened_a_document() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let tmp = TmpDir::new();
+        let project = tmp.0.join("project");
+        let examples = project.join("examples");
+        std::fs::create_dir_all(&examples).unwrap();
+        let source = examples.join("kernel.cuh");
+        std::fs::write(&source, "__global__ void k() {}\n").unwrap();
+        let (client, _server, _server_w) =
+            client_with_fake_server_for(clangd_config(&project, "cuda"), 64 * 1024).await;
+        client
+            .open_document(
+                source.to_string_lossy().into_owned(),
+                "__global__ void k() {}\n",
+            )
+            .await
+            .unwrap();
+        assert!(
+            !client.project_config_changed().await,
+            "nothing changed yet"
+        );
+
+        let flags = project.join("compile_flags.txt");
+        std::fs::write(&flags, "-xcuda\n").unwrap();
+        assert!(client.project_config_changed().await, "flags file created");
+
+        // A server started afterwards begins from what exists then.
+        let (fresh, _server, _server_w) =
+            client_with_fake_server_for(clangd_config(&project, "cuda"), 64 * 1024).await;
+        fresh
+            .open_document(
+                source.to_string_lossy().into_owned(),
+                "__global__ void k() {}\n",
+            )
+            .await
+            .unwrap();
+        assert!(!fresh.project_config_changed().await);
+        std::fs::remove_file(&flags).unwrap();
+        assert!(fresh.project_config_changed().await, "flags file deleted");
+    });
+}
+
+#[test]
+fn a_server_that_rereads_its_configuration_is_never_reported_changed() {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let tmp = TmpDir::new();
+        let source = tmp.0.join("a.ts");
+        std::fs::write(&source, "export {};\n").unwrap();
+        let (client, _server, _server_w) = client_with_fake_server(64 * 1024).await;
+        client
+            .open_document(source.to_string_lossy().into_owned(), "export {};\n")
+            .await
+            .unwrap();
+        std::fs::write(tmp.0.join("compile_flags.txt"), "-xcuda\n").unwrap();
+        assert!(!client.project_config_changed().await);
+    });
 }
 
 #[test]
@@ -1329,6 +1416,7 @@ fn memory_watchdog_is_armed_and_fires_on_macos_and_linux() {
                 workspace_folders: json!([]),
             },
             ProgressTracker::new(),
+            None,
         ));
         assert!(
             memory_watchdog_for(&child, None, &connection, Default::default()).is_none(),

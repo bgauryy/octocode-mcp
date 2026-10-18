@@ -21,11 +21,11 @@ Load when an instruction is wordy, ambiguous, or buried, instructions and data b
 ## Techniques
 
 - On failure, start direct: define the success signal and eval, confirm the prompt (not model, tool, data, policy) is the lever, then add one technique per failure within a token, latency, and safety budget:
-  - Known format → direct contract: [Brief (intent)](agents.md#handoff) plus inputs.
+  - Known format → direct contract: [task contract](agents.md#handoff).
   - Unclear edges → few-shot boundary cases; drop once a rule suffices.
   - Machine consumer → structured output: enums, validation, actionable errors.
   - External facts or actions → retrieval ([budget](context.md#budget)) or a tool loop ([tools](tools.md)) with an observable stop.
-  - Over- or under-exploring → eagerness contract: `Done when: <observable checks>`, call budget, ask vs assume, safe vs unsafe.
+  - Over- or under-exploring → Stop condition (Definition of Done as observable checks; escalate at the boundary) + Budget contract (call budget, behavior when spent); ask vs assume, safe vs unsafe.
   - Dependent stages → prompt chain: typed artifact + verifier per stage, no raw transcripts.
   - Decision-changing ambiguity → bounded candidates checked by evidence, not majority vote.
   - Hard planning → inspectable plan + checkpoints; no private reasoning.

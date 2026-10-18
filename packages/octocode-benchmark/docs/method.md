@@ -142,8 +142,15 @@ shuffle per (pair, pass, question), and tool names and commands are redacted. Th
 different model family (`JUDGE_MODEL`, default gpt-5.5), rebuilds ground truth from GitHub
 with read-only gh first, then scores:
 
-- **correctness** 0–10 (whole numbers), **depth** 1–5, **workflow** 1–5;
-- a winner, correctness first; characters only break a correctness tie.
+- **correctness** 0–10 and **depth** 1–5 (whole numbers); **workflow** is `null`, because tool
+  transcripts and costs are withheld from the judge ([judging](judging.md#quality-rubric));
+- a quality winner, correctness first. After grading, the controller compares characters and
+  time only among quality-equivalent answers.
+
+`JUDGE.txt` records the runner, model and `prompt=` fingerprint (SHA-256 prefix of
+`judging.md` plus `example-verdict.md`). Verdicts under different fingerprints are different
+judge versions: recalibrate (see [judging](judging.md#calibration-and-uncertainty)) before
+comparing them.
 
 Judge scores are noisy: the same answer can move a point between judgings. So correctness is
 reported rounded to whole points and arms within one point are called tied. Head-to-head

@@ -380,7 +380,7 @@ export class Permission {
     const reason = request.reason ? ` Why it asks: ${shownReasons(request.reason)}.` : '';
     const noun = request.action ? actionNoun(request.action) : 'this call';
     const head = `${NEEDS_APPROVAL} ${noun} (${shown(request.what[0] ?? '', 120)}) needs the user's approval (${this.#mode} mode) and no one can be asked here.${reason} Do not retry;`;
-    if (this.#isSubagent) return `${head} report it to your parent as a blocker.`;
+    if (this.#isSubagent) return `${head} report it to your parent as SBAR.`;
     const forcing = this.#forcing(request);
     const mode = forcing.length > 0 ? modeAllowingReasons(forcing) : request.action ? modeAllowing(request.action) : undefined;
     return `${head} ask the user to run it themselves${mode ? `, or to start Pi with ${PERMISSION_ENV}=${mode}` : ''}.`;

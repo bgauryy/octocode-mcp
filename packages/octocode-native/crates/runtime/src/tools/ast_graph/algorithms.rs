@@ -54,9 +54,39 @@ pub(crate) fn witness_edges(edges: Vec<FileEdge>) -> Vec<Value> {
         .collect()
 }
 
-/// The file graph without its module tree: no `rust-module` edges, and no
-/// edge from a module file to one of its ancestors in that tree.
+/// The file graph without its data edges ([`Load::Data`]): the edges that
+/// link code.
+pub(super) fn code_graph(nodes: &BTreeMap<String, Node>) -> BTreeMap<String, Node> {
+    nodes
+        .iter()
+        .map(|(file, node)| {
+            let edges = node
+                .edges
+                .iter()
+                .filter_map(|(target, kinds)| {
+                    let kinds = kinds
+                        .iter()
+                        .filter(|kind| load(kind) != Load::Data)
+                        .cloned()
+                        .collect::<BTreeSet<_>>();
+                    (!kinds.is_empty()).then(|| (target.clone(), kinds))
+                })
+                .collect();
+            (
+                file.clone(),
+                Node {
+                    edges,
+                    dynamic_only: node.dynamic_only.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+/// The code graph without its module tree: no data or `rust-module` edges,
+/// and no edge from a module file to one of its ancestors in that tree.
 pub(super) fn dependency_graph(nodes: &BTreeMap<String, Node>) -> BTreeMap<String, Node> {
+    let nodes = &code_graph(nodes);
     let module_tree = |kind: &String| load(kind) == Load::ModuleTree;
     let mut parent = BTreeMap::<&str, &str>::new();
     for (file, node) in nodes {

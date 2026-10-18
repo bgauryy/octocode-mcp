@@ -275,7 +275,7 @@ def _run(args):
             deferred.append(items.pop())
             content = host_context(binding, items, limit)
         if deferred:
-            store.release_dispatch(identity, deferred, 'Host context budget; offered at a later hook event')
+            store.release_dispatch(identity, deferred, dispatch.BUDGET_DEFERRAL)
         if not content:
             return output({})
         value = {'additional_context': content} if mode == 'cursor' else {'hookSpecificOutput': {'hookEventName': 'PostToolUse' if event == 'posttooluse' else 'PostToolUseFailure', 'additionalContext': content}}

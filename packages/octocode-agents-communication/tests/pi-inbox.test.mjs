@@ -185,8 +185,8 @@ test('Pi native context preserves reply correlation without replaying durable me
  try {
   const session = controller.getBinding().session;
   const sender = f.run('join', { vendor: 'raw', name: 'peer' }).id;
-  const question = f.run('send_message', { to: sender, body: 'Can you review?', reasoning: 'Request a peer review', replyRequired: true, conversationId: 'review:42' }, session);
-  const reply = f.run('complete', { message:question.id, reply:'Review complete.', reasoning:'Report review result' }, sender);
+  const question = f.run('send_message', { to: sender, question: 'Can you review?', reasoning: 'Request a peer review', conversationId: 'review:42' }, session);
+  const reply = f.run('complete', { message:question.id, outcome:'done',reply:{conclusion:'Review complete.'}, reasoning:'Report review result' }, sender);
   const notice = f.run('send_message', { to: session, body: 'Independent notice.', reasoning: 'Share a separate update' }, sender);
   await controller.drain();
   const contexts = f.sent.filter(item => item.message.customType === 'octocode-peer');
@@ -197,7 +197,8 @@ test('Pi native context preserves reply correlation without replaying durable me
   assert.equal(correlated.data.replyTo, question.id);
   assert.equal(correlated.data.conversationId, 'review:42');
   assert.equal(correlated.from, sender);
-  assert.equal(correlated.data.body, 'Review complete.');
+  assert.equal(correlated.data.body, 'BLUF\nOutcome: done\nConclusion: Review complete.');
+  assert.equal(correlated.data.kind, 'answer');
   const unrelated = messages.find(item => item.data.messageId === notice.id);
   assert.equal(Object.hasOwn(unrelated.data, 'replyTo'), false);
   assert.equal(Object.hasOwn(unrelated.data, 'conversationId'), false);
@@ -334,7 +335,7 @@ test('Pi opt-in completion recovers omitted FYI once per external work cycle wit
  await f.fire('session_start');
  try {
   const session=controller.getBinding().session,sender=f.run('join',{name:'sender',vendor:'generic'}).id;
-  const sent=f.run('send_message',{to:session,body:'FYI evidence',replyRequired:false,reasoning:'Check omission recovery',wake:'passive'},sender);
+  const sent=f.run('send_message',{to:session,body:'FYI evidence',reasoning:'Check omission recovery',wake:'passive'},sender);
   await controller.drain();assert.equal(completionMessages(f).length,0,'idle passive delivery cannot wake recovery');
   await f.fire('agent_start');await f.fire('agent_end');await settleCompletion(f,1);
   const recovery=completionMessages(f)[0];assert.deepEqual(recovery.message.details.pending,[sent.id]);

@@ -1,4 +1,5 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { BranchIndex, type BranchSource } from '../shared/branch-index.js';
 import { readPaths, resolveToolPath } from '../shared/home.js';
 import { isRecord, partText } from '../shared/util.js';
 import { mergeRanges, readView, type LineRange, type ReadView } from './coverage.js';
@@ -23,14 +24,27 @@ export interface MessageRef {
   message: unknown;
 }
 
-/** The results cleared on this branch, as `tool call id → where the whole text was saved`. */
+/** Adds the results one session entry records as cleared (`CLEARED_RESULTS_TYPE`) to `cleared`; any other entry adds none. */
+function noteCleared(cleared: Map<string, string>, entry: unknown): void {
+  if (!isRecord(entry) || entry['type'] !== 'custom' || entry['customType'] !== CLEARED_RESULTS_TYPE || !isRecord(entry['data']) || !Array.isArray(entry['data']['results'])) return;
+  for (const result of entry['data']['results']) if (isRecord(result) && typeof result['id'] === 'string' && typeof result['saved'] === 'string') cleared.set(result['id'], result['saved']);
+}
+
+/** The results cleared on `branch`, as `tool call id → where the whole text was saved`: one scan of the branch (a `branchEntries` list). */
 export function clearedResults(branch: readonly unknown[]): Map<string, string> {
   const cleared = new Map<string, string>();
-  for (const entry of branch) {
-    if (!isRecord(entry) || entry['type'] !== 'custom' || entry['customType'] !== CLEARED_RESULTS_TYPE || !isRecord(entry['data']) || !Array.isArray(entry['data']['results'])) continue;
-    for (const result of entry['data']['results']) if (isRecord(result) && typeof result['id'] === 'string' && typeof result['saved'] === 'string') cleared.set(result['id'], result['saved']);
-  }
+  for (const entry of branch) noteCleared(cleared, entry);
   return cleared;
+}
+
+const clearedIndex = new BranchIndex<Map<string, string>>(() => new Map(), noteCleared);
+
+/**
+ * The results cleared on the session's current branch, like `clearedResults` but resumed: a request reads only the entries
+ * added since the last one (`BranchIndex`). Read-only: it is the shared state.
+ */
+export function sessionCleared(session: BranchSource): ReadonlyMap<string, string> {
+  return clearedIndex.read(session);
 }
 
 /** The messages of the model's current context (after the last compaction, on this branch), each with the entry that owns it. */
@@ -174,7 +188,7 @@ function changedFiles(details: unknown, cwd: string): ChangedFile[] {
 
 /** The files the model's current context shows (a cleared result shows none), with when each was last shown, for `FileGuard.restore`. */
 export function contextReads(ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'>): Array<{ file: string; at: number; partial?: boolean; lines?: LineRange[] }> {
-  const cleared = new Set(clearedResults(ctx.sessionManager.getBranch()).keys());
+  const cleared = new Set(sessionCleared(ctx.sessionManager).keys());
   return [...seenFiles(contextMessages(ctx), ctx.cwd, cleared).values()].flatMap((seen) =>
     seen.at === undefined ? [] : [{ file: seen.file, at: seen.at, ...(seen.partial ? { partial: true, ...(seen.lines ? { lines: seen.lines } : {}) } : {}) }],
   );

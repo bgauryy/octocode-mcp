@@ -29,7 +29,7 @@ Each agent keeps its own identity and worktree path; all participants share one 
 | Connect an agent host | `mcp`, `attach`, `listen`, `dispatch`: expose bound tools or deliver to an existing native session. `run` starts a new managed worker only when requested. |
 | Integrate host events | `host-config`, `host-hook`, `hook`, `confirm_delivery`, `completion-check`: preview setup, deliver context, and optionally check unfinished handling. |
 | Inspect and recover | `health`, `view`, `retry_delivery`: inspect delivery and explicitly recover uncertain attempts. |
-| Maintain storage | `db info`, `db protocol`, `db export`, `db retention`, `db compact`, `db migrate`, `prune`: inspect, back up, migrate, and maintain storage without dropping message history. |
+| Maintain storage | `db info`, `db protocol`, `db export`, `db retention`, `db compact`, `prune`: inspect, back up, and maintain storage without dropping message history. |
 | Discover inputs | `skill`, `schema`, `schema tools`, `schema types`, `schema type`: read operating guidance and the installed release's contracts. |
 
 Every command has a runnable example in [the command reference](scripts/docs/COMMANDS.md); `<command> --help` gives exact inputs.
@@ -57,7 +57,7 @@ COMMUNICATION_DB=/absolute/shared/communication.sqlite
 COMMUNICATION_NAME=coordinator
 COMMUNICATION_VENDOR=codex
 comm() {
-  npx -y @octocodeai/octocode-agents-communication /cli "$@" --json --workspace-root "$COMMUNICATION_WORKSPACE" \
+  npx -y @octocodeai/octocode-agents-communication /cli "$@" --json --workspace "$COMMUNICATION_WORKSPACE" \
     --database "$COMMUNICATION_DB"
 }
 comm db info
@@ -75,10 +75,10 @@ agent heartbeat '{"ttlMs":600000,"task":"Review API compatibility","status":"bus
 comm peers
 ```
 
-Confirm both sessions appear in `peers`. In `coordinator`, send the request; `replyRequired:true` makes it a request that owes an answer (the default is an FYI):
+Confirm both sessions appear in `peers`. In `coordinator`, send the request. A `task` (Task contract) is a request that owes an answer; a `body` is an FYI:
 
 ```sh
-agent send_message '{"to":"api-reviewer","body":"Situation: src/api.ts changed. Request: review it for compatibility.","reasoning":"Resolve API compatibility before handoff; done when risks are listed","replyRequired":true,"key":"api-review-1","conversationId":"api-review"}'
+agent send_message '{"to":"api-reviewer","task":{"objective":"Review src/api.ts for compatibility","inputs":["src/api.ts diff"],"output":"List of risks","done":"Each changed export checked and risks listed"},"reasoning":"Resolve API compatibility before handoff","key":"api-review-1","conversationId":"api-review"}'
 ```
 
 In the recipient, read pending mail using its own binding:
@@ -90,7 +90,7 @@ agent fetch '{"incoming":true,"type":"message","limit":20}'
 After doing the requested work, use the request's `items[].data.messageId` as the number passed to `--message` and complete with outcome and reply:
 
 ```sh
-agent complete --message RECEIVED_MESSAGE_ID --outcome done --reply 'Reviewed src/api.ts; the response shape is compatible.'
+agent complete --message RECEIVED_MESSAGE_ID --outcome done --reply '{"conclusion":"The response shape is compatible","evidence":[{"claim":"Exports unchanged","source":"src/api.ts:42"}]}'
 ```
 
 `complete` stores the reply and acknowledges the request in one transaction.
@@ -101,7 +101,7 @@ agent fetch '{"incoming":true,"type":"message","limit":20}'
 agent complete --message ANSWER_MESSAGE_ID
 ```
 
-Replace `ANSWER_MESSAGE_ID` with that answer's `data.messageId` (`recordId` is only a history cursor). Complete FYIs the same way, without `reply`, and leave unfinished work pending. Message shapes (SBAR requests, outcome-first replies, readbacks) are in [OPERATING.md](OPERATING.md#send-and-handle-messages).
+Replace `ANSWER_MESSAGE_ID` with that answer's `data.messageId` (`recordId` is only a history cursor). Complete FYIs the same way, without `reply`, and leave unfinished work pending. Every message kind and its protocol is in [OPERATING.md](OPERATING.md#send-and-handle-messages).
 
 Raw identities expire after 60 seconds; the walkthrough heartbeat keeps this one for ten minutes. Renew before expiry ([presence rules](scripts/docs/WORKFLOW.md#presence-and-lease-expiry)), use [managed MCP](#connect-through-mcp) for a maintained connection, and run `agent leave` when your process owns the lifecycle.
 
@@ -123,7 +123,7 @@ agent share_document '{"name":"api-review.md","content":"Verified API findings..
 agent read_document '{"name":"api-review.md","limit":4096}'
 ```
 
-Document names are immutable; use a new name for a revision. Follow every read continuation. Saving a document or memory notifies no one; use `send_message` for a handoff.
+Document names are immutable; use a new name for a revision (an ADR revision sets `supersedes`). Follow every read continuation. Saving a document or memory notifies no one; use `send_message` for a handoff.
 
 ## Connect through MCP
 
@@ -186,7 +186,7 @@ agent record '{"type":"memory","branch":"feature/api","data":{"content":"API pre
 agent fetch '{"type":"memory","search":"response shape","branch":"feature/api","limit":20}'
 ```
 
-`record` notifies no one. Query rules and continuations: [records](scripts/docs/RECORDS.md); SQL contract and v1–v5 migration: [database protocol](scripts/docs/DB.md).
+`record` notifies no one. Query rules and continuations: [records](scripts/docs/RECORDS.md); SQL contract: [database protocol](scripts/docs/DB.md).
 
 `comm health` reads delivery diagnostics without joining or changing storage; a zero exit does not mean healthy delivery, so read its status. `comm view '{"open":true}'` opens a read-only loopback dashboard over the whole store (Ctrl+C stops it). Uncertain offers, crash recovery, export and retention: [operations](scripts/docs/OPERATIONS.md).
 
@@ -200,12 +200,12 @@ Leases are advisory and worktree-local; edit guards cover only their documented 
 | [Installation](scripts/docs/INSTALLATION.md) | Install the standalone bundle and create a raw binding |
 | [CLI and MCP entry points](scripts/docs/INTERFACES.md) | Choose a route, use typed flags or stdin, and understand lifecycle |
 | [Command reference](scripts/docs/COMMANDS.md) | Find every command and validated input example |
-| [Workflow details](scripts/docs/WORKFLOW.md) | Check message examples, retry keys, TTLs, and topics |
+| [Workflow details](scripts/docs/WORKFLOW.md) | Check message examples, idempotency keys, TTLs, and topics |
 | [Record queries](scripts/docs/RECORDS.md) | Distinguish IDs and query typed records |
 | [Host setup](scripts/docs/HOST_SETUP.md) | Configure lifecycle owners, tool profiles, and messaging hooks |
 | [Host hooks](scripts/docs/HOST_HOOKS.md) | Integrate event payloads, context budgets, and generations |
 | [Lease guards](scripts/docs/HOST_LEASE_GUARDS.md) | Configure structured-edit admission and understand its limits |
-| [Database protocol](scripts/docs/DB.md) | Implement SQL clients and inspect schema, visibility, paging, and migrations |
+| [Database protocol](scripts/docs/DB.md) | Implement SQL clients and inspect schema, visibility, and paging |
 | [Service protocol](scripts/docs/SERVICE_PROTOCOL.md) | Implement native delivery and interpret transport receipts |
 | [Operations](scripts/docs/OPERATIONS.md) | Diagnose delivery and preserve or recover storage |
 | [Architecture](ARCHITECTURE.md) | Maintain module boundaries, contracts, and packaging |

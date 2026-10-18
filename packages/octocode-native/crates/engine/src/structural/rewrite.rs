@@ -7,7 +7,7 @@ use ast_grep_config::{Fixer, GlobalRules, RuleConfig, SerializableRuleConfig};
 use ast_grep_core::{
     AstGrep,
     language::Language,
-    matcher::{Matcher, Pattern, PatternBuilder, PatternError},
+    matcher::{Matcher, Pattern, PatternBuilder, PatternError, PatternNode},
     meta_var::MetaVariable,
     replacer::Replacer,
     tree_sitter::{LanguageExt, StrDoc, TSLanguage},
@@ -22,7 +22,7 @@ use crate::text::utf8_offsets::LineIndex;
 use super::kinds::named_kind_id;
 use super::language::{AgLanguage, primary_expando_for_ext};
 use super::layout::Layout;
-use super::macro_bodies::{MAX_MACRO_DEPTH, MacroBodies, is_body_candidate, parse_body};
+use super::macro_bodies::{MAX_MACRO_DEPTH, MacroBodies};
 use super::octo::parse_tree_with_deadline;
 
 pub const MAX_REWRITE_CONTENT_BYTES: usize = crate::signatures::MAX_PARSE_SIZE;
@@ -91,8 +91,51 @@ impl Language for RewriteLanguage {
     }
 
     fn build_pattern(&self, builder: &PatternBuilder) -> Result<Pattern, PatternError> {
-        builder.build(|source| StrDoc::try_new(source, self.clone()))
+        let mut pattern = builder.build(|source| StrDoc::try_new(source, self.clone()))?;
+        if let Some(statement) = named_kind_id(&self.entry.language, "expression_statement")
+            && let PatternNode::Internal { children, .. } = &mut pattern.node
+        {
+            children
+                .iter_mut()
+                .for_each(|child| collapse_multi_statements(child, statement));
+        }
+        Ok(pattern)
     }
+}
+
+/// As in search (`meta_from_node`), a statement that holds only a `$$$`
+/// capture and its terminator (`$$$BODY;`) stands for the capture: it matches
+/// any run of statements, not one statement. The root stays as built, so a
+/// bare `$$$A;` pattern is still rejected.
+fn collapse_multi_statements(node: &mut PatternNode, statement: u16) {
+    let PatternNode::Internal { kind_id, children } = node else {
+        return;
+    };
+    let mut named = children.iter().filter(|child| {
+        !matches!(
+            child,
+            PatternNode::Terminal {
+                is_named: false,
+                ..
+            }
+        )
+    });
+    if *kind_id == statement
+        && let (
+            Some(PatternNode::MetaVar {
+                meta_var: meta_var @ (MetaVariable::MultiCapture(_) | MetaVariable::Multiple),
+            }),
+            None,
+        ) = (named.next(), named.next())
+    {
+        *node = PatternNode::MetaVar {
+            meta_var: meta_var.clone(),
+        };
+        return;
+    }
+    children
+        .iter_mut()
+        .for_each(|child| collapse_multi_statements(child, statement));
 }
 
 impl LanguageExt for RewriteLanguage {
@@ -174,6 +217,7 @@ pub fn compile_rewrite(mut rule_config: Value) -> Result<CompiledRewrite, String
     let anchors = pattern_anchors(&rule_config);
     let layout = Layout::new(&rule_config);
     let bare_name = widen_identifier_pattern(&mut rule_config);
+    contextualize_patterns(&mut rule_config);
     let crlf = crlf_config(&rule_config)
         .map(|crlf| {
             let layout = Layout::new(&crlf);
@@ -182,7 +226,7 @@ pub fn compile_rewrite(mut rule_config: Value) -> Result<CompiledRewrite, String
         .transpose()?;
     let config = rule_config_of(rule_config)?;
     let fixer = fixer_of(&config)?;
-    let macros = MacroBodies::for_language(&config.language.entry.language, anchors);
+    let macros = MacroBodies::for_language(&config.language.octocode_language(), anchors);
     Ok(CompiledRewrite {
         config,
         fixer,
@@ -311,6 +355,46 @@ fn widen_identifier_pattern(rule_config: &mut Value) -> Option<String> {
         .collect();
     rule_config["rule"] = serde_json::json!({"any":any});
     Some(pattern.to_owned())
+}
+
+/// Every string `pattern` in the rule config (the rule, nested relations,
+/// utils, constraints, rewriters, fix expansions) that structural search
+/// compiles in a parse context becomes ast-grep's `{context, selector}`
+/// form of that context, so a rewrite matches what the same pattern finds:
+/// a CUDA launch statement, a template function body. Patterns that parse as
+/// written stay unchanged.
+fn contextualize_patterns(rule_config: &mut Value) {
+    let Some(language) = rule_config
+        .get("language")
+        .and_then(Value::as_str)
+        .and_then(RewriteLanguage::from_selector)
+    else {
+        return;
+    };
+    let language = language.octocode_language();
+    let mut pending = vec![rule_config];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Object(object) => {
+                for (key, child) in object.iter_mut() {
+                    if key == "pattern"
+                        && let Some(pattern) = child.as_str()
+                    {
+                        if let Some(found) = super::octo::pattern_context(&language, pattern) {
+                            *child = serde_json::json!({
+                                "context": found.context,
+                                "selector": found.selector,
+                            });
+                        }
+                    } else {
+                        pending.push(child);
+                    }
+                }
+            }
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            _ => {}
+        }
+    }
 }
 
 /// Where `name` stands as a whole word in `content`: not part of a longer
@@ -451,7 +535,7 @@ impl CompiledRewrite {
         let mut bodies = self
             .macros
             .as_ref()
-            .map(|macros| macros.token_trees(tree.root_node(), content))
+            .map(|macros| macros.bodies(tree.root_node(), content))
             .unwrap_or_default();
         // Text inside the file's string literals never matches in a body.
         let mut strings = if bodies.is_empty() {
@@ -467,6 +551,7 @@ impl CompiledRewrite {
                 text: content,
                 base: 0,
                 tree,
+                tail: "",
                 body: None,
                 strings: Vec::new(),
             },
@@ -475,24 +560,23 @@ impl CompiledRewrite {
             &line_index,
             &mut output,
         )?;
-        // Rust macro arguments re-parsed as code (see `macro_bodies`); each
-        // body's own invocations are queued in turn, up to the nesting bound.
+        // Macro bodies re-parsed as code (see `macro_bodies`); each body's own
+        // invocations are queued in turn, up to the nesting bound.
         let mut depth_of = vec![1; bodies.len()];
-        while let Some(range) = bodies.pop() {
+        while let (Some(range), Some(macros)) = (bodies.pop(), &self.macros) {
             let depth = depth_of.pop().unwrap_or(MAX_MACRO_DEPTH);
             let language = &config.language.entry.language;
             let span = BodySpan::of(content, &range);
             let local = span.to_local(&range);
             let text = &content[span.base..range.end_byte];
-            let Some(body) = parse_body(text, language, local, deadline)
+            let Some(body) = macros
+                .parse(text, language, local, deadline)
                 .map_err(|error| format!("[{}] {}", error.code, error.message))?
             else {
                 continue;
             };
-            if depth < MAX_MACRO_DEPTH
-                && let Some(macros) = &self.macros
-            {
-                let nested = macros.token_trees(body.root_node(), text);
+            if depth < MAX_MACRO_DEPTH {
+                let nested = macros.bodies(body.root_node(), text);
                 depth_of.extend(std::iter::repeat_n(depth + 1, nested.len()));
                 bodies.extend(nested.iter().map(|inner| span.to_file(inner)));
             }
@@ -508,6 +592,7 @@ impl CompiledRewrite {
                     text,
                     base: span.base,
                     tree: body,
+                    tail: macros.terminator(),
                     body: Some(local),
                     strings: inside,
                 },
@@ -594,13 +679,13 @@ impl CompiledRewrite {
         };
         let base = parsed.base;
         let grep = AstGrep::doc(StrDoc {
-            src: parsed.text.to_owned(),
+            src: [parsed.text, parsed.tail].concat(),
             lang: config.language.clone(),
             tree: parsed.tree,
         });
         for matched in grep.root().find_all(&config.matcher) {
-            if let Some(body) = &parsed.body
-                && !is_body_candidate(matched.get_inner_node(), body, &parsed.strings)
+            if let (Some(body), Some(macros)) = (&parsed.body, &self.macros)
+                && !macros.is_candidate(matched.get_inner_node(), body, &parsed.strings)
             {
                 continue;
             }
@@ -723,7 +808,9 @@ struct Parsed<'a> {
     text: &'a str,
     base: usize,
     tree: tree_sitter::Tree,
-    /// The body's token tree, in `text` offsets; `None` for the file.
+    /// The source the parser read after `text` (a body's terminator).
+    tail: &'static str,
+    /// The macro body's text range, in `text` offsets; `None` for the file.
     body: Option<tree_sitter::Range>,
     /// The file's string literals inside the body, in `text` offsets.
     strings: Vec<std::ops::Range<usize>>,
@@ -824,6 +911,57 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// A pattern that search compiles in a parse context (a CUDA launch
+    /// statement, a template function body) rewrites the same nodes search
+    /// finds, nested rules included.
+    #[cfg(all(feature = "tree-sitter-cuda", feature = "tree-sitter-cpp"))]
+    #[test]
+    fn context_patterns_rewrite_what_search_finds() {
+        let rule = |language: &str, rule: Value, fix: &str| {
+            json!({
+                "id":"octocode-inline-rewrite","language":language,"severity":"warning",
+                "message":"Octocode inline structural rewrite","rule":rule,"fix":fix
+            })
+        };
+        let cuda = "void run(float *d) {\n  scale<<<g, 256>>>(d, 4);\n}\n";
+        for pattern in ["$K<<<$G, $B>>>($$$A);", "$K<<<$G, $B>>>($$$A)"] {
+            let found = rewrite(
+                cuda,
+                rule("cuda", json!({"pattern": pattern}), "$K<<<$G, 128>>>($$$A)"),
+            )
+            .expect("rewrite");
+            assert_eq!(found.len(), 1, "{pattern}");
+            assert_eq!(found[0].text, "scale<<<g, 256>>>(d, 4)", "{pattern}");
+            assert_eq!(found[0].replacement, "scale<<<g, 128>>>(d, 4)", "{pattern}");
+        }
+        let nested = rewrite(
+            cuda,
+            rule(
+                "cuda",
+                json!({"kind":"function_definition","has":{"stopBy":"end","pattern":"$K<<<$$$C>>>($$$A);"}}),
+                "/* launches */",
+            ),
+        )
+        .expect("rewrite");
+        assert_eq!(nested.len(), 1);
+
+        let cpp = "template <typename T>\nvoid demo(T x) { use(x); }\n";
+        let found = rewrite(
+            cpp,
+            rule(
+                "cpp",
+                json!({"pattern":"template <typename $T> void $F($$$P) { $$$B }"}),
+                "template <typename $T> inline void $F($$$P) { $$$B }",
+            ),
+        )
+        .expect("rewrite");
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].replacement,
+            "template <typename T> inline void demo(T x) { use(x); }"
+        );
+    }
 
     /// In a CRLF file (its first line break), the template's line breaks
     /// are written CRLF; captured text keeps its own, so a bare `\n` inside
@@ -1423,6 +1561,45 @@ mod tests {
                 .all(|(index, mention)| mention.line == index as u32)
         );
     }
+    /// A C-family `#define` body is re-parsed like a Rust macro body: a
+    /// rewrite reaches the call inside it at file offsets, in every C grammar.
+    #[test]
+    fn c_family_rewrites_reach_define_bodies_at_file_offsets() {
+        let source = "#define NODE_FREE(array) zfree((array)->alloc)\nvoid f(void) { zfree(q); }\n#define WRAPPED(p) \\\n    zfree(p)\n#define OPEN {\n";
+        for language in ["c", "cpp", "cuda"] {
+            let found = rewrite(
+                source,
+                json!({
+                    "id":"r","language":language,"rule":{"pattern":"zfree($$$A)"},
+                    "fix":"xfree($$$A)"
+                }),
+            )
+            .expect("rewrite");
+            let texts: Vec<_> = found.iter().map(|m| m.text.as_str()).collect();
+            assert_eq!(
+                texts,
+                ["zfree((array)->alloc)", "zfree(q)", "zfree(p)"],
+                "{language}"
+            );
+            assert_eq!(found[0].replacement, "xfree((array)->alloc)", "{language}");
+            assert_eq!(
+                (found[0].range.start.line, found[0].range.start.column),
+                (0, 25)
+            );
+            assert_eq!(
+                (found[2].range.start.line, found[2].range.start.column),
+                (3, 4)
+            );
+            for matched in &found {
+                assert_eq!(
+                    &source[matched.byte_start as usize..matched.byte_end as usize],
+                    matched.replaced_text,
+                    "{language}"
+                );
+            }
+        }
+    }
+
     /// A body is re-parsed from its own lines, yet a match inside it keeps
     /// file offsets and lines, and a multi-line capture keeps the source's
     /// layout exactly as the same code outside a macro does.

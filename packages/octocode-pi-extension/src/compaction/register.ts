@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionBeforeCompactEvent, SessionCompactEvent } from '@earendil-works/pi-coding-agent';
-import { contextReads, seenFiles, type WorkedFile } from '../files/reads.js';
+import { contextReads, seenFiles, sessionCleared, type WorkedFile } from '../files/reads.js';
 import type { FileGuard } from '../files/tool.js';
 import { chooseSessionCacheRetention } from '../shared/env.js';
 import { interactive } from '../shared/interactive.js';
@@ -149,7 +149,7 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard, isSubagen
     if (pendingRestore && settleRestoredFiles(event.messages, pendingRestore, guard)) pendingRestore = undefined;
     // Every request shows the results cleared on this branch as their placeholders, the same way each time, and no
     // thinking a compaction made stale (`thinking.ts`).
-    const messages = requestMessages(event.messages, ctx.model, ctx.sessionManager.getBranch());
+    const messages = requestMessages(event.messages, ctx.model, sessionCleared(ctx.sessionManager));
     return messages === event.messages ? undefined : { messages };
   });
   pi.on('session_tree', async (_event, ctx) => {

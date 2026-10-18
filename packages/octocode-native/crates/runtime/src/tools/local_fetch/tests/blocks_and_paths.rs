@@ -27,21 +27,21 @@ fn checked_streamed_page(query: &LocalFetchQuery, paths: &Paths) -> LocalFetchRe
 }
 
 #[test]
-fn streamed_oversized_line_pages_its_retained_bytes_and_later_selected_lines() {
+fn streamed_oversized_line_pages_its_bytes_and_later_selected_lines() {
     let fixture = Fixture::new();
     let path = fixture.0.join("large.log");
-    let retained = "x".repeat(4 * 1024 * 1024);
+    let longest = "x".repeat(4 * 1024 * 1024);
+    let suffix = "suffix past the streamed window\n";
     let selected_tail = "selected tail\n";
     // Streamed sources are those over the in-memory ceiling: the lines
     // after the oversized one only take the file just past it.
-    let outside = (super::super::executor::MAX_SOURCE_BYTES as usize)
-        .saturating_sub(retained.len())
+    let outside = (super::super::executor::MAX_SOURCE_BYTES as usize).saturating_sub(longest.len())
         / "outside\n".len()
         + 1_000;
     fixture.write(
         "large.log",
         format!(
-            "{retained}unretained suffix\n{selected_tail}{}",
+            "{longest}{suffix}{selected_tail}{}",
             "outside\n".repeat(outside)
         ),
     );
@@ -50,28 +50,20 @@ fn streamed_oversized_line_pages_its_retained_bytes_and_later_selected_lines() {
         &path,
         serde_json::json!({"ranges":["1-2"], "unit":"bytes", "length":50_000}),
     );
+    let view = format!("{longest}{suffix}{selected_tail}");
     let mut collected = String::new();
     let mut pages = 0usize;
     loop {
         let result = checked_streamed_page(&query, &paths);
         assert_eq!(result.status, "success", "{result:?}");
         let content = result.content.as_deref().expect("page content");
-        collected.push_str(content);
-        if result
-            .source_line_ranges
-            .iter()
-            .any(|range| range.start == 1)
-        {
-            assert_eq!(result.terminal_limit, Some(true), "{result:?}");
-            assert!(
-                serde_json::to_value(&result).expect("output")["partialReasons"]
-                    .as_array()
-                    .expect("typed reasons")
-                    .iter()
-                    .any(|reason| reason == "streamed-line-size-limit"),
-                "{result:?}"
-            );
+        let page = result.pagination.as_ref().expect("pagination");
+        if page.unit == WindowUnit::Bytes {
+            assert_eq!(page.offset, collected.len(), "pages are contiguous");
+            assert_eq!(page.total_bytes, view.len(), "the range's own size");
         }
+        assert!(result.terminal_limit.is_none(), "{result:?}");
+        collected.push_str(content);
         pages += 1;
         assert!(pages < 300, "paging must terminate");
         let Some(next) = result.next.and_then(|next| next.continue_window) else {
@@ -80,7 +72,7 @@ fn streamed_oversized_line_pages_its_retained_bytes_and_later_selected_lines() {
         let wire = serde_json::to_value(next).expect("executable continuation");
         query = serde_json::from_value(wire["query"]["queries"][0].clone()).expect("copied query");
         assert!(query.snapshot.is_some(), "source identity persists");
-        if collected.len() < retained.len() {
+        if collected.len() < longest.len() {
             assert_eq!(
                 query.unit,
                 Some(WindowUnit::Bytes),
@@ -89,8 +81,7 @@ fn streamed_oversized_line_pages_its_retained_bytes_and_later_selected_lines() {
         }
     }
     assert!(pages > 1);
-    assert_eq!(collected, format!("{retained}{selected_tail}"));
-    assert!(!collected.contains("unretained suffix"));
+    assert_eq!(collected, view);
     assert!(!collected.contains("outside"));
 }
 

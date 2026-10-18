@@ -409,7 +409,7 @@ impl Row {
 /// stages, path shaping) with exactly the output kinds `extras` (`&[]` is the
 /// default view; the row itself names none). The row is briefed when it is
 /// not. A runtime error fails the test, and so does an output that breaks the
-/// output contract or carries a retired name ([`assert_no_retired_names`]).
+/// output contract.
 pub async fn run(runtime: &ToolRuntime, tool: &str, mut row: Value, extras: &[&str]) -> Row {
     assert!(
         row.get("extras").is_none(),
@@ -420,49 +420,7 @@ pub async fn run(runtime: &ToolRuntime, tool: &str, mut row: Value, extras: &[&s
         .await
         .unwrap_or_else(|error| panic!("{tool} {row}: {error:?}"));
     checks::assert_output_contract(tool, &outcome.structured_content);
-    assert_no_retired_names(tool, &outcome.structured_content);
     Row { outcome }
-}
-
-/// No retired name of `tool` (shared deny-list scopes `field`: an output key,
-/// `lead`: a `next`/`hints` key, `code`: an `errorCode` value) appears in
-/// `output`.
-pub fn assert_no_retired_names(tool: &str, output: &Value) {
-    let names = retired_names(&["field", "lead", "code"], Some(tool))
-        .into_iter()
-        .map(|entry| {
-            (
-                entry["name"].as_str().expect("name").to_owned(),
-                entry["scope"].as_str().expect("scope").to_owned(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let mut stack = vec![output];
-    while let Some(node) = stack.pop() {
-        match node {
-            Value::Object(map) => {
-                for (key, child) in map {
-                    if let Some((name, scope)) = names
-                        .iter()
-                        .find(|(name, scope)| scope != "code" && name == key)
-                    {
-                        panic!("{tool}: retired {scope} name `{name}` in output: {output}");
-                    }
-                    if key == "errorCode"
-                        && let Some(code) = child.as_str()
-                        && names
-                            .iter()
-                            .any(|(name, scope)| scope == "code" && name == code)
-                    {
-                        panic!("{tool}: retired errorCode `{code}` in output: {output}");
-                    }
-                    stack.push(child);
-                }
-            }
-            Value::Array(items) => stack.extend(items),
-            _ => {}
-        }
-    }
 }
 
 /// [`checks::Walker`] over the runtime: each call runs as the whole input,
@@ -487,35 +445,6 @@ pub async fn walk(
         });
     }
     walker.finish()
-}
-
-/// Entries of the shared retired-name deny-list
-/// (`skills-dev/octocode-dev/scripts/retired-names.json`) in one of `scopes`;
-/// with `tool`, only the entries that apply to it (no `tools` list, or one
-/// naming it).
-pub fn retired_names(scopes: &[&str], tool: Option<&str>) -> Vec<Value> {
-    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../../skills-dev/octocode-dev/scripts/retired-names.json");
-    let text = std::fs::read_to_string(file).expect("read retired-names.json");
-    let list: Value = serde_json::from_str(&text).expect("parse retired-names.json");
-    list["names"]
-        .as_array()
-        .expect("names")
-        .iter()
-        .filter(|entry| {
-            entry["scope"]
-                .as_str()
-                .is_some_and(|scope| scopes.contains(&scope))
-        })
-        .filter(|entry| {
-            tool.is_none_or(|tool| {
-                entry["tools"]
-                    .as_array()
-                    .is_none_or(|tools| tools.iter().any(|name| name == tool))
-            })
-        })
-        .cloned()
-        .collect()
 }
 
 /// Changed-file rows in a patch-free inventory: a `"M +1 -1 path"` row is

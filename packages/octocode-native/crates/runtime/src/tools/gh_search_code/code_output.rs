@@ -852,25 +852,28 @@ pub(super) fn empty_hints(query: &GhSearchCodeQuery) -> Vec<String> {
     let reference = requested_ref(query).map(|reference| {
         format!("Code search indexes only the default branch; `{reference}` was not searched.")
     });
-    let scope = query.repo.as_ref().and_then(|_| {
-        let scope = query.path.as_deref()?.as_str();
-        Some(match file_scope(scope) {
+    let scope = query.path.as_deref().map(|path| path.as_str()).and_then(|scope| {
+        match file_scope(scope) {
             Some(file) => {
                 let under = if file.parent.is_empty() {
                     String::new()
                 } else {
                     format!(" with `path:\"{}\"`", file.parent)
                 };
-                format!(
+                Some(format!(
                     "`path` is a directory prefix and `{}` looks like a file: search it by `filename:\"{}\"`{under}, or read it with matchString.",
                     file.path, file.name
-                )
+                ))
             }
-            None => format!(
-                "No indexed match under `{}`: unproven absence (the index can lag); ghStructure the path, ghGetFileContent its files.",
-                scope.trim_matches('/')
-            ),
-        })
+            // Absence under a directory is a repository fact: an owner-wide
+            // search has no one directory to list.
+            None => query.repo.as_ref().map(|_| {
+                format!(
+                    "No indexed match under `{}`: unproven absence; a file is `filename` + its parent as `path`; ghStructure lists the path.",
+                    scope.trim_matches('/')
+                )
+            }),
+        }
     });
     reference.into_iter().chain(scope).collect()
 }

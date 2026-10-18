@@ -14,7 +14,7 @@ test('repo verify executes an additional workspace gate and propagates its failu
   for (const name of ['workspace-health.mjs', 'artifact-freshness.mjs']) {
     fs.copyFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), path.join(scripts, name));
   }
-  for (const name of ['dedupe-deps.mjs', 'docs-verify.mjs', 'workspace-health.test.mjs']) fs.writeFileSync(path.join(scripts, name), '');
+  for (const name of ['dedupe-deps.mjs', 'docs-verify.mjs', 'check-research-guidance.mjs', 'workspace-health.test.mjs']) fs.writeFileSync(path.join(scripts, name), '');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ workspaces: ['skills/*'] }));
   for (const [name, extra] of [['plain', {}], ['recovery', { verify: 'release-smoke' }]]) {
     const dir = path.join(root, 'skills', name);
@@ -39,4 +39,43 @@ test('repo verify executes an additional workspace gate and propagates its failu
   ]);
   const failing = run(true);
   assert.equal(failing.status, 17, failing.stderr);
+});
+
+test('check enforces the config/native layering and keeps mcp-cli standalone', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-layering-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scripts = path.join(root, 'skills-dev/octocode-dev/scripts');
+  fs.mkdirSync(scripts, { recursive: true });
+  fs.copyFileSync(fileURLToPath(new URL('./workspace-health.mjs', import.meta.url)), path.join(scripts, 'workspace-health.mjs'));
+  fs.copyFileSync(fileURLToPath(new URL('./artifact-freshness.mjs', import.meta.url)), path.join(scripts, 'artifact-freshness.mjs'));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ workspaces: ['packages/*'] }));
+  const scriptSet = Object.fromEntries(['build', 'lint', 'test', 'typecheck', 'verify'].map(name => [name, name]));
+  const write = (dir, pkg) => {
+    fs.mkdirSync(path.join(root, 'packages', dir), { recursive: true });
+    fs.writeFileSync(path.join(root, 'packages', dir, 'package.json'), JSON.stringify({ scripts: scriptSet, ...pkg }));
+  };
+  write('native', { name: '@octocodeai/octocode-native' });
+  write('config', { name: '@octocodeai/config' });
+  write('mcp-cli', { name: 'octocode-mcp-cli' });
+  write('mcp', {
+    name: 'octocode-mcp',
+    dependencies: { '@octocodeai/octocode-native': '1.0.0' },
+    devDependencies: { '@octocodeai/config': 'workspace:*' },
+  });
+  const check = () => spawnSync(process.execPath, [path.join(scripts, 'workspace-health.mjs'), 'check'], { cwd: root, encoding: 'utf8', timeout: 30_000 });
+  assert.equal(check().status, 0, check().stderr);
+
+  write('mcp-cli', { name: 'octocode-mcp-cli', devDependencies: { '@octocodeai/config': 'workspace:*' } });
+  const cliCoupled = check();
+  assert.equal(cliCoupled.status, 1);
+  assert.match(cliCoupled.stderr, /octocode-mcp-cli must not depend on @octocodeai\/config/);
+
+  write('mcp-cli', { name: 'octocode-mcp-cli' });
+  write('mcp', {
+    name: 'octocode-mcp',
+    dependencies: { '@octocodeai/octocode-native': '1.0.0', '@octocodeai/config': 'workspace:*' },
+  });
+  const published = check();
+  assert.equal(published.status, 1);
+  assert.match(published.stderr, /octocode-mcp bundles @octocodeai\/config/);
 });

@@ -4,9 +4,7 @@ use std::time::Instant;
 use tree_sitter::{Language, Node, Tree};
 
 use crate::signatures::extractor::{AST_EXECUTION_TIMEOUT, ParseFailure, parse_with_deadline};
-use crate::structural::macro_bodies::{
-    MAX_MACRO_DEPTH, MacroBodies, is_body_candidate, parse_body,
-};
+use crate::structural::macro_bodies::{MAX_MACRO_DEPTH, MacroBodies};
 use crate::structural::types::{
     FileMatches, StructuralDemand, StructuralDetailedMatch, StructuralMatch,
 };
@@ -83,7 +81,14 @@ impl MatchWithKind {
 
 /// What a matcher keeps of the matches it finds, by the caller's
 /// [`StructuralDemand`]: a match is built only when it is kept or priced.
-pub(in crate::structural) enum Found<'a> {
+/// It also records whether the file parsed with recovered syntax that could
+/// hide a match ([`super::recovery`]).
+pub(in crate::structural) struct Found<'a> {
+    kept: Kept<'a>,
+    recovered: bool,
+}
+
+enum Kept<'a> {
     Matches(Vec<MatchWithKind>),
     Priced(
         &'a (dyn Fn(&StructuralDetailedMatch) -> u32 + Sync),
@@ -94,48 +99,62 @@ pub(in crate::structural) enum Found<'a> {
 
 impl<'a> Found<'a> {
     pub(in crate::structural) fn new(demand: StructuralDemand<'a>) -> Self {
-        match demand {
-            StructuralDemand::Matches => Self::Matches(Vec::new()),
-            StructuralDemand::Count => Self::Counted(0),
-            StructuralDemand::Priced(price) => Self::Priced(price, Vec::new()),
+        let kept = match demand {
+            StructuralDemand::Matches => Kept::Matches(Vec::new()),
+            StructuralDemand::Count => Kept::Counted(0),
+            StructuralDemand::Priced(price) => Kept::Priced(price, Vec::new()),
+        };
+        Self {
+            kept,
+            recovered: false,
         }
     }
 
     /// One match of `node`; `build` makes it only when this demand keeps
     /// or prices it.
     pub(super) fn push(&mut self, node: Node<'_>, build: impl FnOnce() -> StructuralMatch) {
-        match self {
-            Self::Matches(matches) => matches.push(MatchWithKind::new(node, build())),
-            Self::Priced(price, prices) => {
+        match &mut self.kept {
+            Kept::Matches(matches) => matches.push(MatchWithKind::new(node, build())),
+            Kept::Priced(price, prices) => {
                 let found = MatchWithKind::new(node, build());
                 prices.push(price(&StructuralDetailedMatch::from_match(
                     found.matched,
                     found.node_kind,
                 )));
             }
-            Self::Counted(count) => *count = count.saturating_add(1),
+            Kept::Counted(count) => *count = count.saturating_add(1),
         }
+    }
+
+    /// The file parsed with recovered syntax that could hide a match.
+    pub(super) fn mark_recovered(&mut self) {
+        self.recovered = true;
+    }
+
+    /// Whether the file parsed with recovered syntax that could hide a match.
+    pub(in crate::structural) fn recovered(&self) -> bool {
+        self.recovered
     }
 
     /// The kept matches (empty for a count or a price demand).
     pub(in crate::structural) fn into_matches(self) -> Vec<MatchWithKind> {
-        match self {
-            Self::Matches(matches) => matches,
-            Self::Priced(..) | Self::Counted(_) => Vec::new(),
+        match self.kept {
+            Kept::Matches(matches) => matches,
+            Kept::Priced(..) | Kept::Counted(_) => Vec::new(),
         }
     }
 
     /// What a file keeps, as the detailed shape.
     pub(in crate::structural) fn into_file_matches(self) -> FileMatches {
-        match self {
-            Self::Matches(matches) => FileMatches::Held(
+        match self.kept {
+            Kept::Matches(matches) => FileMatches::Held(
                 matches
                     .into_iter()
                     .map(|m| StructuralDetailedMatch::from_match(m.matched, m.node_kind))
                     .collect(),
             ),
-            Self::Priced(_, prices) => FileMatches::Priced(prices),
-            Self::Counted(count) => FileMatches::Counted(count),
+            Kept::Priced(_, prices) => FileMatches::Priced(prices),
+            Kept::Counted(count) => FileMatches::Counted(count),
         }
     }
 }
@@ -273,9 +292,9 @@ fn walk_expanding<'tree>(
     loop {
         ExecutionError::check(deadline)?;
         let current = cursor.node();
-        let candidate = match body {
-            None => true,
-            Some(body) => current.id() != root.id() && is_body_candidate(current, body, strings),
+        let candidate = match (body, macros) {
+            (Some(body), Some(macros)) => macros.is_candidate(current, body, strings),
+            _ => true,
         };
         if current.is_named() && candidate {
             f(current, &ancestors, root)?;
@@ -286,7 +305,7 @@ fn walk_expanding<'tree>(
             && macros.is_expandable(current, ancestors.last().copied(), content)
         {
             let range = current.range();
-            if let Some(tree) = parse_body(content, language, range, deadline)? {
+            if let Some(tree) = macros.parse(content, language, range, deadline)? {
                 let mut chain: Vec<Node<'_>> = ancestors.clone();
                 chain.push(current);
                 let body_strings = crate::structural::macro_bodies::string_literals(current);

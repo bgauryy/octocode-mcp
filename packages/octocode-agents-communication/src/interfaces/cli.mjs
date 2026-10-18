@@ -16,7 +16,7 @@ async function readStdin() {
 }
 const flagProperty = name => name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
 const transportDescriptions = {
-  workspaceRoot: 'Checkout root for this invocation; defaults to the current directory.',
+  workspace: 'Checkout root for this invocation; defaults to the current directory.',
   database: 'SQLite store path; defaults to shared Octocode configuration.',
   session: 'Existing communication identity; inspect join output. Required for bound operations.',
   vendor: 'Host vendor for setup or managed identity.', model: 'Vendor model identifier.',
@@ -46,13 +46,9 @@ export function createCommunicationCli() {
     const schema = structuredClone(payloadSchema);
     schema.properties ??= {};
     if (descriptor.name === 'schema') schema.properties.command = { type: 'string', description: 'Exact canonical command name to inspect; omit for the complete catalog.' };
-    // Keep document origin distinct from the invocation checkout.
-    if (schema.properties.workspace) {
-      schema.properties.originWorkspace = schema.properties.workspace; delete schema.properties.workspace;
-    }
     const transport = new Map();
     for (const name of descriptor.cliFlags) {
-      const property = name === 'workspace' ? 'workspaceRoot' : flagProperty(name);
+      const property = flagProperty(name);
       transport.set(property, name);
       schema.properties[property] ??= { type: ['trace', 'managed', 'compact'].includes(name) ? 'boolean' : name === 'duration-ms' ? 'integer' : 'string', description: transportDescriptions[property] };
       if (['trace', 'managed', 'compact'].includes(name)) schema.properties[property].default = false;
@@ -76,7 +72,6 @@ export function createCommunicationCli() {
           args.push('--' + name);
           if (value !== true) args.push(String(value));
         }
-        if (payload.originWorkspace !== undefined) { payload.workspace = payload.originWorkspace; delete payload.originWorkspace; }
         const hasPayload = !flagOnly.has(descriptor.name) && !descriptor.name.startsWith('schema ');
         if (hasPayload) args.push('-');
         return execute(args, { stream: streaming.has(descriptor.name), ...(hasPayload ? { input: JSON.stringify(payload) } : {}) });
@@ -86,7 +81,7 @@ export function createCommunicationCli() {
     return command;
   });
   return defineCli({ name: 'npx -y @octocodeai/octocode-agents-communication /cli', version: manifest.version,
-    instructions: 'Durable cross-vendor communication. Start with join --name <unique-name> --vendor generic --json; reuse its id with --session. Before edits acquire leases with lock or lock_many. Every command has --help and --help --json. Use --json for machine output and copy next.input for every page. --workspace-root selects the invocation checkout; --workspace is accepted as an alias. The default package entry serves MCP; this /cli route runs operations without closing your identity.', commands });
+    instructions: 'Durable cross-vendor communication. Start with join --name <unique-name> --vendor generic --json; reuse its id with --session. Before edits acquire leases with lock or lock_many. Every command has --help and --help --json. Use --json for machine output and copy next.input for every page. --workspace selects the invocation checkout. The default package entry serves MCP; this /cli route runs operations without closing your identity.', commands });
 }
 export async function runCommunicationCli(argv = process.argv.slice(2), io) {
   const spec = createCommunicationCli();
@@ -109,7 +104,7 @@ export async function runCommunicationCli(argv = process.argv.slice(2), io) {
     parseCommandInput(defineCommand({ name: 'validate', description: '', inputSchema: payloadSchemas.get(command), run() {} }), input);
     const flags = [];
     for (const [key, value] of Object.entries(input)) {
-      const flag = command.flags.find(item => item.property === (key === 'workspace' ? 'originWorkspace' : key));
+      const flag = command.flags.find(item => item.property === key);
       if (!flag) throw new Error(`Unknown input field: ${key}`);
       const add = item => flags.push(`--${flag.name}=${typeof item === 'object' || flag.kind === 'json' ? JSON.stringify(item) : String(item)}`);
       if (flag.presence) { if (value === true) flags.push(`--${flag.name}`); else if (value !== false) throw new Error(`${key} must be boolean`); }
@@ -118,6 +113,5 @@ export async function runCommunicationCli(argv = process.argv.slice(2), io) {
     }
     args.splice(position, 1, ...flags);
   }
-  for (let i = 0; i < args.length; i++) if (args[i] === '--workspace' || args[i].startsWith('--workspace=')) args[i] = args[i].replace('--workspace', '--workspace-root');
   return runCli(spec, args, io);
 }

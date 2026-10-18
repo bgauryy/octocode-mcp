@@ -2,7 +2,7 @@
 
 ## Response
 
-Markdown, task content only: supported finding, source URL, capture path, observed post-action state, coverage gap. No probe output or process metadata.
+Markdown, task content only. BLUF: the supported finding first, each claim beside its source URL or capture path (Claim–evidence), then the observed post-action state and the coverage gap. No probe output or process metadata.
 
 ## Saved result
 
@@ -29,6 +29,8 @@ Then a `#` title and a BLUF lead paragraph. Always include `## Finding`, `## Ste
 |---|---|---|---|---|
 
 Result: `Pass`, `Fail`, or `Partial`. Capture files (screenshots, HAR, traces): add `captures: <workspace-relative capture folder>` to the header and a `## Captures` section linking each; inline-only captures get `inline only` in the Capture cell.
+
+Unfinished work (`next` set) is a Handoff packet: current state and evidence in `## Finding`, attempts in Steps, blockers in `## Gaps`, next action in `next`, plus constraints and the target, frame, or session ids the next call needs. A blocker that needs someone else's action leads the BLUF as an SBAR: situation, background, assessment, recommendation.
 
 Date the file name with `date +%F`, never from memory; one report, one `.md`. Render, fix every `warning:` line, reply with a short summary plus `.html` and `.md` paths:
 

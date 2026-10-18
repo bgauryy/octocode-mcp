@@ -30,7 +30,7 @@ Load when gathering repo facts, choosing a mode or page type, writing an ADR or 
 - Find entrypoints, config keys, and contracts by path search; read focused slices.
 - Durable docs name manifest scripts ("Run `yarn test`"), not shell programs.
 - Spot-check symbols by lexical or structural search; LSP use: `octocode-research`.
-- Build a claim map before assertive prose; only answered (or carefully worded partial) claims become firm.
+- Build a claim map (Claim–evidence: each claim beside its source and status) before assertive prose; only answered (or carefully worded partial) claims become firm.
 
 | Claim | Evidence (path, module, doc) | Status |
 |---|---|---|
@@ -60,7 +60,7 @@ Load when gathering repo facts, choosing a mode or page type, writing an ADR or 
 
 - Decision (ADR) sections: Status (proposed, accepted, superseded, or deprecated), Date, Context, Decision, Alternatives considered, Consequences. Keep Status accurate; supersede, never delete.
 - Link it from the relevant index or architecture doc.
-- Done when: convention matched or default justified, at least one alternative or an explicit "none", no secrets.
+- Definition of Done: convention matched or default justified, at least one alternative or an explicit "none", no secrets.
 
 ## Agent instruction files
 

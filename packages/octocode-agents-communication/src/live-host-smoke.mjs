@@ -105,10 +105,10 @@ export async function liveHostSmoke(options) {
     const initialMessages = rows().messages.map(row => row.id);
     result.initialMessages = initialMessages;
     const beforePassive = events.filter(event => event.type === 'turn-completed').length;
-    const notice = cli('send_message', { to: receiver, body: 'Informational update: the sample batch contains 4 red items and 9 blue items.', reasoning: 'Share sample data for the next task', key: 'live-smoke-fyi', replyRequired: false, wake: 'passive' }, sender).id;
+    const notice = cli('send_message', { to: receiver, body: 'Informational update: the sample batch contains 4 red items and 9 blue items.', reasoning: 'Share sample data for the next task', key: 'live-smoke-fyi', wake: 'passive' }, sender).id;
     await pause(2000);
     const passiveTurns = events.filter(event => event.type === 'turn-completed').length - beforePassive;
-    const request = cli('send_message', { to: receiver, body: 'How many items are in the sample batch described in the informational update? Reply with only the total number.', reasoning: 'Obtain the total for the sample batch', key: 'live-smoke-request', replyRequired: true, wake: 'action' }, sender).id;
+    const request = cli('send_message', { to: receiver, question: 'How many items are in the sample batch described in the informational update? Reply with only the total number.', reasoning: 'Obtain the total for the sample batch', key: 'live-smoke-request', wake: 'action' }, sender).id;
     result.request = request; result.notice = notice; result.passiveTurns = passiveTurns;
     await wait(() => {
       const state = rows();

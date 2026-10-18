@@ -25,6 +25,7 @@ Pi bound tools launch the CLI. Host hooks also use lifecycle and delivery method
 | Owner | Responsibility and contract |
 | --- | --- |
 | `catalog.json`, `catalog.py`, `validation.py` | Command inputs, record payload schemas, tool profiles, discovery, and validation |
+| `protocols.py` | Message kinds named after known protocols: cross-reference checks the schema cannot state (check-back, decision options, handoff leases, pinned `document:` evidence, RACI informed) and body rendering from the catalog slots |
 | `cli.py`, `mcp.py` | Bounded ingress, command routing, output framing, and bound MCP identity; managed MCP owns its lifecycle |
 | `store.py` and capability modules | Workspace/identity checks, current state, messaging, leases, documents, health, and scoped history |
 | `schema.sql`, `database.py` | Storage identity/fingerprint, transactions, constraints, indexes, and atomic event triggers |
@@ -43,10 +44,10 @@ Discovery combines these sources; no interface maintains a second command or rec
 
 ### Request and final reply
 
-`CLI/MCP input → catalog validation → Store.send → one write transaction → message, recipients, and record triggers → send receipt`.
+`CLI/MCP input → catalog validation → kind → protocols.message_slots → Store.send → one write transaction → message, recipients, and record triggers → send receipt`.
 
-The transaction validates live sender identity, repository coordination scope, routing, retry key, and reply policy.
-`complete` with `reply` creates the correlated final answer and parent acknowledgement atomically.
+The kind field fixes reply policy and wake. The transaction validates live sender identity, repository coordination scope, routing, idempotency key, and the kind's cross-references, and stores the slots with the rendered body.
+`complete` with `outcome` and a BLUF `reply` creates the correlated final answer and parent acknowledgement atomically; in the same transaction it enforces a requested check-back, delivers copies to RACI informed peers, and moves handed-off leases.
 FYI completion acknowledges received IDs without creating a reply. A failed transition rolls back.
 
 ### Delivery and handling
@@ -75,7 +76,7 @@ Peer discovery, messages, documents and shared records use the repository `coord
 Session IDs route cooperating same-user processes; they are not credentials or filesystem isolation. `peers`, message senders and lease owners show exact IDs, and a CLI caller supplies its own `--session`, so any process that holds a peer's ID acts as that peer. A per-session secret would sit beside the ID: the database file, `db export` and process arguments are readable by the same OS user, so it would add no boundary and would need every host, hook and the Pi lease reader to carry it. The boundaries that hold are pinned by `tests/identity-trust.test.mjs`: no tool input names the acting session (bound MCP and Pi tools fix it at launch), an ID acts only in its own workspace and only while live, and native receipt and write checks compare the host session. Isolation between mutually distrusting agents needs separate OS users or databases.
 Leases use canonical paths and frozen Unicode case folding. They are advisory; guards cover only reported operations.
 
-The runtime rejects unknown schema fingerprints; `db migrate` upgrades pinned v1–v5 stores to v6 behind a verified backup and keeps historical payloads as recorded ([migration](scripts/docs/DB.md#cleanup-and-conformance)).
+The runtime opens only the exact current schema fingerprint and leaves any other database unchanged ([database identity](scripts/docs/DB.md#identity-and-discovery)).
 
 ## Documentation and verification
 
@@ -85,4 +86,4 @@ The package manifest owns build, syntax, link, regression, smoke and packing com
 
 ## npm interfaces
 
-The default npm executable serves MCP stdio; the `/cli` route and `./cli` subpath use `octocode-mcp-cli` (bundled at build time, not a published dependency) for validation, typed flags and help. Both launch the same Python runtime. The full 18-tool `tools/list` stays within 18 KiB including field descriptions (`tests/tool-selection.test.mjs`); profiles reduce it further.
+The default npm executable serves MCP stdio; the `/cli` route and `./cli` subpath use `octocode-mcp-cli` (bundled at build time, not a published dependency) for validation, typed flags and help. Both launch the same Python runtime. The full 18-tool `tools/list` stays within 20 KiB including field descriptions (`tests/tool-selection.test.mjs`); profiles reduce it further.

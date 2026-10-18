@@ -69,7 +69,7 @@ class PythonRuntimeTests(unittest.TestCase):
                 db.close()
 
     def test_schema_fingerprint_preserves_database_protocol(self):
-        self.assertEqual(database.schema()['schemaSha256'], 'aaba31166352d06e9572372476dfc7ca9a7c0084ab004d80984addc2d3c66851')
+        self.assertEqual(database.schema()['schemaSha256'], '68083d45977cb9de63a4e7af324a36515f5dedec89a195f433b1bd155b9e085f')
 
     def entries(self):
         folder = registry.directory()

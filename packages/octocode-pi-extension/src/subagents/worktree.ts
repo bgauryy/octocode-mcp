@@ -280,7 +280,7 @@ const pruning = new Map<string, Promise<PruneReport>>();
 async function pruneDir(repo: string, dir: string): Promise<PruneReport> {
   const report: PruneReport = { saved: [], kept: [] };
   if (!fs.existsSync(dir)) return report;
-  releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER);
+  await releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER);
   for (const entry of fs.readdirSync(dir)) {
     if (!entry.endsWith('.json')) continue;
     const agentId = entry.slice(0, -'.json'.length);

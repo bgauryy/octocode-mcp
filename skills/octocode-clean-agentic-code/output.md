@@ -2,7 +2,7 @@
 
 ## Response
 
-BLUF: outcome first, then removed or consolidated items with proof of redundancy and behavior preserved, checks run, uncertain deferrals. Markdown, task content only (no probe output or process metadata); the source diff is the implementation.
+BLUF: outcome first, then removed or consolidated items as claim–evidence (proof of redundancy, behavior preserved), checks run, uncertain deferrals. Markdown, task content only (no probe output or process metadata); the source diff is the implementation.
 
 ## Saved result
 
@@ -23,7 +23,7 @@ next: <the one next action for whoever continues, in the imperative>
 ---
 ```
 
-Then the `#` title and a lead paragraph stating the answer. Always include `## Removed`, `## Deferred`, and `## Checks` (write `None.` under an empty one), with these tables under the first two:
+Then the `#` title and a lead paragraph stating the answer. Always include `## Removed`, `## Deferred`, and `## Checks` (write `None.` under an empty one), with these tables under the first two (Removed rows are claim–evidence; Deferred rows are unresolved hypothesis tests, each with the check that would settle it):
 
 | Path | Change | Proof of redundancy | Behavior check |
 |---|---|---|---|

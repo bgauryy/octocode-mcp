@@ -4,6 +4,7 @@ mod files;
 mod memo;
 mod output;
 pub(crate) use output::Output;
+mod resume;
 #[cfg(test)]
 mod tests;
 mod tree;
@@ -321,6 +322,63 @@ impl<'a> Walking<'a> {
         match self {
             Self::Listing(budget) => Some(budget),
             Self::Probe(_) => None,
+        }
+    }
+}
+
+/// How a listing walk keeps and uses its cursor ([`resume`]): the walk's
+/// identity and the path policy it ran under, and its root.
+struct Resumes<'a> {
+    identity: Value,
+    paths: &'a crate::policy::path::PathPolicy,
+    root: &'a std::path::Path,
+}
+
+impl Resumes<'_> {
+    /// The engine options for a listing walk of `walking`: the cursor of the
+    /// window it resumes at `walk_offset` (when one is kept and nothing it
+    /// depends on changed), and a checkpoint at the window's `requested`-th
+    /// row, where a window cut at its rows ends.
+    fn options(
+        &self,
+        walking: Walking<'_>,
+        walk_offset: u32,
+        requested: usize,
+    ) -> (
+        Option<octocode_engine::search::fs_resume::WalkCursor>,
+        Option<u32>,
+    ) {
+        if walking.budget().is_none() {
+            return (None, None);
+        }
+        let resume = (walk_offset > 0)
+            .then(|| resume::take(&self.identity, &self.paths.identity(), walk_offset))
+            .flatten();
+        (resume, Some(u32_of_usize(requested)))
+    }
+
+    /// Keep where the walk stands at the end of its window, for the window
+    /// that resumes there.
+    fn keep(
+        &self,
+        native: &mut octocode_engine::types::FileSystemQueryResult,
+        walking: Walking<'_>,
+    ) {
+        if walking.budget().is_none() || native.time_cut.is_none() {
+            return;
+        }
+        if let Some(cursor) = native
+            .cursor
+            .take()
+            .filter(|cursor| cursor.position() == native.walk_position)
+        {
+            resume::keep(
+                &self.identity,
+                &self.paths.identity(),
+                self.paths,
+                self.root,
+                cursor,
+            );
         }
     }
 }
@@ -843,8 +901,9 @@ fn end_window(
     if rows.next().is_none() {
         return TimeWindow::Whole;
     }
-    native.entries.retain(|entry| entry.walk_position <= last);
-    native.walk_position = last;
+    // The window ends at `last`: the entries and the counts through it, the
+    // rest is the resume's.
+    native.end_at(last);
     TimeWindow::EndedAtRows
 }
 
@@ -895,20 +954,23 @@ impl<R: Sourced + Send + Sync + 'static> memo::Listed for Walked<R> {
 ///
 /// [`Prune::at`]: octocode_engine::search::walk::Prune::at
 struct WalkLeft {
-    withheld: std::sync::Mutex<crate::policy::discovery::Withheld>,
-    hidden: std::sync::atomic::AtomicUsize,
+    /// Entries the path policy withheld, by the walk position of the entry
+    /// (and whether it is a directory).
+    withheld: std::sync::Mutex<Vec<(u32, std::path::PathBuf, bool)>>,
+    /// Walk positions of the dot entries skipped without `includeHidden`.
+    hidden: std::sync::Mutex<Vec<u32>>,
     root: std::path::PathBuf,
     /// The default prune; `None` with `defaultExcludes:false`.
     prune: Option<octocode_engine::search::walk::RootedPrune>,
-    /// Pruned directories, root-relative, in walk order.
-    pruned: std::sync::Mutex<Vec<String>>,
+    /// Pruned directories, root-relative, in walk order, by walk position.
+    pruned: std::sync::Mutex<Vec<(u32, String)>>,
 }
 
 impl WalkLeft {
     fn new(root: &std::path::Path, defaults: bool) -> Self {
         Self {
             withheld: std::sync::Mutex::default(),
-            hidden: std::sync::atomic::AtomicUsize::new(0),
+            hidden: std::sync::Mutex::default(),
             root: root.to_path_buf(),
             prune: defaults.then(|| {
                 octocode_engine::search::walk::Prune::new(
@@ -940,12 +1002,12 @@ impl WalkLeft {
         visit: octocode_engine::portable::Visit,
     ) -> bool {
         let pruned = self.excludes(path, file_type);
-        if pruned && visit == octocode_engine::portable::Visit::Fresh {
+        if let Some(position) = visit.fresh_at().filter(|_| pruned) {
             let relative = path.strip_prefix(&self.root).unwrap_or(path);
             self.pruned
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
-                .push(relative.to_string_lossy().replace('\\', "/"));
+                .push((position, relative.to_string_lossy().replace('\\', "/")));
         }
         pruned
     }
@@ -976,37 +1038,45 @@ impl WalkLeft {
         }
         let dot = display_name(path).starts_with('.');
         let allowed = policy.discovery.permits_entry(path, file_type);
-        let fresh = visit == octocode_engine::portable::Visit::Fresh;
+        let fresh = visit.fresh_at();
         let unseen = if allowed {
             Self::unfollowed(path, file_type, policy.filtered)
         } else {
             policy.probe.could_list(path)
         };
-        if fresh && unseen && (policy.show_hidden || !dot) && reports_withheld(path) {
-            self.record_withheld(path);
+        if let Some(position) = fresh
+            && unseen
+            && (policy.show_hidden || !dot)
+            && reports_withheld(path)
+        {
+            self.record_withheld(position, path);
         }
         if !allowed {
             return false;
         }
         if dot && !policy.show_hidden {
-            if fresh && !self.excludes(path, file_type) {
-                self.count_hidden();
+            if let Some(position) = fresh
+                && !self.excludes(path, file_type)
+            {
+                self.count_hidden(position);
             }
             return true;
         }
         !self.prunes(path, file_type, visit)
     }
 
-    fn count_hidden(&self) {
+    fn count_hidden(&self, position: u32) {
         self.hidden
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push(position);
     }
 
-    fn record_withheld(&self, path: &std::path::Path) {
+    fn record_withheld(&self, position: u32, path: &std::path::Path) {
         self.withheld
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .record(path, path.is_dir());
+            .push((position, path.to_path_buf(), path.is_dir()));
     }
 
     /// Whether a `filtered` listing walked past an admitted link to a
@@ -1023,18 +1093,39 @@ impl WalkLeft {
             && path.is_dir()
     }
 
-    fn into_uncovered(self, ignored: usize) -> Uncovered {
+    /// What the walk left out through the entry at walk position `through`:
+    /// the window ends there, and the window that resumes after it counts
+    /// the rest.
+    fn into_uncovered(self, ignored: usize, through: u32) -> Uncovered {
+        let covered = |position: &u32| *position <= through;
+        let mut withheld = crate::policy::discovery::Withheld::default();
+        for (_, path, is_dir) in self
+            .withheld
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .filter(|(position, ..)| covered(position))
+        {
+            withheld.record(path, *is_dir);
+        }
         Uncovered {
             ignored,
-            withheld: self
-                .withheld
+            withheld,
+            hidden: self
+                .hidden
                 .into_inner()
-                .unwrap_or_else(|error| error.into_inner()),
-            hidden: self.hidden.into_inner(),
+                .unwrap_or_else(|error| error.into_inner())
+                .iter()
+                .filter(|position| covered(position))
+                .count(),
             pruned: self
                 .pruned
                 .into_inner()
-                .unwrap_or_else(|error| error.into_inner()),
+                .unwrap_or_else(|error| error.into_inner())
+                .into_iter()
+                .filter(|(position, _)| covered(position))
+                .map(|(_, relative)| relative)
+                .collect(),
         }
     }
 }
@@ -1095,7 +1186,7 @@ impl<R: Sourced> Walked<R> {
             files,
             dirs,
             bytes,
-            uncovered: left.into_uncovered(native.ignored as usize),
+            uncovered: left.into_uncovered(native.ignored as usize, native.walk_position),
             warnings,
             ranked: false,
         };

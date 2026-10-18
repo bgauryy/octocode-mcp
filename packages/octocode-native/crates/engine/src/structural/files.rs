@@ -406,6 +406,7 @@ impl FileScan<'_> {
                 skipped_file(path_string, "truncated", "executionLimit", diagnostic),
             );
         }
+        let recovered = found.recovered();
         let matches = found.into_file_matches();
         (
             Tally::Parsed(matches.len() as u32),
@@ -416,6 +417,7 @@ impl FileScan<'_> {
                 language_id: language_id.map(str::to_owned),
                 skipped_reason: None,
                 matches,
+                recovered,
                 diagnostics: Vec::new(),
             },
         )
@@ -792,6 +794,7 @@ fn skipped_file(
         language_id: None,
         skipped_reason: Some(skipped_reason.to_owned()),
         matches: FileMatches::Held(Vec::new()),
+        recovered: false,
         diagnostics: vec![diagnostic],
     }
 }

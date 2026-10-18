@@ -438,10 +438,7 @@ mod tests {
                 "x.c",
                 "#include <stdio.h>\nstatic int add(int a, int b) { return a + b; }\nint main(void) { printf(\"%d\", add(1, 2)); }\n",
             ),
-            (
-                "large.rs",
-                include_str!("../../../runtime/tests/runtime_clasify.rs"),
-            ),
+            ("large.rs", include_str!("graph_facts/mod.rs")),
         ];
         for (path, source) in cases {
             let full = tree_sitter_graph_facts(source, path).expect(path).facts;
@@ -948,5 +945,78 @@ pub fn second() -> usize {
             .map(|d| (d.range.start.line, d.range.end.line))
             .collect();
         assert_eq!(ranges, vec![(0, 20), (22, 25)], "{facts:?}");
+    }
+
+    /// `(name, 0-based first line, 0-based last line, 0-based name line, doc line)`
+    /// of every declaration of `source`.
+    fn extents(source: &str, path: &str) -> Vec<(String, u32, u32, u32, Option<u32>)> {
+        extract_declarations_document(source, path)
+            .expect("declarations")
+            .declarations
+            .into_iter()
+            .map(|d| {
+                (
+                    d.name,
+                    d.range.start.line,
+                    d.range.end.line,
+                    d.selection_range.start.line,
+                    d.doc_line,
+                )
+            })
+            .collect()
+    }
+
+    /// A declaration wrapped by its header (`template <…>` in C++ and CUDA, the
+    /// `@decorator` lines in Python) spans the header: its range starts at the
+    /// header and its doc comment is the one above it, while the selection
+    /// stays on the name.
+    #[test]
+    fn wrapped_declaration_ranges_include_their_header() {
+        let template = "// doc
+template <typename T>
+__global__ void
+k(T x) {
+}
+
+template <typename T>
+struct S {
+  template <typename U>
+  void m(U u) {}
+};
+
+void plain() {}
+";
+        for path in ["a.cu", "a.cpp"] {
+            let found = extents(template, path);
+            let of = |name: &str| found.iter().find(|d| d.0 == name).expect(name).clone();
+            let k = of("k");
+            assert_eq!(
+                (k.1, k.2, k.3, k.4),
+                (1, 4, 3, Some(0)),
+                "{path}: {found:?}"
+            );
+            assert_eq!(of("S").1, 6, "{path}: {found:?}");
+            assert_eq!((of("m").1, of("m").3), (8, 9), "{path}: {found:?}");
+            assert_eq!(of("plain").1, 12, "{path}: {found:?}");
+        }
+        let python = "# doc
+@dec
+@dec2(1)
+def foo():
+    pass
+
+class A:
+    @property
+    def b(self):
+        return 1
+";
+        let found = extents(python, "a.py");
+        let of = |name: &str| found.iter().find(|d| d.0 == name).expect(name).clone();
+        assert_eq!(
+            (of("foo").1, of("foo").3, of("foo").4),
+            (1, 3, Some(0)),
+            "{found:?}"
+        );
+        assert_eq!((of("b").1, of("b").3), (7, 8), "{found:?}");
     }
 }

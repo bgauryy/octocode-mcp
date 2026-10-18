@@ -14,7 +14,7 @@ Load when modeling a design, boundary, interface, or flow, or when topology, cyc
 
 ## Decompose large tasks
 
-- Split into the smallest verifiable problems (inputs, outputs, verification point); order by dependency edges.
+- Split into the smallest verifiable problems, each a Task contract: objective, inputs, constraints, output, Definition of Done (the verification point); order by dependency edges.
 - Parallelize only with clear ownership and a latency or independent-evidence gain, never to hide failures.
 - Compose after parts pass; test shared interfaces end to end.
 

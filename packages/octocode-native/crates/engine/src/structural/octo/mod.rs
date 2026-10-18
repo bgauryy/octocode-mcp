@@ -10,6 +10,7 @@ mod error;
 mod line_index_support;
 mod matching;
 mod pattern;
+mod recovery;
 mod rule;
 
 pub(super) use error::CompileError;
@@ -27,7 +28,9 @@ use line_index_support::{to_structural_match, to_structural_match_with_index};
 use matching::{CandidateVisitor, CaptureEnv, collect_kind_matches, visit_named_expanding_macros};
 pub(super) use matching::{Found, MatchWithKind};
 use pattern::CompiledPattern;
+pub(super) use pattern::PatternContext;
 pub use pattern::PatternDeclaration;
+use recovery::Recovery;
 pub use rule::RULE_INVALID;
 use rule::{CompiledRule, Document};
 
@@ -45,13 +48,30 @@ pub(super) type OctoCompiledMatcher =
     Box<dyn Fn(&str, &mut Found<'_>) -> Result<(), ExecutionError> + Send + Sync>;
 
 /// Every match `run` finds in `content`, materialized.
+#[cfg(test)]
 pub(super) fn all_matches(
     run: &OctoCompiledMatcher,
     content: &str,
 ) -> Result<Vec<MatchWithKind>, ExecutionError> {
+    matches_with_recovery(run, content).map(|(matches, _)| matches)
+}
+
+/// [`all_matches`], and whether the source parsed with recovered syntax that
+/// could hide a match ([`Found::recovered`]).
+pub(super) fn matches_with_recovery(
+    run: &OctoCompiledMatcher,
+    content: &str,
+) -> Result<(Vec<MatchWithKind>, bool), ExecutionError> {
     let mut found = Found::new(super::types::StructuralDemand::Matches);
     run(content, &mut found)?;
-    Ok(found.into_matches())
+    let recovered = found.recovered();
+    Ok((found.into_matches(), recovered))
+}
+
+/// The parse context `pattern` compiles in for `lang`, when it needs one
+/// ([`PatternContext`]).
+pub(super) fn pattern_context(lang: &AgLanguage, pattern: &str) -> Option<PatternContext> {
+    CompiledPattern::new(lang, pattern).ok()?.context().cloned()
 }
 
 /// The declaration `pattern` spells in `lang` ([`CompiledPattern::declaration`]).
@@ -69,7 +89,8 @@ pub(super) fn compile_matcher(
         Prefilter::Single(anchor) => Some(vec![anchor]),
         Prefilter::Union(anchors) => Some(anchors),
     };
-    let macros = MacroBodies::for_language(&language, anchors);
+    let recovery = Recovery::new(query.recovery_anchors());
+    let macros = MacroBodies::for_language(lang, anchors);
     match query.parts() {
         (Some(pattern), None) if is_document_probe(pattern) => {
             Ok(Box::new(move |content, found| {
@@ -87,10 +108,13 @@ pub(super) fn compile_matcher(
             Ok(Box::new(move |content, found| {
                 let deadline = match_deadline(content);
                 if compiled.is_special() {
-                    return compiled.find_special_matches(content, deadline, found);
+                    return compiled.find_special_matches(content, deadline, &recovery, found);
                 }
 
                 let tree = parse_tree_with_deadline(compiled.language(), content, deadline)?;
+                if recovery.hides_match(&tree, content) {
+                    found.mark_recovered();
+                }
                 let line_index = LineIndex::tree_sitter(content);
                 let visit: &mut CandidateVisitor<'_> = &mut |candidate, _, _| {
                     if !compiled.matches_candidate(candidate) {
@@ -128,6 +152,9 @@ pub(super) fn compile_matcher(
                 return Ok(Box::new(move |content, found| {
                     let deadline = match_deadline(content);
                     let tree = parse_tree_with_deadline(&language, content, deadline)?;
+                    if recovery.hides_match(&tree, content) {
+                        found.mark_recovered();
+                    }
                     collect_kind_matches(
                         tree.root_node(),
                         &kind,
@@ -142,6 +169,9 @@ pub(super) fn compile_matcher(
             Ok(Box::new(move |content, found| {
                 let deadline = match_deadline(content);
                 let tree = parse_tree_with_deadline(&language, content, deadline)?;
+                if recovery.hides_match(&tree, content) {
+                    found.mark_recovered();
+                }
                 let line_index = LineIndex::tree_sitter(content);
                 visit_named_expanding_macros(
                     tree.root_node(),

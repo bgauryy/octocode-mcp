@@ -361,7 +361,8 @@ function flagFromJsonProperty(
   const notes = schemaNotes(record);
   const hasDefault = Object.prototype.hasOwnProperty.call(record, 'default');
   const defaultValue = record.default;
-  const description = typeof record.description === 'string' ? record.description : undefined;
+  // A title is the property's label (JSON Schema 2020-12 §9.1); help shows it when no description exists.
+  const description = typeof record.description === 'string' ? record.description : typeof record.title === 'string' ? record.title : undefined;
   const flagRequired = hasDefault ? false : required;
   const base = {
     property,

@@ -526,21 +526,13 @@ fn refresh_lock_path(host: &str) -> std::path::PathBuf {
         .join(format!("oauth-refresh-{name}.lock"))
 }
 
-/// An advisory file lock (`flock` / `LockFileEx`) held for one
-/// load-refresh-store sequence. The OS drops it if the process dies, so a
-/// crashed refresher never leaves a stale lock behind.
-struct RefreshFileLock(std::fs::File);
-
-impl Drop for RefreshFileLock {
-    fn drop(&mut self) {
-        let _ = self.0.unlock();
-    }
-}
-
+/// The advisory file lock (`flock` / `LockFileEx`) held for one
+/// load-refresh-store sequence, polled so the wait yields to the runtime.
 async fn acquire_refresh_lock(
     path: &std::path::Path,
     wait: Duration,
-) -> Result<RefreshFileLock, ProviderError> {
+) -> Result<octocode_io::lock::LockedFile, ProviderError> {
+    use octocode_io::lock::TryLock;
     let unavailable = || {
         ProviderError::new(
             ProviderErrorKind::CredentialStoreUnavailable,
@@ -550,7 +542,7 @@ async fn acquire_refresh_lock(
     // Creating the directory and opening the file touch the disk, so they run
     // off the async executor.
     let lock_path = path.to_path_buf();
-    let file = tokio::task::spawn_blocking(move || {
+    let mut file = tokio::task::spawn_blocking(move || {
         if let Some(parent) = lock_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -566,10 +558,10 @@ async fn acquire_refresh_lock(
     .map_err(|_| unavailable())?;
     let deadline = Instant::now() + wait;
     loop {
-        match file.try_lock() {
-            Ok(()) => return Ok(RefreshFileLock(file)),
-            Err(std::fs::TryLockError::WouldBlock) => {}
-            Err(std::fs::TryLockError::Error(_)) => return Err(unavailable()),
+        match octocode_io::lock::try_lock(file) {
+            Ok(TryLock::Locked(lock)) => return Ok(lock),
+            Ok(TryLock::Busy(busy)) => file = busy,
+            Err(_) => return Err(unavailable()),
         }
         if Instant::now() >= deadline {
             return Err(ProviderError::new(

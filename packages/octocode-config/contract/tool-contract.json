@@ -290,7 +290,7 @@
     "versionNotFound": "notFound",
     "workspaceRootInvalid": "execution"
   },
-  "fingerprint": "8b2b1eff501b9213725121572f4067699405fcaa9b6bd2f156b4dd6765f80561",
+  "fingerprint": "b7a6bccbbf076c45437a6e7651212b1b0593dc7cd4e7301238f8b0097e887224",
   "limits": {
     "defaultReadContextLines": 3,
     "maxInputArrayItems": 100
@@ -15464,9 +15464,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -24598,9 +24610,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -34454,9 +34478,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -45501,9 +45537,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -55363,9 +55411,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -65909,9 +65969,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -79757,9 +79829,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -89320,9 +89404,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -94216,9 +94312,23 @@
                   "type": "integer"
                 },
                 "matchString": {
-                  "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                  "minLength": 1,
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "maxItems": 10,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  ],
+                  "description": "Literal unless regex; a list matches any; regex:\"rust\" makes a|b alternatives.",
+                  "title": "MatchString"
                 },
                 "maxDepth": {
                   "description": "Levels below path; 1 = children.",
@@ -98413,9 +98523,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -102244,9 +102366,21 @@
                                   "type": "integer"
                                 },
                                 "matchString": {
-                                  "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                                  "minLength": 1,
-                                  "type": "string"
+                                  "anyOf": [
+                                    {
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "items": {
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "maxItems": 10,
+                                      "minItems": 1,
+                                      "type": "array"
+                                    }
+                                  ]
                                 },
                                 "maxDepth": {
                                   "maximum": 20,
@@ -104391,9 +104525,23 @@
             "type": "integer"
           },
           "matchString": {
-            "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-            "minLength": 1,
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 1,
+                "type": "array"
+              }
+            ],
+            "description": "Literal unless regex; a list matches any; regex:\"rust\" makes a|b alternatives.",
+            "title": "MatchString"
           },
           "maxDepth": {
             "description": "Levels below path; 1 = children.",
@@ -109043,9 +109191,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -119256,9 +119416,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -132360,9 +132532,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -144180,9 +144364,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -154966,9 +155162,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,
@@ -164960,9 +165168,21 @@
                               "type": "integer"
                             },
                             "matchString": {
-                              "description": "Literal unless regex; regex:\"rust\" makes a|b alternatives.",
-                              "minLength": 1,
-                              "type": "string"
+                              "anyOf": [
+                                {
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "maxItems": 10,
+                                  "minItems": 1,
+                                  "type": "array"
+                                }
+                              ]
                             },
                             "maxDepth": {
                               "maximum": 20,

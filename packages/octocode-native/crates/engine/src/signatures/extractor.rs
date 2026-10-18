@@ -57,17 +57,29 @@ pub(crate) fn parse_with_deadline(
         parser
             .set_language(language)
             .map_err(|err| ParseFailure::Language(err.to_string()))?;
-        let tree = parse_until(parser, content, deadline);
+        let tree = parse_until(parser, content, "", deadline);
         parser.reset();
         tree.filter(|_| Instant::now() < deadline)
             .ok_or(ParseFailure::Interrupted)
     })
 }
 
-/// One parse of `content` that the progress callback stops at `deadline`.
-fn parse_until(parser: &mut tree_sitter::Parser, content: &str, deadline: Instant) -> Option<Tree> {
+/// One parse of `content` followed by `tail` (source the parser reads as if
+/// the content ended with it) that the progress callback stops at `deadline`.
+fn parse_until(
+    parser: &mut tree_sitter::Parser,
+    content: &str,
+    tail: &str,
+    deadline: Instant,
+) -> Option<Tree> {
     let bytes = content.as_bytes();
-    let mut read = |offset: usize, _| bytes.get(offset..).unwrap_or(b"");
+    let mut read = |offset: usize, _| {
+        if offset < bytes.len() {
+            &bytes[offset..]
+        } else {
+            tail.as_bytes().get(offset - bytes.len()..).unwrap_or(b"")
+        }
+    };
     let mut progress = |_: &tree_sitter::ParseState| {
         if Instant::now() >= deadline {
             ControlFlow::Break(())
@@ -91,6 +103,20 @@ pub(crate) fn parse_ranges_before(
     ranges: &[tree_sitter::Range],
     deadline: Instant,
 ) -> Option<Tree> {
+    parse_ranges_ending(content, "", language, ranges, deadline)
+}
+
+/// [`parse_ranges_before`] of `content` followed by `tail`: the parser reads
+/// `tail` right after `content` without it being part of the caller's text,
+/// so a range may cover it. A `#define` body is only a complete statement
+/// with its `;`.
+pub(crate) fn parse_ranges_ending(
+    content: &str,
+    tail: &str,
+    language: &Language,
+    ranges: &[tree_sitter::Range],
+    deadline: Instant,
+) -> Option<Tree> {
     if Instant::now() >= deadline {
         return None;
     }
@@ -98,7 +124,7 @@ pub(crate) fn parse_ranges_before(
         parser.reset();
         parser.set_language(language).ok()?;
         parser.set_included_ranges(ranges).ok()?;
-        let tree = parse_until(parser, content, deadline);
+        let tree = parse_until(parser, content, tail, deadline);
         let _ = parser.set_included_ranges(&[]);
         parser.reset();
         tree.filter(|_| Instant::now() < deadline)

@@ -189,7 +189,7 @@ fn stopped(stop: crate::runtime::ExecutionError) -> ClassificationError {
         crate::runtime::ExecutionError::Cancelled => failure(
             "cancelled",
             "The call stopped before its page was captured.",
-            "Retry only if the judgment is still needed.",
+            crate::response::rows::CANCELLED_HINT,
         ),
         _ => failure(
             "timeout",

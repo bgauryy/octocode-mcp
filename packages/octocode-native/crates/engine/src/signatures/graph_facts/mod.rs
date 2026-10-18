@@ -14,9 +14,9 @@ use crate::graph::{
 
 use super::languages;
 use super::nodes::{
-    call_callee, clean_specifier, compact_identifier, declaration, declaration_name,
-    import_specifier, is_call_node, is_exported_declaration, is_import_node, is_name_leaf,
-    last_name_leaf, node_text,
+    call_callee, clean_specifier, compact_identifier, declaration, declaration_extent,
+    declaration_name, import_specifier, is_call_node, is_exported_declaration, is_import_node,
+    is_name_leaf, last_name_leaf, node_text,
 };
 use crate::text::file_extension::{JS_TS_EXTENSIONS, extension_of};
 
@@ -58,7 +58,7 @@ impl<'a> NodePositions<'a> {
         }
     }
 
-    /// A declaration's range, ending at its last character: a node that
+    /// A declaration's range (see [`declaration_extent`]), ending at its last character: a node that
     /// owns its line terminator (C `#define`, every `preproc_*`) would
     /// otherwise end at column 0 of the next line, which a line-based
     /// reader takes as the next declaration's line.
@@ -1085,8 +1085,10 @@ fn declaration_fact(
             .and_then(compact_identifier)
             .filter(|name| !is_recovered_keyword_declaration(node, name, &acc.file_path))
             .map(|name| {
-                let range = line_index.declaration_range(node);
-                let line = range.start.line + 1;
+                let range = line_index.declaration_range(declaration_extent(node));
+                // `line` stays where the declaration node itself starts; the
+                // range also holds its template or decorator header.
+                let line = line_index.range(node).start.line + 1;
                 // This identifies a declaration occurrence, not a canonical binding.
                 // Location distinguishes overloads, impl blocks and equal names in scopes.
                 let id = format!(

@@ -14,6 +14,7 @@ from .documents import DocumentsMixin
 from .dispatch import DeliveryMixin, now
 from .peers import PeersMixin
 from .expiry import ExpiryMixin, RESERVED_KEY_PREFIXES
+from .protocols import ProtocolMixin, REQUESTS, WAKES, kind_of
 from .workspace import coordination_scope, stored_scope, scope_workspaces
 from .registry import register
 
@@ -65,7 +66,7 @@ def page(rows, string_cursor, command, input, metadata_bytes=0):
     return result
 
 
-class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMixin, DeliveryMixin, PeersMixin, ExpiryMixin):
+class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMixin, DeliveryMixin, PeersMixin, ExpiryMixin, ProtocolMixin):
     def __init__(self, database, workspace, read_only=False, create=False):
         self.workspace = str(Path(workspace).resolve(strict=True))
         self.coordination_scope = coordination_scope(self.workspace)
@@ -151,7 +152,7 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
             return getattr(self, name)(session, input)
         if name == 'binding':
             identity = self.known(session, False)
-            return dict(identity, coordinationScope=self.coordination_scope, active=identity['expiresAt'] > now())
+            return self.with_checkpoint(session, dict(identity, coordinationScope=self.coordination_scope, active=identity['expiresAt'] > now()))
         if name == 'health':
             return self.health(input)
         if name == 'activity':
@@ -164,7 +165,7 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
             if 'message' not in input:
                 return self.inbox(session, input.get('after', 0))
             self.known(session)
-            return page(query(self.db, 'SELECT m.id,m.sender,s.name AS senderName,m.body,m.reasoning,m.topic,m.expiresAt,m.wake,m.conversationId,m.replyTo,m.replyRequired FROM deliveries d JOIN messages m ON m.id=d.message JOIN sessions s ON s.id=m.sender WHERE d.recipient=? AND d.acknowledgedAt IS NULL AND m.expiresAt>? AND m.id=?', (session, now(), input['message'])), False, name, input)
+            return page(query(self.db, 'SELECT m.id,m.sender,s.name AS senderName,m.kind,m.body,m.reasoning,m.topic,m.expiresAt,m.wake,m.conversationId,m.replyTo,m.replyRequired FROM deliveries d JOIN messages m ON m.id=d.message JOIN sessions s ON s.id=m.sender WHERE d.recipient=? AND d.acknowledgedAt IS NULL AND m.expiresAt>? AND m.id=?', (session, now(), input['message'])), False, name, input)
         if name == 'join':
             branch = input['branch'] if 'branch' in input else current_branch(self.workspace)
             with transaction(self.db):
@@ -189,7 +190,7 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
                     execute(self.db, 'UPDATE deliveries SET claimUntil=0,claimedBy=NULL WHERE recipient=? AND acknowledgedAt IS NULL', (session,))
                     execute(self.db, 'UPDATE sessions SET expiresAt=?,name=? WHERE id=?', (now()+60000, self.unique_name(row['name'], session), session))
                     self.grant_waits(now())
-                    return self.known(session)
+                    return self.with_checkpoint(session, self.known(session))
                 if name == 'heartbeat':
                     identity = self.known(session)
                     if 'vendorSession' in input:
@@ -255,6 +256,13 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
             return self.complete(session, input)
         raise ValueError('Unknown operation: ' + name)
 
+    def with_checkpoint(self, session, result):
+        """Checkpoint-resume: an identity read returns the agent's latest checkpoint record."""
+        rows = query(self.db, "SELECT id,timestamp,data FROM records WHERE \"from\"=? AND type='checkpoint' ORDER BY id DESC LIMIT 1", (session,))
+        if rows:
+            result['checkpoint'] = dict(recordId=rows[0]['id'], timestamp=rows[0]['timestamp'], data=json.loads(rows[0]['data']))
+        return result
+
     def validate_vendor_session_update(self, session, identity, value):
         if identity.get('vendorSession') != value:
             self.ensure_binding_change_allowed(session)
@@ -263,13 +271,11 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
 
     def complete(self, session, input):
         if 'reply' in input:
-            body = catalog.text(input, 'reply')
-            reasoning = input.get('reasoning', 'Complete received message')
-            if 'outcome' in input:
-                # The reply body stays the exact answer; the outcome travels in reasoning, which inbox returns.
-                reasoning = 'Outcome: {}'.format(input['outcome']) + ('; ' + input['reasoning'] if 'reasoning' in input else '')
-                catalog.text(dict(reasoning=reasoning), 'reasoning')
-            return self.send(session, dict(replyTo=input['message'], body=body, reasoning=reasoning, key='complete:{}'.format(input['message']), wake='action'), False, True)
+            slots, body = self.answer_slots(input)
+            # The outcome also travels in reasoning, which inbox returns beside the BLUF body.
+            reasoning = 'Outcome: {}'.format(input['outcome']) + ('; ' + input['reasoning'] if 'reasoning' in input else '')
+            catalog.text(dict(reasoning=reasoning), 'reasoning')
+            return self.send(session, dict(replyTo=input['message'], body=body, slots=slots, outcome=input['outcome'], reasoning=reasoning, key='complete:{}'.format(input['message']), wake='action'), False, True)
         with transaction(self.db):
             self.known(session)
             messages = input.get('messages', [input.get('message')])
@@ -289,20 +295,25 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
         if not broadcast and (('to' in input and 'topic' in input) or not any(k in input for k in ('to', 'topic', 'replyTo'))):
             raise ValueError('Supply exactly one of to or topic. For replies use complete with message and reply.')
         target = '*' if broadcast else catalog.text(input, 'to') if 'to' in input else catalog.text(input, 'topic') if 'topic' in input else None
-        body, reasoning = catalog.text(input, 'body'), catalog.text(input, 'reasoning')
-        reply_required = input.get('replyRequired', False)
-        if 'replyTo' in input and reply_required:
-            raise ValueError('Replies are informational; use replyRequired:false. Start a new direct request for new work')
+        reasoning = catalog.text(input, 'reasoning')
+        # The kind decides the policy: requests owe an answer; requests and blockers wake.
+        kind = 'answer' if completing else kind_of(input)
+        reply_required = kind in REQUESTS
         duration = catalog.ttl(input, 3600000)
-        wake = input.get('wake', 'action' if reply_required else 'passive')
+        wake = input.get('wake', 'action' if kind in WAKES else 'passive')
         key = catalog.text(input, 'key') if 'key' in input else str(uuid.uuid4())
         if not completing and key.startswith(RESERVED_KEY_PREFIXES):
-            raise ValueError('Keys beginning complete: or expired: are reserved for final replies and runtime notices')
+            raise ValueError('Keys beginning {} are reserved for final replies and runtime notices'.format(', '.join(RESERVED_KEY_PREFIXES)))
         with transaction(self.db):
             self.known(session)
             if 'to' in input and not broadcast:
                 target = self.resolve_peer(target)
-            conversation, reply_sender = input.get('conversationId'), None
+            if completing:
+                slots, body, conversation = input['slots'], input['body'], None
+            else:
+                slots, body, conversation = self.message_slots(session, kind, input, target)
+            catalog.text(dict(body=body), 'body')
+            reply_sender = None
             if 'replyTo' in input:
                 parents = query(self.db, 'SELECT m.conversationId,m.sender,m.replyRequired FROM messages m JOIN sessions s ON s.id=m.sender WHERE m.id=? AND s.workspace IN (SELECT value FROM json_each(?)) AND (m.sender=? OR EXISTS(SELECT 1 FROM deliveries d WHERE d.message=m.id AND d.recipient=?))', (input['replyTo'], json.dumps(self.shared_workspaces()), session, session))
                 if not parents:
@@ -310,8 +321,6 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
                 parent = parents[0]
                 if not parent['replyRequired']:
                     raise ValueError('Message {} is informational and accepts no reply. Handle it with complete using message or messages only; start a new direct request for new work'.format(input['replyTo']))
-                if 'conversationId' in input and conversation != parent.get('conversationId'):
-                    raise ValueError('Reply conversationId must match its parent')
                 conversation, reply_sender = parent.get('conversationId'), parent['sender']
             target = target if target is not None else reply_sender
             if target is None:
@@ -327,8 +336,8 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
             rows = query(self.db, 'SELECT * FROM messages WHERE sender=? AND key=?', (session, key))
             if rows:
                 row = rows[0]
-                expected = dict(target=target, body=body, topic=input.get('topic'), reasoning=reasoning, wake=wake, conversationId=conversation, replyTo=input.get('replyTo'), replyRequired=reply_required, ttlMs=duration)
-                if any(row.get(k) != v for k, v in expected.items()):
+                expected = dict(target=target, kind=kind, body=body, topic=input.get('topic'), reasoning=reasoning, wake=wake, conversationId=conversation, replyTo=input.get('replyTo'), replyRequired=reply_required, ttlMs=duration)
+                if any(row.get(k) != v for k, v in expected.items()) or (json.loads(row['slots']) if 'slots' in row else None) != slots:
                     raise ValueError('Final reply already stored with different content; use send_message for new work' if completing else 'Message key reused with different content (target, topic, body, reasoning, wake, correlation or ttlMs); use a new key')
                 count = query(self.db, 'SELECT count(*) AS n FROM deliveries WHERE message=?', (row['id'],))[0]['n']
                 return receipt(row['id'], count)
@@ -342,11 +351,13 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
                 recipients = [{'id': target}]
             else:
                 recipients = query(self.db, 'SELECT s.id FROM sessions s JOIN subscriptions t ON s.id=t.session WHERE t.topic=? AND s.workspace IN (SELECT value FROM json_each(?)) AND s.expiresAt>? AND s.id<>?', (target, json.dumps(self.shared_workspaces()), now(), session))
-            execute(self.db, 'INSERT INTO messages(sender,target,topic,body,key,expiresAt,reasoning,wake,conversationId,replyTo,ttlMs,replyRequired) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', (session, target, input.get('topic'), body, key, now()+duration, reasoning, wake, conversation, input.get('replyTo'), duration, reply_required))
+            execute(self.db, 'INSERT INTO messages(sender,target,topic,body,key,expiresAt,reasoning,wake,conversationId,replyTo,ttlMs,replyRequired,kind,slots) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (session, target, input.get('topic'), body, key, now()+duration, reasoning, wake, conversation, input.get('replyTo'), duration, reply_required, kind, None if slots is None else json.dumps(slots, ensure_ascii=False, separators=(',', ':'))))
             id = self.db.execute('SELECT last_insert_rowid()').fetchone()[0]
             for recipient in recipients:
                 execute(self.db, 'INSERT INTO deliveries(message,recipient) VALUES(?,?)', (id, recipient['id']))
-            result = receipt(id, len(recipients))
+            effects = self.finish_request(session, input['replyTo'], id, input['outcome'], now()) if completing else {}
+            result = receipt(id, query(self.db, 'SELECT count(*) AS n FROM deliveries WHERE message=?', (id,))[0]['n'])
+            result.update(effects)
             if offline:
                 result['recipientOffline'] = True
             return result
@@ -356,7 +367,7 @@ class Store(LeaseMixin, RecordsMixin, HealthMixin, CompletionMixin, DocumentsMix
         state = (session, after, self.db.execute('PRAGMA data_version').fetchone()[0], self.db.total_changes)
         if self.idle_inbox == state:
             return {'items': []}
-        rows = query(self.db, 'SELECT m.id,m.sender,s.name AS senderName,m.body,m.reasoning,m.topic,m.expiresAt,m.wake,m.conversationId,m.replyTo,m.replyRequired FROM deliveries d JOIN messages m ON m.id=d.message JOIN sessions s ON s.id=m.sender WHERE d.recipient=? AND d.acknowledgedAt IS NULL AND m.expiresAt>? AND d.message>? ORDER BY d.message LIMIT 101', (session, now(), after))
+        rows = query(self.db, 'SELECT m.id,m.sender,s.name AS senderName,m.kind,m.body,m.reasoning,m.topic,m.expiresAt,m.wake,m.conversationId,m.replyTo,m.replyRequired FROM deliveries d JOIN messages m ON m.id=d.message JOIN sessions s ON s.id=m.sender WHERE d.recipient=? AND d.acknowledgedAt IS NULL AND m.expiresAt>? AND d.message>? ORDER BY d.message LIMIT 101', (session, now(), after))
         result = page(rows, False, 'inbox', {'after': after})
         self.idle_inbox = state if not rows else None
         return result

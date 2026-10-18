@@ -1023,9 +1023,9 @@ async fn local_fetch_redacted_content_is_marked_not_verbatim() {
 }
 
 /// Every local walk prunes one default directory set, and a caller
-/// `exclude` glob skips more rather than replacing it. `localSearch` (search-safe)
-/// also prunes tool-config directories such as `.github`; structure and AST
-/// walks (syntax-visible) keep them.
+/// `exclude` glob skips more rather than replacing it. Tool-config directories
+/// such as `.github` are not on it: with `includeHidden`, text, structure and
+/// AST walks all reach them.
 #[tokio::test]
 async fn local_walks_share_one_default_prune_and_exclude_adds() {
     let workspace = Workspace::new();
@@ -1099,7 +1099,12 @@ async fn local_walks_share_one_default_prune_and_exclude_adds() {
     )
     .await
     .expect("localSearch");
-    assert_eq!(paths_of(&searched, "files"), ["src/lib.rs"]);
+    assert_eq!(
+        paths_of(&searched, "files"),
+        syntax_visible,
+        "{:?}",
+        searched.structured_content
+    );
 
     let files = call(
         &runtime,

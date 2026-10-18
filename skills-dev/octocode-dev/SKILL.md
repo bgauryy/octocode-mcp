@@ -35,7 +35,7 @@ Paths: `<repo>` is the monorepo root. `CORE` is `../octocode-mcp-host/packages/o
 
 ## Hard rules
 
-The working, contract and change rules live in `<repo>/AGENTS.md`. Rebuild order after a native, engine, or CLI change: `yarn workspace @octocodeai/octocode-native build:dev` → `yarn workspace octocode build:dev` (or `octocode-mcp`) → `$OCTO config --json && $OCTO schema` → call the changed tool.
+The working, contract and change rules live in `<repo>/AGENTS.md`; its two flows draw the contract pipeline and the native-change steps ([contract pipeline](docs/DEVELOPMENT.md#contract-pipeline)). Commands for the native-change flow (native, engine, or CLI change): `yarn workspace @octocodeai/octocode-native build:dev` → `yarn workspace octocode build:dev` (or `octocode-mcp`) → `$OCTO config --json && $OCTO schema` → call the changed tool.
 
 ## Task runner
 
@@ -74,16 +74,18 @@ When a script flag or path rule is unclear, read [the script guide](scripts/READ
 1. Map: run `scripts/tool-inventory.mjs <tool>`. Locate every layer with `references/surface-map.md`.
 2. Work the lanes in order; load each reference only while you work it: [contract](references/contract-audit.md) → [implementation](references/implementation-audit.md) → [output](references/output-audit.md).
 3. When a finding is confirmed, fix the owning layer and verify with `references/fix-and-verify.md`.
-4. Write one report from `assets/audit-report.md`. Give each finding `path:line`, severity, evidence, fix, and the verification command and result. The path is in [the output format](output.md).
+4. Write one report from `assets/audit-report.md`. Each finding is a 5W2H record (`path:line`, severity, evidence, fix; `unknown` in a slot nobody verified) with its verification command and result. The path is in [the output format](output.md).
 
-A multi-tool audit may run one subagent per tool. Give each the tool name, this skill path, and the report template.
+A multi-tool audit may run one subagent per tool, each with a Task contract: objective (audit that tool), inputs (the tool name, this skill path, the report template), output (that tool's report, BLUF), Definition of Done (one 5W2H record per finding with its verification command and result).
 
-## Done gate
+## Definition of Done
+
+Every check holds:
 
 - The owning layer changed. Generated outputs were regenerated, not edited. New fields are covered.
 - `$DEV build:dev` (or the package build) exited 0. The changed path ran through `$OCTO` or MCP.
 - Focused tests pass. Before a handoff that spans packages, `$DEV verify` and `$DEV docs:verify` pass.
-- Report the exact commands and results. Name anything not verified.
+- Reply BLUF with claim–evidence: the exact commands and results. Name anything not verified.
 
 ## Output
 

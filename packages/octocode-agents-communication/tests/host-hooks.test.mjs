@@ -36,7 +36,7 @@ for (const vendor of ['cursor', 'grok', 'claude', 'codex']) {
     if (vendor === 'grok') assert.deepEqual(initial, {});
     else assert.ok((initial.additional_context ?? initial.hookSpecificOutput.additionalContext).includes(recipient.id));
     const sender = f.cli('join', { vendor: 'raw', name: 'sender' });
-    const message = f.cli('send_message', { to: recipient.id, body: 'ONE DELIVERY', replyRequired:false }, sender.id);
+    const message = f.cli('send_message', { to: recipient.id, body: 'ONE DELIVERY' }, sender.id);
     const ignored = f.hook(vendor === 'cursor' ? 'beforeSubmitPrompt' : 'UserPromptSubmit');
     assert.deepEqual(ignored, vendor === 'cursor' ? { continue: true } : {});
     assert.equal(db.prepare('SELECT count(*) n FROM dispatches').get().n, 0);
@@ -307,7 +307,7 @@ test('Grok native camelCase payload with compatibility event and slash-suffixed 
   const db = new DatabaseSync(f.database); t.after(() => db.close());
   const recipient = db.prepare('SELECT id FROM sessions WHERE vendor=?').get('grok').id;
   const sender = f.cli('join', { name: 'sender', vendor: 'raw' });
-  f.cli('send_message', { to: recipient, body: 'GROK ENVELOPE', replyRequired: false }, sender.id);
+  f.cli('send_message', { to: recipient, body: 'GROK ENVELOPE' }, sender.id);
   const event = { ...envelope, hookEventName: 'post_tool_use' };
   assert.ok(f.hook('PostToolUse', event).hookSpecificOutput.additionalContext.includes('GROK ENVELOPE'));
   assert.deepEqual(f.hook('PostToolUse', event), {});

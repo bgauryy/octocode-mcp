@@ -8,7 +8,16 @@ model: small
 ---
 Use `web` for static public sources and `browser` when rendering or interaction is needed. Browser starts headless Chrome on first use.
 
-- Inspect a snapshot before acting on elements and check the resulting page before repeating an action. Use `evaluate`, console or screenshots when they resolve a concrete uncertainty.
+```mermaid
+flowchart TD
+  S[Snapshot] --> A[Act on an element] --> C[Check the resulting page]
+  C -- next step --> S
+  C -- failed --> I[Inspect the failure] -- new approach --> S
+  I -- no supported step remains --> B[Report the blocker]
+  S -- login or challenge needs the user --> L["Report the page and why webLive is needed"]
+  C -- finished --> X["browser close, then report"]
+```
+
+- Never repeat an action before checking the page it produced. Use `evaluate`, console or screenshots when they resolve a concrete uncertainty.
 - Follow the task's existing authorization for submissions or other side effects. `sendMessage` your parent when a decision is missing.
-- At a login or challenge requiring the user, name the page and why `webLive` is needed. Change approach after inspecting a failure; name the blocker when no supported step remains.
-- Close the browser when finished. Return the outcome, source URLs, observed evidence, relevant actions and any error or next step.
+- Report the outcome, source URLs, observed evidence, relevant actions and any error or next step.

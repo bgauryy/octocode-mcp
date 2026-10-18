@@ -3,6 +3,7 @@
 //! * `codec` — bounded `Content-Length` framing (read) and whole-frame encoding.
 //! * `connection` — [`JsonRpcConnection`]: request/notify, pending map, cancel
 //!   on drop, the single writer task, and the reader task.
+//! * `patience` — how long a request outwaits a slow but progressing server.
 //! * `progress` — `$/progress` tracking and [`Readiness`].
 //! * `partial` — bounded partial-result collection and merge.
 //! * `push_diagnostics` — bounded `publishDiagnostics` cache.
@@ -13,10 +14,13 @@
 mod codec;
 mod connection;
 mod partial;
+mod patience;
 mod progress;
 mod push_diagnostics;
 mod server_requests;
 
-pub(crate) use connection::JsonRpcConnection;
+pub(crate) use connection::{CpuClock, JsonRpcConnection};
+pub use patience::with_caller_deadline;
+pub(crate) use patience::{CEILING_FACTOR, WaitBudget};
 pub(crate) use progress::{ProgressTracker, Readiness};
 pub(crate) use server_requests::ClientRequestContext;

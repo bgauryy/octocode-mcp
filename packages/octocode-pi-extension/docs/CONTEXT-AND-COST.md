@@ -90,6 +90,25 @@ What compaction does: [COMPACTION.md](COMPACTION.md). What it costs:
   Only the pointer enters the context, in a summary that is new anyway (after a default summary, one hidden message behind
   the cached prefix): no cache miss. A subagent's task gets one line of about 480 characters.
 
+### Scan cost of a large web result
+
+`permission/provenance` indexes a tool result so that a later call repeating it is flagged. It reads at most 256 KB of a
+result (`MAX_BYTES_PER_RESULT`), and that scan, not the HTML-to-text pass of `web/scan` (about 8–13 ms for 256 KB), was the
+56.5 ms measured for a 256 KB web result: 200,000 rolling hashes, each stored in a `Map`. `node scripts/bench-web-scan.mjs`
+(build first; `--runs N`, `--json`) measures it in CPU milliseconds, best / median / worst of 15 runs after a warm-up:
+
+| Scan of 256 KB | Before (`Map`) | After (`KeyTable`) |
+|---|---|---|
+| `record`, text with no repeated window | 44.9 / 59.3 / 138.0 | 13.4 / 14.2 / 50.3 |
+| `record`, prose | 47.6 / 54.3 / 66.8 | 15.4 / 15.7 / 17.5 |
+| `check`, a 500-character command | 0.0 / 0.0 / 6.6 | 0.0 / 0.0 / 0.0 |
+
+The hashing itself is 2–14 ms; the rest was the `Map`'s per-key allocation and rehashing. The index is now an
+open-addressing table over two typed arrays (`permission/key-table`), sized once from the ring: the same hits (every
+provenance test passes unchanged), about a quarter of the CPU. The first scan in a fresh process is not faster (66–134 ms
+before, 77–88 ms after, one-shot runs on a loaded machine): it is dominated by the JIT compiling the hash loop, and the
+benchmark's "first" column shows it.
+
 ## Prompt cache
 
 Anthropic caches a request's prefix (tools, system prompt, messages) at the breakpoints pi-ai marks. Opus 5.5 list price per
@@ -298,4 +317,4 @@ Tests: `tests/session-health.test.ts` runs the script on a fixture transcript.
 ## Tests
 
 Under `tests/` (compaction's: [COMPACTION.md](COMPACTION.md#tests)): `read-dedupe`, `compaction-cache`, `files`, `elision`,
-`sessions*`, `bash`, `hooks`, `shared`, `footer`, `team-panel`, `subagent-goal`, `agentdb`, `subagent-tool`, `session-health`.
+`sessions*`, `bash`, `hooks`, `shared`, `key-table`, `footer`, `team-panel`, `subagent-goal`, `agentdb`, `subagent-tool`, `session-health`.

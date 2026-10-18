@@ -14,8 +14,9 @@
 //!   failed and fails every pending request at once (the pending map is taken,
 //!   not iterated).
 //! * **One slow request is not a fault**: a request that uses its whole
-//!   timeout is cancelled with `$/cancelRequest` and the server is kept, so the
-//!   next request does not pay a cold start. Only [`RETIRE_AFTER_TIMEOUTS`]
+//!   wait (the timeout, extended while the server makes progress) is
+//!   cancelled with `$/cancelRequest` and the server is kept, so the next
+//!   request does not pay a cold start. Only [`RETIRE_AFTER_TIMEOUTS`]
 //!   timeouts with no answered request between them retire the connection.
 //!   Both tasks install a [`FailOnExit`] guard, so every exit path, including
 //!   panic and abort, fails the connection.
@@ -25,6 +26,7 @@
 
 use super::codec::{Frame, encode_frame, read_frame};
 use super::partial::PartialResultStore;
+use super::patience::{ServerActivity, WaitBudget};
 use super::progress::ProgressTracker;
 use super::push_diagnostics::PushDiagnosticsStore;
 use super::server_requests::{ClientRequestContext, client_response_for};
@@ -55,6 +57,9 @@ const RETIRE_AFTER_TIMEOUTS: u32 = 2;
 /// How long the reader may wait for writer-queue space to reply to a server
 /// request before declaring the server wedged (it is not reading stdin).
 const REPLY_ENQUEUE_DEADLINE_MS: u64 = 1_000;
+
+/// Cumulative CPU time of the server's process tree; `None` when unreadable.
+pub(crate) type CpuClock = Arc<dyn Fn() -> Option<Duration> + Send + Sync>;
 
 type PendingSender = oneshot::Sender<Result<Value>>;
 
@@ -89,6 +94,8 @@ struct Shared {
     unparseable_frames: AtomicU64,
     /// Request timeouts since the server last answered a pending request.
     consecutive_timeouts: AtomicU32,
+    /// The server's progress signals, which extend a request's wait.
+    activity: ServerActivity,
 }
 
 impl Shared {
@@ -286,6 +293,7 @@ impl JsonRpcConnection {
         writer: W,
         context: ClientRequestContext,
         progress: Arc<ProgressTracker>,
+        cpu_clock: Option<CpuClock>,
     ) -> Self
     where
         R: AsyncRead + Unpin + Send + 'static,
@@ -301,6 +309,7 @@ impl JsonRpcConnection {
             partial_results: PartialResultStore::default(),
             unparseable_frames: AtomicU64::new(0),
             consecutive_timeouts: AtomicU32::new(0),
+            activity: ServerActivity::new(cpu_clock, Arc::clone(&progress)),
         });
         // The guards are created before spawning so they run even if a task is
         // aborted before its first poll.
@@ -359,9 +368,21 @@ impl JsonRpcConnection {
         self.shared.unparseable_frames.load(Ordering::Relaxed)
     }
 
-    /// Sends a request and waits for its response until `timeout_ms`.
+    /// Sends a request and waits for its response within `budget`: a base
+    /// timeout in milliseconds (`u32`) or a shared [`WaitBudget`].
     ///
-    /// Timeout policy: a request that consumes its whole timeout is cancelled
+    /// Starvation policy (see `patience`): past the budget's base timeout
+    /// the wait is extended in steps of a quarter of
+    /// it, but only while the server shows progress (its process tree's CPU
+    /// time grew, or a `$/progress` token is open), and never past the
+    /// budget's ceiling (the caller's deadline under
+    /// [`super::with_caller_deadline`], else twice the base; retries that
+    /// pass one [`WaitBudget`] share it). A server with no progress times out at the base, so a cold
+    /// server on an oversubscribed machine answers while a hung one still
+    /// fails. Dropping the future cancels the request at any point of the
+    /// wait.
+    ///
+    /// Timeout policy: a request that consumes its whole wait is cancelled
     /// with `$/cancelRequest` and fails with a timeout; the server is kept, so
     /// one slow walk on a large tree does not cost a cold start. The
     /// connection is retired as wedged only when the cancel cannot be
@@ -373,9 +394,11 @@ impl JsonRpcConnection {
         &self,
         method: &str,
         params: Value,
-        timeout_ms: u32,
+        budget: impl Into<WaitBudget>,
     ) -> Result<Value> {
-        let deadline = Instant::now() + Duration::from_millis(u64::from(timeout_ms));
+        let budget = budget.into();
+        let started = Instant::now();
+        let deadline = started + budget.base;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let frame =
             encode_frame(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))?;
@@ -394,11 +417,11 @@ impl JsonRpcConnection {
                 deadline,
             )
             .await?;
-        match tokio::time::timeout_at(deadline, response).await {
+        match self.shared.activity.wait(response, started, budget).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(closed_error()),
-            Err(_) => {
-                let reason = format!("LSP request timed out after {timeout_ms}ms");
+            Err(waited) => {
+                let reason = format!("LSP request timed out after {}ms", waited.as_millis());
                 // `true` when the cancel could not be written in time: the
                 // writer queue is full or the pipe does not drain, so the
                 // server stopped reading stdin.
@@ -445,7 +468,7 @@ impl JsonRpcConnection {
         &self,
         method: &str,
         mut params: Value,
-        timeout_ms: u32,
+        budget: impl Into<WaitBudget>,
     ) -> Result<Value> {
         let token = format!(
             "octocode-partial-{}",
@@ -460,7 +483,7 @@ impl JsonRpcConnection {
         );
         // The guard discards the collected chunks if this future is dropped.
         let partials = self.shared.partial_results.begin(token);
-        let result = self.request(method, params, timeout_ms).await?;
+        let result = self.request(method, params, budget).await?;
         partials.finish(result)
     }
 

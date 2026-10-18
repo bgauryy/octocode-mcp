@@ -1,7 +1,7 @@
 pub use crate::contracts::tool_types::{AstSearchQueryMatchPattern, AstSearchQueryMatchRule};
 use crate::tools::ast_rule::{
-    GlobParsers, GrammarChoice, choose_grammar, compile_check, has_extension_in,
-    language_extensions, present_grammars,
+    GlobParsers, GrammarChoice, RuleError, choose_grammar, compile_check, count_grammars,
+    has_extension_in, language_extensions, present_grammars,
 };
 use crate::tools::empty_walk::{FileProbe, Globs, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
@@ -165,11 +165,16 @@ struct Scope {
 struct ScannedFile {
     /// The row path.
     path: String,
+    /// The parser extension the file was read with (empty for a single file,
+    /// which no grammar census covers).
+    parser: String,
     /// What the scan kept of its matches (see [`demand`]).
     matches: FileMatches,
     diagnostics: Vec<StructuralDiagnostic>,
     /// The engine status.
     status: String,
+    /// The file parsed with recovered syntax that could hide a match.
+    recovered: bool,
     /// The scanned path and the digest of the bytes it was matched in:
     /// where a page rebuilds a priced file's matches.
     source: Option<(std::path::PathBuf, String)>,
@@ -204,51 +209,75 @@ struct Scan {
     /// Candidate entries the security path policy withheld from the walk.
     withheld: crate::policy::discovery::Withheld,
     /// Files the walk passed over because no grammar parses their names.
-    unparsed: Unparsed,
+    unparsed: NamedFiles,
     /// Without `language`: the files the walk admitted, by parser extension
     /// (the census the scope's grammar is inferred from).
     census: std::collections::BTreeMap<String, usize>,
 }
 
-/// Example paths a skipped-file warning names.
-const UNPARSED_EXAMPLES: usize = 3;
+/// Example paths a file-count warning names.
+const NAMED_EXAMPLES: usize = 3;
 
-/// Files a directory scan left unparsed for want of a grammar: their count
-/// and the first [`UNPARSED_EXAMPLES`] paths in path order, spelled as the
-/// response's row paths are (workspace-relative, else absolute).
+/// A tally of files a warning names: their count and the first
+/// [`NAMED_EXAMPLES`] paths in path order, spelled as the response's row
+/// paths are (workspace-relative, else absolute).
 #[derive(Default)]
-struct Unparsed {
+struct NamedFiles {
     count: u32,
     examples: std::collections::BTreeSet<String>,
 }
 
-impl Unparsed {
+impl NamedFiles {
     fn record(&mut self, path: String) {
         self.count = self.count.saturating_add(1);
         self.examples.insert(path);
-        if self.examples.len() > UNPARSED_EXAMPLES {
+        if self.examples.len() > NAMED_EXAMPLES {
             self.examples.pop_last();
         }
     }
 
-    /// The warning that names them and the field that parses them.
-    fn notice(&self) -> Option<String> {
+    /// The paths a warning lists: `a, b, c, …` when more files follow.
+    fn listed(&self) -> String {
         let more = if self.count as usize > self.examples.len() {
             ", …"
         } else {
             ""
         };
-        let names = self.examples.iter().cloned().collect::<Vec<_>>().join(", ");
-        match self.count {
-            0 => None,
-            1 => Some(format!(
-                "1 file skipped: no AST grammar for its name ({names}); if it is source code, languageGlobs maps its name to a grammar."
-            )),
-            count => Some(format!(
-                "{count} files skipped: no AST grammar for their names ({names}{more}); if they are source code, languageGlobs maps their names to a grammar."
-            )),
-        }
+        format!(
+            "{}{more}",
+            self.examples.iter().cloned().collect::<Vec<_>>().join(", ")
+        )
     }
+}
+
+/// The warning that names the files passed over for want of a grammar and
+/// the field that parses them.
+fn unparsed_notice(files: &NamedFiles) -> Option<String> {
+    let names = files.listed();
+    match files.count {
+        0 => None,
+        1 => Some(format!(
+            "1 file skipped: no AST grammar for its name ({names}); if it is source code, languageGlobs maps its name to a grammar."
+        )),
+        count => Some(format!(
+            "{count} files skipped: no AST grammar for their names ({names}); if they are source code, languageGlobs maps their names to a grammar."
+        )),
+    }
+}
+
+/// The warning that names the files whose recovered parse could hide a
+/// match (see `octocode_engine::structural`'s recovery criterion): the
+/// matches listed are not all of the file's.
+fn recovered_notice(files: &NamedFiles) -> Option<String> {
+    let names = files.listed();
+    let (count, noun) = match files.count {
+        0 => return None,
+        1 => (1, "file"),
+        count => (count, "files"),
+    };
+    Some(format!(
+        "{count} {noun} parsed with syntax errors that could hide a match ({names}); astSearch syntaxTree shows where."
+    ))
 }
 
 /// Scans kept for the continuation pages of a multi-page result.
@@ -418,6 +447,18 @@ struct Grouped {
     unevaluated_files: u32,
     /// Files skipped unread: no grammar, unreadable, over the parse limit.
     skipped_files: u32,
+    /// The warning naming the grammars the query does not apply to.
+    inapplicable_notice: Option<String>,
+    /// Files whose recovered parse could hide a match.
+    recovered: NamedFiles,
+}
+
+/// A diagnostic that says the query does not compile in the file's grammar.
+fn is_compile_failure(diagnostic: &StructuralDiagnostic) -> bool {
+    matches!(
+        diagnostic.code.as_str(),
+        "structural.query.compileFailed" | octocode_engine::structural::RULE_INVALID
+    )
 }
 
 /// Diagnostic codes of a file the scan skipped unread.
@@ -487,7 +528,9 @@ pub fn execute_match(
         }
     };
     let mut scope = scope;
-    scope.inferred = infer_grammar(q, &scope, &scan)?;
+    let grammars = compile_in_grammars(q, &scope, &scan);
+    scope.inferred = infer_grammar(q, &scope, &scan, &grammars)?;
+    let inapplicable = Inapplicable::of(&grammars);
     let snapshot = match_snapshot(q, &scope, &scan);
     // A page number without a snapshot asks for that page of a fresh scan;
     // only a snapshot that no longer matches is stale.
@@ -508,7 +551,8 @@ pub fn execute_match(
         ));
     }
     let budget = crate::tools::page_windows::page_budget(response_window, &q.to_value());
-    let mut grouped = group_files(q, &scan.files, budget);
+    let mut grouped = group_files(q, &scan.files, budget, &inapplicable);
+    grouped.inapplicable_notice = inapplicable.notice();
     let shown = file_page(q, &grouped.groups, budget).window;
     if let Ok(incomplete) = rebuild_page(q, &scope, &scan.files, &mut grouped.groups[shown], budget)
     {
@@ -529,24 +573,16 @@ pub fn execute_match(
             crate::tools::result::restart_query(ToolId::AstSearch, &q.to_value()),
         ));
     }
-    if !scope.is_file && scope.language.is_none() && !scan.truncated && q.scan_offset() == 0 {
-        // Validate even files the literal prefilter left unparsed. Only an
-        // initial whole-scope scan can reject the query for the selected set.
-        let extensions = scan
-            .sources
-            .iter()
-            .filter_map(|path| match scope.parsers.extension(path) {
-                Some(extension) => language_extensions(extension),
-                None => {
-                    crate::tools::ast_rule::file_grammar(path).map(|(_, extensions)| extensions)
-                }
-            })
-            .flatten()
-            .collect::<std::collections::BTreeSet<_>>();
-        if !extensions.is_empty() {
-            compile_check(&extensions, q.pattern().as_deref(), q.rule().as_deref())
-                .map_err(|error| ToolError::new(error.code, error.message))?;
-        }
+    if !scan.truncated
+        && q.scan_offset() == 0
+        && !grammars.is_empty()
+        && grammars.iter().all(|grammar| grammar.outcome.is_err())
+        && let Some(Err(error)) = grammars.first().map(|grammar| grammar.outcome.clone())
+    {
+        // Every grammar the whole scope holds (even in files the literal
+        // prefilter left unparsed) rejects the query: only an initial
+        // whole-scope scan can reject it for the selected set.
+        return Err(ToolError::new(error.code, error.message));
     }
     if grouped.total_matches == 0
         && grouped.parsed_files == 0
@@ -559,21 +595,22 @@ pub fn execute_match(
         // A capped incompatible window must retain coverage and scan onward.
         return Err(error);
     }
-    let empty_scope = if scope.is_file || grouped.total_matches > 0 {
-        EmptyScope::default()
-    } else if grouped.parsed_files == 0 && q.language().is_some() {
-        EmptyScope::of(q, &scope, paths, cancel)
+    let gaps = if scope.is_file {
+        ScopeGaps::default()
+    } else if grouped.total_matches == 0 && grouped.parsed_files == 0 && q.language().is_some() {
+        ScopeGaps::of(q, &scope, paths, cancel)
     } else {
         // Files of the grammar behind skipped paths are still a reason,
-        // beside the pattern's shape: whether or not the scan parsed any, and
-        // whether one language or each file's own grammar selected them.
-        EmptyScope::beside_parsed(q, &scope, paths, cancel)
+        // beside the pattern's shape or the matches found: whether or not
+        // the scan parsed any, and whether one language or each file's own
+        // grammar selected them.
+        ScopeGaps::beside_parsed(q, &scope, paths, cancel)
     };
     let exact_miss_scope = grouped.total_matches == 0
         && grouped.scanned_files > 0
         && !scan.truncated
         && q.scan_offset() == 0;
-    let mut out = render_match_page(q, &scope, &scan, grouped, &snapshot, empty_scope, budget);
+    let mut out = render_match_page(q, &scope, &scan, grouped, &snapshot, gaps, budget);
     if exact_miss_scope && let Some(miss) = exact_miss(q, &scope, paths, security, cancel) {
         miss.attach(&mut out);
     }
@@ -727,6 +764,96 @@ impl ExactMiss {
     }
 }
 
+/// How the query fares in one grammar of a directory scan's walk.
+struct GrammarCompile {
+    label: String,
+    extensions: std::collections::BTreeSet<String>,
+    /// The walk's files of this grammar.
+    files: usize,
+    /// Whether the query compiles in it, else why not.
+    outcome: Result<(), RuleError>,
+}
+
+/// The query compiled in each grammar the scan's own walk met (its census),
+/// once per call. Empty for a single file or an explicit `language`, whose
+/// compile checks are the scope's own.
+fn compile_in_grammars(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> Vec<GrammarCompile> {
+    if scope.is_file || scope.language.is_some() {
+        return Vec::new();
+    }
+    let (pattern, rule) = (q.pattern(), q.rule());
+    count_grammars(scan.census.clone())
+        .into_iter()
+        .map(|(label, extensions, files)| GrammarCompile {
+            outcome: compile_check(&extensions, pattern.as_deref(), rule.as_deref()),
+            label,
+            extensions,
+            files,
+        })
+        .collect()
+}
+
+/// The grammars of a scope that the query does not compile in, while it
+/// compiles in another grammar of the same scope. A query that does not
+/// parse as language X cannot match X code: those files are outside what the
+/// query applies to, not files left unread, so they make the result neither
+/// partial nor failed. They are still named, with the compiler's reason, in a
+/// warning. A query that compiles in no grammar of the scope is an error, not
+/// this.
+#[derive(Default)]
+struct Inapplicable {
+    /// Grammar label → (its files in the walk, why the query does not compile).
+    languages: std::collections::BTreeMap<String, (usize, String)>,
+}
+
+impl Inapplicable {
+    fn of(grammars: &[GrammarCompile]) -> Self {
+        if !grammars.iter().any(|grammar| grammar.outcome.is_ok()) {
+            return Self::default();
+        }
+        Self {
+            languages: grammars
+                .iter()
+                .filter_map(|grammar| {
+                    let error = grammar.outcome.as_ref().err()?;
+                    Some((
+                        grammar.label.clone(),
+                        (grammar.files, error.message.clone()),
+                    ))
+                })
+                .collect(),
+        }
+    }
+
+    /// Whether a file read with `parser` is of a grammar the query does not
+    /// apply to.
+    fn covers(&self, parser: &str) -> bool {
+        octocode_engine::signatures::languages::find_entry(parser).is_some_and(|entry| {
+            self.languages
+                .contains_key(&octocode_engine::signatures::languages::label(entry))
+        })
+    }
+
+    /// The warning that names each language with its file count and reason.
+    fn notice(&self) -> Option<String> {
+        if self.languages.is_empty() {
+            return None;
+        }
+        let names = self
+            .languages
+            .iter()
+            .map(|(language, (files, reason))| {
+                let plural = if *files == 1 { "" } else { "s" };
+                format!("{language} ({files} file{plural}: {reason})")
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        Some(format!(
+            "The query does not apply to {names}: it does not compile in that grammar, so those files cannot match it. The files of the other grammars were searched; set language to search one grammar."
+        ))
+    }
+}
+
 /// The one grammar a directory scan without `language` read, from the
 /// census of its own walk (no second walk): `None` when it read several (or
 /// one the query does not compile in). A first window whose files are all
@@ -735,15 +862,22 @@ fn infer_grammar(
     q: MatchQuery<'_>,
     scope: &Scope,
     scan: &Scan,
+    grammars: &[GrammarCompile],
 ) -> Result<Option<String>, ToolError> {
     if scope.is_file || scope.language.is_some() {
         return Ok(None);
     }
-    let (pattern, rule) = (q.pattern(), q.rule());
-    let present = crate::tools::ast_rule::rank_grammars(scan.census.clone());
-    match choose_grammar(present.into_iter(), |_, extensions| {
-        compile_check(extensions, pattern.as_deref(), rule.as_deref())
-    }) {
+    match choose_grammar(
+        grammars
+            .iter()
+            .map(|grammar| (grammar.label.clone(), grammar.extensions.clone())),
+        |language, _| {
+            grammars
+                .iter()
+                .find(|grammar| grammar.label == language)
+                .map_or(Ok(()), |grammar| grammar.outcome.clone())
+        },
+    ) {
         GrammarChoice::One(language) => Ok(Some(language)),
         GrammarChoice::Several(_) | GrammarChoice::Invalid(_) => Ok(None),
         // A walk that admitted no file at all, or withheld some, names no
@@ -881,9 +1015,11 @@ fn scan_file(
     Ok(Scan {
         files: vec![ScannedFile {
             path: super::display_name(canonical),
+            parser: String::new(),
             matches: FileMatches::Held(r.matches),
             diagnostics: r.diagnostics,
             status: r.status,
+            recovered: r.recovered,
             source: None,
         }],
         sources: vec![canonical.clone()],
@@ -935,7 +1071,7 @@ fn scan_directory(
             || scope.parsers.extension(path).is_some()
     };
     let grammars = structural_extensions();
-    let unparsed = std::sync::Mutex::new(Unparsed::default());
+    let unparsed = std::sync::Mutex::new(NamedFiles::default());
     let observed = std::sync::Mutex::new(std::collections::BTreeSet::new());
     let ignore_rules = q.include_ignored() != Some(true);
     let external_rules = std::sync::Mutex::new(if ignore_rules {
@@ -947,6 +1083,7 @@ fn scan_directory(
     });
     let untracked_ignore_dependencies = std::sync::atomic::AtomicBool::new(false);
     let census = std::sync::Mutex::new(std::collections::BTreeMap::<String, usize>::new());
+    let counted = std::sync::Mutex::new(std::collections::HashSet::<std::path::PathBuf>::new());
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let discovery = paths.discovery_walk();
     let price = |m: &StructuralDetailedMatch| match_price(q, m);
@@ -1018,9 +1155,15 @@ fn scan_directory(
                     .record(path, is_dir);
             }
             let unparsed_file = !parses(path) && path.is_file();
-            // A file no grammar parses is disclosed, not silently dropped; one
-            // only `language` leaves out has a grammar and is the caller's choice.
-            if allowed && unparsed_file && !has_extension_in(path, &grammars) {
+            // A file no grammar parses is disclosed, not silently dropped, when
+            // the scope is every grammar's files. Under `language` the scope is
+            // that language's files: a file of any other kind (a grammar's own
+            // or none) was never in it, so it is not skipped evidence.
+            if allowed
+                && unparsed_file
+                && scope.language.is_none()
+                && !has_extension_in(path, &grammars)
+            {
                 // Named as a row path reads after the response stage: from
                 // the workspace root, else absolute.
                 unparsed
@@ -1033,7 +1176,15 @@ fn scan_directory(
                     );
             }
             let admitted = allowed && !unparsed_file;
-            if admitted && scope.language.is_none() && path.is_file() {
+            // The engine asks again for each file it reads: count a path once.
+            if admitted
+                && scope.language.is_none()
+                && path.is_file()
+                && counted
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .insert(path.to_path_buf())
+            {
                 let extension = scope.parsers.extension(path).map_or_else(
                     || octocode_engine::text::extension_of(&path.to_string_lossy(), true, ""),
                     str::to_owned,
@@ -1091,12 +1242,14 @@ fn scan_directory(
             .into_iter()
             .map(|f| ScannedFile {
                 path: match_display_path(&scope.canonical, &f.path),
+                parser: parser_extension(scope, std::path::Path::new(&f.path)),
                 source: f
                     .source_sha256
                     .map(|digest| (std::path::PathBuf::from(&f.path), digest)),
                 matches: f.matches,
                 diagnostics: f.diagnostics,
                 status: f.status,
+                recovered: f.recovered,
             })
             .collect(),
         truncated: r.scan_truncated,
@@ -1257,18 +1410,30 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> String {
     ]))
 }
 
-fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Grouped {
+fn group_files(
+    q: MatchQuery<'_>,
+    files: &[ScannedFile],
+    budget: usize,
+    inapplicable: &Inapplicable,
+) -> Grouped {
     let mut grouped = Grouped::default();
     let file_list = file_list(q);
     let content_length = content_length(q);
     for (index, file) in files.iter().enumerate() {
         let ScannedFile {
             path,
+            parser,
             matches,
             diagnostics,
             status,
+            recovered,
             ..
         } = file;
+        // A file of a grammar the query does not parse in is outside what it
+        // applies to (named once in the notice), not a compile failure.
+        let outside = status != "ok"
+            && diagnostics.iter().any(is_compile_failure)
+            && inapplicable.covers(parser);
         match status.as_str() {
             "ok" => {
                 grouped.parsed_files += 1;
@@ -1280,14 +1445,9 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Group
                 grouped.scanned_files += 1;
                 grouped.first_scanned.get_or_insert_with(|| path.clone());
             }
+            _ if outside => {}
             _ => {
-                if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
-                    matches!(
-                        diagnostic.code.as_str(),
-                        "structural.query.compileFailed"
-                            | octocode_engine::structural::RULE_INVALID
-                    )
-                }) {
+                if let Some(diagnostic) = diagnostics.iter().find(|d| is_compile_failure(d)) {
                     grouped.compile_failed_files += 1;
                     grouped.compile_error.get_or_insert_with(|| {
                         ToolError::new(
@@ -1305,6 +1465,9 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Group
                     grouped.unevaluated_files += 1;
                 }
             }
+        }
+        if *recovered {
+            grouped.recovered.record(path.clone());
         }
         let total = matches.len();
         if total > 0 {
@@ -1327,7 +1490,7 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Group
                 _ => listed_file(q, path.clone(), total),
             });
         }
-        if status != "ok" || !diagnostics.is_empty() {
+        if !outside && (status != "ok" || !diagnostics.is_empty()) {
             // A literal prefilter can skip thousands of files. Preserve the
             // coverage fact once instead of one identical diagnostic for
             // every skipped path.
@@ -1600,7 +1763,7 @@ fn render_match_page(
     scan: &Scan,
     grouped: Grouped,
     snapshot: &str,
-    empty_scope: EmptyScope,
+    gaps: ScopeGaps,
     budget: usize,
 ) -> Value {
     let truncated = scan.truncated;
@@ -1627,7 +1790,14 @@ fn render_match_page(
     // Withheld entries are disclosed once, like localSearch's walk.
     let withheld = scan.withheld.notice();
     crate::tools::paging::push_warnings(&mut out, withheld.clone());
-    crate::tools::paging::push_warnings(&mut out, scan.unparsed.notice());
+    crate::tools::paging::push_warnings(&mut out, unparsed_notice(&scan.unparsed));
+    crate::tools::paging::push_warnings(&mut out, grouped.inapplicable_notice.clone());
+    crate::tools::paging::push_warnings(&mut out, recovered_notice(&grouped.recovered));
+    // An empty page explains itself, skipped walks included; the matches of
+    // a page that has some are those of the walk the defaults left, so the
+    // skipped files of the grammar are named once, beside them, with their
+    // lead.
+    let mut include_skipped = None;
     if groups.is_empty() {
         explain_empty(
             q,
@@ -1638,19 +1808,28 @@ fn render_match_page(
                 scanned: grouped.scanned_files,
                 diagnosed: !diagnostics.is_empty(),
             },
-            empty_scope,
+            gaps,
         );
+    } else if let Some(skipped) = gaps.skipped {
+        let language = scope.language.as_deref().or(scope.inferred.as_deref());
+        crate::tools::paging::push_warnings(&mut out, [skipped.notice(language)]);
+        include_skipped = Some(skipped.lead);
     }
     let skips = scan.skips;
     let skipped = skips.0 + skips.1 + skips.2 > 0 || grouped.skipped_files > 0;
-    let incomplete =
-        truncated || skipped || grouped.compile_failed_files > 0 || grouped.unevaluated_files > 0;
+    let recovered = grouped.recovered.count > 0;
+    let incomplete = truncated
+        || skipped
+        || recovered
+        || grouped.compile_failed_files > 0
+        || grouped.unevaluated_files > 0;
     let more_matches = page_groups.iter().any(|group| group.more_matches);
     // Each coverage cut names itself, so a partial final page (no `next`)
     // still says why it is partial.
     for (cut, reason) in [
         (truncated, super::scan_window::cut_reason(q.max_files())),
         (skipped, "filesSkipped"),
+        (recovered, "parseRecovered"),
         (grouped.compile_failed_files > 0, "compileFailed"),
         (grouped.unevaluated_files > 0, "filesUnevaluated"),
         // A file's later match pages (`next.nextMatchPage`): the row's own
@@ -1684,6 +1863,10 @@ fn render_match_page(
     );
     if grouped.compile_failed_files > 0 {
         compile_failed_end(q, scope, &mut out, snapshot);
+    }
+    // After the page leads, which replace `next`.
+    if let Some(lead) = include_skipped {
+        out["next"]["includeSkipped"] = lead;
     }
     // `complete` tells a reader the row's pages are drill-downs; a row with
     // no page needs no such note.
@@ -1811,27 +1994,23 @@ fn explain_empty(
     scope: &Scope,
     out: &mut Value,
     facts: EmptyFacts,
-    empty_scope: EmptyScope,
+    gaps: ScopeGaps,
 ) {
     if facts.parsed == 0 && !facts.diagnosed {
         let language = q
             .language()
             .map_or_else(String::new, |language| format!(" {language}"));
         let mut hint = format!("No{language} file under this path was parsed.");
-        if let Some(skipped) = empty_scope.skipped {
-            let subject = match language.trim_start() {
-                "" => "Files".to_owned(),
-                language => format!("{language} files"),
-            };
-            hint.push_str(&format!(
-                " {subject} were skipped as {} ({}); the lead includes them.",
-                skipped.labels, skipped.because
-            ));
+        if let Some(skipped) = gaps.skipped {
+            hint.push(' ');
+            hint.push_str(
+                &skipped.notice(Some(language.trim_start()).filter(|name| !name.is_empty())),
+            );
             out["next"]["includeSkipped"] = skipped.lead;
         }
         out["hints"] = json!([hint]);
         // The grammars the scope does hold, each a query that runs.
-        if let Some(repair) = empty_scope.repair {
+        if let Some(repair) = gaps.repair {
             out["next"]["repair"] = repair;
         }
     } else if facts.scanned > 0 {
@@ -1844,15 +2023,8 @@ fn explain_empty(
             facts.scanned,
             language.as_deref(),
         )];
-        if let Some(skipped) = empty_scope.skipped {
-            let subject = language.as_deref().map_or_else(
-                || "Files".to_owned(),
-                |language| format!("{language} files"),
-            );
-            hints.push(format!(
-                "{subject} were skipped as {} ({}); the lead includes them.",
-                skipped.labels, skipped.because
-            ));
+        if let Some(skipped) = gaps.skipped {
+            hints.push(skipped.notice(language.as_deref()));
             out["next"]["includeSkipped"] = skipped.lead;
         }
         out["hints"] = json!(hints);
@@ -2243,11 +2415,11 @@ fn continuation_with(q: MatchQuery<'_>, changes: Value, snapshot: &str) -> Value
         .build()
 }
 
-/// What an empty directory scan can still offer: the other grammars the scope
-/// holds, and the walk flags that were off while files of the requested
-/// grammar sat behind them.
+/// What a directory scan can still offer beside its answer: the other
+/// grammars the scope holds (an empty scan only), and the walk flags that
+/// were off while files of the requested grammar sat behind them.
 #[derive(Default)]
-struct EmptyScope {
+struct ScopeGaps {
     repair: Option<Value>,
     skipped: Option<SkippedWalk>,
 }
@@ -2260,7 +2432,19 @@ struct SkippedWalk {
     lead: Value,
 }
 
-impl EmptyScope {
+impl SkippedWalk {
+    /// What was skipped and that the lead includes it; `language` names the
+    /// grammar of the skipped files, when the scan has one.
+    fn notice(&self, language: Option<&str>) -> String {
+        let subject = language.map_or_else(|| "Files".to_owned(), |name| format!("{name} files"));
+        format!(
+            "{subject} were skipped as {} ({}); the lead includes them.",
+            self.labels, self.because
+        )
+    }
+}
+
+impl ScopeGaps {
     fn of(
         q: MatchQuery<'_>,
         scope: &Scope,
@@ -2273,8 +2457,8 @@ impl EmptyScope {
         }
     }
 
-    /// An empty scan with no other language to offer (it parsed files, or
-    /// no `language` was set): only the skipped walks, no repair.
+    /// A scan with no other language to offer (it found matches, it parsed
+    /// files, or no `language` was set): only the skipped walks, no repair.
     fn beside_parsed(
         q: MatchQuery<'_>,
         scope: &Scope,
@@ -2612,9 +2796,11 @@ mod interrupted_rescan_tests {
         let q = MatchQuery::Pattern(&query);
         let file = |diagnostics, status: &str| ScannedFile {
             path: "a.min.js".to_owned(),
+            parser: String::new(),
             matches: FileMatches::Held(vec![]),
             diagnostics,
             status: status.to_owned(),
+            recovered: false,
             source: None,
         };
         let cut = Scan {

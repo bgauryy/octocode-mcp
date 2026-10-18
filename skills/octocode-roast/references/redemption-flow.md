@@ -4,7 +4,13 @@ Load when fixes are wanted or offered after the autopsy.
 
 ## Checkpoint
 
-- Critique-only request: offer options; apply nothing.
+| Request | Action |
+|---|---|
+| Critique-only | Decision request below; apply nothing |
+| Fixes already authorized | Map them to findings; proceed in scope |
+| Fixes offered | Decision request below; await a selection |
+
+Decision request: options are the rows (finding, smallest safe fix, severity); recommendation: the fix order shown below; default if no answer: apply nothing.
 
 ```text
 Redemption options
@@ -16,8 +22,6 @@ Rows in fix order; #1 = do now.
 
 Choose: numbers, a category, all, more critique, or stop.
 ```
-
-- Fixes already authorized: map them to findings, proceed in scope; else await a selection.
 
 ## Execute selected repairs
 

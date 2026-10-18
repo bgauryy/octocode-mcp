@@ -71,7 +71,15 @@ Load when the source or task is known: local checkout, remote repository or pack
 ### Local and remote together
 
 - Local → upstream: resolve the local version or error anchor; confirm local callers and config before claiming an upstream fix applies.
-- Remote → local, smallest first: one read: `ghGetFileContent`; a directory: `ghStructure` (`materialize` small sets, then `localSearch` at `location.localPath`); repeated subtree reads: `ghCloneRepo` + `path` (path or list; availability in [octocode](octocode.md)); repo-wide graph or LSP: full clone.
+- Remote → local, smallest first:
+
+| Need | Use |
+|---|---|
+| One read | `ghGetFileContent` |
+| A directory | `ghStructure` (`materialize` small sets, then `localSearch` at `location.localPath`) |
+| Repeated subtree reads | `ghCloneRepo` + `path` (path or list; availability in [octocode](octocode.md)) |
+| Repo-wide graph or LSP | full clone |
+
 - A sparse clone proves nothing about omitted paths; shallow history (`historyDepth`, default 1) is not full history.
 - Work in `location.localPath` (or `exploreClone` in `hints`); keep the resolved ref and `commitSha`; `forceRefresh` when currency matters.
 
@@ -79,10 +87,17 @@ Load when the source or task is known: local checkout, remote repository or pack
 
 ### Behavior change: RED, GREEN, REFACTOR
 
-1. Name the contract, trigger, consumers, and smallest behavior boundary.
-2. Write or find a regression or acceptance check; see it fail before the patch (intended failure, not broken setup).
-3. Smallest coherent change; rerun the same check to green; refactor within scope while green.
-4. Verify per the lobby (rebuild CLI/MCP first after a tool or package change).
+```mermaid
+flowchart LR
+  N[Name contract, trigger, consumers, smallest behavior boundary] --> K[Write or find a regression or acceptance check]
+  K --> F{Fails before the patch for the intended reason?}
+  F -- no, broken setup --> K
+  F -- yes --> P[Smallest coherent change]
+  P --> G{Same check green?}
+  G -- no --> P
+  G -- yes --> R[Refactor within scope while green]
+  R --> V[Verify per the lobby: rebuild CLI/MCP first after a tool or package change]
+```
 
 - Enhancement: freeze baseline and target first. Trivial reversible edit: a direct check; skip a test that mirrors its text.
 - Before patching, read exact source and local patterns; graph/LSP impact when imports or symbols cross boundaries.
@@ -90,13 +105,25 @@ Load when the source or task is known: local checkout, remote repository or pack
 
 ### Refactor: SKELETON, CONTRACTS, BLAST, EXECUTE, VERIFY
 
-Size: S = up to 3 files or one symbol; M = one package; L = cross-package. Scale execution, never evidence quality.
+```mermaid
+flowchart LR
+  S[Skeleton] --> C[Contracts] --> B[Blast] --> E[Execute big to small]
+  E --> D{Re-run discovery after each batch: unplanned hits?}
+  D -- yes --> B
+  D -- no --> V[Verify by size]
+```
 
-1. Skeleton: structure, graph dependencies/dependents, symbols on entry points and move targets.
-2. Contracts: behavior to preserve; interfaces authorized to change.
-3. Blast: graph dependents/path/cycles + LSP references/callers + text/AST across code, tests, scripts, configs, docs.
-4. Execute big to small: real moves (not copies), path literals from a proven hit list, renames via semantic identity. Re-run discovery after each batch; unplanned hits: back to Blast.
-5. Verify by size: S targeted check · M package test + typecheck + lint · L graph dependents/cycles, root build, final search for old names.
+- Skeleton: structure, graph dependencies/dependents, symbols on entry points and move targets.
+- Contracts: behavior to preserve; interfaces authorized to change.
+- Blast: graph dependents/path/cycles + LSP references/callers + text/AST across code, tests, scripts, configs, docs.
+- Execute: real moves (not copies), path literals from a proven hit list, renames via semantic identity.
+- Verify by size; scale execution, never evidence quality:
+
+| Size | Scope | Verify |
+|---|---|---|
+| S | up to 3 files or one symbol | targeted check |
+| M | one package | package test + typecheck + lint |
+| L | cross-package | graph dependents/cycles, root build, final search for old names |
 
 Report per [output](../output.md#response).
 
@@ -104,7 +131,14 @@ Report per [output](../output.md#response).
 
 Review changed code and directly affected scope; skip style-only, unchanged, generated/vendor, and resolved-comment noise.
 
-- Modes: PR number/URL or a branch with a PR → remote; file path without PR → file + direct imports/exports + one-hop consumers; "my changes" or staged/unstaged → local (`git status`, scoped diff, `git diff HEAD` combined); ambiguous → ask.
+Mode by input:
+
+| Input | Mode |
+|---|---|
+| PR number/URL, or a branch with a PR | remote |
+| File path without PR | file + direct imports/exports + one-hop consumers |
+| "my changes" or staged/unstaged | local (`git status`, scoped diff, `git diff HEAD` combined) |
+| Ambiguous | ask |
 
 ### Gather
 

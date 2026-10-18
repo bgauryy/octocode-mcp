@@ -91,6 +91,7 @@ fn a_priced_scan_pages_exactly_as_a_held_scan() {
                 let (source, digest) = file.source.clone().expect("scanned source");
                 ScannedFile {
                     path: file.path.clone(),
+                    parser: file.parser.clone(),
                     matches: FileMatches::Held(
                         match octocode_engine::structural::file_matches(
                             &source,
@@ -108,11 +109,16 @@ fn a_priced_scan_pages_exactly_as_a_held_scan() {
                     ),
                     diagnostics: file.diagnostics.clone(),
                     status: file.status.clone(),
+                    recovered: file.recovered,
                     source: None,
                 }
             })
             .collect::<Vec<_>>();
-        let pages = file_page(q, &group_files(q, &priced.files, budget).groups, budget);
+        let pages = file_page(
+            q,
+            &group_files(q, &priced.files, budget, &Inapplicable::default()).groups,
+            budget,
+        );
         let file_pages = match pages.pagination["totalPages"].as_u64() {
             Some(total) => total as u32,
             None => 1,
@@ -124,8 +130,9 @@ fn a_priced_scan_pages_exactly_as_a_held_scan() {
                 cursor["matchPage"] = json!(match_page);
                 let query = typed(cursor);
                 let q = MatchQuery::Pattern(&query);
-                let mut from_prices = group_files(q, &priced.files, budget);
-                let expected = group_files(q, &held, budget);
+                let mut from_prices =
+                    group_files(q, &priced.files, budget, &Inapplicable::default());
+                let expected = group_files(q, &held, budget, &Inapplicable::default());
                 let window = file_page(q, &from_prices.groups, budget).window;
                 assert_eq!(window, file_page(q, &expected.groups, budget).window);
                 assert!(
@@ -175,7 +182,7 @@ fn a_priced_file_edited_after_its_scan_rebuilds_no_page() {
     let q = MatchQuery::Pattern(&query);
     let (scope, scan) = scan_of(q, &paths);
     let budget = 100_000;
-    let mut grouped = group_files(q, &scan.files, budget);
+    let mut grouped = group_files(q, &scan.files, budget, &Inapplicable::default());
     let window = file_page(q, &grouped.groups, budget).window;
     std::fs::write(root.0.join("src/f0.rs"), "fn z() {}\n").expect("edit");
     assert!(rebuild_page(q, &scope, &scan.files, &mut grouped.groups[window], budget).is_err());
@@ -198,7 +205,7 @@ fn a_priced_file_whose_match_does_not_finish_is_shown_unevaluated() {
     let renamed = source.with_extension("unparsed");
     std::fs::copy(&source, &renamed).expect("same bytes");
     scan.files[0].source = Some((renamed, digest));
-    let mut grouped = group_files(q, &scan.files, budget);
+    let mut grouped = group_files(q, &scan.files, budget, &Inapplicable::default());
     let window = file_page(q, &grouped.groups, budget).window;
     assert!(window.contains(&0) && window.len() > 1, "{window:?}");
     let Ok(incomplete) = rebuild_page(

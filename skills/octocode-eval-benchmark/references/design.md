@@ -42,7 +42,9 @@ Fields: **goal**; **subject** (mutable surface, baseline and candidate versions)
 
 ## Verdict
 
-- **Accept**: valid, comparable sealed evidence meets the effect and uncertainty rule and every critical guardrail.
-- **Revert**: a valid comparison fails the rule or breaches a guardrail.
-- **Inconclusive**: uncertainty or coverage cannot decide; proves nothing. Collect more only under the plan, or start a new experiment.
-- **Invalid**: leakage, changed harness, or environment mismatch; proves nothing. Repair and rebaseline.
+| Verdict | When | Then |
+|---|---|---|
+| Accept | valid, comparable sealed evidence meets the effect and uncertainty rule and every critical guardrail | — |
+| Revert | a valid comparison fails the rule or breaches a guardrail | — |
+| Inconclusive | uncertainty or coverage cannot decide; proves nothing | collect more only under the plan, or start a new experiment |
+| Invalid | leakage, changed harness, or environment mismatch; proves nothing | repair and rebaseline |

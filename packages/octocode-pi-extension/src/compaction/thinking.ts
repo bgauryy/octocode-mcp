@@ -1,4 +1,3 @@
-import { clearedResults } from '../files/reads.js';
 import { isRecord } from '../shared/util.js';
 import { applyClearedResults } from './clearing.js';
 
@@ -48,11 +47,11 @@ export function stripStaleThinking<T>(messages: T[]): T[] {
 }
 
 /**
- * What Octocode's `context` handler changes in every request to `model`: the results cleared on `branch` as their
- * placeholders, and no stale thinking. The cache-shared summary replays it, so its prefix is the one the cache holds.
+ * What Octocode's `context` handler changes in every request to `model`: the results in `cleared` (the session branch's,
+ * `sessionCleared`) as their placeholders, and no stale thinking. The cache-shared summary replays it, so its prefix is the one the cache holds.
  * The same list when nothing changes.
  */
-export function requestMessages<T>(messages: T[], model: unknown, branch: readonly unknown[]): T[] {
-  const cleared = applyClearedResults(messages, clearedResults(branch));
-  return bindsThinkingToPrefix(model) ? stripStaleThinking(cleared) : cleared;
+export function requestMessages<T>(messages: T[], model: unknown, cleared: ReadonlyMap<string, string>): T[] {
+  const replaced = applyClearedResults(messages, cleared);
+  return bindsThinkingToPrefix(model) ? stripStaleThinking(replaced) : replaced;
 }

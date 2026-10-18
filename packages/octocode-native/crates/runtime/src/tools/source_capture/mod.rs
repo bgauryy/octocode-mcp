@@ -161,13 +161,17 @@ fn read_page(
     let prepared = prepare_source(id, row, dispatcher)?;
     let tool = id.as_str();
     context.check().map_err(|stop| {
+        let (code, hint) = match stop {
+            crate::runtime::ExecutionError::Timeout => (
+                "timeout",
+                "Retry with more time, or supply the source text as state.",
+            ),
+            _ => ("cancelled", crate::response::rows::CANCELLED_HINT),
+        };
         failure(
-            match stop {
-                crate::runtime::ExecutionError::Timeout => "timeout",
-                _ => "cancelled",
-            },
+            code,
             "The call stopped before its source was captured.",
-            "Retry only if the judgment is still needed.",
+            hint,
         )
     })?;
     let result = dispatcher.execute(id, &prepared, context).map_err(|stop| {

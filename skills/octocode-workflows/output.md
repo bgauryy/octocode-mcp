@@ -4,9 +4,11 @@ Return task content, not a worker roster or transcript. A domain owner's output 
 
 ## Response
 
-For workflow selection: primary workflow, why it fits, orchestrator and actor duties, owner skills, next check, and limits.
+Lead with the conclusion (BLUF), then claim–evidence and limits.
 
-For completion: result first; then verified scope, decisive evidence, changed or observed boundary, failed/unverified/stale work, and next action. The orchestrator merges raw actor observations into the sole ledger; do not present a message delivery as verified work.
+For workflow selection: primary workflow, why it fits, orchestrator and actor duties (RACI), owner skills, next check, and limits.
+
+For completion: result and confidence first; then verified scope, decisive evidence, changed or observed boundary, failed/unverified/stale work, and next action. The orchestrator merges raw actor observations into the sole ledger; do not present a message delivery as verified work.
 
 ## Saved report
 
@@ -23,7 +25,7 @@ next: <one next action>
 ---
 ```
 
-Include `## Selection` or `## Completion`, `## Evidence`, and `## Limits`. The ledger may be linked, not copied.
+Include `## Selection` or `## Completion`, `## Evidence`, and `## Limits`. The ledger may be linked, not copied. A saved handoff is a Handoff packet: current state and next action under `## Completion`, evidence anchors under `## Evidence`, blockers and constraints under `## Limits`, and the header's `next`.
 
 Before starting work that may repeat an earlier report, list the saved ones:
 

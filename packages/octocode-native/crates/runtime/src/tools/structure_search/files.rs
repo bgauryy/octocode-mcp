@@ -3,7 +3,7 @@ use crate::contracts::tool_types::DefaultExcludes;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::Walk;
 use crate::tools::id::ToolId;
-use crate::tools::num::{u32_of, u32_of_usize, usize_of};
+use crate::tools::num::{u32_of, usize_of};
 use crate::tools::paging::clamp_page_size;
 use crate::tools::result::ToolError;
 use crate::{
@@ -143,6 +143,23 @@ fn snapshot_identity(
     requested: usize,
 ) -> Value {
     json!([
+        walk_identity(q, root),
+        // Effective (not raw) values: the nextPage continuation injects these
+        // defaults, so the digest must match what the follow-up request carries.
+        q.sort(),
+        q.detail(),
+        requested,
+        q.scan_offset(),
+        q.walk_offset(),
+        q.page_size(),
+    ])
+}
+
+/// What decides the walk a listing runs and what it enters, whatever the
+/// window it cuts (the offsets, the rows and their layout): the walk a
+/// cursor continues.
+fn walk_identity(q: &StructureSearchQueryFiles, root: &std::path::Path) -> Value {
+    json!([
         root.to_string_lossy(),
         q.max_depth(),
         q.min_depth(),
@@ -154,14 +171,6 @@ fn snapshot_identity(
         q.permissions(),
         q.access(),
         q.exclude(),
-        // Effective (not raw) values: the nextPage continuation injects these
-        // defaults, so the digest must match what the follow-up request carries.
-        q.sort(),
-        q.detail(),
-        requested,
-        q.scan_offset(),
-        q.walk_offset(),
-        q.page_size(),
         q.include_ignored,
         q.include_hidden,
         q.default_excludes,
@@ -380,9 +389,17 @@ fn walk_files(
     } else {
         super::max_walk()
     };
+    let resumes = super::Resumes {
+        identity: walk_identity(q, root),
+        paths,
+        root,
+    };
+    let (resume, window_rows) = resumes.options(walking, q.walk_offset(), requested);
     let mut native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
             time_budget: walking.budget(),
+            resume,
+            window_rows,
             ..query_options(q, root, walk_limit)
         },
         &|path, file_type, visit| left.admit(&policy, path, file_type, visit),
@@ -418,6 +435,7 @@ fn walk_files(
     };
     let mut lines = lines;
     let window = super::end_window(&mut native, requested, q.scan_offset(), sort == "path");
+    resumes.keep(&mut native, walking);
     // `end_window` keeps a walk-order prefix: the counts of its entries.
     lines.truncate(native.entries.len());
     // A directory root is the listing itself, never one of its rows.
@@ -874,12 +892,14 @@ fn cut_walk_before(native: &mut octocode_engine::types::FileSystemQueryResult, a
     let Some(first) = native.entries.get(at) else {
         return;
     };
-    native.time_cut = Some(first.relative_path.clone());
-    native.walk_position = first.walk_position.saturating_sub(1);
-    native.entries.truncate(at);
-    // The window ends before the walk's own end, so not at its ceiling.
-    native.was_capped = false;
-    native.total_discovered = u32_of_usize(at);
+    let (relative, before) = (
+        first.relative_path.clone(),
+        first.walk_position.saturating_sub(1),
+    );
+    // The window ends before the walk's own end, so not at its ceiling, and
+    // counts only what it covers.
+    native.end_at(before);
+    native.time_cut = Some(relative);
 }
 
 pub(super) fn line_count(
@@ -1138,6 +1158,7 @@ mod tests {
             pruned_dirs: Vec::new(),
             time_cut: None,
             walk_position: 9,
+            ..Default::default()
         };
         cut_walk_before(&mut native, 1);
         assert_eq!(native.entries.len(), 1);

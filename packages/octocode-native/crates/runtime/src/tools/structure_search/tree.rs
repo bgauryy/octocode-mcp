@@ -257,8 +257,26 @@ fn walk_tree(
         show_hidden,
         filtered: q.filtered(),
     };
+    let resumes = super::Resumes {
+        identity: json!([
+            root.to_string_lossy(),
+            q.walk_depth(),
+            q.include_hidden,
+            q.include_ignored,
+            q.include,
+            q.extensions,
+            q.entry_type.map(|kind| kind.to_string()),
+            q.exclude,
+            q.default_excludes,
+        ]),
+        paths,
+        root,
+    };
+    let (resume, window_rows) = resumes.options(walking, q.walk_offset(), requested);
     let mut native = octocode_engine::portable::query_file_system(
         FileSystemQueryOptions {
+            resume,
+            window_rows,
             path: root.to_string_lossy().into_owned(),
             include_root: Some(false),
             recursive: Some(true),
@@ -282,6 +300,7 @@ fn walk_tree(
     .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
     let window = super::end_window(&mut native, requested, q.scan_offset(), true);
+    resumes.keep(&mut native, walking);
     let rows = tree_rows(&native.entries, security);
     let mut walk = super::Walked::finish(native, rows, requested, q.scan_offset(), left, security);
     walk.meta.time_window = window;

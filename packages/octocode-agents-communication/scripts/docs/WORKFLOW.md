@@ -24,35 +24,37 @@ Renew before expiry: renewal never revives an expired lease, and an expired iden
 
 ## Request, progress, and final answer
 
-`send_message` is an FYI by default (`replyRequired:false`, `wake:"passive"`). A request (a question or task you need answered) sets `replyRequired:true`, which wakes the recipient (`wake:"action"`) and needs an answer through `complete`. Final answers from `complete` wake the asker. A recipient cannot reply to an FYI: if you need an answer, ask again with `replyRequired:true`. A topic request wakes every subscriber, each owing an answer.
+The kind field sets the reply policy ([kinds](../../OPERATING.md#send-and-handle-messages)). `question`, `task`, `decision` and `handoff` are requests: they wake the recipient (`wake:"action"`) and need an answer through `complete`. `blocker` wakes without owing one; `body`, `delta`, `checkback` and `issue` are passive FYIs. Explicit `wake` overrides urgency only. Final answers from `complete` wake the asker. A recipient cannot reply to an FYI: if you need an answer, send a request. A topic request wakes every subscriber, each owing an answer.
 Action schedules handling within the recipient's authorized task; it grants no new objective or permissions.
-A request (`replyRequired:true` or `wake:"action"`) that expires unacknowledged stops being offered for delivery. Submitted context may already have reached the recipient, and work may still be in progress; a late `complete` can acknowledge it and return the final answer. On your next `heartbeat` you receive an action-wake notice `Request N expired before <names> acknowledged it` (once per message, naming the unacknowledged recipients). Inspect `health` and the recipient before deciding whether to send a new request with a new key.
+A request (or any `wake:"action"` message) that expires unacknowledged stops being offered for delivery. Submitted context may already have reached the recipient, and work may still be in progress; a late `complete` can acknowledge it and return the final answer. On your next `heartbeat` you receive an SBAR blocker whose situation reads `Request N expired before <names> acknowledged it` (once per message, naming the unacknowledged recipients); for a `decision` its assessment states that the default applies. Inspect `health` and the recipient before deciding whether to send a new request with a new key.
 
 `Receive → retrieve full body → perform requested work → complete with outcome and reply → sender acknowledges answer`.
 
 ```sh
-agent send_message '{"to":"api-reviewer","body":"Situation: src/api.ts changed the response type. Background: clients pin v2. Assessment: compatibility unverified. Request: review and list risks.","reasoning":"Resolve API review before handoff; done when risks are listed","replyRequired":true,"key":"api-review-1","conversationId":"api-review"}'
+agent send_message '{"to":"api-reviewer","task":{"objective":"Review the src/api.ts response-type change for compatibility","inputs":["src/api.ts","clients pin v2"],"output":"List of risks","done":"Every changed export checked and risks listed","checkBack":true},"reasoning":"Resolve API review before handoff","key":"api-review-1","conversationId":"api-review"}'
 agent inbox
 agent fetch '{"incoming":true,"type":"message","limit":20}'
+# checkBack:true: confirm understanding with the sender before completing done:
+agent send_message '{"to":"coordinator","checkback":{"request":MESSAGE_ID_FROM_DATA,"objective":"Review src/api.ts compatibility","done":"Every changed export checked"},"reasoning":"Confirm the task"}'
 # Use data.messageId from fetch, after checking the requested work:
-agent complete '{"message":MESSAGE_ID_FROM_DATA,"outcome":"done","reply":"Reviewed src/api.ts; no breaking change. Evidence: ..."}'
+agent complete '{"message":MESSAGE_ID_FROM_DATA,"outcome":"done","reply":{"conclusion":"No breaking change","evidence":[{"claim":"Exports unchanged","source":"src/api.ts:42"}],"unknowns":["Client v1 behavior"]}}'
 # Acknowledge handled FYIs and answers without creating another reply:
 agent complete '{"messages":[FYI_ID,ANSWER_ID]}'
 ```
 
 A fetched `{recordId:16,data:{messageId:1,...}}` completes with `message:1`, never `message:16`.
-Progress, including a readback, uses a new send key, the same `conversationId`, and `replyRequired:false`; it neither completes the request nor sets `replyTo`.
+Progress is a `delta` with a new send key and the same `conversationId`; a `checkback` inherits its request's conversation. Neither completes the request nor sets `replyTo`. A `task` with `checkBack:true` refuses `outcome:"done"` until its recipient has sent the check-back.
 Handled FYIs use `{message}` or `{messages:[...]}`; never reply to an FYI automatically.
-`outcome` (done, partial, failed, refused, canceled) needs `message` and `reply`; the reply stays the exact answer and the stored `reasoning` starts with `Outcome: <value>`. Unfinished work or work that needs input stays pending.
+`outcome` (done, partial, failed, refused, canceled) needs `message` and `reply`. The reply is a BLUF: `conclusion` first, then optional claim–evidence, `assumptions`, `unknowns` and `next`; the stored body starts `BLUF\nOutcome: <value>`. `document:NAME` evidence is pinned to the document's sha256. A done `handoff` moves its leases to the recipient; RACI `informed` peers of a task or decision receive the answer as an FYI. Unfinished work or work that needs input stays pending.
 
-## Intent, limits, and retries
+## Purpose, limits, and retries
 
-`reasoning` is intent (purpose and done-when), up to 512 UTF-8 bytes; it is not private reasoning.
-Message bodies allow 16,384 UTF-16 units. Put larger evidence in an immutable document.
+`reasoning` is the purpose, up to 512 UTF-8 bytes; it is not private reasoning.
+Message bodies, including rendered protocol bodies, allow 16,384 UTF-16 units. Put larger evidence in an immutable document.
 Message `ttlMs` ranges from 1 second to 1 day.
-A retry `key` identifies unchanged input. Preserve payload, routing, and branch when retrying.
+An idempotency `key` identifies unchanged input. Preserve payload, routing, and branch when retrying.
 Use a new key for changed content. `conversationId` connects progress and final replies.
-If Pi reports a failed/timed-out send or record, retain its exposed retry key and inspect history; retry unchanged input with that key only when needed.
+If Pi reports a failed/timed-out send or record, retain its exposed idempotency key and inspect history; retry unchanged input with that key only when needed.
 A committed write can produce a later error. A new tool-call ID creates a different automatic key.
 
 ## Topics and shared evidence
@@ -62,6 +64,6 @@ Send `{topic:"api",body,reasoning}` to current subscribers.
 Use `notify_all` for current active peers, excluding the sender.
 Topic and broadcast defaults are passive with no required reply.
 Recipients are fixed at send time. Later joiners receive no old fanout.
-`share_document` accepts up to 1 MiB UTF-8; pass large JSON on stdin with `-`. Names are immutable: choose a new name for a revision. If historical documents share a name, pass `read_document.workspace` (CLI `--origin-workspace`) to select the original worktree; continuations keep that origin. Usage scopes (request, turn, cumulative) are alternatives, never summed; absent counts are unknown, not zero.
+`share_document` accepts up to 1 MiB UTF-8; pass large JSON on stdin with `-`. Names are immutable: choose a new name for a revision; an ADR revision sets `supersedes` to the published document it replaces. Usage scopes (request, turn, cumulative) are alternatives, never summed; absent counts are unknown, not zero.
 
 Command forms: [command reference](COMMANDS.md). Uncertain delivery and backups: [operations](OPERATIONS.md).

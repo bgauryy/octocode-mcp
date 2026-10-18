@@ -465,8 +465,6 @@ pub enum PartialReason {
     /// prefix of the matches.
     #[serde(rename = "regex-match-limit")]
     RegexMatchLimit,
-    #[serde(rename = "streamed-line-size-limit")]
-    StreamedLineSizeLimit,
 }
 
 /// A declaration a `block:true` read widened a hit to: its name, name line
@@ -786,6 +784,45 @@ pub struct SourceFacts {
     /// window): a U+FEFF leading them is text, not the file's byte-order
     /// mark.
     pub interior: bool,
+    /// The bytes are a window of a larger byte view (a streamed source's
+    /// range): where they start in it and its whole size, so a byte page's
+    /// offsets, totals and continuation are the view's.
+    pub byte_origin: Option<ByteOrigin>,
+}
+
+/// A byte window's place in the byte view it was cut from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ByteOrigin {
+    /// The view byte the window's first byte is.
+    pub base: usize,
+    /// The view's size in bytes.
+    pub total: usize,
+}
+
+impl ByteOrigin {
+    /// `q`, a byte read of the view, as the same read of the window.
+    pub(super) fn within(self, q: &LocalFetchQuery) -> LocalFetchQuery {
+        let mut window = q.clone();
+        if window.unit == Some(WindowUnit::Bytes) {
+            let offset = q.offset().unwrap_or(0).saturating_sub(self.base);
+            window.offset = Some(wire_count(offset));
+        }
+        window
+    }
+
+    /// A byte page cut from the window, restated in the view's coordinates:
+    /// its offset, the view's size, and whether (and where) more follows.
+    /// A page that stopped at an oversized line's end resumes by lines, so
+    /// its remainder is the view's whenever the line is not the last.
+    pub(super) fn place(self, page: &mut Pagination) {
+        page.offset += self.base;
+        page.total_bytes = self.total;
+        let end = page.offset + page.length;
+        if page.resume_line.is_none() {
+            page.has_more = end < self.total;
+        }
+        page.next_offset = page.has_more.then_some(end);
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

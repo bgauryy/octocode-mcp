@@ -376,6 +376,7 @@ fn shape(
         window,
         first_page_bytes: None,
         interior: false,
+        byte_origin: None,
     };
     let mut content = if local.clasify_context.is_none() && local.selection.is_none() {
         process_fetched_content(

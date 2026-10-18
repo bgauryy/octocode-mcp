@@ -44,6 +44,10 @@ trait PoolClient: Clone + Send + Sync + 'static {
     /// `timeout` never fails every later call while the server indexes.
     /// Concurrent acquires of the key share this one wait.
     fn resume(&self) -> ClientFuture<()>;
+    /// A project config file the server reads once and never re-reads for a
+    /// document it holds changed under it (see `lsp::project_config`): the
+    /// pool replaces the server when it is idle.
+    fn project_config_changed(&self) -> ClientFuture<bool>;
 }
 
 impl PoolClient for NativeLspClient {
@@ -79,6 +83,11 @@ impl PoolClient for NativeLspClient {
                 client.resume_timed_out_readiness(timeout_ms).await;
             }
         })
+    }
+
+    fn project_config_changed(&self) -> ClientFuture<bool> {
+        let client = self.clone();
+        Box::pin(async move { client.project_config_changed().await })
     }
 }
 
@@ -124,6 +133,17 @@ impl Drop for IdleTimerGuard {
             handle.abort();
         }
     }
+}
+
+/// What [`GenericPool::retire_if_idle`] did with a client whose project
+/// config changed.
+enum Retirement {
+    /// Removed from the pool; the caller stops it and starts a fresh one.
+    Retired,
+    /// A clear or replacement owns the in-flight start now.
+    Superseded,
+    /// In use, or no longer the pooled entry: left as it is.
+    Busy,
 }
 
 struct Entry<C> {
@@ -441,6 +461,26 @@ impl<C: PoolClient> GenericPool<C> {
                     Arc::clone(&inflight),
                 );
                 if client.alive().await {
+                    if client.project_config_changed().await {
+                        match self
+                            .retire_if_idle(&key, &inflight, &client, entry_id)
+                            .await
+                        {
+                            Retirement::Retired => {
+                                cancellation.track_client(client.clone());
+                                client.stop().await;
+                                cancellation.disarm();
+                                return self.finish_start(key, inflight, factory()).await;
+                            }
+                            Retirement::Superseded => {
+                                cancellation.disarm();
+                                return inflight.wait().await;
+                            }
+                            // In use: keep serving it; the next acquire that
+                            // finds it idle replaces it.
+                            Retirement::Busy => {}
+                        }
+                    }
                     client.resume().await;
                     enum Revalidated<C> {
                         Reused(Vec<C>),
@@ -505,6 +545,30 @@ impl<C: PoolClient> GenericPool<C> {
             }
             Action::Start(inflight) => self.finish_start(key, inflight, factory()).await,
         }
+    }
+
+    /// Remove `client` (the entry `entry_id` of `key`) from the pool for
+    /// replacement, unless it is in use. The busy check and the removal share
+    /// the state lock that leasing takes, so no lease can start on a client
+    /// that is being retired.
+    async fn retire_if_idle(
+        &self,
+        key: &str,
+        inflight: &Arc<InFlight<C>>,
+        client: &C,
+        entry_id: u64,
+    ) -> Retirement {
+        let mut state = self.state.lock().await;
+        if !inflight_is_current(&state, key, inflight) {
+            return Retirement::Superseded;
+        }
+        if state.entries.get(key).map(|entry| entry.id) != Some(entry_id) || client.busy() {
+            return Retirement::Busy;
+        }
+        state.entries.remove(key);
+        self.count.store(state.entries.len(), Ordering::SeqCst);
+        remove_lru(&mut state.lru, key);
+        Retirement::Retired
     }
 
     /// [`acquire`](Self::acquire), then lease the client under the state lock
@@ -976,6 +1040,7 @@ mod tests {
         resumes: Arc<AtomicUsize>,
         resume_gate: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
         resident: Arc<AtomicU64>,
+        config_changed: Arc<AtomicBool>,
     }
 
     impl FakeClient {
@@ -990,6 +1055,7 @@ mod tests {
                 resumes: Arc::new(AtomicUsize::new(0)),
                 resume_gate: Arc::new(Mutex::new(None)),
                 resident: Arc::new(AtomicU64::new(0)),
+                config_changed: Arc::new(AtomicBool::new(false)),
             }
         }
 
@@ -1052,6 +1118,11 @@ mod tests {
                     let _ = receiver.await;
                 }
             })
+        }
+
+        fn project_config_changed(&self) -> ClientFuture<bool> {
+            let changed = self.config_changed.load(Ordering::SeqCst);
+            Box::pin(async move { changed })
         }
     }
 
@@ -1474,6 +1545,69 @@ mod tests {
         assert_eq!(a.id, 2);
         assert_eq!(b.id, 2);
         assert_eq!(starts.load(Ordering::SeqCst), 1);
+    }
+
+    /// A server whose project config changed under it keeps the setup it
+    /// first saw, so the pool replaces it, once it is idle.
+    #[tokio::test]
+    async fn a_client_whose_project_config_changed_is_replaced_when_idle() {
+        let pool = pool(4, 60_000);
+        let old = pool
+            .acquire("k".into(), || async { Ok(Some(FakeClient::new(1))) })
+            .await
+            .expect("install")
+            .expect("client");
+        let same = pool
+            .acquire("k".into(), || async { Ok(Some(FakeClient::new(2))) })
+            .await
+            .expect("reuse")
+            .expect("client");
+        assert_eq!(same.id, 1, "unchanged config keeps the pooled server");
+        assert_eq!(old.stops.load(Ordering::SeqCst), 0);
+
+        old.config_changed.store(true, Ordering::SeqCst);
+        let replaced = pool
+            .acquire("k".into(), || async { Ok(Some(FakeClient::new(3))) })
+            .await
+            .expect("replace")
+            .expect("client");
+        assert_eq!(replaced.id, 3);
+        assert_eq!(old.stops.load(Ordering::SeqCst), 1, "old server stopped");
+        assert_eq!(pool.len(), 1);
+        let again = pool
+            .acquire("k".into(), || async { Ok(Some(FakeClient::new(4))) })
+            .await
+            .expect("reuse")
+            .expect("client");
+        assert_eq!(again.id, 3, "the replacement is pooled");
+    }
+
+    #[tokio::test]
+    async fn a_busy_client_is_never_replaced_for_a_config_change() {
+        let pool = pool(4, 60_000);
+        let old = pool
+            .acquire("k".into(), || async { Ok(Some(FakeClient::new(1))) })
+            .await
+            .expect("install")
+            .expect("client");
+        old.config_changed.store(true, Ordering::SeqCst);
+        old.busy.store(true, Ordering::SeqCst);
+        let during = pool
+            .acquire("k".into(), || async { Ok(Some(FakeClient::new(2))) })
+            .await
+            .expect("acquire")
+            .expect("client");
+        assert_eq!(during.id, 1, "in use: keeps serving");
+        assert_eq!(old.stops.load(Ordering::SeqCst), 0);
+
+        old.busy.store(false, Ordering::SeqCst);
+        let after = pool
+            .acquire("k".into(), || async { Ok(Some(FakeClient::new(3))) })
+            .await
+            .expect("acquire")
+            .expect("client");
+        assert_eq!(after.id, 3, "replaced once idle");
+        assert_eq!(old.stops.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test(start_paused = true)]

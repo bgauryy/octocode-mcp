@@ -1,8 +1,6 @@
 //! Hard-cutover shapes, through each tool's real runtime path: one
-//! workspace-relative path form, one name per purpose, and the retired-name
-//! deny-list
-//! (`skills-dev/octocode-dev/scripts/retired-names.json`), checked against
-//! every tool output these tests produce.
+//! workspace-relative path form and one name per purpose; every tool output
+//! these tests produce is checked against the output contract.
 
 use crate::support::{self, Run as _, Workspace};
 use octocode_native::runtime::{ToolOutcome, ToolRuntime};

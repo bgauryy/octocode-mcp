@@ -51,7 +51,7 @@ function senderTool(t, executable=binary) {
  return {workspace,cli,sender,recipient,tool};
 }
 
-test('Pi validation errors retain CLI evidence and retry key without duplicating command flags',async t=>{
+test('Pi validation errors retain CLI evidence and idempotency key without duplicating command flags',async t=>{
  const f=senderTool(t),key=`pi:${createHash('sha256').update('invalid-send').digest('hex')}`;
  await assert.rejects(f.tool.execute('invalid-send',{to:f.recipient,body:'Review',reasoning:''}),error=>{
   assert.match(error.message,/reasoning/);assert.ok(error.message.includes(key));
@@ -60,7 +60,7 @@ test('Pi validation errors retain CLI evidence and retry key without duplicating
  });
 });
 
-test('Pi exposes the same retry key after a committed send times out, preventing duplicate mail',async t=>{
+test('Pi exposes the same idempotency key after a committed send times out, preventing duplicate mail',async t=>{
  const directory=tempWorkspace(t,'communication-pi-postcommit-',{real:true}),shim=join(directory,'delayed.py');
  // The real CLI commits before this fixture stalls its process exit once.
  writeFileSync(shim,`import subprocess,sys,pathlib,time\nresult=subprocess.run([sys.executable,'-B',${JSON.stringify(binary)}]+sys.argv[1:],input=sys.stdin.buffer.read(),capture_output=True)\nsys.stdout.buffer.write(result.stdout);sys.stdout.buffer.flush()\nsys.stderr.buffer.write(result.stderr);sys.stderr.buffer.flush()\nmarker=pathlib.Path(${JSON.stringify(join(directory,'stalled'))})\nif result.returncode==0 and not marker.exists():\n marker.touch();time.sleep(30)\nsys.exit(result.returncode)\n`);

@@ -125,6 +125,7 @@ pub fn execute_local_fetch(
             window,
             first_page_bytes: None,
             interior: false,
+            byte_origin: None,
         },
         security,
         cancel,
@@ -697,6 +698,9 @@ fn cut_page<'a>(
     let head_view = head_query(&q, view.mode, view.text.len());
     let head = head_view.is_some();
     let page_q = head_view.as_ref().unwrap_or(&q);
+    // A byte page of a streamed window is cut at its offset in the window.
+    let in_window = facts.byte_origin.map(|origin| origin.within(page_q));
+    let page_q = in_window.as_ref().unwrap_or(page_q);
     // A transformed view pages in the lines a raw read of the same
     // selection pages in: raw source lines for a whole file (the unit of
     // `totalLines`, the gutter and `ranges`), the extracted lines for
@@ -713,7 +717,12 @@ fn cut_page<'a>(
         line_page_bytes,
         source_lines: source_lines.as_ref(),
     };
-    let scanned = scan_page(&q, &window, source_path, security, source, ext.start)?;
+    let mut scanned = scan_page(&q, &window, source_path, security, source, ext.start)?;
+    if let Some(origin) = facts.byte_origin
+        && scanned.page.pagination.unit == WindowUnit::Bytes
+    {
+        origin.place(&mut scanned.page.pagination);
+    }
     Ok(CutPage {
         q,
         asked,
@@ -1857,7 +1866,7 @@ fn long_line_warning(pages: usize) -> String {
     use crate::tools::id::query_limits::local_fetch::LENGTH_MAXIMUM;
     format!(
         "One line fills this file: {pages} byte pages to read it through. Faster: matchString returns byte windows around each hit \
-         (add contextLines for more), or unit:\"bytes\" with length:{LENGTH_MAXIMUM} walks it in fewer, larger pages."
+         (not with `contextLines:0`), or unit:\"bytes\" with length:{LENGTH_MAXIMUM} walks it in fewer, larger pages."
     )
 }
 

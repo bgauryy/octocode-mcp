@@ -1095,3 +1095,23 @@ fn every_oxc_symbol_kind_is_a_declared_declaration_kind() {
         );
     }
 }
+
+/// A decorator list written before `export` belongs to the class: its range
+/// starts there, and the selection stays on the name.
+#[test]
+fn a_class_range_starts_at_decorators_before_export() {
+    let src = "@Component({})\nexport class C {}\n\n@Injectable()\nexport default class D {}\n";
+    let facts = extract_declarations(src, "a.ts").expect("declarations");
+    let spans: Vec<(&str, u32, u32)> = facts
+        .declarations
+        .iter()
+        .map(|d| {
+            (
+                d.name.as_str(),
+                d.range.start.line,
+                d.selection_range.start.line,
+            )
+        })
+        .collect();
+    assert_eq!(spans, vec![("C", 0, 1), ("D", 3, 4)], "{facts:?}");
+}

@@ -17,7 +17,7 @@ The runtime actor owns a started process and its host process/session lifetime: 
 flowchart LR
   F[Orchestrator frames feature and row] --> R[Runtime actor establishes baseline]
   R --> Q{Baseline meets acceptance?}
-  Q -- yes --> M[Orchestrator accepts existing behavior]
+  Q -- yes --> M
   Q -- no --> C[Code actor proves boundary]
   C --> B[Code actor changes and builds]
   B --> A[Runtime actor activates and asserts identity]
@@ -30,7 +30,7 @@ flowchart LR
   D -- missing prerequisite --> H[Report unverified row]
 ```
 
-1. Agree checkout, baseline including uncommitted work, endpoint, configuration, scenario, build-to-process route, and acceptance condition. Use `octocode-agents-communication` for separate identities, leases, durable requests, and completion.
+1. Agree a Task contract for the feature: inputs (checkout, baseline including uncommitted work, endpoint, configuration, scenario, build-to-process route) and Definition of Done (the acceptance condition). Use `octocode-agents-communication` for separate identities, leases, durable requests, and completion.
 2. Runtime actor captures exact inputs, durable state, expected/actual output, process/build identity, and error/exit evidence through the real interface. If the baseline already meets the acceptance condition, it returns that observation for orchestrator acceptance without an edit. It returns a ledger-row observation, not a verdict.
 3. Code actor owns source research, proven boundary, authorized edit, and build request. It uses Research's exact reads/AST/LSP semantics and Architect's Frame → Model → Prove → Change → Verify, including strongest rival and distinguishing check. It sends only ready build identities and replay instructions.
 4. Runtime actor uses the [identity guard](verification.md#automatically-check-artifact-identity), establishes the actual loaded build, restores required state, and repeats the same acceptance and material edge checks.

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { clearedResults, CLEARED_RESULTS_TYPE, contextMessages, contextReads, plainText, toolCallArguments, type MessageRef } from '../files/reads.js';
+import { CLEARED_RESULTS_TYPE, contextMessages, contextReads, plainText, sessionCleared, toolCallArguments, type MessageRef } from '../files/reads.js';
 import type { FileGuard } from '../files/tool.js';
 import { readOnlyCommand } from '../permission/shell.js';
 import { shortPath } from '../shared/format.js';
@@ -9,7 +9,7 @@ import { isOctocodeTool } from '../shared/octocode-tools.js';
 import { saveContentCopy } from '../shared/spill.js';
 import { CHARS_PER_TOKEN } from '../shared/tokens.js';
 import { isRecord } from '../shared/util.js';
-import { lastCacheUseAt } from './cache.js';
+import { cacheClock } from './cache.js';
 
 /**
  * Clearing old tool results after the prompt cache went cold (the practice of Claude Code's time-based clearing).
@@ -98,11 +98,10 @@ function olderResults(candidates: readonly Candidate[], cleared: ReadonlyMap<str
  */
 export function clearColdResults(pi: Pick<ExtensionAPI, 'appendEntry'>, ctx: ExtensionContext, guard: Pick<FileGuard, 'forget'>, ttlMs: number | undefined, now = Date.now()): void {
   if (ttlMs === undefined) return;
-  const branch = ctx.sessionManager.getBranch();
-  const lastUse = lastCacheUseAt(branch);
+  const lastUse = cacheClock(ctx.sessionManager).useAt;
   if (lastUse === undefined || now - lastUse <= ttlMs) return;
   const messages = contextMessages(ctx);
-  const older = olderResults(clearableResults(messages), clearedResults(branch));
+  const older = olderResults(clearableResults(messages), sessionCleared(ctx.sessionManager));
   if (older.length === 0) return;
   const saved = older.flatMap((candidate) => {
     const file = candidate.saved ?? saveContentCopy(candidate.text, `cleared-${candidate.tool}`);
@@ -112,7 +111,7 @@ export function clearColdResults(pi: Pick<ExtensionAPI, 'appendEntry'>, ctx: Ext
   if (saved.reduce((chars, { candidate }) => chars + candidate.text.length, 0) / CHARS_PER_TOKEN < CLEAR_AT_LEAST_TOKENS) return;
   const results = saved.map(({ candidate, file }) => ({ id: candidate.id, saved: file }));
   // Notes pointing at a result cleared now or earlier take that result's placeholder.
-  const savedOf = new Map([...clearedResults(branch), ...results.map(({ id, saved: file }) => [id, file] as const)]);
+  const savedOf = new Map([...sessionCleared(ctx.sessionManager), ...results.map(({ id, saved: file }) => [id, file] as const)]);
   for (const { message } of messages) {
     if (!isRecord(message) || message['role'] !== 'toolResult') continue;
     const target = noteOf(message);

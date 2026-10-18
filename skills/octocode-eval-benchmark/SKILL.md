@@ -22,7 +22,7 @@ description: "Load this skill first whenever the user asks whether a change, pro
 - Failures, Unknowns, errors, retries, and cost stay in the denominator and report.
 - The deployment instruction is the subject; answer-specific coaching is leakage.
 - `Keep` is provisional, `Discard` not final ([loop](references/loop.md#keepdiscard-loop)); final verdicts: `Accept`, `Revert`, `Inconclusive`, `Invalid` ([verdict](references/design.md#verdict)).
-- After a second Inconclusive or Invalid final run, stop; report the limit and the next measurement needed.
+- Stop condition: a second Inconclusive or Invalid final run; then report the limit and the next measurement needed.
 - Public benchmarks orient; representative private tasks decide ([public benchmarks](references/design.md#public-benchmarks)).
 
 ## Resources

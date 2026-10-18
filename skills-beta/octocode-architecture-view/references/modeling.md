@@ -38,7 +38,7 @@ Load live tool schemas through `octocode-research` before calling a tool.
 - Add actors, stores, and externals with `actor:`, `store:`, and `ext:` ids. Link them with typed edges.
 - Fold noise: `{"id": "<child>", "mergeInto": "<parent>"}` sums files and loc and redirects edges. Use `exclude` globs for fixtures.
 - Remove a false-positive edge or node with `remove: true` (for example, a URL found in a generated contract).
-- Mark a legitimate upward edge (callback, plugin registration, codegen input) with `allowed: true`.
+- When the Hypothesis test in `SKILL.md` dismisses an upward edge as legitimate (callback, plugin registration, codegen input), mark it `allowed: true`.
 
 ## Flows
 
@@ -46,4 +46,4 @@ Pick 3–6 scenarios that explain the system: the main request path, one write t
 
 ## Explanation (`meta.summary`)
 
-Write 3–8 sentences or bullets: what the system does, the main runtime path, how the layers split responsibilities, where state lives, and the top risks. Add `meta.stack` chips. Findings use `confidence`: `confirmed` (exact code read), `likely` (strong structural signal), or `candidate` (heuristic). Only `confirmed` findings should drive action.
+Write 3–8 sentences or bullets: what the system does, the main runtime path, how the layers split responsibilities, where state lives, and the top risks. Add `meta.stack` chips. Findings use `confidence`: `confirmed` (exact code read), `likely` (strong structural signal), or `candidate` (heuristic, until a Hypothesis test confirms it). Only `confirmed` findings should drive action.

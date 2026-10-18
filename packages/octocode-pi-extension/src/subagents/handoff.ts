@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { atomicWriteFileSync } from '../shared/atomic.js';
@@ -119,44 +120,46 @@ export function savePendingReport(dir: string, id: string, report: Report): void
 /**
  * The saved reports, oldest first, each claimed by a rename so two processes never take one. The claim stays until
  * `ReportQueue` delivers the report (deleted) or fails to (renamed back); a report saved twice is delivered once.
+ * Async: the poll for late reports runs every second, and the disk must not block the event loop.
  */
-export function takePendingReports(dir: string): Report[] {
+export async function takePendingReports(dir: string): Promise<Report[]> {
   let names: string[];
   try {
-    releaseDeadClaims(dir, fs.readdirSync(dir), CLAIM_MARKER, (original) => original.endsWith('.json'));
-    names = fs.readdirSync(dir).filter((name) => name.endsWith('.json')).sort();
+    await releaseDeadClaims(dir, await fsp.readdir(dir), CLAIM_MARKER, (original) => original.endsWith('.json'));
+    names = (await fsp.readdir(dir)).filter((name) => name.endsWith('.json')).sort();
   } catch {
     return [];
   }
   const seen = new Set<string>();
-  return names.flatMap((name) => {
+  const taken: Report[] = [];
+  for (const name of names) {
     const file = path.join(dir, name);
     const claim = `${file}${claimSuffix(CLAIM_MARKER)}`;
     try {
-      fs.renameSync(file, claim);
+      await fsp.rename(file, claim);
     } catch {
-      return [];
+      continue;
     }
     try {
-      const report = JSON.parse(fs.readFileSync(claim, 'utf8')) as Report;
+      const report = JSON.parse(await fsp.readFile(claim, 'utf8')) as Report;
       if (report.reportId !== undefined && seen.has(report.reportId)) {
-        fs.rmSync(claim, { force: true });
-        return [];
+        await fsp.rm(claim, { force: true });
+        continue;
       }
       if (report.reportId !== undefined) seen.add(report.reportId);
-      const taken = { ...report, content: `(Arrived after the session restarted) ${report.content}` };
-      claims.set(taken, { claim, file });
-      return [taken];
+      const late = { ...report, content: `(Arrived after the session restarted) ${report.content}` };
+      claims.set(late, { claim, file });
+      taken.push(late);
     } catch {
       // Unreadable: it stays where it was.
       try {
-        fs.renameSync(claim, file);
+        await fsp.rename(claim, file);
       } catch {
         // Gone meanwhile.
       }
-      return [];
     }
-  });
+  }
+  return taken;
 }
 
 /** Most report ids a queue remembers for deduplication. */

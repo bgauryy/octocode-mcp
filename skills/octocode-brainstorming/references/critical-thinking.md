@@ -102,8 +102,16 @@ Premortems, competing hypotheses, and "consider the opposite" surface counterevi
 
 ## Debate: when and how
 
-- Debate only when one contested conclusion decides the recommendation, verified evidence supports both sides, and both agree how evidence would settle it; else skip and report the gap.
-- Write the resolution as one falsifiable sentence plus its settling evidence.
-- Dispatch and judge per the [debater and judge briefs](briefs.md#debater-brief).
+```mermaid
+flowchart TD
+  A{One contested conclusion decides the recommendation?} -- no --> S[Skip debate; report the gap]
+  A -- yes --> B{Verified evidence supports both sides?}
+  B -- no --> S
+  B -- yes --> C{Both sides agree how evidence would settle it?}
+  C -- no --> S
+  C -- yes --> W[Write the resolution: one falsifiable sentence plus its settling evidence] --> D[Dispatch PRO and CON, then judge]
+```
+
+Dispatch and judge per the [debater and judge briefs](briefs.md#debater-brief).
 
 Next: [briefs](briefs.md); report per [output](../output.md).

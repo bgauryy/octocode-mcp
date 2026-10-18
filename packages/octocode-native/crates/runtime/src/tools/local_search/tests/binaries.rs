@@ -479,6 +479,36 @@ fn an_unset_regex_reads_every_text_literally() {
     }
 }
 
+/// The hint is not special to `|`: an empty literal search whose text holds
+/// any regex metacharacter (the general case of an agent meaning a pattern)
+/// warns, and its `findSimilar` lead is a runnable `regex:"rust"` query that
+/// finds the text it was meant for.
+#[test]
+fn an_empty_literal_search_with_any_regex_character_leads_to_a_regex_run() {
+    let files = [("a.txt", "abc\nfoo\nxyz\n123\nzz9\n")];
+    for (text, found) in [
+        ("a.c", 1),
+        ("fo+", 1),
+        ("^xy", 1),
+        ("\\d+", 2),
+        ("[xz]yz?$", 1),
+        ("abc|xyz", 2),
+        ("z{2}", 1),
+    ] {
+        let body = search_fixture(
+            &files,
+            ls_query(serde_json::json!({"matchString": text}), None),
+        );
+        assert_eq!(body["matchedLineCount"], 0, "{text}: {body}");
+        let lead = &body["next"]["findSimilar"];
+        let row = lead.pointer("/query/queries/0").unwrap_or(&lead["query"]);
+        assert_eq!(row["regex"], "rust", "{text}: {body}");
+        assert_eq!(row["matchString"], text, "{text}: {body}");
+        let retried = search_fixture(&files, ls_query(row.clone(), None));
+        assert_eq!(retried["matchedLineCount"], found, "{text}: {retried}");
+    }
+}
+
 /// A literal page with hits whose text reads as an alternation (`a|b`)
 /// warns, with the regex reading as an executable lead, only when one count
 /// of that reading finds more matched lines; an explicit `regex:"literal"`

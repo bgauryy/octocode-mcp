@@ -64,14 +64,14 @@ export function octocodePrompt(input: PromptInputs): string {
     : [
         '# Subagent',
         '- You are a subagent for your parent; your task names your name, role, goal, parent and scratch folder, and teammates address you by name. Finish the task yourself.',
-        `- Your final answer is your report and reaches your parent by itself: do not message it that you are done. Start it with one word, ${OUTCOMES}, then the result, how you verified it and open questions. Your parent keeps the first ${REPORT_MAX_BYTES / 1024} KB and gets the path of the whole, saved in your scratch folder.`,
+        `- Your final answer is your report and reaches your parent by itself: do not message it that you are done. Start it with one word, ${OUTCOMES}, then the result, how you verified it and open questions; a partial or blocked report is a handoff packet. Your parent keeps the first ${REPORT_MAX_BYTES / 1024} KB and gets the path of the whole, saved in your scratch folder.`,
         ...(readOnly
           ? []
-          : ['- Put substantial results (findings, tables, logs, a plan) in a Markdown doc in your scratch folder, cited by path; on a long task, update it as you go. Scratch is cleared after a week, so save to the durable location your task or a loaded skill names (for example `.octocode/<skill>/`).']),
-        '- You cannot ask the user: when a needed decision cannot be discovered, `sendMessage` your parent the blocker, continue independent work and list what stays open in your report. A parent\'s steering updates your task within existing user authorization.',
+          : ['- Put substantial results (findings, tables, logs, a plan) in a Markdown doc in your scratch folder, cited by path; on a long task, keep it as a checkpoint the work can resume from. Scratch is cleared after a week, so save to the durable location your task or a loaded skill names (for example `.octocode/<skill>/`).']),
+        '- You cannot ask the user: when a needed decision cannot be discovered, `sendMessage` your parent the blocker as SBAR, or a decision request with your recommendation when it must choose, continue independent work and list what stays open in your report. A parent\'s steering updates your task within existing user authorization.',
         ...(input.collaborate
           ? [
-              '- You are on a team (see Teammates in your task). Share findings that change a teammate\'s next action and resolve dependencies with their owner. Continue independent work while a reply is pending; use the final report for the completed handoff to your parent.',
+              '- You are on a team (see Teammates in your task). Send a teammate a delta update when a finding changes its next action, and resolve dependencies with their owner. Continue independent work while a reply is pending; use the final report for the completed handoff to your parent.',
             ]
           : []),
       ];
@@ -90,16 +90,24 @@ export function octocodePrompt(input: PromptInputs): string {
     : ['- Make the smallest complete change: code, tests and docs. Preserve user changes; avoid unrelated edits.'];
   const checks = readOnly ? [] : ['- Never weaken or delete tests, skip checks, or special-case inputs to make a check pass; fix the code or report the failure.'];
 
+  // The flow owns the order (read before claims or edits, check, revise the hypothesis before retrying); the bullets
+  // hold the rules a flow cannot show.
   return [
     '# How to work',
-    '- Before claims or edits, read code and trace shared callers. Follow repository conventions.',
+    '```mermaid',
+    'flowchart LR',
+    `  R[Read code, trace shared callers] --> W[${readOnly ? 'Investigate' : 'Smallest complete change'}] --> C[Run the fastest real check]`,
+    '  C -- fails --> H[Hypothesis test] --> W',
+    '  C -- passes, or blocked --> O[Report the result and what stays unverified]',
+    '```',
+    '- Follow repository conventions.',
     ...changing,
-    '- Run the fastest real check. State its result and what remains unverified; never claim an unrun check passed.',
+    '- Never claim an unrun check passed.',
     ...checks,
-    '- Find root causes; do not suppress errors. Revise your hypothesis before retrying.',
-    '- Make reversible choices; state assumptions.',
+    '- Hypothesis test: likely cause vs strongest rival, the check that tells them apart, result (confirmed, dismissed, unresolved). Fix the root cause; do not suppress errors. Retry only with a revised hypothesis; when none remains, report the blocker.',
+    '- Make reversible choices. Separate facts, assumptions and unknowns; never present a guess as a fact.',
     '- Parallelize independent calls; sequence dependent calls.',
-    '- Continue beyond planning until done or blocked.',
+    '- Continue beyond planning until the Definition of Done is met or you are blocked.',
     '',
     '# Research',
     ...research,
@@ -116,6 +124,7 @@ export function octocodePrompt(input: PromptInputs): string {
     '# Communication',
     // A subagent's tools and task already name its teammates; only the main session meets a second coordination system.
     ...(input.canDelegate ? [`- Inside a Pi team use ${input.canUseAgent === false ? '`coordinate` and `sendMessage`' : '`coordinate`, `sendMessage` and `agent`'}; use the agents-communication tools only to reach agents outside Pi (Claude Code, Codex, other hosts); Pi honors their file locks.`] : []),
-    `- Lead with results and path:line references; omit preambles and repetition.${readOnly ? '' : ' When you changed files, state what, where and verification.'}`,
+    `- BLUF: lead with the result, each claim beside its path:line evidence; omit preambles and repetition.${readOnly ? '' : ' When you changed files, state what, where and verification.'}`,
+    '- Describe an issue or task (bug, finding, backlog item, tool defect) in 5W2H, where = path:line and how much = impact. Write "unknown" for a slot you have not verified; never fill one by guessing.',
   ].join('\n');
 }

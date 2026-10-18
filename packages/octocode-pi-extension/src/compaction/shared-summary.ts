@@ -1,5 +1,6 @@
 import { type Api, type Model, type SimpleStreamOptions } from '@earendil-works/pi-ai';
 import { convertToLlm, type CompactionResult, type ExtensionAPI, type ExtensionContext, type SessionBeforeCompactEvent } from '@earendil-works/pi-coding-agent';
+import { sessionCleared } from '../files/reads.js';
 import { CHARS_PER_TOKEN } from '../shared/tokens.js';
 import { clipText, contentText, errorMessage, isRecord } from '../shared/util.js';
 import { requestMessages } from './thinking.js';
@@ -121,7 +122,7 @@ export async function sharedSummary(
     const { preparation } = event;
     const projection = ctx.sessionManager.buildSessionProjection();
     // The projection plus the transform Octocode's own `context` handler applies to every real request.
-    const messages = requestMessages(projection.messages, model, ctx.sessionManager.getBranch());
+    const messages = requestMessages(projection.messages, model, sessionCleared(ctx.sessionManager));
     const prompt = [SHARED_SUMMARY_PROMPT, boundaryNote(projection.entries, preparation.firstKeptEntryId), preparation.previousSummary === undefined ? '' : PREVIOUS_SUMMARY_NOTE, `Additional focus:\n${instructions}`].filter(Boolean).join('\n\n');
     const cap = summaryCapTokens(model, preparation.settings.reserveTokens);
     const level = pi.getThinkingLevel();

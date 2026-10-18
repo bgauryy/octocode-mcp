@@ -170,7 +170,7 @@ fn stopped(stop: BudgetStop) -> ClassificationError {
         BudgetStop::Cancelled => failure(
             "cancelled",
             "The call stopped before its page was fetched.",
-            "Retry only if the judgment is still needed.",
+            crate::response::rows::CANCELLED_HINT,
         ),
     }
 }

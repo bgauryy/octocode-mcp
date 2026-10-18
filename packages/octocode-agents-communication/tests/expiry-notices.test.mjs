@@ -11,18 +11,18 @@ function fixture(t) {
   const join_ = name => call('join', { name, vendor: 'generic' }).id;
   const db = new DatabaseSync(database); t.after(() => db.close());
   const expire = id => db.prepare('UPDATE messages SET expiresAt=1 WHERE id=?').run(id);
-  const notices = session => call('inbox', {}, session).items.filter(item => /^Request \d+ expired/.test(item.body));
+  const notices = session => call('inbox', {}, session).items.filter(item => item.kind === 'blocker' && /^SBAR\nSituation: Request \d+ expired/.test(item.body));
   return { call, join: join_, db, expire, notices };
 }
 
 test('an action message that expires unhandled notifies its sender once', t => {
   const f = fixture(t), alice = f.join('alice'), bob = f.join('bob');
-  const sent = f.call('send_message', { to: bob, body: 'Please review', wake: 'action', replyRequired: true, ttlMs: 1000 }, alice);
+  const sent = f.call('send_message', { to: bob, question: 'Please review', wake: 'action', ttlMs: 1000 }, alice);
   assert.deepEqual(f.notices(alice), [], 'nothing before expiry');
   f.expire(sent.id);
   f.call('heartbeat', {}, alice);
   const [notice] = f.notices(alice);
-  assert.match(notice.body, new RegExp(`^Request ${sent.id} expired before bob acknowledged it`));
+  assert.match(notice.body, new RegExp(`^SBAR\nSituation: Request ${sent.id} expired before bob acknowledged it`));
   assert.equal(notice.wake, 'action');
   assert.equal(notice.replyRequired, false);
   assert.deepEqual(f.call('inbox', {}, bob).items, [], 'the expired request itself is never delivered');
@@ -47,7 +47,7 @@ test('the notice names every recipient that never acknowledged', t => {
 test('expiry after host submission reports unconfirmed handling and preserves a late answer', t => {
   const f = fixture(t), alice = f.join('alice'), bob = f.join('bob');
   f.call('attach', { transport: 'raw' }, bob);
-  const sent = f.call('send_message', { to: bob, body: 'Please review', replyRequired: true }, alice);
+  const sent = f.call('send_message', { to: bob, question: 'Please review' }, alice);
   const delivered = f.call('hook', { format: 'json' }, bob);
   assert.deepEqual(delivered.items, [{ id: sent.id }]);
   assert.equal(f.db.prepare('SELECT state FROM dispatches WHERE message=? AND recipient=?').get(sent.id, bob).state, 'submitted');
@@ -58,7 +58,7 @@ test('expiry after host submission reports unconfirmed handling and preserves a 
   assert.match(notice.body, /inspect.*recipient/i);
   assert.doesNotMatch(notice.body, /never handled|never delivered/i);
   assert.deepEqual(f.call('hook', { format: 'json' }, bob).items, [], 'expiry does not replay submitted context');
-  const reply = f.call('complete', { message: sent.id, outcome: 'done', reply: 'Reviewed before expiry; completion arrived later.' }, bob);
+  const reply = f.call('complete', { message: sent.id, outcome: 'done', reply:{conclusion:'Reviewed before expiry; completion arrived later.'} }, bob);
   assert.equal(f.call('inbox', {}, alice).items.find(item => item.id === reply.id).replyTo, sent.id);
   f.call('heartbeat', {}, alice);
   assert.equal(f.notices(alice).length, 1, 'late completion creates no second notice');
@@ -66,14 +66,14 @@ test('expiry after host submission reports unconfirmed handling and preserves a 
 
 test('handled, passive and self-addressed messages stay silent', t => {
   const f = fixture(t), alice = f.join('alice'), bob = f.join('bob');
-  const handled = f.call('send_message', { to: bob, body: 'Done soon', wake: 'action', replyRequired: false, ttlMs: 1000 }, alice);
+  const handled = f.call('send_message', { to: bob, body: 'Done soon', wake: 'action', ttlMs: 1000 }, alice);
   f.call('complete', { messages: [handled.id] }, bob);
-  const passive = f.call('send_message', { to: bob, body: 'FYI', wake: 'passive', replyRequired: false, ttlMs: 1000 }, alice);
+  const passive = f.call('send_message', { to: bob, body: 'FYI', wake: 'passive', ttlMs: 1000 }, alice);
   f.expire(handled.id); f.expire(passive.id);
   f.call('heartbeat', {}, alice);
   assert.deepEqual(f.notices(alice), []);
   // A runtime notice that expires unread is not itself reported: no notice chain.
-  const sent = f.call('send_message', { to: bob, body: 'Please review', wake: 'action', replyRequired: true, ttlMs: 1000 }, alice);
+  const sent = f.call('send_message', { to: bob, question: 'Please review', wake: 'action', ttlMs: 1000 }, alice);
   f.expire(sent.id);
   f.call('heartbeat', {}, alice);
   const [notice] = f.notices(alice);
@@ -84,7 +84,7 @@ test('handled, passive and self-addressed messages stay silent', t => {
 
 test('a resumed sender learns of requests that expired while it was away', t => {
   const f = fixture(t), alice = f.join('alice'), bob = f.join('bob');
-  const sent = f.call('send_message', { to: bob, body: 'Please review', wake: 'action', replyRequired: true, ttlMs: 1000 }, alice);
+  const sent = f.call('send_message', { to: bob, question: 'Please review', wake: 'action', ttlMs: 1000 }, alice);
   f.expire(sent.id);
   f.db.prepare('UPDATE sessions SET expiresAt=1 WHERE id=?').run(alice);
   f.call('heartbeat', {}, bob);

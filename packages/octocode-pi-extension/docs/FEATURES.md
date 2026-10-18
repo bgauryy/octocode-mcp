@@ -377,7 +377,7 @@ Listed in the `agent` tool's description; format and loading: [Subagent profiles
 | `webLive` | Visible browser flows, user-assisted login | Visible Octocode browser profile, static web; no `file`, `bash`, MCP |
 
 - Every child keeps `read`, `sendMessage` and `coordinate` so it can reach its parent: a profile with an absolute `tools` allowlist gains them at load; one that excludes one is refused ([Core tools](CONFIGURATION.md#subagent-profiles)).
-- A child starts without the parent's conversation: its task must carry goal, scope, paths, evidence, decisions and expected result.
+- A child starts without the parent's conversation: its task must be a Task contract: objective; inputs (paths, evidence and decisions it cannot infer); constraints; output; Definition of Done.
 - A child's `memory` only reads; its `backlog` proposes items and updates state and notes of items its parent claimed.
 - `researcher` and `reviewer` write only scratch and the task's output path; `webHeadless` and `webLive` have no `file` or bash, so output goes in the report. This is instruction, not an OS sandbox. The parent owns user communication, missing approvals, review and integration.
 
@@ -541,7 +541,7 @@ You can move an item to any state from the board; a subagent can only set `ongoi
 
 **Fields.** A one-line title and:
 
-- `goal`: the done-when, a check someone else can run. An agent must give one when adding (`/backlog add <title>` from you needs none); its `update` can replace but not blank it.
+- `goal`: the Definition of Done, a check someone else can run. An agent must give one when adding (`/backlog add <title>` from you needs none); its `update` can replace but not blank it.
 - `paths` (files, directories, components); `why`; `evidence` (paths, measurements, links); `plan`; `body`.
 - `from`: the item it came from, shown `(from B12)`. `get` on the origin lists derived items; `list` with `from` filters. Looping links are refused; removing the origin clears the link with a note.
 
@@ -563,7 +563,7 @@ You can move an item to any state from the board; a subagent can only set `ongoi
   - The header counts items by state and priority and shows the median claim-to-done time.
   - Its Content-Security-Policy allows only its own inline script and style; item text shows only as text.
 - `export` and `html` refuse to write, naming item and field, when any text looks like a credential.
-- `do <id>` (or `d`, or Enter → Do it now) claims the item as ongoing for this session and hands the agent a prompt with its title, goal, paths, why, evidence, plan, body and origin; it queues as a follow-up while the agent is busy. The agent records follow-ups with `from` set to the item and marks it done only after verifying its goal, with a note (a blocker is recorded instead). Delegating to a subagent hands over the same context; neither grants authority beyond existing permissions.
+- `do <id>` (or `d`, or Enter → Do it now) claims the item as ongoing for this session and hands the agent a prompt with its title, goal, paths, why, evidence, plan, body and origin; it queues as a follow-up while the agent is busy. The agent records follow-ups with `from` set to the item and marks it done only after verifying its goal, with a note (a blocker is recorded instead, as SBAR). Delegating to a subagent hands over the same context; neither grants authority beyond existing permissions.
 
 ## Memory
 

@@ -76,6 +76,101 @@ fn ast_audit_cpp_multi_capture_body_matches_statements() {
     assert_eq!(matches[0].metavars["VALUE"], ["1"]);
 }
 
+/// `template <...>` wraps the declaration whose `{ $$$BODY }` C++ reads as
+/// an initializer list; the body must resolve there as it does at the root.
+#[cfg(feature = "tree-sitter-cpp")]
+#[test]
+fn cpp_template_function_body_capture_matches_statements() {
+    let source = "template <typename T>\nvoid demo(T x) { use(x); done(); }\n";
+    for pattern in [
+        "template <typename T> void demo(T x) { $$$BODY }",
+        "template <typename $T> void $NAME($$$ARGS) { $$$BODY }",
+        "template <$$$PARAMS> void $NAME($$$ARGS) { $$$BODY }",
+    ] {
+        for matches in [
+            run_pattern(source, "cpp", pattern),
+            run_rule(source, "cpp", &format!("pattern: '{pattern}'")),
+        ] {
+            assert_eq!(matches.len(), 1, "{pattern}");
+            assert_eq!(
+                matches[0].metavars["BODY"],
+                ["use(x);", "done();"],
+                "{pattern}"
+            );
+        }
+    }
+    // A template of a concrete body stays exact.
+    assert!(
+        run_pattern(
+            source,
+            "cpp",
+            "template <typename T> void demo(T x) { other(); }"
+        )
+        .is_empty()
+    );
+}
+
+/// A CUDA launch is a statement: top level, the grammar reshapes it
+/// (`parameter_pack_expansion` with a MISSING `...`), so it compiles in
+/// function-body context and matches launches with or without `;`.
+#[cfg(feature = "tree-sitter-cuda")]
+#[test]
+fn cuda_launch_and_template_kernel_patterns_match_real_code() {
+    let source = "template <typename T>\n__global__ void scale(T *data, int n) { data[0] = n; }\n\
+                  void run(float *data, dim3 grid) {\n  scale<<<grid, 256>>>(data, 4);\n  \
+                  other<<<1, 32, 0, stream>>>(data);\n}\n";
+    for ext in ["cu", "cuh"] {
+        for (pattern, launches) in [
+            ("$K<<<$G, $B>>>($$$A);", 1),
+            ("$K<<<$G, $B>>>($$$A)", 1),
+            ("$K<<<$$$CONFIG>>>($$$A)", 2),
+            ("scale<<<grid, 256>>>(data, 4);", 1),
+        ] {
+            for matches in [
+                run_pattern(source, ext, pattern),
+                run_rule(source, ext, &format!("pattern: '{pattern}'")),
+            ] {
+                assert_eq!(matches.len(), launches, "{ext}: {pattern}");
+                assert!(
+                    matches[0].text.starts_with("scale<<<grid, 256>>>"),
+                    "{ext}: {pattern}"
+                );
+            }
+        }
+        let config = run_pattern(source, ext, "$K<<<$$$CONFIG>>>($$$A)");
+        assert_eq!(
+            config[1].metavars["CONFIG"],
+            ["1", ",", "32", ",", "0", ",", "stream"]
+        );
+        for pattern in [
+            "template <typename $T> __global__ void $NAME($$$ARGS) { $$$BODY }",
+            "template <$$$P> __global__ void $NAME($$$ARGS) { $$$BODY }",
+        ] {
+            let matches = run_pattern(source, ext, pattern);
+            assert_eq!(matches.len(), 1, "{ext}: {pattern}");
+            assert_eq!(matches[0].metavars["NAME"], ["scale"]);
+            assert_eq!(matches[0].metavars["BODY"], ["data[0] = n;"]);
+        }
+    }
+}
+
+/// Function-body context is a fallback for snippets that fail alone; a
+/// top-level declaration keeps its own tree, and several statements still
+/// fail as several top-level nodes.
+#[cfg(feature = "tree-sitter-cuda")]
+#[test]
+fn cuda_statement_context_leaves_declarations_and_sequences_alone() {
+    let source = "int width = 4;\nvoid run() { int width = 8; }\n";
+    assert_eq!(run_pattern(source, "cu", "int width = $V;").len(), 2);
+    let sequence =
+        StructuralQuery::new(Some("a<<<1, 1>>>(); b<<<1, 1>>>();"), None).expect("query");
+    let error = compile_matcher(&lang("cu"), &sequence)
+        .err()
+        .expect("two launches are two nodes")
+        .to_string();
+    assert!(error.contains("2 top-level nodes"), "{error}");
+}
+
 fn lang(ext: &str) -> AgLanguage {
     AgLanguage::new(
         ext,
@@ -286,7 +381,7 @@ fn multi_capture_body_matches_in_csharp_despite_missing_sibling() {
     // `preprocess_pattern` wraps every C# pattern in a synthetic
     // `class __OctoWrap { ... }` (see `AgLanguage::class_wrap`) so the parser
     // has real member context, and `effective_pattern_root` unwraps through
-    // that specific synthetic class by name (see `CSHARP_WRAP_MARKER`) to
+    // that specific synthetic class by name (see `WRAP_MARKER`) to
     // reach the real member. `meta_from_node` is purely text-based, so the
     // leftover ERROR wrapper around `$$$BODY` doesn't block recognizing it
     // as a multi-capture once the root kind is right.
@@ -914,6 +1009,136 @@ fn rust_macro_bodies_without_the_anchor_keep_flat_tokens() {
     assert_eq!(found.len(), 3);
     // A body without the pattern's anchor keeps its flat tokens.
     assert!(run_pattern("fn t() { assert!(ok); }\n", "rs", "$X.unwrap()").is_empty());
+}
+
+const C_DEFINE_SOURCE: &str = "#define NODE_FREE(array) zfree((array)->alloc)\n#define LIMIT limit(8)\n#define RESET(p) do { p = zfree(p); } while (0)\n#define WRAPPED(p) \\\n    zfree(p)\nvoid f(void) { zfree(q); }\n";
+
+/// `#define` bodies are opaque `preproc_arg` text to tree-sitter; they are
+/// re-parsed in place in the file's own grammar (C, C++ and CUDA alike), so a
+/// pattern reaches the calls inside them at file coordinates.
+#[test]
+fn c_family_patterns_match_inside_define_bodies() {
+    for ext in ["c", "cpp", "cu"] {
+        let found = run_pattern(C_DEFINE_SOURCE, ext, "zfree($$$A)");
+        let texts: Vec<_> = found.iter().map(|m| m.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            ["zfree((array)->alloc)", "zfree(p)", "zfree(p)", "zfree(q)"],
+            ".{ext}"
+        );
+        assert_eq!((found[0].start_line, found[0].start_col), (1, 25), ".{ext}");
+        assert_eq!((found[1].start_line, found[1].start_col), (3, 26), ".{ext}");
+        // A body continued past a backslash-newline keeps its own line.
+        assert_eq!((found[2].start_line, found[2].start_col), (5, 4), ".{ext}");
+        assert_eq!(found[0].metavar_ranges["A"][0].line, 1, ".{ext}");
+        let limit = run_pattern(C_DEFINE_SOURCE, ext, "limit($N)");
+        assert_eq!(limit.len(), 1, ".{ext}");
+        assert_eq!(limit[0].metavars["N"], ["8"], ".{ext}");
+    }
+}
+
+#[test]
+fn c_family_define_bodies_keep_enclosing_ancestors_and_the_kind_fast_path() {
+    let inside = run_rule(
+        C_DEFINE_SOURCE,
+        "c",
+        "pattern: zfree($$$A)\ninside:\n  kind: preproc_function_def\n  stopBy: end",
+    );
+    assert_eq!(inside.len(), 3);
+    let outside = run_rule(
+        C_DEFINE_SOURCE,
+        "c",
+        "pattern: zfree($$$A)\nnot:\n  inside:\n    kind: preproc_function_def\n    stopBy: end",
+    );
+    assert_eq!(outside.len(), 1);
+    // The whole body can be the match: no delimiter wrapper hides it.
+    assert_eq!(
+        run_rule(C_DEFINE_SOURCE, "c", "kind: call_expression").len(),
+        5
+    );
+}
+
+/// A body that is no expression or statement (a bare brace, a type, a token
+/// paste, a string, nothing) yields no match and no recovered syntax.
+#[test]
+fn c_family_define_bodies_that_are_not_code_add_no_noise() {
+    let source = "#define OPEN {\n#define TYPE unsigned int\n#define EMPTY\n#define CAT(a, b) a ## b\n#define MSG \"zfree(x)\"\n#define LIST 1, 2, 3\n";
+    for ext in ["c", "cpp", "cu"] {
+        assert!(run_pattern(source, ext, "zfree($$$A)").is_empty(), ".{ext}");
+        assert!(run_rule(source, ext, "kind: ERROR").is_empty(), ".{ext}");
+        assert!(
+            run_rule(source, ext, "kind: call_expression").is_empty(),
+            ".{ext}"
+        );
+    }
+}
+
+/// A macro-attribute line (`JSON_HEDLEY_NON_NULL(2)`) makes tree-sitter read
+/// the method after it as part of one garbled declaration: the call inside
+/// its body is not a `call_expression`, so a call pattern misses it.
+const HIDDEN_CALL: &str = "class lexer {\n    JSON_HEDLEY_NON_NULL(2)\n    token_type scan_literal(const char_type* literal_text, const std::size_t length,\n                            token_type return_type)\n    {\n        JSON_ASSERT(char_traits<char_type>::to_char_type(current) == literal_text[0]);\n        return return_type;\n    }\n};\nint clean() { JSON_ASSERT(1); return 2; }\n";
+
+/// The same macro-attribute garble, but the body after it parses cleanly.
+const LOCAL_ERROR: &str = "struct S {\n    JSON_HEDLEY_NON_NULL(2)\n    int scan(const char* a, int b)\n    {\n        JSON_ASSERT(a != nullptr);\n        return b;\n    }\n};\n";
+
+/// Whether the matcher of `pattern` reports `src` as parsed with recovered
+/// syntax that could hide one of its matches, and how many it found.
+fn recovery_of(src: &str, ext: &str, query: (Option<&str>, Option<&str>)) -> (bool, usize) {
+    let matcher = compile_matcher(
+        &lang(ext),
+        &StructuralQuery::new(query.0, query.1).expect("query"),
+    )
+    .expect("compile");
+    let mut found = Found::new(crate::structural::types::StructuralDemand::Matches);
+    matcher(src, &mut found).expect("complete execution");
+    (found.recovered(), found.into_matches().len())
+}
+
+/// A recovered parse is reported when recovered syntax spans the text the
+/// pattern needs: the call a pattern would match can sit in a garbled
+/// declaration, and the matcher cannot find what the tree does not hold.
+#[test]
+fn a_match_names_recovered_syntax_that_could_hide_a_match() {
+    let (recovered, found) = recovery_of(HIDDEN_CALL, "cpp", (Some("JSON_ASSERT($$$A)"), None));
+    assert_eq!((recovered, found), (true, 1), "the hidden call is the miss");
+    let rule = "pattern: JSON_ASSERT($$$A)";
+    assert!(recovery_of(HIDDEN_CALL, "cpp", (None, Some(rule))).0);
+}
+
+/// Recovered syntax elsewhere, a clean parse around the anchor, an anchor in
+/// a comment or a string, and a clean file are not a gap.
+#[test]
+fn recovered_syntax_away_from_the_anchor_is_no_gap() {
+    let pattern = (Some("JSON_ASSERT($$$A)"), None);
+    assert_eq!(recovery_of(LOCAL_ERROR, "cpp", pattern), (false, 1));
+    let elsewhere = format!(
+        "{LOCAL_ERROR}// JSON_ASSERT(x) is documented here\nconst char* s = \"JSON_ASSERT(y)\";\n"
+    );
+    assert_eq!(recovery_of(&elsewhere, "cpp", pattern), (false, 1));
+    assert_eq!(
+        recovery_of(
+            "int clean() { JSON_ASSERT(1); return 2; }\n",
+            "cpp",
+            pattern
+        ),
+        (false, 1)
+    );
+}
+
+/// A query with no literal anchor (a kind, a bare call shape) cannot say
+/// where a match would be, so any recovered syntax in the file could hide it.
+#[test]
+fn an_anchorless_query_reports_every_recovered_parse() {
+    assert!(recovery_of(LOCAL_ERROR, "cpp", (Some("$F($$$A)"), None)).0);
+    assert!(recovery_of(LOCAL_ERROR, "cpp", (None, Some("kind: call_expression"))).0);
+    assert!(
+        !recovery_of(
+            "int f() { return g(1); }\n",
+            "cpp",
+            (None, Some("kind: call_expression"))
+        )
+        .0
+    );
 }
 
 /// The match deadline grows with the source: a large file (up to the 8 MiB

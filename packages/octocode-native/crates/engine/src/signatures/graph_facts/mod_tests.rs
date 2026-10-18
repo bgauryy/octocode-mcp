@@ -791,14 +791,33 @@ fn rust_include_macros_name_their_literal_file() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|import| import["importKind"] == "include")
-        .map(|import| (import["specifier"].clone(), import["line"].clone()))
+        .filter(|import| {
+            matches!(
+                import["importKind"].as_str(),
+                Some("include" | "include-data")
+            )
+        })
+        .map(|import| {
+            (
+                import["importKind"].clone(),
+                import["specifier"].clone(),
+                import["line"].clone(),
+            )
+        })
         .collect();
     assert_eq!(
         includes,
         [
-            (serde_json::json!("gen/types.rs"), serde_json::json!(1)),
-            (serde_json::json!("../data.txt"), serde_json::json!(2)),
+            (
+                serde_json::json!("include"),
+                serde_json::json!("gen/types.rs"),
+                serde_json::json!(1)
+            ),
+            (
+                serde_json::json!("include-data"),
+                serde_json::json!("../data.txt"),
+                serde_json::json!(2)
+            ),
         ]
     );
 }

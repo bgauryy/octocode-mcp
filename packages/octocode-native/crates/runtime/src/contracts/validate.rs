@@ -1635,6 +1635,28 @@ mod tests {
         }
     }
 
+    /// `localSearch` takes `localFetch`'s `matchString` form: one text or a
+    /// list of 1 to 10 non-empty texts that match any.
+    #[test]
+    fn local_search_match_string_is_one_text_or_a_bounded_list() {
+        let admit = |match_string: Value| {
+            crate::contracts::prepare_many_and_validate(
+                "localSearch",
+                normalize_input(
+                    "localSearch",
+                    json!({"queries":[{"path":".","matchString":match_string}]}),
+                ),
+            )
+        };
+        let many = |count: usize| (0..count).map(|n| format!("v{n}")).collect::<Vec<_>>();
+        for accepted in [json!("x"), json!(["a", "b"]), json!(many(10))] {
+            admit(accepted.clone()).unwrap_or_else(|error| panic!("{accepted}: {error:?}"));
+        }
+        for rejected in [json!(""), json!([]), json!(["a", ""]), json!(many(11))] {
+            assert!(admit(rejected.clone()).is_err(), "{rejected}");
+        }
+    }
+
     #[test]
     fn matches_generated_reference_corpus() {
         let fixtures: Value =

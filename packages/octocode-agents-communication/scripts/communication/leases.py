@@ -19,9 +19,10 @@ WAIT_TTL = 600000
 QUEUED = 'Queued; owners were notified. Keep the request that needs this lease pending and end your turn. A "Lease granted" message wakes you with the lease ID.'
 
 
-def notice(db, sender, target, body, key, wake, at):
-    """Runtime-authored informational mail; one key per wait keeps it idempotent."""
-    message = db.execute('INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,wake,ttlMs,replyRequired) VALUES(?,?,?,?,?,?,?,3600000,0)', (sender, target, body, key, at + 3600000, 'Lease queue notice', wake)).lastrowid
+def notice(db, sender, target, kind, slots, key, wake, at):
+    """Runtime-authored FYI in a message protocol (blocker or delta); one key per event keeps it idempotent."""
+    from .protocols import render
+    message = db.execute('INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,wake,ttlMs,replyRequired,kind,slots) VALUES(?,?,?,?,?,?,?,3600000,0,?,?)', (sender, target, render(kind, slots), key, at + 3600000, 'Runtime notice', wake, kind, json.dumps(slots, ensure_ascii=False))).lastrowid
     execute(db, 'INSERT INTO deliveries(message,recipient) VALUES(?,?)', (message, target))
 
 
@@ -188,7 +189,9 @@ class LeaseMixin:
         paths = ', '.join(self.relative(t.path) for t in targets)
         name = query(self.db, 'SELECT name FROM sessions WHERE id=?', (session,))[0]['name']
         for blocker in sorted(holders):
-            notice(self.db, session, blocker, '{} is queued for {} ({}). The runtime hands the lease over when you unlock it; no reply needed.'.format(name, paths, reasoning), 'lease-wait:{}:{}'.format(wait, blocker), 'passive', at)
+            notice(self.db, session, blocker, 'blocker', {'situation': '{} is queued for {}'.format(name, paths), 'background': reasoning,
+                   'assessment': 'Your lease blocks it', 'recommendation': 'Unlock when done; the runtime hands the lease over. No reply needed'},
+                   'lease-wait:{}:{}'.format(wait, blocker), 'passive', at)
         result.update(queued=True, wait=dict(id=wait, expiresAt=at + WAIT_TTL), guidance=QUEUED)
         return result
 
@@ -239,7 +242,8 @@ class LeaseMixin:
             execute(self.db, 'DELETE FROM lease_waits WHERE id=?', (wait['id'],))
             leases = self.insert_leases(wait['workspace'], wait['owner'], targets, wait['reasoning'], at, at + wait['leaseTtlMs'])
             granted = ', '.join('{} (lease {})'.format(lease['path'], lease['id']) for lease in leases)
-            notice(self.db, wait['owner'], wait['owner'], 'Lease granted: {}, expires in {}s. Continue the work you queued it for; unlock when done.'.format(granted, wait['leaseTtlMs'] // 1000), 'lease-wait:{}'.format(wait['id']), 'action', at)
+            notice(self.db, wait['owner'], wait['owner'], 'delta', {'changes': ['Lease granted: {}, expires in {}s'.format(granted, wait['leaseTtlMs'] // 1000)],
+                   'next': 'Continue the work you queued it for; unlock when done'}, 'lease-wait:{}'.format(wait['id']), 'action', at)
 
     def lease_transition(self, session, input, renew):
         from .store import now

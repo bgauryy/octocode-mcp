@@ -27,7 +27,7 @@ After an owning/shared-boundary/source change, stale dependent scenarios and cal
 
 ## Diagnose and replan from evidence
 
-Preserve observation, strongest rival, and next distinguishing check. Do not repeat unchanged edit/build/restart/request merely because it failed.
+Keep each diagnosis a hypothesis test: claim, strongest rival, distinguishing check, result (confirmed, dismissed, unresolved). Do not repeat unchanged edit/build/restart/request merely because it failed; a retry after a reasoning failure needs a revised hypothesis.
 
 | Evidence | Next action |
 |---|---|
@@ -35,8 +35,8 @@ Preserve observation, strongest rival, and next distinguishing check. Do not rep
 | Wrong fixture/assertion/configuration/state | Establish owning contract and intended setup; preserve a check for the original defect |
 | Product defect on intended build | Trace owning boundary, make smallest authorized correction, rebuild, invalidate/replay dependent rows |
 | Ambiguous cause or partial semantic evidence | Refresh context, narrow claim, run a discriminating probe, preserve disproof |
-| Transient external failure | Retry only with evidence of transience and the operation's replay/deduplication contract |
-| Missing access, actor, dependency, or authorization | Record prerequisite, request it through the proper owner, continue independent in-scope rows |
+| Transient external failure | Bounded retry, only with evidence of transience and the operation's replay/deduplication contract |
+| Missing access, actor, dependency, or authorization | Record prerequisite, request it through the proper owner as an SBAR (situation, background, assessment, recommendation), continue independent in-scope rows |
 
 A timeout is an unknown mutation outcome: inspect durable state and idempotency/operation identity before replay. If effect remains unknown, leave it unverified. Continue while a new observation can progress within scope and budget; stop repeating the failed attempt, not useful work. Browser mutation safeguards and sealed-evaluation integrity are stricter domain limits and remain in force.
 

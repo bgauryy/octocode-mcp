@@ -63,7 +63,7 @@ test('typed data queries distinguish null, missing, false and zero; branch can b
 });
 test('current dispatch fetch excludes superseded attempts and completed stages',t=>{
  const f=fixture(t);
- const mail=f.call('send_message',{to:f.b,body:'Handoff',replyRequired:false},f.a);
+ const mail=f.call('send_message',{to:f.b,body:'Handoff'},f.a);
  f.call('attach',{transport:'raw'},f.b);
  f.call('hook',{format:'json',deferConfirm:true,consumer:'fixture'},f.b);
  const first=f.call('fetch',{type:'dispatch.staged',current:true,from:f.b},f.b).items[0];
@@ -94,7 +94,7 @@ test('record fetch preserves filters and a fixed high-water mark across every pa
  assert.ok(plan.some(row=>row.detail.includes('records_type')),JSON.stringify(plan));
  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
-test('all 25 operational and generic payloads conform to the discovered envelope and type schemas',t=>{
+test('all 26 operational and generic payloads conform to the discovered envelope and type schemas',t=>{
  const f=fixture(t);
  f.call('heartbeat',{branch:'changed',name:'renamed'},f.a);
  f.call('set_status',{task:'Validate payload contracts',status:'busy'},f.a);
@@ -104,9 +104,10 @@ test('all 25 operational and generic payloads conform to the discovered envelope
  f.call('share_document',{name:'typed.md',content:'Proof',context:{summary:'Typed document',branch:'changed'}},f.a);
  f.call('record',{type:'memory',data:{content:'Retain generic data',path:'x'.repeat(5000)}},f.a);
  f.call('record',{type:'event',data:{name:'checkpoint',nested:{value:null}}},f.a);
+ f.call('record',{type:'checkpoint',data:{goal:'Validate payload contracts',done:['schemas'],next:'Check envelopes'}},f.a);
  f.call('record_usage',{key:'usage',scope:'turn',inputTokens:7},f.a);
  f.call('attach',{transport:'raw'},f.b);f.call('attach',{transport:'raw'},f.b);
- const mail=f.call('send_message',{to:f.b,body:'Contract evidence',replyRequired:false},f.a);
+ const mail=f.call('send_message',{to:f.b,body:'Contract evidence'},f.a);
  const db=new DatabaseSync(f.database);
  db.prepare("UPDATE deliveries SET claimedBy='fixture',claimUntil=0 WHERE message=?").run(mail.id);
  db.prepare('UPDATE deliveries SET claimedBy=NULL WHERE message=?').run(mail.id);
@@ -123,7 +124,7 @@ test('all 25 operational and generic payloads conform to the discovered envelope
  const program=`import sys,sqlite3\nsys.path.insert(0,sys.argv[1])\nfrom communication import catalog,validation,database\nfrom communication.records import SELECT,envelope\nc=catalog.catalog()\ndb=sqlite3.connect(sys.argv[2])\nseen=set()\nfor row in database.query(db,SELECT):\n record=envelope(row)\n validation.validate(c['recordEnvelope'],record)\n validation.validate(catalog.record_type(record['type'])['dataSchema'],record['data'])\n seen.add(record['type'])\nassert seen=={t['type'] for t in c['recordTypes']},seen\n`;
  execFileSync('python3',['-B','-c',program,join(root,'scripts'),f.database],{encoding:'utf8',stdio:'pipe'});
 });
-test('bound MCP exposes discriminated memory/event schemas and preserves generic JSON on the wire',t=>{
+test('bound MCP exposes discriminated memory/event/checkpoint schemas and preserves generic JSON on the wire',t=>{
  const f=fixture(t),data={content:'Wire proof',nullable:null,nested:{boolean:false},path:'x'.repeat(5000)};
  const frames=[
   {jsonrpc:'2.0',id:1,method:'tools/list'},
@@ -135,7 +136,7 @@ test('bound MCP exposes discriminated memory/event schemas and preserves generic
  const responses=execFileSync(binary,['mcp','--tools','fetch,record','--session',f.a,'--workspace',f.workspace,'--database',f.database],{
   input:frames.map(JSON.stringify).join('\n')+'\n',encoding:'utf8',stdio:'pipe'}).trim().split('\n').map(JSON.parse);
  const schema=responses[0].result.tools.find(tool=>tool.name==='record').inputSchema;
- assert.deepEqual(schema.oneOf.map(item=>item.properties.type.const),['memory','event']);
+ assert.deepEqual(schema.oneOf.map(item=>item.properties.type.const),['memory','event','checkpoint']);
  const record=JSON.parse(responses[1].result.content[0].text);
  assert.equal(record.to,null);assert.deepEqual(record.data,data);
  assert.deepEqual(responses[1],responses[2]);
@@ -184,7 +185,7 @@ test('all type discovery examples are valid, compact fields are complete and dis
  const workspace=tempWorkspace(t,'communication-types-',{real:true}),database=join(workspace,'absent.sqlite');
  const call=(...args)=>JSON.parse(execFileSync(binary,[...args,'--workspace',workspace,'--database',database],{encoding:'utf8',stdio:'pipe'}));
  const full=call('schema','types'),compact=call('schema','types','--compact');
- assert.equal(full.length,25);assert.equal(compact.length,25);
+ assert.equal(full.length,26);assert.equal(compact.length,26);
  for(const item of full){
   const brief=compact.find(x=>x.type===item.type);
   assert.deepEqual([...brief.required,...brief.optional].sort(),Object.keys(item.dataSchema.properties).sort());

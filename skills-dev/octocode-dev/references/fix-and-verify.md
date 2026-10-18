@@ -9,12 +9,24 @@ Load before editing and before reporting done. Changes cross two repos and a gen
 
 ## Landing order
 
-| Change in | Steps |
-|---|---|
-| Core (schema, description, instructions) | edit `CORE` → core `yarn test && yarn lint` → `yarn contracts:regen` at the monorepo root (refreshes the `file:` core **copy**, then regenerates `packages/octocode-config/contract/`) → declare any new field in `field-effect-coverage.json` → native rebuild (build.rs embeds `contract/` in place) |
-| Native runtime / engine | edit → `cargo fmt` + clippy on touched crate → `yarn workspace @octocodeai/octocode-native test:rust` (nextest; `bacon test` while editing) → `yarn workspace @octocodeai/octocode-native build:dev` |
-| Config contract | edit `config-contract.json` → `yarn workspace @octocodeai/config generate:config-contract` → native rebuild (build.rs regenerates the struct) |
-| CLI / MCP | `yarn workspace octocode build:dev` / `yarn workspace octocode-mcp build:dev`; MCP tests `test` |
+```mermaid
+flowchart TD
+  K{Change in} -- Core: schema, description, instructions --> C1["edit CORE"]
+  C1 --> C2["core: yarn test && yarn lint"]
+  C2 --> C3["yarn contracts:regen at the monorepo root: refreshes the file: core copy, then regenerates packages/octocode-config/contract/"]
+  C3 --> C4["declare any new field in field-effect-coverage.json"]
+  C4 --> NB
+  K -- Native runtime or engine --> N1["edit"]
+  N1 --> N2["cargo fmt + clippy on the touched crate"]
+  N2 --> N3["yarn workspace @octocodeai/octocode-native test:rust: nextest; bacon test while editing"]
+  N3 --> NB
+  K -- Config contract --> G1["edit config-contract.json"]
+  G1 --> G2["yarn workspace @octocodeai/config generate:config-contract"]
+  G2 --> NB["native rebuild: yarn workspace @octocodeai/octocode-native build:dev; build.rs embeds contract/ in place (config change: regenerates the struct)"]
+  K -- CLI or MCP --> I1["yarn workspace octocode build:dev, or yarn workspace octocode-mcp build:dev; MCP tests: test"]
+```
+
+Every branch except CLI or MCP ends at the native rebuild. `<repo>/AGENTS.md` draws the core and native-change flows.
 
 Provenance records the core package version; release order is in `docs/RELEASE.md` (owned by the human).
 
@@ -28,4 +40,4 @@ Provenance records the core package version; release order is in `docs/RELEASE.m
 6. Re-run `scripts/tool-inventory.mjs <tool>`; the fixed field is no longer flagged.
 7. Package tests + lint green vs baseline.
 
-Record each check as passed / failed / skipped / unavailable with its command and scope.
+Claim–evidence: record each check as passed / failed / skipped / unavailable with its command and scope.

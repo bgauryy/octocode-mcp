@@ -42,13 +42,6 @@ test('document intent is required before filesystem writes and immutable in the 
   const rows = db.prepare("SELECT data FROM records WHERE type='document'").all();
   assert.equal(rows.length, 1);
   assert.equal(JSON.parse(rows[0].data).reasoning, reasoning);
-  // Old evidence is readable but a retry cannot invent its previously unrecorded intent.
-  const historical = { ...result.document, name: 'historical.md', path: '.octocode/communication/historical.md' };
-  delete historical.reasoning;
-  writeFileSync(join(f.workspace, historical.path), input.content);
-  db.prepare("INSERT INTO records(path,[from],type,entityId,timestamp,data,key) VALUES(?,?,'document',?,?,?,?)").run(f.workspace, f.a.id, historical.name, Date.now(), JSON.stringify(historical), historical.name);
-  assert.equal(f.call('read_document', { name: historical.name }, f.b.id).content, input.content);
-  assert.throws(() => f.call('share_document', { ...input, name: historical.name, reasoning }, f.a.id), /immutable/);
 });
 
 test('MCP document publication enforces and exposes the canonical intent contract', t => {

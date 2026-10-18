@@ -346,7 +346,7 @@ impl SearchWalk {
     ) -> Self {
         let defaults = defaults.then(|| {
             octocode_engine::search::walk::Prune::new(
-                super::prune::PruneMode::SearchSafe.directories_with_includes(true, include),
+                super::prune::PruneMode::SyntaxVisible.directories_with_includes(true, include),
             )
             .at(&root)
         });

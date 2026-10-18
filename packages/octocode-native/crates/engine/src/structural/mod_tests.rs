@@ -367,6 +367,44 @@ fn search_files_finds_matches_and_prefilters_non_matching_files() {
     assert_eq!(result.skipped_by_pre_filter, 1);
 }
 
+/// A scan reports, per file, whether recovered syntax could hide a match:
+/// the file whose method a macro attribute garbled, not the clean one.
+#[test]
+fn search_files_flags_the_file_whose_recovered_syntax_could_hide_a_match() {
+    let root = TmpDir::new();
+    fs::write(
+        root.join("garbled.cpp"),
+        "class lexer {\n    JSON_HEDLEY_NON_NULL(2)\n    token_type scan_literal(const char_type* literal_text, const std::size_t length,\n                            token_type return_type)\n    {\n        JSON_ASSERT(char_traits<char_type>::to_char_type(current) == literal_text[0]);\n        return return_type;\n    }\n};\n",
+    )
+    .expect("write garbled");
+    fs::write(
+        root.join("clean.cpp"),
+        "int f() { JSON_ASSERT(1); return 2; }\n",
+    )
+    .expect("write clean");
+    let result = search_files_detailed(StructuralSearchFilesOptions {
+        path: root.to_string_lossy().to_string(),
+        pattern: Some("JSON_ASSERT($$$A)".to_owned()),
+        rule: None,
+        include: None,
+        exclude_dir: None,
+        exclude: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
+        max_depth: None,
+        max_files: Some(10),
+        skip_files: None,
+        max_file_bytes: None,
+    })
+    .expect("search files");
+    let recovered: Vec<_> = result
+        .files
+        .iter()
+        .filter(|file| file.recovered)
+        .map(|file| file.path.rsplit('/').next().unwrap_or(&file.path))
+        .collect();
+    assert_eq!(recovered, ["garbled.cpp"]);
+}
+
 #[test]
 fn search_files_errors_on_nonexistent_root_for_every_prefilter_branch() {
     let root = TmpDir::new();

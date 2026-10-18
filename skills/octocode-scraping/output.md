@@ -4,7 +4,7 @@ Deliver task content only; no probe output or process metadata. Answers and cita
 
 ## Response
 
-BLUF: answer and confidence first, then source URL, saved artifact path, pages covered, and blocked or unread portions.
+BLUF: answer and confidence first, then evidence (Claim–evidence: each claim beside its source URL and saved artifact path), pages covered, and blocked or unread portions.
 
 ## Saved result
 
@@ -29,6 +29,8 @@ Then the `#` title and a BLUF lead paragraph (answer first). Add `session: <work
 
 | URL | Status | Session file | Notes |
 |---|---|---|---|
+
+`## Blocked or unread` is the stop report: a `Partial` result hands over unfinished work as a Handoff packet; a `Blocked` one asks for someone else's action as an SBAR ([recovery](references/recovery.md#on-a-stop)). The header `next` is that report's next action.
 
 Date the file name with `date +%F`, never from memory; one report, one `.md`. Render, fix every `warning:` line, reply with a short summary plus `.html` and `.md` paths:
 

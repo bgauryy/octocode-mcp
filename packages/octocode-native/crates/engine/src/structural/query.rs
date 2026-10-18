@@ -50,14 +50,28 @@ impl<'a> StructuralQuery<'a> {
 
     /// Returns the full prefilter descriptor for the text candidate-selection step.
     pub(super) fn prefilter(&self) -> Prefilter {
+        self.anchors(AnchorUse::Prefilter)
+    }
+
+    /// The literals a match must contain, read to find where it could sit
+    /// ([`AnchorUse::Recovery`]).
+    pub(super) fn recovery_anchors(&self) -> Option<Vec<String>> {
+        match self.anchors(AnchorUse::Recovery) {
+            Prefilter::None => None,
+            Prefilter::Single(anchor) => Some(vec![anchor]),
+            Prefilter::Union(anchors) => Some(anchors),
+        }
+    }
+
+    fn anchors(&self, anchor_use: AnchorUse) -> Prefilter {
         match (self.pattern, self.rule) {
-            (Some(pattern), _) => match derive_literal_anchor(pattern) {
+            (Some(pattern), _) => match derive_literal_anchor(pattern, anchor_use) {
                 Some(anchor) => Prefilter::Single(anchor.to_owned()),
                 None => Prefilter::None,
             },
             (_, Some(_)) => self
                 .parsed_rule()
-                .map_or(Prefilter::None, prefilter_for_rule),
+                .map_or(Prefilter::None, |raw| prefilter_for_rule(raw, anchor_use)),
             _ => Prefilter::None,
         }
     }
@@ -144,20 +158,39 @@ pub(super) fn invalid_query_explanation(
     }
 }
 
-fn derive_literal_anchor(pattern: &str) -> Option<&str> {
-    literal_anchor_candidates(pattern)
+/// What the literals of a query are read for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum AnchorUse {
+    /// Choosing files to parse: only a run with a lower-case letter is safe
+    /// (an all-upper-case run is a constant or keyword a grammar may
+    /// normalize), as a wrong anchor drops a file's matches.
+    Prefilter,
+    /// Finding where a match sits in a file already parsed (see
+    /// `octo::recovery`): a macro such as `JSON_ASSERT` anchors too, as a
+    /// wrong anchor only changes a disclosure.
+    Recovery,
+}
+
+fn derive_literal_anchor(pattern: &str, anchor_use: AnchorUse) -> Option<&str> {
+    literal_anchor_candidates(pattern, anchor_use)
         .into_iter()
         .max_by_key(|token| token.len())
 }
 
-fn literal_anchor_candidates(pattern: &str) -> Vec<&str> {
+fn literal_anchor_candidates(pattern: &str, anchor_use: AnchorUse) -> Vec<&str> {
     let mut candidates = Vec::new();
     let mut token_start = None;
     let mut chars = pattern.char_indices().peekable();
 
     while let Some((index, ch)) = chars.next() {
         if ch == '$' {
-            push_anchor_candidate(pattern, &mut candidates, &mut token_start, index);
+            push_anchor_candidate(
+                pattern,
+                &mut candidates,
+                &mut token_start,
+                index,
+                anchor_use,
+            );
             while let Some((_, next)) = chars.peek() {
                 if *next == '$'
                     || *next == '_'
@@ -175,11 +208,23 @@ fn literal_anchor_candidates(pattern: &str) -> Vec<&str> {
         if is_anchor_char(ch) {
             token_start.get_or_insert(index);
         } else {
-            push_anchor_candidate(pattern, &mut candidates, &mut token_start, index);
+            push_anchor_candidate(
+                pattern,
+                &mut candidates,
+                &mut token_start,
+                index,
+                anchor_use,
+            );
         }
     }
 
-    push_anchor_candidate(pattern, &mut candidates, &mut token_start, pattern.len());
+    push_anchor_candidate(
+        pattern,
+        &mut candidates,
+        &mut token_start,
+        pattern.len(),
+        anchor_use,
+    );
     candidates
 }
 
@@ -188,12 +233,13 @@ fn push_anchor_candidate<'a>(
     candidates: &mut Vec<&'a str>,
     token_start: &mut Option<usize>,
     end: usize,
+    anchor_use: AnchorUse,
 ) {
     let Some(start) = token_start.take() else {
         return;
     };
     let token = &pattern[start..end];
-    if is_safe_anchor_token(token) {
+    if is_safe_anchor_token(token, anchor_use) {
         candidates.push(token);
     }
 }
@@ -204,9 +250,9 @@ fn is_anchor_char(ch: char) -> bool {
     ch == '_' || ch.is_ascii_alphanumeric()
 }
 
-fn is_safe_anchor_token(token: &str) -> bool {
+fn is_safe_anchor_token(token: &str, anchor_use: AnchorUse) -> bool {
     token.len() >= 3
-        && token.chars().any(|ch| ch.is_ascii_lowercase())
+        && (anchor_use == AnchorUse::Recovery || token.chars().any(|ch| ch.is_ascii_lowercase()))
         && token
             .chars()
             .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
@@ -215,8 +261,8 @@ fn is_safe_anchor_token(token: &str) -> bool {
 /// Infer necessary file literals from the same parsed rule that compilation uses.
 /// Conjunction may use any proven necessary condition; disjunction needs one
 /// from every branch. A negated matcher never proves a positive file literal.
-fn prefilter_for_rule(raw: &super::octo::RawRule) -> Prefilter {
-    rule_anchors(raw).map_or(Prefilter::None, |mut anchors| {
+fn prefilter_for_rule(raw: &super::octo::RawRule, anchor_use: AnchorUse) -> Prefilter {
+    rule_anchors(raw, anchor_use).map_or(Prefilter::None, |mut anchors| {
         anchors.sort();
         anchors.dedup();
         if anchors.len() == 1 {
@@ -227,9 +273,13 @@ fn prefilter_for_rule(raw: &super::octo::RawRule) -> Prefilter {
     })
 }
 
-fn rule_anchors(rule: &super::octo::RawRule) -> Option<Vec<String>> {
+fn rule_anchors(rule: &super::octo::RawRule, anchor_use: AnchorUse) -> Option<Vec<String>> {
     let mut required = Vec::new();
-    if let Some(anchor) = rule.pattern.as_deref().and_then(derive_literal_anchor) {
+    if let Some(anchor) = rule
+        .pattern
+        .as_deref()
+        .and_then(|pattern| derive_literal_anchor(pattern, anchor_use))
+    {
         required.push(vec![anchor.to_owned()]);
     }
     for child in rule
@@ -239,12 +289,15 @@ fn rule_anchors(rule: &super::octo::RawRule) -> Option<Vec<String>> {
         .chain(rule.has.iter().map(Box::as_ref))
         .chain(rule.inside.iter().map(Box::as_ref))
     {
-        if let Some(anchors) = rule_anchors(child) {
+        if let Some(anchors) = rule_anchors(child, anchor_use) {
             required.push(anchors);
         }
     }
     if let Some(any) = rule.any.as_ref().filter(|rules| !rules.is_empty())
-        && let Some(branches) = any.iter().map(rule_anchors).collect::<Option<Vec<_>>>()
+        && let Some(branches) = any
+            .iter()
+            .map(|rule| rule_anchors(rule, anchor_use))
+            .collect::<Option<Vec<_>>>()
     {
         required.push(branches.into_iter().flatten().collect());
     }
@@ -257,6 +310,30 @@ mod tests {
 
     fn derive_rule_prefilter(rule: &str) -> Prefilter {
         StructuralQuery::new(None, Some(rule)).unwrap().prefilter()
+    }
+
+    /// An all-upper-case macro cannot select files to parse, yet it still
+    /// says where a match sits in a parsed file.
+    #[test]
+    fn an_upper_case_macro_anchors_recovery_but_not_the_prefilter() {
+        let pattern = StructuralQuery::new(Some("JSON_ASSERT($$$A)"), None).unwrap();
+        assert_eq!(pattern.prefilter(), Prefilter::None);
+        assert_eq!(
+            pattern.recovery_anchors(),
+            Some(vec!["JSON_ASSERT".to_owned()])
+        );
+        let rule = StructuralQuery::new(
+            None,
+            Some("any: [{pattern: JSON_ASSERT($A)}, {pattern: foo($A)}]"),
+        )
+        .unwrap();
+        assert_eq!(rule.prefilter(), Prefilter::None);
+        assert_eq!(
+            rule.recovery_anchors(),
+            Some(vec!["JSON_ASSERT".to_owned(), "foo".to_owned()])
+        );
+        let anchorless = StructuralQuery::new(Some("$F($$$A)"), None).unwrap();
+        assert_eq!(anchorless.recovery_anchors(), None);
     }
 
     #[test]

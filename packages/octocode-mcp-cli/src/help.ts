@@ -89,6 +89,17 @@ function sampleJson(schema: JsonSchema, root: JsonSchema, depth = 0): unknown {
     return resolved.default;
   }
   if (Array.isArray(resolved.enum) && resolved.enum.length > 0) return resolved.enum[0];
+  const members = schemaList(resolved.allOf);
+  if (members.length > 0) {
+    // Fold each member's first alternative into one object schema; the sample must satisfy every member.
+    const { allOf: _allOf, ...merged } = resolved;
+    for (const member of members) {
+      const part = schemaList(member.anyOf)[0] ?? schemaList(member.oneOf)[0] ?? member;
+      merged.properties = { ...(asSchema(merged.properties) ?? {}), ...(asSchema(part.properties) ?? {}) };
+      merged.required = [...new Set([...(Array.isArray(merged.required) ? merged.required : []), ...(Array.isArray(part.required) ? part.required : [])])];
+    }
+    return sampleJson(merged, root, depth + 1);
+  }
   const alternative = schemaList(resolved.anyOf)[0] ?? schemaList(resolved.oneOf)[0];
   if (alternative) {
     if (!asSchema(resolved.properties) && !asSchema(alternative.properties)) return sampleJson(alternative, root, depth + 1);

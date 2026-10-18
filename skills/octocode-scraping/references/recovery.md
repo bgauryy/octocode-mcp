@@ -26,7 +26,25 @@ Load when a scrape fails, blocks, times out, or overflows, or when legality, pri
 | Timeout | Find the cause (connection, rendering, scope); adjust before retrying. |
 | Huge output | Follow continuations; size parts with `--chunk-bytes`, `--max-text-bytes`; `--no-raw` drops raw audit. |
 
+## Retries
+
+Bounded retry: a retry needs a changed diagnosis or input; the only wait is one `Retry-After` of ≤10 seconds; anything else is reported and stops (SBAR below).
+
+```mermaid
+flowchart LR
+  F["Failure"] --> C{"Diagnosis or input changed?"}
+  C -- "yes" --> R["Retry with the change"] --> F
+  C -- "no" --> H{"429/503 with Retry-After ≤10 s, not yet waited?"}
+  H -- "yes" --> W["Wait once, retry"] --> F
+  H -- "no" --> S["Report and stop"]
+```
+
 ## On a stop
 
-- Handoff (SBAR): situation (sanitized status), background (route tried), assessment (evidence), request (next check or missing authority).
+| Stop | Protocol | Slots |
+|---|---|---|
+| Finished | BLUF ([output](../output.md)) | Answer, confidence, evidence, gaps |
+| Unfinished, someone resumes | Handoff packet | Current state (session folder, pages fetched); evidence; blockers; next action; constraints (authorization, robots, spend); next-call ids (`sessionId`, the `next.*` continuation); no raw logs, page text, or abandoned routes |
+| Blocked, needs someone else's action | SBAR | Situation (sanitized status); background (route tried); assessment (evidence); recommendation, as a request (next check or missing authority) |
+
 - A cheaper route may work: [providers](providers.md).

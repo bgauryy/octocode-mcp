@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { processStartTime, sameProcess } from './process.js';
 
@@ -29,12 +29,12 @@ function parseClaim(name: string, marker: string): { original: string; running: 
  * unclaimed name so the next take claims it again. `isOriginal` limits it to the unclaimed names the caller owns. A claim
  * another process released first is skipped.
  */
-export function releaseDeadClaims(dir: string, names: readonly string[], marker: string, isOriginal: (original: string) => boolean = () => true): void {
+export async function releaseDeadClaims(dir: string, names: readonly string[], marker: string, isOriginal: (original: string) => boolean = () => true): Promise<void> {
   for (const name of names) {
     const claim = parseClaim(name, marker);
     if (!claim || claim.running || !isOriginal(claim.original)) continue;
     try {
-      fs.renameSync(path.join(dir, name), path.join(dir, claim.original));
+      await fsp.rename(path.join(dir, name), path.join(dir, claim.original));
     } catch {
       // Another process gave it back first.
     }

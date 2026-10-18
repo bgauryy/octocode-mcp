@@ -147,6 +147,26 @@ pub(super) fn declaration<'t>(node: Node<'t>, content: &str) -> Option<(&'static
     }
 }
 
+/// The node that spans a declaration as written. Some grammars wrap the
+/// declaration node in a node that holds its header: C++ and CUDA put
+/// `template <…>` in a `template_declaration` around the function, class or
+/// alias, and Python puts the `@decorator` lines in a `decorated_definition`
+/// around the `def` or `class`. The wrapper starts where the declaration is
+/// read from (a doc comment sits above the header), so its range is the
+/// declaration's; the name node still places `line`.
+pub(super) fn declaration_extent(node: Node<'_>) -> Node<'_> {
+    let mut extent = node;
+    while let Some(parent) = extent.parent()
+        && matches!(
+            parent.kind(),
+            "template_declaration" | "decorated_definition"
+        )
+    {
+        extent = parent;
+    }
+    extent
+}
+
 fn modifier_words<'c>(node: Node<'_>, content: &'c str) -> Vec<&'c str> {
     let mut cursor = node.walk();
     node.children(&mut cursor)

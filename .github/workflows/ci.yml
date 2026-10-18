@@ -84,6 +84,60 @@ jobs:
         run: yarn workspace @octocodeai/config check:config-contract
         working-directory: .
 
+  # Every platform's cfg(target_os)/cfg(windows) code, type-checked through the
+  # same cross tools a release uses (build-native.cjs --check: no link, no
+  # staging). Darwin needs the Apple SDK, so a macOS runner checks the darwin
+  # entries of bin/platform.cjs and Linux checks the rest.
+  native-platforms:
+    name: Native type-check (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: packages/octocode-native
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Platforms this runner checks
+        id: platforms
+        run: |
+          node -e '
+            const { PLATFORMS } = require("./bin/platform.cjs");
+            const mine = Object.entries(PLATFORMS).filter(([, p]) => (p.os === "darwin") === (process.platform === "darwin"));
+            console.log(`names=${mine.map(([name]) => name).join(" ")}`);
+            console.log(`triples=${mine.map(([, p]) => p.triple).join(" ")}`);
+          ' >> "$GITHUB_OUTPUT"
+      # rustup reads rust-toolchain.toml; the targets are this runner's platforms.
+      - run: rustup target add ${{ steps.platforms.outputs.triples }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/octocode-native
+          key: platforms
+      - if: runner.os == 'Linux'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild,cargo-xwin
+      # A libc-only cross (musl on the glibc runner) uses the host toolchain.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/cargo-xwin
+          key: cargo-xwin-${{ runner.os }}
+      - name: Type-check
+        run: node scripts/build-native.cjs --check --jobs 2 $(printf -- '--target %s ' ${{ steps.platforms.outputs.names }})
+
   # The native package's script tests (platform map, build/publication,
   # lint floor, audit-native): plain Node, no Rust build.
   native-scripts:

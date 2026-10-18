@@ -61,7 +61,7 @@ Load when building a runner, laying out a suite or run folder, dispatching worke
 
 ## Task text
 
-State every requirement the grader enforces, including a required output location, API, or business constraint; never bug locations, rubric checklists, expected answers, or a preferred tool sequence.
+Task contract (objective, inputs, constraints, output) that states every requirement the grader enforces, including a required output location, API, or business constraint; the solver picks the method, so never bug locations, rubric checklists, expected answers, or a preferred tool sequence.
 
 ## Multi-agent subjects
 

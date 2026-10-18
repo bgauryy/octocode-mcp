@@ -1,7 +1,10 @@
 use crate::error::{Error, Result};
 use crate::graph::SourceStamp;
+use crate::lsp::project_config::ProjectConfigWatch;
 use crate::lsp::spawn_limits;
-use crate::lsp::transport::{ClientRequestContext, JsonRpcConnection, ProgressTracker, Readiness};
+use crate::lsp::transport::{
+    ClientRequestContext, CpuClock, JsonRpcConnection, ProgressTracker, Readiness, WaitBudget,
+};
 use crate::lsp::types::{JsCodeSnippet, JsExactPosition, JsLanguageServerConfig, JsRange};
 use crate::lsp::uri::{path_to_uri, uri_to_path};
 use crate::text::LineIndex;
@@ -528,6 +531,12 @@ struct NativeLspClientInner {
     /// away). Part of every cached response key: an answer given before the
     /// change is never reused after it, whatever the caller's generation.
     content_epoch: AtomicU64,
+    /// The project config files (compile database, `.clangd`) of every
+    /// directory this server resolved a document through, as they were when
+    /// it first looked. The server never re-reads them for a document it
+    /// holds, so a change replaces the server (see
+    /// [`NativeLspClient::project_config_changed`]).
+    project_config: StdMutex<ProjectConfigWatch>,
     /// Windows: owns the Job Object enforcing the server's memory cap; must
     /// outlive the child and be released only after the child is reaped
     /// (closing a kill-on-close job hard-kills the tree). Unit on Unix, where
@@ -614,6 +623,7 @@ impl NativeLspClient {
         // safe defaults; user-supplied options still win key by key.
         let mut config = config;
         crate::lsp::config::apply_server_default_options(&mut config, None);
+        let config_command = config.command.clone();
         Self {
             inner: Arc::new(NativeLspClientInner {
                 config,
@@ -629,6 +639,9 @@ impl NativeLspClient {
                 sync_lock: Mutex::new(()),
                 open_docs: StdMutex::new(OpenDocuments::new(MAX_OPEN_DOCUMENTS)),
                 content_epoch: AtomicU64::new(0),
+                project_config: StdMutex::new(ProjectConfigWatch::new(
+                    crate::lsp::config::project_config_files(&config_command),
+                )),
                 memory_cap_guard: StdMutex::new(None),
                 memory_watchdog: StdMutex::new(None),
                 resident_bytes: Arc::new(AtomicU64::new(0)),
@@ -670,6 +683,17 @@ impl NativeLspClient {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             open_docs.clear();
+        }
+        {
+            let mut project_config = self
+                .inner
+                .project_config
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            project_config.clear();
+            // Baseline taken before the server exists, so nothing it could
+            // read is missing from it.
+            project_config.observe(Path::new(&self.inner.config.workspace_root));
         }
     }
 
@@ -774,6 +798,7 @@ impl NativeLspClient {
                 workspace_folders: json!([{ "uri": root_uri, "name": "workspace" }]),
             },
             Arc::clone(&self.inner.progress),
+            cpu_clock_for(&child),
         ));
         // Watch the server tree's RSS (macOS has no address-space cap; Linux
         // RLIMIT_AS bounds one process, not the tree). Armed before
@@ -1219,6 +1244,9 @@ impl NativeLspClient {
         // without mutating `open_docs`, so a doc is never marked open when its
         // didOpen/didChange was never actually sent.
         let connection = self.connection_handle().await?;
+        // The server resolves this document's project setup now (at its
+        // first `didOpen`): the baseline for noticing a later change.
+        self.observe_project_config(Path::new(&file_path));
         // Content the server already holds is not sent again: a resync would
         // make the server re-analyze an unchanged document (and drop its
         // diagnostics) on every request.
@@ -1293,6 +1321,38 @@ impl NativeLspClient {
             let _ = notify_close(&connection, &evicted_uri).await;
         }
         notification.map(|()| Some(next_version))
+    }
+
+    fn observe_project_config(&self, path: &Path) {
+        let mut project_config = self
+            .inner
+            .project_config
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        project_config.observe(path);
+    }
+
+    /// Whether a project config file the server reads (`compile_commands.json`,
+    /// `compile_flags.txt`, `.clangd`) was created, changed or deleted in a
+    /// directory it resolved a document through since it first looked there.
+    /// The server keeps the setup it saw until it is replaced, so the pool
+    /// replaces a changed-under client once it is idle. Always `false` for a
+    /// server that re-reads its own configuration.
+    pub async fn project_config_changed(&self) -> bool {
+        let watch = {
+            let watch = self
+                .inner
+                .project_config
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !watch.is_active() {
+                return false;
+            }
+            watch.clone()
+        };
+        tokio::task::spawn_blocking(move || watch.changed())
+            .await
+            .unwrap_or(false)
     }
 
     /// Bring every open document back in line with its file before a
@@ -1495,20 +1555,25 @@ impl NativeLspClient {
         // request + content-modified retry loop never holds the connection
         // mutex across `.await`.
         let connection = self.connection_handle().await?;
+        // One budget for the request and its content-modified retries: the
+        // starvation extension (see `transport::patience`) is granted once.
+        let budget = WaitBudget::new(REQUEST_TIMEOUT_MS);
         let mut attempts = 0;
         loop {
             let response = if supports_partial_results(method) {
                 connection
-                    .request_with_partials(method, params.clone(), REQUEST_TIMEOUT_MS)
+                    .request_with_partials(method, params.clone(), budget)
                     .await
             } else {
-                connection
-                    .request(method, params.clone(), REQUEST_TIMEOUT_MS)
-                    .await
+                connection.request(method, params.clone(), budget).await
             };
             match response {
                 Ok(value) => return Ok(value),
-                Err(error) if is_retryable_error(&error) && attempts < CONTENT_MODIFIED_RETRIES => {
+                Err(error)
+                    if is_retryable_error(&error)
+                        && attempts < CONTENT_MODIFIED_RETRIES
+                        && !budget.is_spent() =>
+                {
                     attempts += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(
                         CONTENT_MODIFIED_RETRY_DELAY_MS,
@@ -2027,6 +2092,23 @@ fn truncate_stderr_line(line: String) -> String {
     let mut truncated = line.chars().take(STDERR_LINE_MAX_CHARS).collect::<String>();
     truncated.push_str("...");
     truncated
+}
+
+/// The CPU clock of a freshly spawned server tree, which lets a request
+/// outwait a server that is starved but progressing (see
+/// `transport::patience`). `None` on platforms with no CPU reader, or
+/// when the child already exited.
+fn cpu_clock_for(child: &Child) -> Option<CpuClock> {
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    {
+        let clock = crate::lsp::process_tree::TreeCpuClock::new(child.id()?);
+        Some(Arc::new(move || clock.read()))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    {
+        let _ = child;
+        None
+    }
 }
 
 /// Arm the RSS watchdog for a freshly spawned server on macOS and Linux (see

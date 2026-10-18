@@ -5,6 +5,9 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use ignore::gitignore::Gitignore;
 use regex::Regex;
 
+use std::sync::Arc;
+
+use super::fs_resume::{Child, Frame, WalkCursor, WalkTally};
 use super::glob;
 use super::walk::{IgnorePolicy, IgnoreRules, Prune, Stop};
 use crate::error::{Error, ErrorKind};
@@ -14,11 +17,24 @@ use crate::types::{FileSystemEntry, FileSystemQueryOptions, FileSystemQueryResul
 /// Whether the walk inspects an entry now or replays one an earlier window
 /// of a resumed walk (`skip_entries`) already inspected. A policy callback
 /// that counts what it leaves out counts only a [`Visit::Fresh`] entry: the
-/// earlier window counted a replayed one.
+/// earlier window counted a replayed one. A fresh entry names its walk
+/// position, so a window that ends at an earlier entry can drop the counts of
+/// the ones after it (the window that resumes there counts them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Visit {
-    Fresh,
+    Fresh { position: u32 },
     Replayed,
+}
+
+impl Visit {
+    /// The walk position of a fresh entry; `None` for a replayed one.
+    #[must_use]
+    pub fn fresh_at(self) -> Option<u32> {
+        match self {
+            Self::Fresh { position } => Some(position),
+            Self::Replayed => None,
+        }
+    }
 }
 
 /// A walk's policy callback: the path, its directory-entry type (`None`
@@ -69,6 +85,11 @@ struct CompiledQuery {
     time_budget: Option<std::time::Duration>,
     /// Leading entries (walk order) an earlier walk inspected: replayed.
     skip_entries: u32,
+    /// Which walk a [`WalkCursor`] belongs to: everything here that decides
+    /// the order and the directories of the walk.
+    shape: u64,
+    /// Keep a window checkpoint at this listed entry.
+    window_rows: Option<u32>,
     warnings: Vec<String>,
 }
 
@@ -80,12 +101,43 @@ struct QueryState {
     /// Entries inspected so far, replayed ones included.
     position: u32,
     entries: Vec<FileSystemEntry>,
+    /// Entries listed (stored, the root excepted) so far.
+    listed: u32,
     total_discovered: u32,
-    skipped: u32,
-    permission_denied: u32,
-    ignored: u32,
-    pruned_dirs: Vec<String>,
+    tally: WalkTally,
     time_cut: Option<String>,
+    /// The directories the walk is inside, outermost first.
+    stack: Vec<Frame>,
+    /// Where the walk stood when it was cut by time.
+    cursor: Option<WalkCursor>,
+    /// Where the walk stood at the `window_rows`-th listed entry.
+    window_cursor: Option<WalkCursor>,
+}
+
+impl QueryState {
+    /// Count an entry or directory that could not be read.
+    fn unreadable(&mut self, err: &std::io::Error) {
+        let denied = err.kind() == std::io::ErrorKind::PermissionDenied;
+        self.tally.unreadable(self.position, denied);
+    }
+
+    /// Where the walk stands: the directories it is inside and, when the
+    /// walk is about to enter one, that directory.
+    fn cursor(&self, shape: u64, entering: Option<Frame>) -> WalkCursor {
+        let mut frames = self.stack.clone();
+        frames.extend(entering);
+        WalkCursor {
+            position: self.position,
+            shape,
+            frames,
+        }
+    }
+
+    /// The walk has nothing more to inspect: out of time or past the limit.
+    fn finished(&self, query: &CompiledQuery) -> bool {
+        self.time_cut.is_some()
+            || (query.stop_at_limit && self.total_discovered as usize > query.limit)
+    }
 }
 
 /// Walk `options.path` in name order, listing the entries its filters
@@ -98,9 +150,16 @@ pub(crate) fn query_file_system(
     admit: &EntryFilter<'_>,
     stop: &Stop<'_>,
 ) -> Result<FileSystemQueryResult, Error> {
+    let resume = options.resume.clone();
     let query = CompiledQuery::new(options)?;
     let mut state = QueryState::default();
-    if !admit(&query.root, None, Visit::Fresh) {
+    // A resumed walk's root was listed (and counted) by the walk it resumes.
+    let root_visit = if query.skip_entries == 0 {
+        Visit::Fresh { position: 0 }
+    } else {
+        Visit::Replayed
+    };
+    if !admit(&query.root, None, root_visit) {
         return Err(Error::new("Filesystem query root is denied by path policy"));
     }
     let root_metadata = fs::symlink_metadata(&query.root).map_err(|err| {
@@ -113,7 +172,6 @@ pub(crate) fn query_file_system(
         )
     })?;
 
-    // A resumed walk's root was listed by the walk it resumes.
     if query.include_root && query.skip_entries == 0 {
         let mut metadata = Some(root_metadata.clone());
         let kind = EntryKind::of(root_metadata.file_type());
@@ -131,7 +189,17 @@ pub(crate) fn query_file_system(
     }
 
     if root_metadata.is_dir() && (query.recursive || !query.include_root) {
-        walk_children(&query.root, 1, &query, &mut state, admit, stop)?;
+        // A cursor made by this walk's shape at the resume position continues
+        // it without replaying a single entry.
+        let frames = resume
+            .filter(|cursor| cursor.shape == query.shape && cursor.position == query.skip_entries)
+            .map(|cursor| cursor.frames);
+        if let Some((first, inner)) = frames.as_deref().and_then(<[Frame]>::split_first) {
+            state.position = query.skip_entries;
+            walk_frame(first.clone(), inner, &query, &mut state, admit, stop)?;
+        } else {
+            walk_children(&query.root, 1, &query, &mut state, admit, stop)?;
+        }
     } else if !root_metadata.is_dir() && !query.include_root {
         return Err(Error::new(format!(
             "Filesystem query root is not a directory: {}",
@@ -140,22 +208,27 @@ pub(crate) fn query_file_system(
     }
 
     let was_capped = state.total_discovered as usize > query.limit;
+    let totals = state.tally.through(u32::MAX);
     Ok(FileSystemQueryResult {
         entries: state.entries,
         total_discovered: state.total_discovered,
         was_capped,
-        skipped: state.skipped,
-        permission_denied: state.permission_denied,
-        ignored: state.ignored,
+        skipped: totals.skipped,
+        permission_denied: totals.permission_denied,
+        ignored: totals.ignored,
         warnings: query.warnings,
-        pruned_dirs: state.pruned_dirs,
+        pruned_dirs: totals.pruned_dirs,
         time_cut: state.time_cut,
         walk_position: state.position,
+        tally: state.tally,
+        cursor: state.cursor,
+        window_cursor: state.window_cursor,
     })
 }
 
 impl CompiledQuery {
     fn new(options: FileSystemQueryOptions) -> Result<Self, Error> {
+        let shape = walk_shape(&options);
         let root = PathBuf::from(options.path);
         let mut warnings = Vec::new();
         let names = options.names.unwrap_or_default();
@@ -238,9 +311,31 @@ impl CompiledQuery {
             limit: options.limit.map(|n| n as usize).unwrap_or(DEFAULT_LIMIT),
             time_budget: options.time_budget,
             skip_entries: options.skip_entries.unwrap_or(0),
+            shape,
+            window_rows: options.window_rows,
             warnings,
         })
     }
+}
+
+/// A digest of what decides the order and the directories of a walk (never
+/// which entries it lists): a [`WalkCursor`] continues only a walk of the
+/// same shape.
+fn walk_shape(options: &FileSystemQueryOptions) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (
+        &options.path,
+        options.include_root,
+        options.recursive,
+        options.max_depth,
+        options.ignore.include_ignored,
+        options.ignore.include_hidden,
+        &options.exclude,
+        &options.exclude_dir,
+    )
+        .hash(&mut hasher);
+    hasher.finish()
 }
 
 /// The `entry_type` filter: `f` lists files, `d` directories.
@@ -331,6 +426,7 @@ enum Verdict {
     Enters,
 }
 
+/// Walk the directory `base` (a fresh one: read now) and everything under it.
 fn walk_children(
     base: &Path,
     depth: u32,
@@ -339,30 +435,50 @@ fn walk_children(
     admit: &EntryFilter<'_>,
     stop: &Stop<'_>,
 ) -> Result<(), Error> {
+    let frame = Frame {
+        base: base.to_path_buf(),
+        depth,
+        children: None,
+        read_at: None,
+        next: 0,
+    };
+    walk_frame(frame, &[], query, state, admit, stop)
+}
+
+/// A directory's entries in walk order, or `None` when it is too deep, past
+/// `max_depth`, or unreadable (counted, unless the walk this one resumes
+/// counted it).
+fn read_children(
+    base: &Path,
+    depth: u32,
+    query: &CompiledQuery,
+    state: &mut QueryState,
+) -> Option<(Vec<Child>, Option<std::time::SystemTime>)> {
     // The walk this one resumes read this directory when it inspected the
     // entry that led here (the root: before its first entry), and counted
     // what failed to read: counted again, a failure would show twice.
     let reread = query.skip_entries > 0 && state.position <= query.skip_entries;
     if depth > MAX_RECURSION_DEPTH {
         if !reread {
-            state.skipped += 1;
+            state.tally.unreadable(state.position, false);
         }
-        return Ok(());
+        return None;
     }
     if query.max_depth.is_some_and(|max_depth| depth > max_depth) {
-        return Ok(());
+        return None;
     }
 
+    // Taken before the listing: a change after it moves the time on.
+    let read_at = fs::symlink_metadata(base)
+        .and_then(|metadata| metadata.modified())
+        .ok();
     let read_dir = match fs::read_dir(base) {
         Ok(entries) => entries,
         Err(err) => {
             if !reread {
-                state.skipped += 1;
-                if err.kind() == std::io::ErrorKind::PermissionDenied {
-                    state.permission_denied += 1;
-                }
+                state.unreadable(&err);
             }
-            return Ok(());
+            return None;
         }
     };
 
@@ -371,24 +487,75 @@ fn walk_children(
     // — would vary run-to-run. Collect and sort by file name for deterministic,
     // stable output (names are unique in a directory, and each is taken once:
     // a comparison that asked the entry for its name would allocate it every
-    // time). Read errors are still surfaced as skips.
-    let mut children: Vec<(std::ffi::OsString, fs::DirEntry)> = Vec::new();
+    // time). Read errors are still surfaced as skips. The entry type comes
+    // with the directory listing on common platforms.
+    let mut children: Vec<Child> = Vec::new();
     for dir_entry in read_dir {
         match dir_entry {
-            Ok(entry) => children.push((entry.file_name(), entry)),
+            Ok(entry) => children.push(Child {
+                name: entry.file_name(),
+                file_type: entry.file_type().ok(),
+            }),
             Err(err) => {
                 if !reread {
-                    state.skipped += 1;
-                    if err.kind() == std::io::ErrorKind::PermissionDenied {
-                        state.permission_denied += 1;
-                    }
+                    state.unreadable(&err);
                 }
             }
         }
     }
-    children.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    children.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+    Some((children, read_at))
+}
 
-    for (file_name, dir_entry) in children {
+/// Walk one directory of the walk: `frame` from its `next` entry on, the
+/// directories `inner` (a cursor's deeper ones, outermost first) before it.
+fn walk_frame(
+    mut frame: Frame,
+    inner: &[Frame],
+    query: &CompiledQuery,
+    state: &mut QueryState,
+    admit: &EntryFilter<'_>,
+    stop: &Stop<'_>,
+) -> Result<(), Error> {
+    let children = match frame.children.clone() {
+        Some(children) => children,
+        None => match read_children(&frame.base, frame.depth, query, state) {
+            Some((children, read_at)) => {
+                frame.read_at = read_at;
+                Arc::new(children)
+            }
+            None => return Ok(()),
+        },
+    };
+    frame.children = Some(children);
+    state.stack.push(frame);
+    let level = state.stack.len() - 1;
+    let walked = walk_level(level, inner, query, state, admit, stop);
+    state.stack.pop();
+    walked
+}
+
+fn walk_level(
+    level: usize,
+    inner: &[Frame],
+    query: &CompiledQuery,
+    state: &mut QueryState,
+    admit: &EntryFilter<'_>,
+    stop: &Stop<'_>,
+) -> Result<(), Error> {
+    if let Some((first, rest)) = inner.split_first() {
+        walk_frame(first.clone(), rest, query, state, admit, stop)?;
+        if state.finished(query) {
+            return Ok(());
+        }
+    }
+    let frame = &state.stack[level];
+    let (base, depth, start) = (frame.base.clone(), frame.depth, frame.next);
+    let children = frame.children.clone().unwrap_or_default();
+
+    for (index, child) in children.iter().enumerate().skip(start) {
+        // The next entry of this directory a resume inspects.
+        state.stack[level].next = index;
         // Look ahead to one additional matching entry before declaring overflow.
         // Reaching the stored-entry cap alone does not prove the scan is partial.
         if query.stop_at_limit && state.total_discovered as usize > query.limit {
@@ -397,6 +564,7 @@ fn walk_children(
         if stop() {
             return Err(Error::cancelled());
         }
+        let file_name = child.name.as_os_str();
         // The leading `skip_entries` entries were inspected by the walk this
         // one resumes: replayed below, they spend none of the time budget.
         let replaying = state.position < query.skip_entries;
@@ -405,19 +573,18 @@ fn walk_children(
                 .deadline
                 .get_or_insert_with(|| Instant::now() + budget);
             if Instant::now() >= deadline {
-                let path = dir_entry.path();
+                let path = base.join(file_name);
                 let relative = path.strip_prefix(&query.root).unwrap_or(&path);
                 state.time_cut = Some(crate::text::slash_path(relative));
+                state.cursor = Some(state.cursor(query.shape, None));
                 return Ok(());
             }
         }
         state.position += 1;
+        state.stack[level].next = index + 1;
 
-        let path = dir_entry.path();
-        // The entry type comes with the directory listing on common
-        // platforms; the policy check and the name filters use it, and only
-        // an entry those admit is stat'ed for its size and times.
-        let file_type = dir_entry.file_type().ok();
+        let path = base.join(file_name);
+        let file_type = child.file_type;
         let mut metadata = None;
         let kind = match file_type {
             Some(file_type) => EntryKind::of(file_type),
@@ -441,19 +608,23 @@ fn walk_children(
         let visit = if replaying {
             Visit::Replayed
         } else {
-            Visit::Fresh
+            Visit::Fresh {
+                position: state.position,
+            }
         };
-        match query.verdict(&path, &file_name, is_directory, (file_type, visit), admit) {
+        match query.verdict(&path, file_name, is_directory, (file_type, visit), admit) {
             Verdict::Ignored { counted } => {
                 if counted && !replaying {
-                    state.ignored += 1;
+                    state.tally.ignored(state.position);
                 }
                 continue;
             }
             Verdict::Pruned => {
                 if !replaying {
                     let relative = path.strip_prefix(&query.root).unwrap_or(&path);
-                    state.pruned_dirs.push(crate::text::slash_path(relative));
+                    state
+                        .tally
+                        .pruned(state.position, crate::text::slash_path(relative));
                 }
                 continue;
             }
@@ -461,8 +632,9 @@ fn walk_children(
             Verdict::Enters => {}
         }
 
-        if !replaying
-            && visit_path(
+        if !replaying {
+            let listed = state.entries.len();
+            if visit_path(
                 &path,
                 &file_name.to_string_lossy(),
                 depth,
@@ -472,15 +644,27 @@ fn walk_children(
                 state,
             )
             .is_err()
-        {
-            continue;
+            {
+                continue;
+            }
+            if state.entries.len() > listed && state.position > 0 {
+                state.listed += 1;
+                if query.window_rows == Some(state.listed) {
+                    let entering = (query.recursive && is_directory).then(|| Frame {
+                        base: path.clone(),
+                        depth: depth + 1,
+                        children: None,
+                        read_at: None,
+                        next: 0,
+                    });
+                    state.window_cursor = Some(state.cursor(query.shape, entering));
+                }
+            }
         }
 
         if query.recursive && is_directory {
             walk_children(&path, depth + 1, query, state, admit, stop)?;
-            if state.time_cut.is_some()
-                || (query.stop_at_limit && state.total_discovered as usize > query.limit)
-            {
+            if state.finished(query) {
                 return Ok(());
             }
         }
@@ -515,10 +699,7 @@ fn lstat(path: &Path, state: &mut QueryState) -> Option<fs::Metadata> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => Some(metadata),
         Err(err) => {
-            state.skipped += 1;
-            if err.kind() == std::io::ErrorKind::PermissionDenied {
-                state.permission_denied += 1;
-            }
+            state.unreadable(&err);
             None
         }
     }
@@ -1071,12 +1252,12 @@ mod tests {
         };
         let (whole, visited) = calls(0);
         assert_eq!(visited, 10);
-        assert!(whole.iter().all(|(_, _, visit)| *visit == Visit::Fresh));
+        assert!(whole.iter().all(|(_, _, visit)| visit.fresh_at().is_some()));
         for skip in 0..=visited {
             let (seen, _) = calls(skip);
             let fresh = seen
                 .iter()
-                .filter(|(_, _, visit)| *visit == Visit::Fresh)
+                .filter(|(_, _, visit)| visit.fresh_at().is_some())
                 .map(|(path, _, _)| path.clone())
                 .collect::<Vec<_>>();
             let first_new = whole.len() - fresh.len();
@@ -1653,5 +1834,213 @@ mod tests {
         );
         assert_eq!(names("*.[jt]s").len(), 3);
         assert_eq!(names("[!R]*.js"), ["Scheduler.js"]);
+    }
+
+    /// A tree whose walk is deep, with unlisted entries (`.md`, directories).
+    fn resume_tree() -> TmpDir {
+        let root = TmpDir::new();
+        for dir in ["a", "a/inner", "b", "c/deep/er"] {
+            fs::create_dir_all(root.join(dir)).expect("dir");
+        }
+        for file in [
+            "a/1.ts",
+            "a/2.md",
+            "a/inner/3.ts",
+            "b/4.ts",
+            "c/deep/er/5.ts",
+            "c/deep/6.md",
+            "7.ts",
+        ] {
+            File::create(root.join(file)).expect("file");
+        }
+        root
+    }
+
+    /// A walk of `resume_tree` resumed at `skip`, with how many entries its
+    /// policy callback saw replayed and fresh.
+    fn resumed(
+        root: &TmpDir,
+        skip: u32,
+        resume: Option<WalkCursor>,
+        time_budget: Option<std::time::Duration>,
+    ) -> (FileSystemQueryResult, usize, usize) {
+        let replayed = std::sync::atomic::AtomicUsize::new(0);
+        let fresh = std::sync::atomic::AtomicUsize::new(0);
+        let result = query_file_system(
+            FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                extensions: Some(vec!["ts".to_owned()]),
+                skip_entries: Some(skip),
+                resume,
+                time_budget,
+                window_rows: Some(2),
+                ..Default::default()
+            },
+            &|path, _, visit| {
+                // The root is judged once per walk, never an entry of it.
+                if path == Path::new(&*root.to_string_lossy()) {
+                    return true;
+                }
+                let counter = if visit.fresh_at().is_some() {
+                    &fresh
+                } else {
+                    &replayed
+                };
+                counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                true
+            },
+            &|| false,
+        )
+        .expect("query");
+        (result, replayed.into_inner(), fresh.into_inner())
+    }
+
+    fn relative_paths(result: &FileSystemQueryResult) -> Vec<String> {
+        result
+            .entries
+            .iter()
+            .map(|entry| entry.relative_path.clone())
+            .collect()
+    }
+
+    /// A walk resumed from the cursor of the walk it resumes continues
+    /// there: nothing is replayed, and it lists and counts what a replaying
+    /// resume does, from every position a walk stops at.
+    #[test]
+    fn a_walk_resumed_from_its_cursor_replays_nothing_and_matches_a_replay() {
+        let root = resume_tree();
+        let (whole, _, _) = resumed(&root, 0, None, None);
+        let visited = whole.walk_position;
+        let mut replays_saved = 0;
+        for skip in 0..visited {
+            // A walk stopped by its time budget at its first new entry.
+            let (cut, _, _) = resumed(&root, skip, None, Some(std::time::Duration::ZERO));
+            let cursor = cut
+                .cursor
+                .clone()
+                .expect("a walk cut by time keeps its cursor");
+            assert_eq!(cursor.position(), skip, "skip {skip}");
+            let (replay, replayed, _) = resumed(&root, skip, None, None);
+            let (continued, none_replayed, fresh) = resumed(&root, skip, Some(cursor), None);
+            assert_eq!(none_replayed, 0, "skip {skip}: nothing replayed");
+            assert_eq!(
+                relative_paths(&continued),
+                relative_paths(&replay),
+                "skip {skip}"
+            );
+            assert_eq!(continued.walk_position, visited, "skip {skip}");
+            assert_eq!(
+                fresh as u32,
+                visited - skip,
+                "skip {skip}: only new entries"
+            );
+            replays_saved += replayed;
+        }
+        assert!(
+            replays_saved > 0,
+            "the replaying resume replays directories"
+        );
+    }
+
+    /// The window that ends at its `window_rows`-th listed entry keeps a
+    /// cursor there: a walk resumed from it lists the rest, and the two
+    /// windows hold every entry once.
+    #[test]
+    fn a_window_ended_at_a_listed_entry_resumes_from_there_without_a_gap_or_repeat() {
+        let root = resume_tree();
+        let (whole, _, _) = resumed(&root, 0, None, None);
+        let all = relative_paths(&whole);
+        for rows in 1..=all.len() as u32 {
+            let mut first = query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                extensions: Some(vec!["ts".to_owned()]),
+                window_rows: Some(rows),
+                ..Default::default()
+            })
+            .expect("window");
+            let last = first.entries[rows as usize - 1].walk_position;
+            first.end_at(last);
+            let cursor = first.cursor.clone().expect("a cursor at the window's end");
+            assert_eq!(cursor.position(), last);
+            let (rest, replayed, _) = resumed(&root, last, Some(cursor), None);
+            assert_eq!(replayed, 0, "rows {rows}");
+            let mut joined = relative_paths(&first);
+            joined.extend(relative_paths(&rest));
+            assert_eq!(joined, all, "rows {rows}");
+        }
+    }
+
+    /// A cursor of another walk shape is not trusted: the walk replays.
+    #[test]
+    fn a_cursor_of_another_walk_is_ignored_and_the_walk_replays() {
+        let root = resume_tree();
+        let (cut, _, _) = resumed(&root, 3, None, Some(std::time::Duration::ZERO));
+        let cursor = cut.cursor.expect("cursor");
+        let shallow = |resume| {
+            query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                skip_entries: Some(3),
+                max_depth: Some(1),
+                resume,
+                ..Default::default()
+            })
+            .expect("query")
+        };
+        assert_eq!(
+            relative_paths(&shallow(Some(cursor))),
+            relative_paths(&shallow(None))
+        );
+    }
+
+    /// A resume reads the directories it holds as the walk it resumes read
+    /// them: an entry removed since is skipped, the rest is listed once.
+    #[test]
+    fn a_cursor_resume_survives_an_entry_removed_since() {
+        let root = resume_tree();
+        // The walk order is `7.ts`, `a`, `a/1.ts`, `a/2.md`, `a/inner`, ...:
+        // after the 3rd entry, `a/2.md` and everything past it remain.
+        let (cut, _, _) = resumed(&root, 3, None, Some(std::time::Duration::ZERO));
+        let cursor = cut.cursor.expect("cursor");
+        fs::remove_file(root.join("a/inner/3.ts")).expect("remove");
+        let (rest, replayed, _) = resumed(&root, 3, Some(cursor), None);
+        assert_eq!(replayed, 0);
+        assert_eq!(relative_paths(&rest), ["b/4.ts", "c/deep/er/5.ts"]);
+        let (replay, _, _) = resumed(&root, 3, None, None);
+        assert_eq!(relative_paths(&rest), relative_paths(&replay));
+    }
+
+    /// Counts are the walk's own through the window's end: the window that
+    /// ends at an earlier entry leaves the rest to the walk that resumes
+    /// there, so the two count each entry once.
+    #[test]
+    fn a_window_counts_only_the_entries_it_covers() {
+        let root = TmpDir::new();
+        fs::create_dir(root.join(".git")).expect("marker");
+        fs::write(root.join(".gitignore"), "*.log\n").expect("rules");
+        for name in ["a.ts", "b.log", "c.ts", "d.log", "e.ts"] {
+            File::create(root.join(name)).expect("file");
+        }
+        let walk = |skip| {
+            query_file_system_inner(FileSystemQueryOptions {
+                path: root.to_string_lossy().to_string(),
+                extensions: Some(vec!["ts".to_owned()]),
+                skip_entries: Some(skip),
+                ..Default::default()
+            })
+            .expect("query")
+        };
+        let whole = walk(0);
+        assert_eq!(whole.ignored, 2);
+        let a = whole.entries[0].walk_position;
+        let c = whole.entries[1].walk_position;
+        let mut window = walk(0);
+        window.end_at(c);
+        assert_eq!((window.ignored, window.entries.len()), (1, 2));
+        assert_eq!(window.walk_position, c);
+        let rest = walk(c);
+        assert_eq!(window.ignored + rest.ignored, whole.ignored);
+        let mut early = walk(0);
+        early.end_at(a);
+        assert_eq!((early.ignored, early.entries.len()), (0, 1));
     }
 }

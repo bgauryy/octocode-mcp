@@ -70,7 +70,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       op: StringEnum(subagent ? ['list', 'get', 'add', 'update'] as const : ['list', 'get', 'add', 'update', 'remove'] as const, { description: ops }),
       id: Type.Optional(Type.String({ description: `${subagent ? 'get/update' : 'get/update/remove'}: item id, e.g. "B12"` })),
       title: Type.Optional(Type.String({ description: `${subagent ? 'add' : 'add/update'}: one-line summary` })),
-      goal: Type.Optional(Type.String({ description: subagent ? 'add: checkable done criterion' : 'add/update: checkable done criterion; add needs it' })),
+      goal: Type.Optional(Type.String({ description: subagent ? 'add: Definition of Done, checkable' : 'add/update: Definition of Done, checkable; add needs it' })),
       paths: Type.Optional(Type.Array(Type.String(), { description: `files, dirs or components affected` })),
       why: Type.Optional(Type.String({ description: `why it matters` })),
       evidence: Type.Optional(Type.Array(Type.String(), { description: `observations: paths, measurements, links` })),

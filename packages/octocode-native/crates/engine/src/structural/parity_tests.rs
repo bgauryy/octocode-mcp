@@ -394,18 +394,47 @@ fn search_and_rewrite_agree_on_the_shared_subset_and_pin_differences() {
                 rewrite: 0,
             },
         ),
-        // ast-grep parses a bare C call pattern as a declaration; astSearch
-        // supplies statement context.
+        // ast-grep alone parses a bare C call pattern as a declaration;
+        // rewrite reuses the statement context search compiles it in.
         case(
             "bare c call",
             "c",
             "c",
             "int main() { foo(1); bar(foo(2)); return 0; }\n",
             json!({"pattern": "foo($X)"}),
-            Differ {
-                search: 2,
-                rewrite: 0,
-            },
+            Same,
+        ),
+        case(
+            "c define body",
+            "c",
+            "c",
+            "#define FREE(a) zfree((a)->alloc)\n#define LIMIT limit(8)\nvoid f(void) { zfree(q); }\n",
+            json!({"pattern": "zfree($X)"}),
+            Same,
+        ),
+        case(
+            "cpp define body",
+            "cpp",
+            "cpp",
+            "#define RESET(p) do { p = zfree(p); } while (0)\n#define WRAPPED(p) \\\n    zfree(p)\n",
+            json!({"pattern": "zfree($X)"}),
+            Same,
+        ),
+        case(
+            "cuda define body",
+            "cu",
+            "cuda",
+            "#define LAUNCH(k, x) k<<<1, 1>>>(x)\n#define FREE(p) zfree(p)\n",
+            json!({"pattern": "zfree($X)"}),
+            Same,
+        ),
+        case(
+            "define body that is no code",
+            "c",
+            "c",
+            "#define OPEN {\n#define TYPE unsigned int\n#define CAT(a, b) a ## b\n",
+            json!({"pattern": "zfree($X)"}),
+            SameMaybeEmpty,
         ),
     ];
     cases.push(Case {

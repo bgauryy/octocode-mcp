@@ -1,3 +1,4 @@
+import { onSecond } from '../shared/clock.js';
 import { pendingReportsDir, takePendingReports } from './handoff.js';
 import type { AgentRuns } from './claim.js';
 import { SUBAGENT_STOP_GRACE_MS } from './process.js';
@@ -14,30 +15,41 @@ const LATE_REPORTS_MS = 4 * SUBAGENT_STOP_GRACE_MS;
  */
 export class LateReports {
   private dir: string | undefined;
-  private timer: NodeJS.Timeout | undefined;
+  private stopClock: (() => void) | undefined;
+  /** The take in progress, or the last one: the next starts after it, so two takes never claim the same file. */
+  private taking: Promise<void> = Promise.resolve();
 
   constructor(private readonly runs: AgentRuns) {}
 
-  /** Takes the reports waiting for this Pi session now, and again every second for a while. */
-  start(sessionId: string): void {
+  /** Takes the reports waiting for this Pi session now (resolves when done), and again every second for a while. */
+  start(sessionId: string): Promise<void> {
     this.dir = pendingReportsDir(sessionId);
     this.runs.reports.pendingDir = this.dir;
-    this.take();
+    const first = this.take();
     const until = Date.now() + LATE_REPORTS_MS;
-    clearInterval(this.timer);
-    this.timer = setInterval(() => {
-      this.take();
-      if (Date.now() >= until) clearInterval(this.timer);
-    }, 1_000);
-    this.timer.unref();
+    this.stopClock?.();
+    this.stopClock = onSecond(() => {
+      void this.take();
+      if (Date.now() >= until) this.stopPolling();
+    });
+    return first;
   }
 
-  take(): void {
-    if (this.dir) for (const report of takePendingReports(this.dir)) this.runs.reports.add(report);
+  take(): Promise<void> {
+    const next = this.taking.then(async () => {
+      if (this.dir) for (const report of await takePendingReports(this.dir)) this.runs.reports.add(report);
+    });
+    this.taking = next.catch(() => undefined);
+    return next;
   }
 
   stop(): void {
-    clearInterval(this.timer);
+    this.stopPolling();
     this.dir = undefined;
+  }
+
+  private stopPolling(): void {
+    this.stopClock?.();
+    this.stopClock = undefined;
   }
 }

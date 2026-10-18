@@ -33,7 +33,7 @@ For raw CLI setup, replace both paths below; never create one database per parti
 ```sh
 COMMUNICATION_WORKSPACE=/absolute/repo-or-worktree
 COMMUNICATION_DB=/absolute/shared/communication.sqlite
-comm() { npx -y @octocodeai/octocode-agents-communication /cli "$@" --json --workspace-root "$COMMUNICATION_WORKSPACE" --database "$COMMUNICATION_DB"; }
+comm() { npx -y @octocodeai/octocode-agents-communication /cli "$@" --json --workspace "$COMMUNICATION_WORKSPACE" --database "$COMMUNICATION_DB"; }
 comm --help
 comm db info
 comm join '{"name":"api-reviewer","vendor":"codex","task":"Review API changes","branch":"feature/api"}'

@@ -2,11 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
 import { binary, execFileSync, tempWorkspace, withReasoning } from './helpers.mjs';
 
-function fixture(t, { legacy = false } = {}) {
+function fixture(t) {
   const directory = tempWorkspace(t, 'communication-worktrees-', { real: true });
   const main = join(directory, 'main');
   const topic = join(directory, 'topic');
@@ -31,12 +29,6 @@ function fixture(t, { legacy = false } = {}) {
     ...command.split(' '), '-', '--workspace', workspace, '--database', database,
     ...(session ? ['--session', session] : []),
   ], { input: JSON.stringify(withReasoning(command, input)), encoding: 'utf8', stdio: 'pipe', timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }));
-  if (legacy) {
-    const db = new DatabaseSync(database);
-    db.exec(readFileSync(new URL('./fixtures/schema-v3.sql', import.meta.url), 'utf8'));
-    db.close();
-    return { main, topic, clone, outside, scope, database, call };
-  }
   const a = call(main, 'join', { name: 'main-author', vendor: 'codex' }).id;
   const b = call(topic, 'join', { name: 'topic-reviewer', vendor: 'claude' }).id;
   const c = call(topic, 'join', { name: 'topic-observer', vendor: 'pi' }).id;
@@ -80,7 +72,7 @@ test('linked worktrees discover cross-vendor peers but preserve actual bindings 
 
 test('cross-worktree requests complete with one correlated final reply and both acknowledgements', t => {
   const f = fixture(t);
-  const sent = f.call(f.main, 'send_message', { to: f.b, body: 'Review the topic checkout', key: 'review-topic', replyRequired: true, conversationId: 'worktree-review' }, f.a);
+  const sent = f.call(f.main, 'send_message', { to: f.b, question: 'Review the topic checkout', key: 'review-topic', conversationId: 'worktree-review' }, f.a);
   assert.equal(sent.recipients, 1);
   const received = f.call(f.topic, 'fetch', { incoming: true, type: 'message' }, f.b).items;
   assert.equal(received.length, 1);
@@ -89,9 +81,9 @@ test('cross-worktree requests complete with one correlated final reply and both 
   assert.equal(received[0].branch, 'main');
   assert.equal(received[0].data.messageId, sent.id);
   assert.throws(() => f.call(f.topic, 'complete', { message: sent.id }, f.b), /requires a final answer/);
-  const finished = f.call(f.topic, 'complete', { message: sent.id, reply: 'Reviewed feature/topic; compatibility is preserved.' }, f.b);
+  const finished = f.call(f.topic, 'complete', { message: sent.id, outcome:'done',reply:{conclusion:'Reviewed feature/topic; compatibility is preserved.'} }, f.b);
   assert.equal(finished.completed, true);
-  assert.equal(f.call(f.topic, 'complete', { message: sent.id, reply: 'Reviewed feature/topic; compatibility is preserved.' }, f.b).id, finished.id);
+  assert.equal(f.call(f.topic, 'complete', { message: sent.id, outcome:'done',reply:{conclusion:'Reviewed feature/topic; compatibility is preserved.'} }, f.b).id, finished.id);
   assert.deepEqual(f.call(f.topic, 'inbox', {}, f.b).items, []);
   const answer = f.call(f.main, 'fetch', { incoming: true, type: 'message' }, f.a).items[0];
   assert.equal(answer.path, f.topic);
@@ -193,69 +185,6 @@ test('immutable evidence and context carry worktree origins across complete Unic
   assert.deepEqual(contexts.map(row => row.workspace), [f.main, f.topic]);
   assert.throws(() => f.call(f.topic, 'share_document', { name: shared.document.name, content: 'Replacement evidence' }, f.b), /immutable/);
   assert.throws(() => f.call(f.clone, 'read_document', { name: shared.document.name }, f.d), /Unknown document/);
-});
-
-
-test('v3 migration preserves every row and old document path while merging linked worktree coordination', t => {
-  const f = fixture(t, { legacy: true }), at = Date.now();
-  const db = new DatabaseSync(f.database);
-  const insertSession = db.prepare('INSERT INTO sessions(id,workspace,name,vendor,branch,expiresAt) VALUES(?,?,?,?,?,?)');
-  insertSession.run('legacy-main', f.main, 'Main author', 'codex', 'main', at + 600000);
-  insertSession.run('legacy-topic', f.topic, 'Topic author', 'claude', 'feature/topic', at + 600000);
-  insertSession.run('legacy-recipient', f.main, 'Main recipient', 'grok', 'main', at + 600000);
-  const message = Number(db.prepare("INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,replyRequired) VALUES('legacy-main','legacy-recipient','Retained v3 request','v3-request',?,'Preserve conversation during migration',1)").run(at + 600000).lastInsertRowid);
-  db.prepare("INSERT INTO deliveries(message,recipient) VALUES(?,'legacy-recipient')").run(message);
-  db.prepare("INSERT INTO leases(workspace,path,kind,owner,acquiredAt,refreshedAt,expiresAt,reasoning,pathKey) VALUES(?,?,'file','legacy-main',?,?,?,'Preserve existing file ownership',?)").run(f.main, join(f.main, 'retained.ts'), at, at, at + 60000, join(f.main, 'retained.ts').toLowerCase());
-  const contents = new Map();
-  const publishLegacy = (workspace, author, name, content) => {
-    const folder = join(workspace, '.octocode', 'communication');
-    mkdirSync(folder, { recursive: true });
-    writeFileSync(join(folder, name), content);
-    const data = { name, path: '.octocode/communication/' + name, author, bytes: Buffer.byteLength(content), sha256: createHash('sha256').update(content).digest('hex'), reasoning: 'Preserve historical evidence' };
-    db.prepare("INSERT INTO records(path,[from],type,entityId,timestamp,data,key) VALUES(?,?,'document',?,?,?,?)").run(workspace, author, name, at, JSON.stringify(data), name);
-    contents.set(workspace + '/' + name, content);
-  };
-  publishLegacy(f.main, 'legacy-main', 'old-main.md', 'Preserved main checkout evidence.');
-  publishLegacy(f.main, 'legacy-main', 'same-name.md', 'Main α🙂 evidence across pages.');
-  publishLegacy(f.topic, 'legacy-topic', 'same-name.md', 'Topic β🙂 evidence across pages.');
-  const tables = ['sessions', 'records', 'messages', 'deliveries', 'leases', 'documents'];
-  const snapshot = Object.fromEntries(tables.map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
-  db.close();
-  assert.throws(() => f.call(f.main, 'binding', {}, 'legacy-main'), /Incompatible/);
-  const backup = join(f.main, 'before-v4.sqlite');
-  const result = f.call(f.main, 'db migrate', { backup });
-  assert.equal(result.sourceSchemaVersion, 3);
-  assert.equal(result.schemaVersion, 6);
-  const migrated = new DatabaseSync(f.database, { readOnly: true });
-  const previous = new DatabaseSync(backup, { readOnly: true });
-  t.after(() => { migrated.close(); previous.close(); });
-  assert.equal(previous.prepare('PRAGMA user_version').get().user_version, 3);
-  for (const table of tables) {
-    assert.deepEqual(migrated.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(), snapshot[table], `${table} state remains exact`);
-    assert.deepEqual(previous.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(), snapshot[table], `${table} backup remains exact`);
-  }
-  assert.deepEqual(migrated.prepare('PRAGMA foreign_key_check').all(), []);
-  assert.deepEqual(migrated.prepare('SELECT workspace,coordinationScope FROM workspaces ORDER BY workspace').all().map(row => ({ ...row })), [f.main, f.topic].sort().map(workspace => ({ workspace, coordinationScope: f.scope })));
-  assert.equal(f.call(f.topic, 'read_document', { name: 'old-main.md' }, 'legacy-topic').content, contents.get(f.main + '/old-main.md'));
-  assert.throws(() => f.call(f.topic, 'read_document', { name: 'same-name.md' }, 'legacy-topic'), /Ambiguous historical document name/);
-  for (const workspace of [f.main, f.topic]) {
-    let page = f.call(f.topic, 'read_document', { name: 'same-name.md', workspace, limit: 7 }, 'legacy-topic');
-    let content = page.content;
-    assert.ok(page.next);
-    while (page.next) {
-      assert.equal(page.next.input.workspace, workspace, 'Continuation keeps the selected historical origin');
-      assert.equal(page.next.input.offset, Buffer.byteLength(content));
-      page = f.call(f.topic, page.next.command, page.next.input, 'legacy-topic');
-      content += page.content;
-    }
-    assert.equal(content, contents.get(workspace + '/same-name.md'));
-    assert.equal(readFileSync(join(workspace, '.octocode', 'communication', 'same-name.md'), 'utf8'), content);
-  }
-  assert.throws(() => f.call(f.topic, 'read_document', { name: 'same-name.md', workspace: f.clone }, 'legacy-topic'), /outside this repository/);
-  const sent = f.call(f.main, 'send_message', { to: 'legacy-topic', body: 'Migration now permits cross-worktree coordination' }, 'legacy-main');
-  assert.equal(f.call(f.topic, 'inbox', {}, 'legacy-topic').items[0].id, sent.id);
-  assert.equal(f.call(f.main, 'check_write', { paths: [{ path: 'retained.ts' }] }, 'legacy-main').ok, true);
-  assert.equal(f.call(f.topic, 'check_write', { paths: [{ path: 'retained.ts' }] }, 'legacy-topic').ok, false);
 });
 
 

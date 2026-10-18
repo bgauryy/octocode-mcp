@@ -4,13 +4,18 @@ Load when assigning workflow roles or Octocode tools, sequencing work, merging e
 
 ## Orchestrator and actor contract
 
-The orchestrator owns the user goal, authority, primary workflow, actor selection, sequence, one ledger, evidence merge, verification, and user-facing result. It assigns each actor a bounded input, read/write/process authority, requested observation, and done-when.
+RACI for every workflow execution, which has one orchestrator and at least one actor:
 
-Every workflow execution has the orchestrator and at least one actor. Actors execute only their assigned steps, preserve raw evidence, and return observations keyed to the orchestrator's ledger row. They neither create another ledger nor mark the work accepted. An actor that needs another role requests it from the orchestrator; there is no nested, unsupervised orchestrator or recursive spawning.
-
-| Before assignment | Actor handoff | Orchestrator merge |
+| RACI slot | Who | Duties |
 |---|---|---|
-| Goal/scope, authority, role, inputs, relevant Octocode access and anchors, target boundary, acceptance condition, next row | Row key, exact source/runtime anchors, relevant non-secret conditions, expected and observed result, counterevidence/gap, requested next action | Re-read deciding anchors, check applicability and identity, retain disproof/uncertainty, update the one ledger |
+| Accountable | Orchestrator | Owns the user goal, authority, primary workflow, actor selection, sequence, one ledger, evidence merge, verification, and user-facing result. Sends each actor a Task contract with a bounded input (table below). |
+| Responsible | Each actor | Executes only its assigned steps, preserves raw evidence, and returns observations keyed to the orchestrator's ledger row. Creates no other ledger and never marks the work accepted. Requests another role from the orchestrator; there is no nested, unsupervised orchestrator or recursive spawning. |
+| Consulted | Owner skill | Keeps its method, permissions, and output. |
+| Informed | User | Receives the orchestrator's result. |
+
+| Assignment: Task contract + Definition of Done | Actor return: claim–evidence, keyed to the row | Orchestrator merge |
+|---|---|---|
+| Objective: goal/scope, target boundary; inputs: relevant Octocode access and anchors; constraints: authority (read/write/process), role; Definition of Done: acceptance condition; next row | Row key; exact source/runtime anchors, relevant non-secret conditions, expected and observed result; counterevidence/gap; requested next action | Re-read deciding anchors, check applicability and identity, retain disproof/uncertainty, update the one ledger |
 
 Use `octocode-agents-communication` for identity, leases, requests, completion, and durable delivery. A delivered handoff is not a verified result. One source/build owner writes a changed boundary; one process owner changes a target process. Inspectors return evidence rather than racing the writer with fixes.
 
@@ -39,12 +44,23 @@ Tool evidence keeps its original scope: syntax does not prove resolved identity,
 
 ## Compose and resume
 
-1. Select one primary workflow from the [catalog](catalog.md); load its owner skill when that phase begins. Add a helper only for a stated condition.
-2. Choose actor duties with a distinct observation or independently derived check. Reject a split when the second role only paraphrases, lacks decisive access, cannot check independently, or costs more coordination than the bounded work. Actors request additional roles from the orchestrator; they do not create nested teams.
-3. The orchestrator creates or reuses the [single ledger](verification.md#keep-one-compact-coverage-ledger), then sends row-keyed assignments.
-4. Merge observations, run the applicable acceptance check, and invalidate dependent rows after a relevant change. Disagreement triggers a distinguishing observation or an explicit unresolved tradeoff—never a vote or eloquence contest.
-5. On interruption, reread the existing ledger, reconcile it with current source/artifact/state identity, retain only evidence with a dependency basis, and assign the next outstanding row. Do not create a replacement ledger.
+```mermaid
+flowchart TD
+  S[Select one primary workflow from the catalog; load its owner skill when that phase begins] --> P{Second role has a distinct observation or independently derived check?}
+  P -- no --> O[Reject the split; the orchestrator records the limitation]
+  P -- yes --> L[Create or reuse the single ledger; send row-keyed Task contracts]
+  O --> L
+  L --> M[Merge observations; run the applicable acceptance check; invalidate dependent rows after a relevant change]
+  M --> Q{Observations disagree?}
+  Q -- yes --> X[Distinguishing observation or explicit unresolved tradeoff, never a vote or eloquence contest] --> M
+  Q -- no --> D[Report through the orchestrator]
+  I[Interruption] --> R[Resume from the existing ledger; assign the next outstanding row] --> L
+```
 
-When a workflow needs unavailable actor tools, report the missing role and affected check. Do not convert the orchestrator into an undisclosed actor. A direct task outside this workflow has no orchestrator wrapper.
+- Add a helper only for a stated condition.
+- Reject a split when the second role only paraphrases, lacks decisive access, cannot check independently, or costs more coordination than the bounded work. Actors request additional roles from the orchestrator; they do not create nested teams.
+- Resume is Checkpoint–resume with the ledger as the checkpoint: done is the `verified` rows, next the next outstanding row, open questions the gaps. Reread the existing ledger, reconcile it with current source/artifact/state identity, retain only evidence with a dependency basis, and assign the next outstanding row. Do not create a replacement ledger.
+
+When a workflow needs unavailable actor tools, report it as an SBAR: situation (the missing role or tool), background (the workflow and row), assessment (the affected check), recommendation (what to supply or accept). Do not convert the orchestrator into an undisclosed actor. A direct task outside this workflow has no orchestrator wrapper.
 
 Next: choose a concrete split in [role patterns](role-patterns.md) or execute the selected procedure.

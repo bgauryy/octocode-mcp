@@ -37,8 +37,10 @@ pub enum Cost {
 
 /// The per-request execution budget of every runtime surface (CLI, warm
 /// server, MCP): above the worst configured cold start plus one logical
-/// request (initialize, language-server readiness, retries and delays).
-/// `HostOptions::timeout_secs` overrides it for an embedder.
+/// request (initialize, language-server readiness, retries and delays, and
+/// the request's base timeout); a language server that keeps progressing
+/// may wait out the rest of it. `HostOptions::timeout_secs` overrides it for
+/// an embedder.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 
 impl Default for RequestLimits {

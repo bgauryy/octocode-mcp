@@ -69,11 +69,14 @@ impl<'a> Seen<'a> {
 /// [`directory_ignore_inputs`] under `paths`, and the rule files outside
 /// the walk); `None` when a listed entry no longer has the size and time
 /// its walk read (it changed before it could be stamped), or an ignore file
-/// is one no stamp can watch.
-fn proof(
+/// is one no stamp can watch. `inside` are directories the walk holds open
+/// (a cursor's): their own ignore files are watched too, as a directory
+/// holding a listed entry's are.
+pub(super) fn proof(
     root: &std::path::Path,
     paths: &crate::policy::path::PathPolicy,
     listed: Vec<Seen<'_>>,
+    inside: &[&std::path::Path],
 ) -> Option<Proof> {
     let sources = listed
         .iter()
@@ -87,6 +90,7 @@ fn proof(
             .filter(|parent| parent.starts_with(root))
             .map(std::path::Path::to_path_buf),
     );
+    dirs.extend(inside.iter().map(|dir| dir.to_path_buf()));
     let mut rules = octocode_engine::search::walk::external_ignore_inputs(root);
     for dir in &dirs {
         let inputs =
@@ -150,7 +154,7 @@ pub(super) fn put<T: Listed>(
     if rows > MAX_TOTAL_ROWS {
         return;
     }
-    let Some(proof) = proof(root, paths, listed) else {
+    let Some(proof) = proof(root, paths, listed, &[]) else {
         return;
     };
     let walk: Arc<dyn Any + Send + Sync> = Arc::clone(walk) as _;
@@ -276,10 +280,10 @@ mod tests {
         };
         let paths = crate::tools::test_support::workspace_policy(root.path());
         let stamp =
-            proof(root.path(), &paths, vec![seen(0)]).expect("a directory stamps at size 0");
+            proof(root.path(), &paths, vec![seen(0)], &[]).expect("a directory stamps at size 0");
         assert!(stamp.holds(), "nothing changed since the walk");
         // Any other size is a change the walk did not read.
-        assert!(proof(root.path(), &paths, vec![seen(1)]).is_none());
+        assert!(proof(root.path(), &paths, vec![seen(1)], &[]).is_none());
         std::thread::sleep(Duration::from_millis(20));
         std::fs::write(child.join("new.txt"), "x").expect("newcomer");
         assert!(
@@ -310,7 +314,7 @@ mod tests {
                 modified,
             }]
         };
-        let stamp = proof(root.path(), &paths, listed()).expect("stamped");
+        let stamp = proof(root.path(), &paths, listed(), &[]).expect("stamped");
         assert!(stamp.holds());
         std::thread::sleep(Duration::from_millis(20));
         std::fs::OpenOptions::new()
@@ -320,6 +324,6 @@ mod tests {
             .expect("edit the nested exclude in place");
         assert!(!stamp.holds(), "the nested repository's rules changed");
         std::os::unix::fs::symlink(&exclude, nested.join(".gitignore")).expect("link");
-        assert!(proof(root.path(), &paths, listed()).is_none());
+        assert!(proof(root.path(), &paths, listed(), &[]).is_none());
     }
 }

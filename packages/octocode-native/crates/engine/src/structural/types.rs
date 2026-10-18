@@ -160,6 +160,9 @@ pub struct StructuralSearchDetailedResult {
     pub language_id: Option<String>,
     pub query: StructuralQueryExplanation,
     pub matches: Vec<StructuralDetailedMatch>,
+    /// The source parsed with recovered syntax that could hide a match: its
+    /// matches may be incomplete.
+    pub recovered: bool,
     pub diagnostics: Vec<StructuralDiagnostic>,
 }
 
@@ -172,6 +175,9 @@ pub struct StructuralSearchDetailedFileResult {
     pub language_id: Option<String>,
     pub skipped_reason: Option<String>,
     pub matches: FileMatches,
+    /// The file parsed with recovered syntax that could hide a match: its
+    /// matches may be incomplete.
+    pub recovered: bool,
     pub diagnostics: Vec<StructuralDiagnostic>,
 }
 

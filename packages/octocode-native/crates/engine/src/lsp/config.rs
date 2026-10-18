@@ -208,6 +208,47 @@ pub(crate) const CLANGD_HEADLESS_ARGS: &[&str] = &[
     "--pch-storage=memory",
 ];
 
+/// What clangd resolves a file's compile command from, relative to the file's
+/// directory and each ancestor: a compilation database, its `build/` variant,
+/// a flags file, and the `.clangd` project config.
+pub(crate) const CLANGD_PROJECT_CONFIG_FILES: &[&str] = &[
+    "compile_commands.json",
+    "build/compile_commands.json",
+    "compile_flags.txt",
+    ".clangd",
+];
+
+/// The files a server reads once per project and never again for a document
+/// it already holds, so a pooled server must be replaced when one changes
+/// (see `lsp::project_config`). Empty for a server that re-reads its own
+/// configuration.
+pub(crate) fn project_config_files(command: &str) -> &'static [&'static str] {
+    match server_stem(command).as_deref() {
+        Some("clangd") => CLANGD_PROJECT_CONFIG_FILES,
+        _ => &[],
+    }
+}
+
+/// clangd `initializationOptions.fallbackFlags` for CUDA: the flags of the
+/// command clangd invents (`clang <file>`) for a file with no compile
+/// command, where they replace that command's missing language and target.
+///
+/// - `-xcuda`: clang takes `.cuh` for a CUDA *header* and plans no compile
+///   job for it, so clangd reports `invalid AST` for every request.
+/// - `--cuda-host-only`: without it the driver plans host and device jobs
+///   and needs a GPU architecture and `libdevice` to plan the device one.
+///   Host-only is one job on any machine, with or without a CUDA SDK; with
+///   one installed clang still finds it and force-includes its headers.
+///
+/// They are used only when no compile command applies: a compilation
+/// database or `compile_flags.txt` entry overrides them completely.
+pub(crate) const CLANGD_CUDA_FALLBACK_FLAGS: &[&str] = &["-xcuda", "--cuda-host-only"];
+
+/// clangd `initializationOptions` by language.
+fn clangd_default_options(language_id: Option<&str>) -> Option<Value> {
+    (language_id == Some("cuda")).then(|| json!({ "fallbackFlags": CLANGD_CUDA_FALLBACK_FLAGS }))
+}
+
 /// jdtls settings (sent as `initializationOptions.settings`): no automatic
 /// workspace build, and Eclipse metadata (`.project`, `.classpath`,
 /// `.settings/`) kept in the `-data` directory, not the project root.
@@ -291,7 +332,12 @@ pub(crate) fn apply_server_default_options(
 ) {
     match server_stem(&config.command).as_deref() {
         Some("rust-analyzer") => apply_rust_analyzer_defaults(config),
-        Some("clangd") => add_default_args(config, CLANGD_HEADLESS_ARGS),
+        Some("clangd") => {
+            add_default_args(config, CLANGD_HEADLESS_ARGS);
+            if let Some(options) = clangd_default_options(config.language_id.as_deref()) {
+                merge_default_options(config, options);
+            }
+        }
         Some("jdtls") => {
             let has_data = config
                 .args
@@ -1774,6 +1820,66 @@ mod tests {
             assert_eq!(config.command, "clangd");
             assert_eq!(config.language_id.as_deref(), Some("cuda"));
         }
+    }
+
+    /// A `.cuh` with no compile command is a CUDA *header* to clang's
+    /// fallback command, which plans no job for it (`invalid AST`); CUDA
+    /// files get the language and a host-only target as fallback flags, and
+    /// the other C-family files are served as before.
+    #[test]
+    fn cuda_files_get_clangd_fallback_flags_and_other_c_family_files_do_not() {
+        let options = LspDiscoveryOptions::default();
+        for extension in ["cu", "cuh"] {
+            let config =
+                default_server_for_file(&format!("fixture.{extension}"), "/workspace", &options)
+                    .expect(extension);
+            assert_eq!(
+                config.initialization_options,
+                Some(json!({ "fallbackFlags": ["-xcuda", "--cuda-host-only"] })),
+                "{extension}"
+            );
+        }
+        for extension in ["c", "h", "cpp", "hpp"] {
+            let config =
+                default_server_for_file(&format!("fixture.{extension}"), "/workspace", &options)
+                    .expect(extension);
+            assert_eq!(config.initialization_options, None, "{extension}");
+        }
+    }
+
+    #[test]
+    fn a_users_clangd_fallback_flags_replace_the_cuda_default() {
+        let mut config = JsLanguageServerConfig {
+            command: "/usr/bin/clangd-18".to_owned(),
+            args: None,
+            workspace_root: "/workspace".to_owned(),
+            language_id: Some("cuda".to_owned()),
+            initialization_options: Some(
+                json!({ "fallbackFlags": ["-xcuda", "--cuda-path=/opt/cuda"] }),
+            ),
+            env: None,
+            max_memory_mb: None,
+            source: Default::default(),
+        };
+        super::apply_server_default_options(&mut config, None);
+        super::apply_server_default_options(&mut config, None);
+        assert_eq!(
+            config.initialization_options,
+            Some(json!({ "fallbackFlags": ["-xcuda", "--cuda-path=/opt/cuda"] }))
+        );
+    }
+
+    #[test]
+    fn only_clangd_declares_project_config_files() {
+        assert_eq!(
+            super::project_config_files("clangd"),
+            super::project_config_files("/usr/bin/clangd-18")
+        );
+        assert!(super::project_config_files("clangd").contains(&"compile_flags.txt"));
+        assert!(super::project_config_files("clangd").contains(&".clangd"));
+        assert!(super::project_config_files("clangd").contains(&"compile_commands.json"));
+        assert!(super::project_config_files("rust-analyzer").is_empty());
+        assert!(super::project_config_files("typescript-language-server").is_empty());
     }
 
     #[test]

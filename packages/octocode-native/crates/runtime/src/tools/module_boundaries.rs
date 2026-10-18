@@ -42,6 +42,10 @@ const SHARED_MODULES: &[(&str, &str)] = &[
         "shared bounded relevance ordering for local search files and fetch windows",
     ),
     ("match_keys", "JSON/TOML key matching"),
+    (
+        "match_list",
+        "the regex alternation a matchString list means",
+    ),
     ("module_boundaries", "this guard"),
     ("num", "numeric conversions"),
     ("numbered", "numbered-line rendering"),

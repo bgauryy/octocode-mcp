@@ -7,19 +7,10 @@
 
 use crate::support::{self, Run as _};
 
-use octocode_native::contracts::{parsed_contract, validate};
+use octocode_native::contracts::validate;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use support::Workspace;
-
-/// Names retired from `scope` (`input`: a row field; `lead`: a
-/// continuation name) for `tool`, from the shared retired-name deny-list.
-fn retired(scope: &str, tool: &str) -> Vec<String> {
-    support::retired_names(&[scope], Some(tool))
-        .into_iter()
-        .map(|entry| entry["name"].as_str().expect("name").to_owned())
-        .collect()
-}
 
 /// One emitted continuation: the tool that emitted it, its name, and the call.
 #[derive(Debug)]
@@ -56,12 +47,6 @@ fn rows(query: &Value) -> Vec<Value> {
 }
 
 fn assert_current(edge: &Edge) {
-    assert!(
-        !retired("lead", &edge.from).contains(&edge.name),
-        "{} emits retired continuation {}: {edge:?}",
-        edge.from,
-        edge.name
-    );
     validate(&edge.tool, edge.query.clone()).unwrap_or_else(|error| {
         panic!(
             "{}.{} → {} is not a complete input under the strict contract: {error:?}\n{edge:?}",
@@ -72,15 +57,6 @@ fn assert_current(edge: &Edge) {
         let Some(object) = row.as_object() else {
             continue;
         };
-        for field in retired("input", &edge.tool) {
-            assert!(
-                !object.contains_key(&field),
-                "{}.{} → {} sets retired field {field}: {edge:?}",
-                edge.from,
-                edge.name,
-                edge.tool
-            );
-        }
         // astTopology's anchor is `source`; `file` was its old name.
         if edge.tool == "astTopology" {
             assert!(!object.contains_key("file"), "{edge:?}");
@@ -288,31 +264,6 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
         assert!(
             seen.contains(expected),
             "{expected} not reached; saw {seen:?}"
-        );
-    }
-}
-
-/// Every registered continuation kind is a current name.
-#[test]
-fn every_registered_continuation_kind_is_current() {
-    let contract = parsed_contract().expect("contract");
-    let kinds = &contract["continuationChannels"]["kinds"];
-    let mut names = Vec::new();
-    for channel in ["pages", "leads"] {
-        names.extend(
-            kinds[channel]
-                .as_array()
-                .unwrap_or_else(|| panic!("{channel} kinds"))
-                .iter()
-                .filter_map(Value::as_str),
-        );
-    }
-    assert!(!names.is_empty());
-    let retired = support::retired_names(&["lead"], None);
-    for name in names {
-        assert!(
-            !retired.iter().any(|entry| entry["name"] == name),
-            "retired kind {name} is registered"
         );
     }
 }

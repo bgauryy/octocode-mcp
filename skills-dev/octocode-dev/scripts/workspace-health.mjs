@@ -22,6 +22,18 @@ const BUILD_INPUTS = {
   '@octocodeai/codex-plugin': ['octocode'],
   '@octocodeai/claude-plugin': ['octocode'],
 };
+// The core layering: interfaces (mcp, cli) sit on config (bundled at build time) and native
+// (loaded at runtime); config and native depend on no workspace package; mcp-cli is a standalone
+// library. A workspace listed here may depend on exactly the packages it maps to.
+const CORE_LAYERING = {
+  'octocode-mcp-cli': [],
+  '@octocodeai/config': [],
+  '@octocodeai/octocode-native': [],
+  'octocode-mcp': ['@octocodeai/config', '@octocodeai/octocode-native'],
+  octocode: ['@octocodeai/config', '@octocodeai/octocode-native'],
+};
+// Bundled into the interface's output, so it must never be a published runtime dependency.
+const BUNDLED_WORKSPACES = ['@octocodeai/config'];
 const BUILD_OUTPUTS = {
   'packages/octocode-mcp': ['dist/index.js'],
   'packages/octocode': ['out/octocode.js'],
@@ -252,6 +264,38 @@ function checkDeclaredInternalImports(workspaces) {
   }
 }
 
+function layeringFailures(workspaces) {
+  const workspaceMap = getWorkspaceMap(workspaces);
+  const failures = [];
+  for (const [name, allowed] of Object.entries(CORE_LAYERING)) {
+    const workspace = workspaceMap.get(name);
+    if (!workspace) continue;
+    for (const dependency of collectInternalDependencies(workspace, workspaceMap)) {
+      // Native owns its per-platform binary packages.
+      if (workspaceMap.get(dependency).kind === 'native-platform') continue;
+      if (!allowed.includes(dependency)) {
+        failures.push(`${name} must not depend on ${dependency}; allowed: ${allowed.join(', ') || 'no workspace package'}`);
+      }
+    }
+    for (const bundled of BUNDLED_WORKSPACES) {
+      const fields = ['dependencies', 'peerDependencies', 'optionalDependencies'];
+      if (fields.some(field => workspace.packageJson[field]?.[bundled])) {
+        failures.push(`${name} bundles ${bundled}; declare it in devDependencies, not as a published runtime dependency`);
+      }
+    }
+  }
+  return failures;
+}
+
+function checkLayering(workspaces) {
+  const failures = layeringFailures(workspaces);
+  if (failures.length > 0) {
+    console.error('Workspace layering check failed:');
+    for (const failure of failures) console.error(`- ${failure}`);
+    process.exit(1);
+  }
+}
+
 function checkRequiredScripts(workspaces) {
   const failures = [];
 
@@ -413,7 +457,8 @@ async function runWorkspaceScriptParallel(workspaces, scriptName, preferScript) 
 
 function runVerify(workspaces) {
   checkRequiredScripts(workspaces);
-  runCommand('node', ['--test', 'skills-dev/octocode-dev/scripts/workspace-health.test.mjs']);
+  checkLayering(workspaces);
+  runCommand('node', ['--test', 'skills-dev/octocode-dev/scripts/*.test.mjs']);
   runCommand('node', ['skills-dev/octocode-dev/scripts/dedupe-deps.mjs']);
   runCommand('node', ['skills-dev/octocode-dev/scripts/docs-verify.mjs']);
 
@@ -430,6 +475,8 @@ function runVerify(workspaces) {
   }
 
   checkBuildOutputs(workspaces);
+  // After the builds: it validates the research skill's examples against the built CLI's live schemas.
+  runCommand('node', ['skills-dev/octocode-dev/scripts/check-research-guidance.mjs']);
 }
 
 async function main() {
@@ -462,6 +509,7 @@ async function main() {
       return;
     case 'check':
       checkRequiredScripts(workspaces);
+      checkLayering(workspaces);
       console.log('Workspace contract check passed.');
       return;
     case 'check-outputs':

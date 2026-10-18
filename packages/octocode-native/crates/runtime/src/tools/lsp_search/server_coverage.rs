@@ -34,6 +34,8 @@ pub(super) const CFG_NEGATED_REASON: &str = "cfgNegatedFeatures";
 pub(super) const BUILD_SCRIPTS_REASON: &str = "buildScriptsOff";
 /// File-level, like [`BUILD_SCRIPTS_REASON`]; no build context recovers it.
 pub(super) const OUTSIDE_INCLUDE_REASON: &str = "includeOutsidePackage";
+/// File-level: the anchor file is a module of several crates.
+pub(super) const SHARED_MODULE_REASON: &str = "sharedModuleFile";
 /// The server's inference limit is stated once in the tool description.
 const PYTHON_WARNING: &str = "Files that spell the name are missing from the answer.";
 /// Bound of the Rust gate scan; a larger workspace counts what it reached.
@@ -149,6 +151,31 @@ fn annotate_includes(row: &mut Value, query: &LspSearchQuery, anchor: &str, scop
             text_check()
         );
         flag_noted(row, query, OUTSIDE_INCLUDE_REASON, note, scope);
+    }
+    // Several files declare the anchor as a module (`#[path]` from a bench
+    // and a test): each crate compiles its own copy, and rust-analyzer
+    // resolves the anchor in one, so uses of the others' copies are not
+    // references of this symbol.
+    if includes.declared_by.len() > 1 {
+        let shown = |path: &Path| {
+            path.strip_prefix(&scope.root)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .into_owned()
+        };
+        let note = format!(
+            "{} is declared as a module by {} files ({}), so each compiles its own copy: rust-analyzer answers for one copy, and uses through the others are missing; confirm with {}.",
+            shown(Path::new(anchor)),
+            includes.declared_by.len(),
+            includes
+                .declared_by
+                .iter()
+                .map(|path| shown(path))
+                .collect::<Vec<_>>()
+                .join(", "),
+            text_check()
+        );
+        flag_noted(row, query, SHARED_MODULE_REASON, note, scope);
     }
     if includes.generated.is_empty() || runs_build_scripts(query) {
         return;
@@ -779,6 +806,82 @@ mod tests {
         assert!(missed.contains(&lib_path), "{missed:?}");
         let covered = lead_paths(vec![1, 2]).await;
         assert_eq!(covered, std::slice::from_ref(&user_path));
+    }
+
+    /// A support file a bench and a test both declare by `#[path]` is
+    /// compiled into each: rust-analyzer answers for one copy, so an answer
+    /// that misses the other declaring file is partial, names both, and
+    /// leads to the text check; an answer covering both is complete.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shared_module_files_flag_the_unanswered_copy() {
+        let dir = tempfile::tempdir().expect("dir");
+        let root = dir.path().canonicalize().expect("root");
+        let package = root.join("pkg");
+        for sub in ["benches/support", "tests", "src"] {
+            std::fs::create_dir_all(package.join(sub)).expect("dir");
+        }
+        std::fs::write(package.join("Cargo.toml"), "[package]\nname = \"p\"\n").expect("manifest");
+        std::fs::write(package.join("src/lib.rs"), "pub fn other() {}\n").expect("lib");
+        let support = package.join("benches/support/frozen.rs");
+        std::fs::write(&support, "pub fn frozen_graph() {}\n").expect("support");
+        let bench = package.join("benches/graph.rs");
+        std::fs::write(
+            &bench,
+            "#[path = \"support/frozen.rs\"]\nmod frozen;\nfn main() { frozen::frozen_graph(); }\n",
+        )
+        .expect("bench");
+        let test = package.join("tests/graph.rs");
+        std::fs::write(
+            &test,
+            "#[path = \"../benches/support/frozen.rs\"]\nmod frozen;\n#[test]\nfn t() { frozen::frozen_graph(); }\n",
+        )
+        .expect("test");
+        let path = |file: &Path| file.to_string_lossy().into_owned();
+        let (support_path, root_text) = (path(&support), path(&root));
+        let policy = crate::tools::test_support::workspace_policy(&root);
+        let row_for = |answered: Vec<String>| {
+            let scope = Scope::new(root_text.clone(), vec!["*.rs".into()]);
+            let (support_path, root_text, policy) =
+                (support_path.clone(), root_text.clone(), &policy);
+            async move {
+                scope
+                    .text_files("frozen_graph", policy, &crate::tools::cancel::NeverCancel)
+                    .await
+                    .expect("scan");
+                scope.answer(answered);
+                let mut row =
+                    json!({"kind":"references","matches":[{"path":"pkg/tests/graph.rs"}]});
+                annotate(
+                    &mut row,
+                    &query(json!({"path": support_path, "operation": "references",
+                        "symbolName": "frozen_graph", "line": 1})),
+                    Some("rust"),
+                    Server {
+                        anchor: &support_path,
+                        root: &root_text,
+                    },
+                    &scope,
+                );
+                row
+            }
+        };
+        let missed = row_for(vec![support_path.clone(), path(&test)]).await;
+        assert_eq!(
+            missed["partialReasons"],
+            json!([SHARED_MODULE_REASON]),
+            "{missed}"
+        );
+        assert_eq!(missed["coverage"]["textOnlyFiles"], 1, "{missed}");
+        assert!(
+            missed["notices"][0].as_str().is_some_and(|notice| {
+                notice.contains("pkg/benches/graph.rs") && notice.contains("pkg/tests/graph.rs")
+            }),
+            "{missed}"
+        );
+        assert!(missed["next"].get("findText").is_some(), "{missed}");
+        let complete = row_for(vec![support_path.clone(), path(&test), path(&bench)]).await;
+        assert!(complete.get("isPartial").is_none(), "{complete}");
+        assert_eq!(complete["coverage"]["textOnlyFiles"], 0, "{complete}");
     }
 
     /// A method reached through `Deref` to a type the package `include!`s

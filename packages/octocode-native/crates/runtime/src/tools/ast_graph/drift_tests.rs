@@ -924,6 +924,44 @@ fn rust_module_tree_loops_are_not_cycles_but_use_cycles_are() {
     assert!(cycles[0].get("runtimeCycleEdges").is_none(), "{out}");
 }
 
+/// `include_str!` embeds a file as data: a dependency its dependents see,
+/// but never a loop in the code graph, while `include!` splices code.
+#[test]
+fn rust_data_includes_link_files_but_close_no_cycle() {
+    let temp = fixture(&[
+        CARGO_APP,
+        ("src/lib.rs", "pub mod a;\npub mod b;\n"),
+        (
+            "src/a.rs",
+            "pub const SAMPLE: &str = include_str!(\"b.rs\");\npub fn ay() {}\n",
+        ),
+        ("src/b.rs", "use crate::a::ay;\npub fn bee() { ay(); }\n"),
+    ]);
+    let root = temp.0.as_path();
+    let src = root.join("src");
+    let out = topology(
+        root,
+        json!({"operation":"cycles","path":src.to_string_lossy()}),
+    );
+    assert_eq!(out["nodes"], json!([]), "{out}");
+    assert_eq!(out["graphSummary"]["cycleCount"], 0, "{out}");
+    assert!(
+        out["graphSummary"].get("moduleTreeCycleCount").is_none(),
+        "{out}"
+    );
+    let out = topology(
+        root,
+        json!({"operation":"dependents","path":src.to_string_lossy(),"source":"b.rs"}),
+    );
+    let row = out["nodes"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .find(|row| row["file"] == "a.rs")
+        .unwrap_or_else(|| panic!("a.rs depends on b.rs: {out}"));
+    assert_eq!(row["edgeKinds"], json!(["rust-include-data"]), "{out}");
+}
+
 /// A cycle item leads with its small facts (counts, runtime cycles,
 /// edges) and ends with its `files`, so a split item shows them first.
 #[test]

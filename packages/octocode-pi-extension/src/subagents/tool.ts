@@ -379,7 +379,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   // Worktrees left by a Pi process that died: their changes are saved to the agent's ref, then the worktree goes (kept when saving fails).
   pi.on('session_start', async (_event, ctx) => {
     panel.start(ctx);
-    late.start(ctx.sessionManager.getSessionId());
+    await late.start(ctx.sessionManager.getSessionId());
     // Off the start path: it lists and deletes directories.
     const root = scratchRoot(ctx.cwd);
     setImmediate(() => void sweepScratch(root));
@@ -402,11 +402,11 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     promptSnippet: 'Delegate bounded work to a subagent',
     parameters: Type.Object({
       goal: Type.String({ description: GOAL_DESCRIPTION }),
-      task: Type.String({ description: 'Brief: purpose, done-when, bounded scope and paths, evidence and decisions the subagent cannot infer, existing authorization, required output' }),
+      task: Type.String({ description: 'Task contract: objective; inputs (paths, evidence and decisions the subagent cannot infer); constraints (bounded scope, existing authorization, budget when costly); output; Definition of Done' }),
       profile: Type.Optional(Type.String({ description: 'Profile name from the active Profiles list; omit for a general-purpose subagent' })),
       model: Type.Optional(Type.String({ description: 'Model override: provider/id, bare id or purpose (small, medium), optionally :thinking. Refused when unavailable; omit for the profile\'s model, else this session\'s' })),
       background: Type.Optional(Type.Boolean({ description: 'Return at once for long or parallel work. `sendMessage` redirects it; `coordinate stop` ends it' })),
-      collaborate: Type.Optional(Type.Boolean({ description: 'true on each call of subagents that must coordinate directly (shared contracts); false for independent tasks' })),
+      collaborate: Type.Optional(Type.Boolean({ description: 'true on each call of subagents that must coordinate directly (shared contracts; name each one\'s owner in the tasks, RACI); false for independent tasks' })),
       isolate: Type.Optional(Type.Boolean({ description: 'Work in a private git worktree; changes land on refs/octocode/pi/<id>, not in this tree. The report names the ref: ask the user to run `/agents merge <id>` to bring them in' })),
     }),
     async execute(id, params, signal, onUpdate, ctx) {

@@ -20,7 +20,7 @@ const entity = (f, session, id) => cli(f, ['fetch', JSON.stringify({type:'messag
 
 test('conflicting routes explain how to recover a new direct request without storing malformed mail', t => {
   const f = fixture(t), a = agent(f, 'a'), b = agent(f, 'b');
-  const input = {to:b,topic:'review-challenge',replyTo:1,replyRequired:true,body:'Review the change'};
+  const input = {to:b,topic:'review-challenge',replyTo:1,question:'Review the change'};
   assert.throws(() => send(f,a,input), /Replies use complete/);
   const {topic,replyTo,...direct} = input;
   const sent = send(f,a,direct);
@@ -30,8 +30,8 @@ test('conflicting routes explain how to recover a new direct request without sto
 
 test('replies inherit correlation and remain visible only to participants', t => {
   const f = fixture(t), a = agent(f, 'a'), b = agent(f, 'b'), outsider = agent(f, 'outsider');
-  const rootMessage = send(f, a, { to: b, body: 'Which tools do you have?', replyRequired: true, conversationId: 'task:42', key: 'question' });
-  const reply = { message: rootMessage.id, reply: 'I have code search.' };
+  const rootMessage = send(f, a, { to: b, question: 'Which tools do you have?', conversationId: 'task:42', key: 'question' });
+  const reply = { message: rootMessage.id, outcome:'done',reply:{conclusion:'I have code search.'} };
   const response = call(f, b, 'complete', reply);
   assert.deepEqual(call(f, b, 'complete', reply), response);
   assert.equal(entity(f, b, response.id).conversationId, 'task:42');
@@ -45,7 +45,7 @@ test('replies inherit correlation and remain visible only to participants', t =>
   assert.equal(cli(f, ['fetch', '{"type":"message","where":{"conversationId":"task:42"}}'], outsider).items.length, 0);
   assert.equal(entity(f, outsider, rootMessage.id), null);
   assert.throws(() => call(f, outsider, 'complete', reply));
-  assert.throws(() => call(f, b, 'complete', {...reply,reply:'changed'}));
+  assert.throws(() => call(f, b, 'complete', {...reply,outcome:'done',reply:{conclusion:'changed'}}));
   mkdirSync(join(f.workspace, 'other'));
   const other = { ...f, workspace: join(f.workspace, 'other') }, foreign = agent(other, 'foreign');
   assert.throws(() => call(other, foreign, 'complete', reply));
@@ -58,7 +58,7 @@ test('replies inherit correlation and remain visible only to participants', t =>
 
 test('correlation validation is enforced in SQL as well as the CLI', t => {
   const f = fixture(t), a = agent(f, 'a'), b = agent(f, 'b'), outsider = agent(f, 'outsider');
-  const question = send(f, a, { to: b, body: 'question', replyRequired: true, conversationId: 'case.1' });
+  const question = send(f, a, { to: b, question: 'question', conversationId: 'case.1' });
   for (const conversationId of ['', 'x'.repeat(129), 'two words', 'é', 'a\n']) {
     assert.throws(() => send(f, a, { to: b, body: 'invalid', conversationId }));
   }
@@ -68,10 +68,10 @@ test('correlation validation is enforced in SQL as well as the CLI', t => {
   const db = new DatabaseSync(f.database); db.exec('PRAGMA foreign_keys=ON');
   assert.throws(() => db.prepare('UPDATE messages SET replyTo=? WHERE id=?').run(question.id, question.id), /immutable/);
   assert.throws(() => db.prepare('UPDATE messages SET conversationId=? WHERE id=?').run('changed', question.id), /immutable/);
-  const insert = db.prepare('INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,conversationId,replyTo,replyRequired) VALUES(?,?,?,?,?,?,?,?,0)');
+  const insert = db.prepare("INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,conversationId,replyTo,replyRequired,kind) VALUES(?,?,?,?,?,?,?,?,0,'answer')");
   assert.throws(() => insert.run(outsider, a, 'hidden', 'hidden', Date.now() + 60000, 'test', 'case.1', question.id), /visible parent/);
   assert.throws(() => insert.run(b, a, 'wrong', 'wrong', Date.now() + 60000, 'test', 'other', question.id), /visible parent/);
-  assert.throws(() => insert.run(a, b, 'bad', 'bad', Date.now() + 60000, 'test', 'non ASCII 🦀', null), /CHECK constraint/);
+  assert.throws(() => db.prepare('INSERT INTO messages(sender,target,body,key,expiresAt,reasoning,conversationId) VALUES(?,?,?,?,?,?,?)').run(a, b, 'bad', 'bad', Date.now() + 60000, 'test', 'non ASCII 🦀'), /CHECK constraint/);
   const valid = insert.run(b, a, 'answer', 'sql', Date.now() + 60000, 'test', 'case.1', question.id);
   assert.equal(entity(f, b, Number(valid.lastInsertRowid)).replyTo, question.id);
   db.close();
@@ -80,8 +80,8 @@ test('correlation validation is enforced in SQL as well as the CLI', t => {
 test('complete alone infers the recipient and prevents the duplicate send-then-complete reply path', t => {
  const f=fixture(t),a=agent(f,'questioner'),b=agent(f,'responder'),c=agent(f,'observer');
  call(f,b,'subscribe',{topics:['requests']});
- const question=send(f,a,{topic:'requests',body:'Review?',replyRequired:true,conversationId:'review:inferred'});
- const payload={message:question.id,reply:'Reviewed'};
+ const question=send(f,a,{topic:'requests',question:'Review?',conversationId:'review:inferred'});
+ const payload={message:question.id,outcome:'done',reply:{conclusion:'Reviewed'}};
  assert.throws(()=>send(f,b,{replyTo:question.id,body:'Reviewed'}),/Replies use complete/);
  const reply=call(f,b,'complete',payload),row=entity(f,a,reply.id);
  assert.equal(cli(f,['fetch',JSON.stringify({type:'message',where:{messageId:reply.id}})],a).items[0].to,a);assert.equal(row.replyTo,question.id);assert.equal(row.conversationId,'review:inferred');

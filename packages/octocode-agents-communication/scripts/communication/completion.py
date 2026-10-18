@@ -20,5 +20,5 @@ class CompletionMixin:
         if not pending:
             return {}
         ids = [row['id'] for row in pending[:16]]
-        reason = 'Peer work is still unacknowledged: IDs {}{}. Handle these IDs from existing context; only if a body is missing, recover it with inbox(message:ID). Finish requests with complete {{message:ID,reply:answer}}; handled FYIs/answers with complete {{messages:[IDs]}} without a reply. Leave unfinished work pending. If genuinely blocked, explain why and stop; this check will not block the recovery turn again.'.format(json.dumps(ids, separators=(',', ':')), ' (more pending; use inbox recovery as needed)' if len(pending)>16 else '')
+        reason = 'Peer work is still unacknowledged: IDs {}{}. Handle these IDs from existing context; only if a body is missing, recover it with inbox(message:ID). Finish requests with complete {{message:ID,outcome,reply:{{conclusion}}}}; handled FYIs/answers with complete {{messages:[IDs]}} without a reply. Leave unfinished work pending. If genuinely blocked, explain why and stop; this check will not block the recovery turn again.'.format(json.dumps(ids, separators=(',', ':')), ' (more pending; use inbox recovery as needed)' if len(pending)>16 else '')
         return dict(decision='block', pending=ids, reason=reason)

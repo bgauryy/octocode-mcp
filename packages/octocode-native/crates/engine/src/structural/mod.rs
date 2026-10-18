@@ -43,7 +43,9 @@ pub use types::{
 
 use crate::signatures::languages;
 use language::AgLanguage;
-use octo::{all_matches, compile_matcher};
+#[cfg(test)]
+use octo::all_matches;
+use octo::{compile_matcher, matches_with_recovery};
 use query::{StructuralQuery, invalid_query_explanation};
 
 /// Defense-in-depth cap on content handed to the single-content structural
@@ -111,6 +113,7 @@ fn no_matches(
         language_id,
         query,
         matches: Vec::new(),
+        recovered: false,
         diagnostics: vec![diagnostic],
     }
 }
@@ -198,8 +201,8 @@ pub fn search_detailed(
         }
     };
 
-    let matches = match all_matches(&run, content) {
-        Ok(matches) => matches,
+    let (matches, recovered) = match matches_with_recovery(&run, content) {
+        Ok(found) => found,
         Err(error) => {
             return no_matches(
                 file_path,
@@ -209,10 +212,11 @@ pub fn search_detailed(
                 error.diagnostic(file_path),
             );
         }
-    }
-    .into_iter()
-    .map(|m| StructuralDetailedMatch::from_match(m.matched, m.node_kind))
-    .collect();
+    };
+    let matches = matches
+        .into_iter()
+        .map(|m| StructuralDetailedMatch::from_match(m.matched, m.node_kind))
+        .collect();
 
     StructuralSearchDetailedResult {
         path: file_path.to_owned(),
@@ -220,6 +224,7 @@ pub fn search_detailed(
         language_id: entry.language_id.map(str::to_owned),
         query: query_explanation,
         matches,
+        recovered,
         diagnostics: Vec::new(),
     }
 }

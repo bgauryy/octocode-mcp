@@ -5,6 +5,7 @@ import { secretProblem } from '../shared/sanitize.js';
 import { formatAgo } from '../shared/format.js';
 import { contentText, isRecord } from '../shared/util.js';
 import { readOnlyMcp, runsLater } from './gate.js';
+import { KeyTable } from './key-table.js';
 import { commandNames, SHELL_TOOLS } from './shell.js';
 
 /**
@@ -146,7 +147,7 @@ const isNetworkCommand = (command: string): boolean => commandNames(command).som
 
 class Provenance {
   /** Hash → its slot in the ring below. */
-  private readonly index = new Map<number, number>();
+  private readonly index: KeyTable;
   /** Oldest-first eviction: `keys[slot]` is the hash written there, `ids[slot]` its source (0: an atom first seen in trusted output). */
   private keys: Float64Array | undefined;
   private ids: Int32Array | undefined;
@@ -163,6 +164,7 @@ class Provenance {
     this.workspaceRoot = options.workspaceRoot ?? workspaceRoot;
     this.annotations = options.annotations ?? (() => undefined);
     this.maxShingles = options.maxShingles ?? MAX_SHINGLES;
+    this.index = new KeyTable(this.maxShingles);
     this.maxBytes = options.maxBytesPerResult ?? MAX_BYTES_PER_RESULT;
     this.now = options.now ?? Date.now;
   }

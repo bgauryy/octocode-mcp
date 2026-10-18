@@ -44,6 +44,9 @@ pub enum ErrorKind {
     Cancelled,
 }
 
+/// The message of clangd's `invalid AST` error (see [`RpcError::is_invalid_ast`]).
+const INVALID_AST_MESSAGE: &str = "invalid AST";
+
 /// A JSON-RPC `ResponseError` (`{code, message, data?}`) returned by a peer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RpcError {
@@ -78,6 +81,14 @@ impl RpcError {
             message,
             data: object.remove("data"),
         }
+    }
+
+    /// `true` for clangd's answer when it holds no AST for the document: the
+    /// document's compile command could not be turned into a compiler
+    /// invocation, or no command applies. LSP has no code for it: clangd
+    /// replies `-32001` (UnknownErrorCode) with this exact message.
+    pub fn is_invalid_ast(&self) -> bool {
+        self.code == ErrorCode::UnknownErrorCode && self.message == INVALID_AST_MESSAGE
     }
 
     /// `true` when the request may be re-sent as-is: ContentModified always;

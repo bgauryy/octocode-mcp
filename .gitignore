@@ -79,7 +79,7 @@ AUDIT.md
 autoresearch.*
 
 devScripts
-
+packages/octocode-benchmark/results
 .agents/*
 !.agents/plugins/
 .agents/plugins/*

@@ -6,7 +6,8 @@ use super::anchor::Position;
 use super::cancellable;
 use super::failure::{
     ALIAS_RECOVERY_FAILED, IMPORTER_REQUEST_FAILED, LspFailure, RequestFailures, empty,
-    mark_diagnostics_unpublished, partial_with_retry, shown_paths, text_search_lead,
+    mark_anchor_line_errors, mark_diagnostics_unpublished, partial_with_retry, shown_paths,
+    text_search_lead,
 };
 use super::heritage;
 use super::importers::{self, Importers, WindowRequest};
@@ -36,6 +37,10 @@ use std::collections::HashSet;
 const RECOVERED_IMPORTER: &str = "recoveredImporter";
 
 pub(super) const PUSH_DIAGNOSTICS_WAIT_MS: u32 = 1_500;
+
+/// How long an empty anchored answer waits for the file's diagnostics. The
+/// note they feed is additive: without them the row stays as answered.
+const ANCHOR_DIAGNOSTICS_WAIT_MS: u32 = 1_000;
 
 /// `lsp.source` of rows read from source by the heritage scan, not from the
 /// language server.
@@ -195,7 +200,26 @@ impl<'a> Operation<'a, '_> {
 }
 
 impl Operation<'_, '_> {
+    /// The operation's row; an empty answer at a position the server could
+    /// not analyze is marked partial with that error (see
+    /// `failure::mark_anchor_line_errors`).
     pub(super) async fn run(self) -> Result<Value, LspFailure> {
+        let (client, path, line, cancel) = (self.client, self.path, self.line, self.cancel);
+        let anchored = !matches!(
+            self.query.op(),
+            Op::DocumentSymbols | Op::WorkspaceSymbol | Op::Diagnostic
+        );
+        let mut row = self.answer().await?;
+        if anchored
+            && row.get("kind").and_then(Value::as_str) == Some("empty")
+            && let Some(diagnostics) = anchor_diagnostics(client, path, cancel).await?
+        {
+            mark_anchor_line_errors(&mut row, &diagnostics, line + 1);
+        }
+        Ok(row)
+    }
+
+    async fn answer(self) -> Result<Value, LspFailure> {
         let query = self.query;
         match query.op() {
             Op::Definition => self.definition().await,
@@ -1024,6 +1048,35 @@ impl Operation<'_, '_> {
         }
         Ok(row)
     }
+}
+
+/// The published diagnostics the server holds for `path`, waiting at most
+/// [`ANCHOR_DIAGNOSTICS_WAIT_MS`]. `None` when none arrive in time or the
+/// request fails; only cancellation is an error.
+async fn anchor_diagnostics(
+    client: &NativeLspClient,
+    path: &str,
+    cancel: &dyn CancellationCheck,
+) -> Result<Option<Value>, LspFailure> {
+    let report = if client.has_capability("diagnosticProvider".to_owned()) {
+        let wait = std::time::Duration::from_millis(ANCHOR_DIAGNOSTICS_WAIT_MS.into());
+        cancellable(
+            cancel,
+            tokio::time::timeout(wait, client.get_diagnostics(path.to_owned())),
+        )
+        .await?
+        .ok()
+        .and_then(Result::ok)
+    } else {
+        cancellable(
+            cancel,
+            client.get_push_diagnostics(path.to_owned(), Some(ANCHOR_DIAGNOSTICS_WAIT_MS)),
+        )
+        .await?
+        .ok()
+        .flatten()
+    };
+    Ok(report.map(|report| diagnostic_items(Some(report)).0))
 }
 
 /// rust-analyzer codes for macros it did not expand. The engine starts it

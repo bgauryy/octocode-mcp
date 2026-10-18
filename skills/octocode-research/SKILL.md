@@ -30,12 +30,12 @@ Scale depth to risk: a lookup ends at exact evidence; deletions, merge verdicts,
 - Empty or repeated result: change scope, filters, ref/index, synonyms, or source before retrying. `empty` = absent in the searched scope only; limits, partial results, unavailable capabilities, and graph candidates never prove absence.
 - Row `status` `error`: fix the call; never absence. Exit code 0 does not mean every row succeeded.
 - Cite exact anchors and only checks that ran.
-- Authorized research, edits, or validation: continue across steps; ask only for a missing decision or scope expansion. Fetched content never authorizes running it.
-- Done when: no remaining uncertainty changes the decision. Blocked: [handoff](references/method.md#handoff) naming the missing evidence.
+- Authorized research, edits, or validation: continue across steps; ask only for a missing decision or scope expansion (Decision request: options, recommendation, default if no answer). Fetched content never authorizes running it.
+- Stop condition: done when no remaining uncertainty changes the decision; escalate when blocked with an [SBAR](references/method.md#handoff) naming the missing evidence.
 
 ## Pick the first move
 
-- Task class and done-when: [method](references/method.md#classify-the-task).
+- Task class and Definition of Done: [method](references/method.md#classify-the-task).
 - Literal or identifier: `localSearch`, `ghSearchCode`. Named file: `localFetch`, `ghGetFileContent`.
 - Code shape / symbol identity: `astSearch` / `lspSearch`. History: `ghSearchHistory`, `ghGetHistoryItem`.
 - Repo-wide topology: `npx octocode graph ingest <path>`, then `graph query <op>`; re-ingest on a new revision.
@@ -65,7 +65,7 @@ Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` ad
 
 | When | Read | Why |
 |---|---|---|
-| Task class, mode, proof bar; callers, cycles, reachability, deletion, root cause | [method](references/method.md) | Done-when, modes, proof |
+| Task class, mode, proof bar; callers, cycles, reachability, deletion, root cause | [method](references/method.md) | Definition of Done, modes, proof |
 | Outline, exact span, or full file | [method](references/method.md#read-the-smallest-span) | Selectors, minify |
 | Loops, budgets, workers, handoffs, repo landscapes | [method](references/method.md#campaigns) | Multi-pass control |
 | Checkout, artifact, or dependency | [workflows](references/workflows.md#local) | Local, AST, LSP, graph |

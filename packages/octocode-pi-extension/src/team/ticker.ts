@@ -1,7 +1,7 @@
-import fs from 'node:fs';
+import { dbStamp } from '../agentdb/db.js';
+import { onSecond } from '../shared/clock.js';
 import type { Member, Traffic } from './model.js';
 
-const TICK_MS = 1_000;
 /** A tick this long after the previous one means the machine slept (or this process stalled): peers could not heartbeat either. */
 const SUSPEND_GAP_MS = 15_000;
 
@@ -29,22 +29,13 @@ interface TickerSource {
   resumed(since: number, now: number): void;
 }
 
-/** A cheap change marker for the database file and its WAL: writes by any process move it. */
-function dbStamp(file: string): string {
-  return [file, `${file}-wal`]
-    .map((entry) => {
-      const stat = fs.statSync(entry, { throwIfNoEntry: false });
-      return stat ? `${stat.mtimeMs}:${stat.size}` : '-';
-    })
-    .join('|');
-}
-
 /**
- * The team's one 1-second ticker (unref'd): it runs only while the agent is joined or something watches, beats for
+ * The team's one ticker, on the shared one-second clock: it runs only while the agent is joined or something watches, beats for
  * delivery, and refreshes a cached view for watchers only when the database changed, so watchers never read it.
  */
 export class TeamTicker {
-  private timer: NodeJS.Timeout | undefined;
+  /** Stops the clock subscription; set while the ticker runs. */
+  private stopClock: (() => void) | undefined;
   private readonly watchers = new Set<() => void>();
   private cached: TeamView = { members: [], traffic: [] };
   private stamp = '';
@@ -73,13 +64,12 @@ export class TeamTicker {
   /** Start or stop the timer to match whether there is any work. */
   sync(): void {
     const needed = this.source.joined() || this.watchers.size > 0;
-    if (needed && !this.timer) {
+    if (needed && !this.stopClock) {
       this.tickedAt = Date.now();
-      this.timer = setInterval(() => this.tick(), TICK_MS);
-      this.timer.unref();
-    } else if (!needed && this.timer) {
-      clearInterval(this.timer);
-      this.timer = undefined;
+      this.stopClock = onSecond(() => this.tick());
+    } else if (!needed && this.stopClock) {
+      this.stopClock();
+      this.stopClock = undefined;
       this.tickedAt = 0;
     }
   }

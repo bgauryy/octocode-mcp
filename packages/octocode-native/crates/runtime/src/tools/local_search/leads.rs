@@ -48,7 +48,8 @@ pub(super) struct Coverage {
 }
 
 /// The empty row's fact when include/exclude left the walk no file.
-const SCOPE_MISS_HINT: &str = "Nothing searched: include/exclude matched no file.";
+const SCOPE_MISS_HINT: &str =
+    "Nothing searched: include/exclude matched no file; viewTree lists the names to fix the globs.";
 
 impl Coverage {
     pub(super) fn of(
@@ -300,13 +301,11 @@ impl Found<'_> {
         // regex characters says the other reading exists.
         let literal_missed = self.empty
             && query.regex.is_none()
-            && query
-                .match_string
-                .contains(super::types::REGEX_METACHARACTERS);
+            && query.pattern().contains(super::types::REGEX_METACHARACTERS);
         // The other reading is offered as the call that runs it, under the
         // engine the text compiles in (lookaround compiles only in pcre2).
         let engine = literal_missed
-            .then(|| regex_engine(&query.match_string))
+            .then(|| regex_engine(query.pattern()))
             .flatten();
         if let Some(engine) = engine {
             warnings
@@ -492,15 +491,15 @@ impl Found<'_> {
             || !self.first_page()
             || query.regex.is_some()
             || query.invert_match == Some(true)
-            || !reads_as_alternation(&query.match_string)
+            || !reads_as_alternation(query.pattern())
         {
             return None;
         }
-        let engine = regex_engine(&query.match_string)?;
+        let engine = regex_engine(query.pattern())?;
         let mut options = search_options.clone();
         options.fixed_string = Some(false);
         options.perl_regex = Some(engine == "pcre2");
-        if octocode_engine::portable::matches_line_break(&query.match_string, false) {
+        if octocode_engine::portable::matches_line_break(query.pattern(), false) {
             options.multiline = Some(true);
         }
         options.files_only = Some(false);
@@ -757,7 +756,7 @@ pub(super) fn disclose_unsearched(
         paths,
         cancel,
     );
-    let verdict = diagnose(&root, PruneMode::SearchSafe, walk, |relaxed| {
+    let verdict = diagnose(&root, PruneMode::SyntaxVisible, walk, |relaxed| {
         Ok::<_, std::convert::Infallible>(tagged.as_ref().map_or_else(
             |()| Hits {
                 cut: true,
@@ -874,7 +873,7 @@ fn skipped_path_error(error: impl std::fmt::Display) -> ToolError {
 fn unsearched_ignored(root: &std::path::Path, walk: Walk) -> Vec<crate::tools::empty_walk::Skip> {
     let started = std::time::Instant::now();
     let allowance = crate::tools::empty_walk::PROBE_BUDGET;
-    crate::tools::empty_walk::ignored_directories(root, PruneMode::SearchSafe, walk, &|| {
+    crate::tools::empty_walk::ignored_directories(root, PruneMode::SyntaxVisible, walk, &|| {
         started.elapsed() > allowance
     })
 }
@@ -1212,7 +1211,7 @@ fn regex_lead(query: &LocalSearchQuery, engine: &str) -> Value {
     restart_lead(query, |fields| {
         fields.insert("regex".into(), json!(engine));
         if query.multiline == LocalSearchQueryMultiline::Off
-            && octocode_engine::portable::matches_line_break(&query.match_string, false)
+            && octocode_engine::portable::matches_line_break(query.pattern(), false)
         {
             fields.insert("multiline".into(), json!("on"));
         }
@@ -1242,12 +1241,12 @@ pub(super) fn disclose_variants(
     // text with an uppercase letter) also probes the text in any case.
     let case_sensitive = match query.case_mode {
         LocalSearchQueryCaseMode::Sensitive => true,
-        LocalSearchQueryCaseMode::Smart => query.match_string.chars().any(char::is_uppercase),
+        LocalSearchQueryCaseMode::Smart => query.pattern().chars().any(char::is_uppercase),
         LocalSearchQueryCaseMode::Insensitive => false,
     };
-    let folded = case_sensitive.then_some(query.match_string.as_str());
-    let variants = identifier_variants(&query.match_string).unwrap_or_default();
-    let mut near = one_edit_spellings(&query.match_string).unwrap_or_default();
+    let folded = case_sensitive.then_some(query.pattern());
+    let variants = identifier_variants(query.pattern()).unwrap_or_default();
+    let mut near = one_edit_spellings(query.pattern()).unwrap_or_default();
     // A case style one edit away (`parse_config` → `parse-config`) is
     // named as a variant.
     near.retain(|spelling| variants.binary_search(spelling).is_err());
@@ -1269,7 +1268,8 @@ pub(super) fn disclose_variants(
             "ignoreCase",
             format!(
                 "No match for {}; it matches ignoring case in {floor}{} file(s).",
-                query.match_string, found.folded_files
+                query.pattern(),
+                found.folded_files
             ),
             ignore_case_lead(query),
         )
@@ -1278,7 +1278,8 @@ pub(super) fn disclose_variants(
             "findSimilar",
             format!(
                 "No match for {}; its other spellings match in {floor}{} file(s).",
-                query.match_string, found.variant_files
+                query.pattern(),
+                found.variant_files
             ),
             variants_lead(query, &variants, false),
         )
@@ -1288,7 +1289,7 @@ pub(super) fn disclose_variants(
             "findSimilar",
             format!(
                 "No match for {}; near spellings match in {floor}{} file(s): {}.",
-                query.match_string,
+                query.pattern(),
                 found.near_files,
                 names.join(", ")
             ),
@@ -1727,11 +1728,11 @@ pub(super) fn read_handoff(
     }
     let mut read = json!({
         "path": path,
-        "matchString": query.match_string.as_str(),
+        "matchString": query.pattern(),
         "contextLines": READ_HANDOFF_CONTEXT,
     });
     if query.regex_mode() != LocalSearchQueryRegex::Literal
-        && regex::escape(&query.match_string) != query.match_string.as_str()
+        && regex::escape(query.pattern()) != query.pattern()
     {
         read["regex"] = json!("rust");
     }
@@ -1849,7 +1850,7 @@ fn probe_lifted(
         .is_some_and(|reason| !reason.is_empty());
     Tagged::found(
         &root,
-        PruneMode::SearchSafe,
+        PruneMode::SyntaxVisible,
         globs,
         searched.files.iter().map(|file| root.join(&file.path)),
         cut,

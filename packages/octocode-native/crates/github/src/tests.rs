@@ -1147,20 +1147,21 @@ async fn primary_limit_waits_for_a_short_reset_then_retries() {
     assert!(epoch_secs() >= reset, "retried before the reset");
 }
 
-/// A rate-limit wait runs on the call's time, not the request's: a 1.5 s
-/// request budget survives a 2–3 s reset wait, and the retried request still
+/// A rate-limit wait runs on the call's time, not the request's: a 1 s
+/// request budget survives a 3–4 s reset wait, and the retried request still
 /// gets its own time. Without a call deadline past the request's, the same
-/// wait fails fast.
+/// wait fails fast. The reset is whole seconds away, so the wait stays past
+/// the request budget even when a loaded machine delays the 403 by 2 s.
 #[tokio::test]
 async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     let server = MockServer::builder().start().await;
-    let reset = epoch_secs() + 3;
+    let reset = epoch_secs() + 4;
     Mock::given(method("GET"))
         .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
         .mount(&server)
         .await;
     let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
-    let mut context = with_token("t", Duration::from_millis(1_500), 1024);
+    let mut context = with_token("t", Duration::from_millis(1_000), 1024);
     context.budget.wait_until = std::time::Instant::now() + Duration::from_secs(10);
     let page = transport
         .execute(
@@ -1172,7 +1173,7 @@ async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     assert_eq!(page.status, 200);
     assert!(context.budget.effective_deadline() > context.budget.deadline);
 
-    let reset = epoch_secs() + 3;
+    let reset = epoch_secs() + 4;
     let other = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
@@ -1182,7 +1183,7 @@ async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     let error = transport
         .execute(
             RequestSpec::get(endpoint.rest(&["repos", "a", "b"]).expect("route")),
-            &with_token("t", Duration::from_millis(1_500), 1024),
+            &with_token("t", Duration::from_millis(1_000), 1024),
         )
         .await
         .expect_err("no call time past the request's");
@@ -2522,11 +2523,14 @@ async fn an_abuse_detection_403_is_a_secondary_limit() {
     );
 }
 
-/// An HTTP-date `Retry-After` is honored instead of the 60 s default.
+/// An HTTP-date `Retry-After` is honored instead of the 60 s default. The
+/// date is whole seconds from now, so it is far enough ahead that a loaded
+/// machine delaying the response by seconds still reads it, not 0 or 60;
+/// `retry::tests` pins the exact arithmetic.
 #[tokio::test]
 async fn an_http_date_retry_after_is_honored() {
     let server = MockServer::builder().start().await;
-    let date = httpdate_after(3);
+    let date = httpdate_after(30);
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(429)
@@ -2547,7 +2551,7 @@ async fn an_http_date_retry_after_is_honored() {
         .rate_limit
         .and_then(|rate| rate.retry_after_seconds)
         .expect("retry after");
-    assert!((1..=4).contains(&seconds), "{seconds} is not ~3 s");
+    assert!((20..=31).contains(&seconds), "{seconds} is not ~30 s");
 }
 
 /// An RFC 9110 IMF-fixdate `seconds` from now.

@@ -96,7 +96,7 @@ def _length(key, value):
     if key == 'prompt':
         return
     byte_units = key in ('reasoning', 'content')
-    limit = {'reasoning': 512, 'content': 1024 * 1024, 'body': 16384, 'reply': 16384, 'path': 4096}.get(key, 256)
+    limit = {'reasoning': 512, 'content': 1024 * 1024, 'body': 16384, 'question': 16384, 'path': 4096}.get(key, 256)
     used = len(value.encode('utf-8')) if byte_units else len(value.encode('utf-16-le')) // 2
     if used > limit:
         maximum = str(limit // (1024 * 1024)) + ' MiB' if limit % (1024 * 1024) == 0 else str(limit)
@@ -106,7 +106,7 @@ def _length(key, value):
 def stored_lengths(value):
     if isinstance(value, dict):
         for key, item in value.items():
-            if isinstance(item, str) and key in ('reasoning', 'content', 'body', 'reply', 'path'):
+            if isinstance(item, str) and key in ('reasoning', 'content', 'body', 'question', 'path'):
                 _length(key, item)
             else:
                 stored_lengths(item)
@@ -121,16 +121,19 @@ def validate(schema, value):
 
 
 def command(name, value):
-    if name == 'record' and isinstance(value, dict) and value.get('type') in ('memory', 'event') and 'data' in value:
+    if name == 'record' and isinstance(value, dict) and value.get('type') in definition('record')['inputSchema']['properties']['type']['enum'] and 'data' in value:
         validation.validate(record_type(value['type'])['dataSchema'], value['data'])
     if name == 'send_message' and isinstance(value, dict) and 'replyTo' in value:
-        raise ValueError('Replies use complete {message:ID,reply:answer} only. For progress send a new FYI with to, replyRequired:false and conversationId; omit replyTo.')
+        raise ValueError('Replies use complete {message, outcome, reply} only. For progress send a delta with to and conversationId; omit replyTo.')
     if name == 'send_message' and isinstance(value, dict) and (('to' in value) == ('topic' in value)):
         raise ValueError('Supply exactly one recipient: to or topic')
+    if name == 'send_message' and isinstance(value, dict):
+        from .protocols import kind_of
+        kind_of(value)
     if name == 'complete' and isinstance(value, dict) and 'reasoning' in value and 'reply' not in value:
         raise ValueError('Invalid complete: to handle without replying, omit reasoning and use message or messages only. Do not add a reply merely to satisfy validation; handled informational messages need no reply.')
-    if name == 'complete' and isinstance(value, dict) and 'outcome' in value and ('messages' in value or 'reply' not in value):
-        raise ValueError('Invalid complete: outcome needs one message and its reply: {message, outcome, reply}. Complete FYIs with message or messages and no outcome; leave unfinished work pending.')
+    if name == 'complete' and isinstance(value, dict) and ('outcome' in value or 'reply' in value) and ('messages' in value or not ('reply' in value and 'outcome' in value and 'message' in value)):
+        raise ValueError('Invalid complete: a request answer needs one message, its outcome and reply: {message, outcome, reply}. Complete FYIs with message or messages and no outcome; leave unfinished work pending.')
     item = definition(name)
     stored_lengths({key: item for key, item in value.items() if key != 'data'} if name == 'record' and isinstance(value, dict) else value)
     if 'inputSchema' in item:

@@ -43,7 +43,8 @@ pub(super) const DEFAULT_LIST_PAGE_SIZE: u32 = 100;
 /// Matched files the engine collects for pages; more are counted only.
 pub(super) const MAX_COLLECTED_FILES: u32 = 10_000;
 
-/// One localSearch row; `selection` judges it under `clasifyContext`.
+/// One localSearch row; `selection` judges it under `clasifyContext`. A list
+/// `matchString` runs as the one regex query that finds the same lines.
 pub fn execute_local_search(
     query: &LocalSearchQuery,
     paths: &PathPolicy,
@@ -54,6 +55,7 @@ pub fn execute_local_search(
     selection: Option<&crate::tools::selection::Runtime>,
 ) -> Result<LocalSearchResult, ToolError> {
     cancel.check().map_err(ToolError::cancelled)?;
+    let query = &*query.normalized()?;
     let scan = scan_query(query, paths, cancel, walk_threads, response_window)?;
     page_of(
         query,
@@ -335,7 +337,7 @@ fn annotate_rows<'q>(
     let (definition, enclosing_note) = annotate_enclosing(
         &mut files,
         symbol,
-        symbol.filter(|_| super::enclosing::declaration_search(&query.match_string)),
+        symbol.filter(|_| super::enclosing::declaration_search(query.pattern())),
         output_root,
         expected_digest,
         outlines,
@@ -436,7 +438,7 @@ pub(super) fn searched_symbol<'q>(query: &'q LocalSearchQuery, layout: &Layout) 
         && query.case_mode != LocalSearchQueryCaseMode::Insensitive
         && query.regex_mode() != LocalSearchQueryRegex::Pcre2
         && query.invert_match != Some(true))
-    .then(|| super::enclosing::searched_symbol(&query.match_string))
+    .then(|| super::enclosing::searched_symbol(query.pattern()))
     .flatten()
 }
 
@@ -685,7 +687,7 @@ pub(super) fn search_options(
     let (case, regex, multiline) = (query.case_mode, query.regex_mode(), query.multiline);
     TextSearchOptions {
         path: root.to_string_lossy().into_owned(),
-        pattern: query.match_string.to_string(),
+        pattern: query.pattern().to_owned(),
         fixed_string: Some(regex == LocalSearchQueryRegex::Literal),
         perl_regex: Some(regex == LocalSearchQueryRegex::Pcre2),
         case_sensitive: Some(case == LocalSearchQueryCaseMode::Sensitive),

@@ -21,11 +21,23 @@ Load when planning evidence, auditing an RFC, or a disagreement survives source 
 Only when a consequential disagreement survives source review, no direct check settles it, and a typed judgment could change the next action; ordinary evidence review is the default. `octocode-research` owns `clasify` admission and mechanics.
 
 - Keep RFC revision, criteria, source evidence, proposed answers, and gaps together; [closure rules](checklist.md#track-and-close-questions) still apply.
-- Delegated reviewers (when authorized): Delphi: same evidence, independent first positions, then share; keep dissent. Give each a different question; keep partial returns; you keep write authority and judgment.
-- First run `npx octocode schema clasify --view query`. Needs `OCTOCODE_CLASSIFICATION_API` in `<HOME>/.octocode/.env`; check presence without displaying it.
-- Note the intended next action; submit typed questions over the exact evidence and competing arguments, with an uncertainty outcome where needed.
-- Inspect every result page, error, and coverage limit. Confidence is not correctness: verify the deciding source before updating. A provider answer never grants implementation authority.
-- Missing capability or failed call: partial, not approved; retry only with a useful repair or new evidence.
+- Delegated reviewers (when authorized): Delphi: same evidence, independent first positions, then share; keep dissent. Task contract for each: objective a different question, inputs the shared evidence, constraints read-only (you keep write authority and judgment), output a position; keep partial returns.
+- Key: `OCTOCODE_CLASSIFICATION_API` in `<HOME>/.octocode/.env`.
+
+```mermaid
+flowchart TD
+  N[Note the intended next action] --> S["Run: npx octocode schema clasify --view query"]
+  S --> K{"Key present? Check presence without displaying it"}
+  K -- no --> P[Partial, not approved]
+  K -- yes --> Q["Submit typed questions over the exact evidence and competing arguments; uncertainty outcome where needed"]
+  Q --> I["Inspect every result page, error, coverage limit"]
+  I -- "failed call" --> R{"Useful repair or new evidence?"}
+  R -- yes --> Q
+  R -- no --> P
+  I -- ok --> V[Verify the deciding source] --> U[Update the same RFC]
+```
+
+- Confidence is not correctness: verify the deciding source before updating. A provider answer never grants implementation authority.
 - Update the same RFC with supported conclusion, dissent, remaining uncertainty; omit requests, receipts, timing, usage.
 - Measuring whether assisted review helps: `octocode-eval-benchmark`; no evaluation report in the RFC.
 

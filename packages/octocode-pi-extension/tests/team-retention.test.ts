@@ -44,9 +44,12 @@ describe('team after a suspend', () => {
 
   it('tells its source when a tick comes long after the previous one (the machine slept)', () => {
     vi.useFakeTimers({ now: 1_000_000 });
+    let stop = () => {};
     try {
       const resumed = vi.fn();
-      const ticker = new TeamTicker({ joined: () => true, beat: () => {}, dbFile: () => undefined, read: () => ({ members: [], traffic: [] }), maxAgeMs: 1_000, resumed });
+      let joined = true;
+      const ticker = new TeamTicker({ joined: () => joined, beat: () => {}, dbFile: () => undefined, read: () => ({ members: [], traffic: [] }), maxAgeMs: 1_000, resumed });
+      stop = () => { joined = false; ticker.sync(); };
       ticker.sync();
       vi.advanceTimersByTime(3_000);
       expect(resumed).not.toHaveBeenCalled();
@@ -55,7 +58,7 @@ describe('team after a suspend', () => {
       expect(resumed).toHaveBeenCalledExactlyOnceWith(1_003_000, 1_604_000);
       vi.advanceTimersByTime(1_000);
       expect(resumed).toHaveBeenCalledTimes(1);
-    } finally { vi.useRealTimers(); }
+    } finally { stop(); vi.useRealTimers(); }
   });
 
   it('repairs the team database on the first tick after a wake, before the heartbeat', () => {

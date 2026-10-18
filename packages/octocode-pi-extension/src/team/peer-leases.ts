@@ -19,11 +19,11 @@ import { PeerRegistry } from './peer-registry.js';
 
 /** `PRAGMA application_id` of the package database (`scripts/schema.sql`: it spells "OCTO" ... "COMM"); a different file is not ours. */
 export const PEER_APPLICATION_ID = 1329678147;
-/** `PRAGMA user_version` of the schema this reads (`scripts/schema.sql`); any other is skipped with one warning. One version: the package migrates older stores (`db migrate`) before it opens them. */
-export const PEER_SCHEMA_VERSION = 6;
+/** `PRAGMA user_version` of the schema this reads (`scripts/schema.sql`); any other is skipped with one warning. One version: the package opens only this schema. */
+export const PEER_SCHEMA_VERSION = 7;
 /** How long a read waits for the package's writer: a refusal is advisory, so an edit never stalls on it. */
 const BUSY_MS = 200;
-/** After a failed open or read, how long before the next attempt: the file may be migrated or finish a write. */
+/** After a failed open or read, how long before the next attempt: the file may finish a write. */
 const RETRY_MS = 30_000;
 
 /** An active lease of the package: `owner` is the holder's package session id, and `name` and `vendor` (`claude`, `codex`, `pi`...) say who that is. */

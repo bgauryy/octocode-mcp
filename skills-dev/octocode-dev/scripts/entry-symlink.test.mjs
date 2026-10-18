@@ -8,11 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 const scripts = fileURLToPath(new URL('.', import.meta.url));
 
-// Each script's cheapest side-effect-free mode; an empty PATH keeps cargo from running.
+// Each script's cheapest side-effect-free mode.
 const cases = [
   ['prepublish.mjs', /Prepublish check/],
   ['package-build.mjs', /Usage: node package-build\.mjs docs/],
-  ['dev-unify-check.mjs', /dev-unify check skipped: cargo is not installed/],
 ];
 
 for (const [script, expected] of cases) {

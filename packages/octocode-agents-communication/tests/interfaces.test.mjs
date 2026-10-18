@@ -16,7 +16,7 @@ test('MCP and CLI report the published manifest version', () => {
 });
 test('all canonical operations expose contextual help with no unexplained flags', () => {
   const spec = createCommunicationCli();
-  assert.equal(spec.commands.length, 52);
+  assert.equal(spec.commands.length, 51);
   for (const command of spec.commands) {
     assert.ok(commandHelp(spec, command).includes(command.description), command.name);
     for (const flag of command.flags) assert.ok(flag.description, `${command.name}.${flag.property}`);
@@ -30,7 +30,7 @@ test('all canonical operations expose contextual help with no unexplained flags'
 });
 test('CLI preserves identities and leases across invocations; default MCP borrows them', t => {
   const workspace = tempWorkspace(t, 'communication-interfaces-', { real: true });
-  const common = ['--workspace-root', workspace, '--database', join(workspace, 'db.sqlite')];
+  const common = ['--workspace', workspace, '--database', join(workspace, 'db.sqlite')];
   const identity = launch(['join', '--name', 'reviewer', '--vendor', 'generic', ...common]);
   const bound = ['--session', identity.id, ...common];
   const lease = launch(['lock', '--path', 'owned.txt', '--reasoning', 'Protect review edits', ...bound]);
@@ -67,7 +67,7 @@ test('CLI preserves identities and leases across invocations; default MCP borrow
 });
 test('CLI waits for delayed stdin chunks and preserves split Unicode', async t => {
   const workspace = tempWorkspace(t, 'communication-stdin-', { real: true });
-  const common = ['--workspace-root', workspace, '--database', join(workspace, 'db.sqlite')];
+  const common = ['--workspace', workspace, '--database', join(workspace, 'db.sqlite')];
   const identity = launch(['join', '--name', 'reader', '--vendor', 'generic', ...common]);
   const bound = ['--session', identity.id, ...common];
   const input = Buffer.from(JSON.stringify({ type: 'memory', data: { content: 'Evidence: 🧪 verified' } }));
@@ -93,6 +93,6 @@ test('CLI waits for delayed stdin chunks and preserves split Unicode', async t =
 
 test('streaming CLI emits no extra result frame after MCP EOF', t => {
   const workspace = tempWorkspace(t, 'communication-stream-', { real: true });
-  const output = execFileSync(process.execPath, [entry, '/cli', 'mcp', '--managed', '--vendor', 'generic', '--name', 'stream', '--workspace-root', workspace, '--database', join(workspace, 'db.sqlite'), '--json'], { input: '', encoding: 'utf8', timeout: 10000 });
+  const output = execFileSync(process.execPath, [entry, '/cli', 'mcp', '--managed', '--vendor', 'generic', '--name', 'stream', '--workspace', workspace, '--database', join(workspace, 'db.sqlite'), '--json'], { input: '', encoding: 'utf8', timeout: 10000 });
   assert.equal(output, '');
 });
