@@ -36,13 +36,9 @@ fn schema_availability_names_the_unset_prerequisites() {
         if !unset.is_empty() {
             assert_eq!(clasify["envVar"], unset.join("|"), "{clasify}");
         }
-        for tool in [ToolId::AstRewrite, ToolId::AstTopology] {
+        {
+            let tool = ToolId::AstTopology;
             let gated = availability(tool.as_str());
-            // A tool the contract parks stays off whatever the beta gate.
-            if tool.is_disabled() {
-                assert_eq!(gated["enabled"], false, "{tool}: {gated}");
-                continue;
-            }
             assert_eq!(gated["enabled"], beta, "{tool}: {gated}");
             if !beta {
                 assert_eq!(gated["envVar"], "OCTOCODE_BETA", "{tool}: {gated}");

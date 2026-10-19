@@ -38,7 +38,7 @@ row-size comparisons.
 - [astSearch](../../../docs/OCTOCODE_TOOLS.md#astsearch)
 - [lspSearch](./lspSearch.md)
 
-`ghCloneRepo` and `astRewrite` are CLI-only; MCP never registers them.
+`ghCloneRepo` and `astTopology` are CLI-only; MCP never registers them.
 
 ## Pagination acceptance
 

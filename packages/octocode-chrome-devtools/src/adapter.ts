@@ -15,11 +15,12 @@ import {
   chromeResearchCommands,
 } from '@octocodeai/config/schema';
 import { schemaFor, type Invocation } from './command-inputs.js';
+import manifest from '../package.json' with { type: 'json' };
 import { invoke, stopEngine } from './invocation.js';
 export { connectStdio, cliFromMcp, runCli } from 'octocode-mcp-cli';
 export const spec = defineCli({
   name: 'octocode-chrome-devtools',
-  version: '0.1.0',
+  version: manifest.version,
   instructions: chromeInstructions,
   commands: Object.entries(commands).map(([name, description]) =>
     defineCommand({

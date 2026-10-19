@@ -1157,7 +1157,9 @@
         "src/tools/ast_search/mod.rs",
         "src/tools/ast_search/policy_tests.rs",
         "src/tools/ast_search/file_language_tests.rs",
-        "tests/runtime_local.rs"
+        "tests/runtime_local.rs",
+        "src/tools/ast_search/rule_tests.rs",
+        "../engine/src/structural/octo/mod_tests.rs"
       ],
       "variants": [
         "match:pattern",
@@ -1389,115 +1391,6 @@
           "continuation"
         ],
         "target": [
-          "consumed"
-        ]
-      }
-    },
-    "astRewrite": {
-      "evidence": [
-        "src/tools/ast_rewrite/tests.rs"
-      ],
-      "variants": [
-        "pattern",
-        "rule"
-      ],
-      "discriminators": {},
-      "fields": {
-        "apply": [
-          "consumed"
-        ],
-        "constraints": [
-          "consumed"
-        ],
-        "defaultExcludes": [
-          "consumed"
-        ],
-        "exclude": [
-          "consumed"
-        ],
-        "expectedHashes": [
-          "consumed"
-        ],
-        "extras": [
-          "output-control",
-          "continuation"
-        ],
-        "fix": [
-          "consumed"
-        ],
-        "include": [
-          "consumed"
-        ],
-        "includeHidden": [
-          "consumed"
-        ],
-        "includeIgnored": [
-          "consumed"
-        ],
-        "language": [
-          "consumed"
-        ],
-        "mainGoal": [
-          "workflow-metadata"
-        ],
-        "maxFiles": [
-          "consumed"
-        ],
-        "maxMatches": [
-          "consumed"
-        ],
-        "page": [
-          "consumed",
-          "output-control",
-          "continuation"
-        ],
-        "pageSize": [
-          "consumed",
-          "output-control"
-        ],
-        "path": [
-          "consumed",
-          "security-policy"
-        ],
-        "pattern": [
-          "consumed"
-        ],
-        "postconditions": [
-          "consumed"
-        ],
-        "reasoning": [
-          "workflow-metadata"
-        ],
-        "rewrite": [
-          "consumed"
-        ],
-        "rule": [
-          "consumed"
-        ],
-        "rule.constraints": [
-          "consumed"
-        ],
-        "rule.rule": [
-          "consumed"
-        ],
-        "rule.transform": [
-          "consumed"
-        ],
-        "rule.utils": [
-          "consumed"
-        ],
-        "selectedMatchIds": [
-          "consumed"
-        ],
-        "snapshot": [
-          "consumed",
-          "output-control",
-          "continuation"
-        ],
-        "transform": [
-          "consumed"
-        ],
-        "utils": [
           "consumed"
         ]
       }

@@ -58,7 +58,7 @@ impl GraphFactsView<'_> {
     }
 }
 
-/// The result of [`scan_graph_facts`]: only what the map kept.
+/// The result of [`scan_walked_graph_facts`]: only what the map kept.
 #[derive(Debug)]
 pub struct GraphFactsMappedScan<T> {
     /// `(relative path, kept value)` per file the map kept, sorted by path.
@@ -291,53 +291,6 @@ static FACTS_MEMO: std::sync::LazyLock<moka::sync::Cache<String, Arc<ParsedFacts
 /// Estimated heap bytes the parsed-facts cache may hold.
 const FACTS_MEMO_BYTES: u64 = 128 * 1024 * 1024;
 
-/// Scans the graph facts of a tree, handing each parsed file to `map` as soon
-/// as it is parsed and keeping only what `map` returns, so the scan holds
-/// what the caller needs rather than every file's facts at once. A file whose
-/// source `keep` rejects (a byte prefilter, e.g. a name the caller looks for)
-/// is read once and neither parsed nor mapped. `admit` is the caller's path
-/// policy for every walked entry; `stop` cancels the scan.
-///
-/// An unset `max_files` caps nothing but the time (see
-/// [`crate::scan_budget`]): files are read in chunks and the scan stops at the
-/// first chunk boundary past the budget, reporting `scan_resume`.
-pub fn scan_graph_facts<T: Send>(
-    options: GraphFactsScanOptions,
-    admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
-    keep: &(dyn Fn(&str) -> bool + Sync),
-    map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
-    stop: &Stop<'_>,
-) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        scan_with_budget(
-            options,
-            admit,
-            keep,
-            map,
-            stop,
-            Some(crate::scan_budget::SCAN_TIME_BUDGET),
-        )
-    }))
-    .unwrap_or_else(|_| {
-        Err(GraphScanError::Failed(
-            "graph-facts scan failed on pathological input".to_owned(),
-        ))
-    })
-}
-
-/// [`scan_graph_facts`] with its time budget (`None` reads every candidate).
-fn scan_with_budget<T: Send>(
-    options: GraphFactsScanOptions,
-    admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
-    keep: &(dyn Fn(&str) -> bool + Sync),
-    map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
-    stop: &Stop<'_>,
-    budget: Option<std::time::Duration>,
-) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
-    let walked = walk_graph_fact_files(&options, admit, stop)?;
-    evaluate_walk(options, walked, FactsSource::Graph, keep, map, stop, budget)
-}
-
 /// Where a scan takes each file's facts from.
 #[derive(Clone, Copy)]
 pub enum FactsSource<'a> {
@@ -411,9 +364,17 @@ pub fn walk_graph_fact_files(
     })
 }
 
-/// [`scan_graph_facts`] over `walked`, a [`walk_graph_fact_files`] walk of
-/// these same `options` (so `max_files` and the filters agree), without
-/// walking again.
+/// Scans the graph facts of `walked`, a [`walk_graph_fact_files`] walk of
+/// these same `options` (so `max_files` and the filters agree), handing each
+/// parsed file to `map` as soon as it is parsed and keeping only what `map`
+/// returns, so the scan holds what the caller needs rather than every file's
+/// facts at once. A file whose source `keep` rejects (a byte prefilter, e.g.
+/// a name the caller looks for) is read once and neither parsed nor mapped.
+/// `stop` cancels the scan.
+///
+/// An unset `max_files` caps nothing but the time (see
+/// [`crate::scan_budget`]): files are read in chunks and the scan stops at the
+/// first chunk boundary past the budget, reporting `scan_resume`.
 pub fn scan_walked_graph_facts<T: Send>(
     options: GraphFactsScanOptions,
     walked: crate::types::FileSystemQueryResult,
@@ -654,6 +615,20 @@ mod tests {
 
     use std::path::Path;
 
+    /// Walks `options` and scans what the walk finds, with the time budget
+    /// `budget` (`None` reads every candidate).
+    fn scan_with_budget<T: Send>(
+        options: GraphFactsScanOptions,
+        admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
+        keep: &(dyn Fn(&str) -> bool + Sync),
+        map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
+        stop: &Stop<'_>,
+        budget: Option<std::time::Duration>,
+    ) -> Result<GraphFactsMappedScan<T>, GraphScanError> {
+        let walked = walk_graph_fact_files(&options, admit, stop)?;
+        evaluate_walk(options, walked, FactsSource::Graph, keep, map, stop, budget)
+    }
+
     /// A scan keeping every parsed file whole.
     #[derive(Debug)]
     struct Scanned {
@@ -679,12 +654,13 @@ mod tests {
         options: GraphFactsScanOptions,
         admit: &(dyn Fn(&Path, Option<fs::FileType>) -> bool + Sync),
     ) -> Result<Scanned, GraphScanError> {
-        let scan = super::scan_graph_facts(
+        let scan = scan_with_budget(
             options,
             admit,
             &|_| true,
             &|view| Some(view.to_entry()),
             &|| false,
+            Some(crate::scan_budget::SCAN_TIME_BUDGET),
         )?;
         Ok(Scanned {
             entries: scan.kept.into_iter().map(|(_, entry)| entry).collect(),
@@ -800,7 +776,7 @@ mod tests {
         let fixture = tempfile::tempdir().expect("fixture");
         let root = fixture.path().to_path_buf();
         create_supported_files(&root, 40);
-        let scan = super::scan_graph_facts(
+        let scan = scan_with_budget(
             GraphFactsScanOptions {
                 path: path_string(&root),
                 ..Default::default()
@@ -815,6 +791,7 @@ mod tests {
                     .map(|declaration| declaration.name.clone())
             },
             &|| false,
+            Some(crate::scan_budget::SCAN_TIME_BUDGET),
         )
         .expect("mapped scan");
         assert_eq!(scan.parsed, 40, "every file is parsed and counted");

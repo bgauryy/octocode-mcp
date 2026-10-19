@@ -58,30 +58,6 @@ async fn ast_search_scan_diagnostics_name_workspace_relative_paths() {
     runtime.close().await;
 }
 
-/// astRewrite is parked: the contract disables it on every surface, beta
-/// included, and a call fails before any work.
-#[tokio::test]
-async fn parked_ast_rewrite_is_unavailable_even_with_beta() {
-    let workspace = Workspace::new();
-    workspace.write("src/sub/a.ts", "export const f = (x) => old(x);\n");
-    let runtime = beta_runtime(&workspace);
-    assert!(!runtime.is_available("astRewrite"));
-    let error = runtime
-        .run(
-            "parked".into(),
-            "astRewrite".into(),
-            json!({"queries":[{"path":"src/sub","language":"typescript","pattern":"old($A)","rewrite":"neu($A)"}]}),
-        )
-        .await
-        .expect_err("parked tool");
-    assert_eq!(error.code, "toolUnavailable", "{error:?}");
-    assert_eq!(
-        error.message,
-        "Tool astRewrite is not available in this native runtime: it is disabled in this build."
-    );
-    runtime.close().await;
-}
-
 // ---------- one name per purpose ----------
 
 #[tokio::test]

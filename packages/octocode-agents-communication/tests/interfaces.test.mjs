@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import manifest from '../package.json' with { type: 'json' };
-import { createCommunicationCli, runCommunicationCli } from '../dist/cli.js';
+import { createCommunicationCli } from '../dist/cli.js';
 import { commandHelp, parseCommandInput } from '../../octocode-mcp-cli/dist/index.js';
-import { root, tempWorkspace } from './helpers.mjs';
+import { execFileSync, root, tempWorkspace } from './helpers.mjs';
 const entry = join(root, 'bin/octocode-agents-communication.mjs');
 const launch = args => JSON.parse(execFileSync(process.execPath, [entry, '/cli', ...args, '--json'], { encoding: 'utf8', timeout: 10000 }));
 test('MCP and CLI report the published manifest version', () => {

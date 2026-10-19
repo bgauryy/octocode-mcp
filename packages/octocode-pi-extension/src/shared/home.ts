@@ -207,7 +207,7 @@ export const PID_SESSION_PREFIX = '_pid-';
 const preparedOutputDirs = new Set<string>();
 
 /** The folders a session keeps under its own: spilled output, bash logs, checkpoint blobs and the archive of compacted history. */
-export type SessionFolder = 'output' | 'bash' | 'checkpoints' | 'archive';
+type SessionFolder = 'output' | 'bash' | 'checkpoints' | 'archive';
 
 /**
  * A session's `output`, `bash`, `checkpoints` or `archive` folder (the current session's, without `id`), by path only:

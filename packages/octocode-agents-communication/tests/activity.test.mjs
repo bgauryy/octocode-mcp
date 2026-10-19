@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync, renameSync, utimesSync } 
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { registerBoundTools } from '../scripts/pi-extension.mjs';
-import { nativeBinary as binary, tempWorkspace } from './helpers.mjs';
+import { binary, tempWorkspace } from './helpers.mjs';
 
 function fixture(t) {
   const workspace = tempWorkspace(t, 'communication-activity-');

@@ -37,7 +37,7 @@ fn structural_zero_is_empty_with_actionable_pattern_guidance() {
     );
 
     // Trailing punctuation the pattern omits is not required (ast-grep
-    // smart strictness, as astRewrite matches).
+    // smart strictness).
     for pattern in ["const $A = $B;", "const $A = $B"] {
         let found = execute_row(
             json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":pattern}),
@@ -564,4 +564,77 @@ fn a_recovered_syntax_tree_names_its_terminal_cut() {
     assert_eq!(out["isPartial"], true, "{out}");
     assert_eq!(out["terminalLimit"], true, "{out}");
     assert_eq!(out["partialReasons"], json!(["parseRecovered"]), "{out}");
+}
+
+#[test]
+fn owned_core_context_and_field_rules_run_as_objects_and_text() {
+    let root = Fixture::new();
+    let file = root.write(
+        "fields.ts",
+        "class Actual { value = 42; other = 7; }\nfunction name() { value(); }\n",
+    );
+    let contextual = json!({"pattern":{"context":"class WrapperOnly { $K = $V; }","selector":"public_field_definition"}});
+    let field = json!({"kind":"function_declaration","has":{"kind":"identifier","regex":"^name$","field":"name"}});
+    for (rule, expected) in [(contextual, 2), (field, 1)] {
+        for path in [&file, &root.0] {
+            for spelling in [rule.clone(), json!({"rule":rule}), json!(rule.to_string())] {
+                let out = run(
+                    &root.0,
+                    json!({"path":path,"operation":"match","rule":spelling,"captureText":true}),
+                )
+                .expect("owned rule");
+                assert_eq!(out["matchCount"], expected, "{out}");
+            }
+        }
+    }
+}
+
+#[test]
+fn owned_core_context_continuations_keep_the_entire_query() {
+    let root = Fixture::new();
+    let file = root.write("fields.ts", "class Actual { value = 42; other = 7; }\n");
+    let rule = json!({"pattern":{"context":"class WrapperOnly { $K = $V; }","selector":"public_field_definition"}});
+    let first = run(
+        &root.0,
+        json!({"path":file,"operation":"match","rule":rule,"matchPageSize":1,"captureText":true}),
+    )
+    .expect("first page");
+    assert_eq!(first["matchCount"], 2, "{first}");
+    let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
+    assert_eq!(next["rule"], rule, "{first}");
+    crate::contracts::validate_query("astSearch", next.clone())
+        .expect("continuation is in contract");
+    let second = run(&root.0, next).expect("second page");
+    assert_eq!(
+        second["files"][0]["matches"].as_array().map(Vec::len),
+        Some(1),
+        "{second}"
+    );
+    assert_ne!(
+        first["files"][0]["matches"][0],
+        second["files"][0]["matches"][0]
+    );
+    assert!(second["next"].get("nextMatchPage").is_none(), "{second}");
+}
+
+#[test]
+fn owned_core_sibling_stops_are_applied_by_the_runtime() {
+    let root = Fixture::new();
+    let file = root.write("calls.ts", "first(); middle(); last();\n");
+    let relation = json!({"kind":"expression_statement","regex":"^last","stopBy":"end"});
+    let rule = json!({"pattern":{"context":"first();","selector":"expression_statement"},"precedes":relation});
+    let out = run(
+        &root.0,
+        json!({"path":file,"operation":"match","rule":rule}),
+    )
+    .expect("sibling match");
+    assert_eq!(out["matchCount"], 1, "{out}");
+    let mut stopped = rule;
+    stopped["precedes"]["stopBy"] = json!({"regex":"^middle"});
+    let out = run(
+        &root.0,
+        json!({"path":file,"operation":"match","rule":stopped}),
+    )
+    .expect("bounded relation");
+    assert_eq!(out["matchCount"], 0, "{out}");
 }

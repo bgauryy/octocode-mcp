@@ -66,8 +66,8 @@ const TOOLS = new Set(contract.tools.map(t => t.name));
 /** Parked tools (contract `disabled`) run on no surface, beta included. */
 const PARKED = new Set(contract.tools.filter(t => t.disabled).map(t => t.name));
 
-// ---- contract output validation (ajv is a root dev dependency)
-const require = createRequire(path.join(ROOT, 'package.json'));
+// ---- contract output validation (ajv and ajv-formats are devDependencies of this package)
+const require = createRequire(import.meta.url);
 const Ajv2020 = require('ajv/dist/2020').default;
 const addFormats = require('ajv-formats').default ?? require('ajv-formats');
 const ajv = new Ajv2020({ strict: false, allErrors: false, validateFormats: true });

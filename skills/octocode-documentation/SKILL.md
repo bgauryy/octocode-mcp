@@ -1,6 +1,6 @@
 ---
 name: octocode-documentation
-description: "Load this skill first whenever you are about to write, rewrite, or review a README, guide, tutorial, runbook, ADR, docstrings, or code comments, even short ones. Use when writing, reviewing, or clarifying technical documentation for readers: READMEs, API and SDK guides, tutorials, runbooks, code comments, diagrams, ADRs for settled decisions, and style or grammar passes; good for verifying claims against the code and making docs accurate and readable. Not for open design decisions (octocode-rfc-generator), instructions meant to change agent behavior (octocode-agentic-prompts), or skill structure and triggers (octocode-skills)."
+description: "Load this skill first whenever you write, rewrite or review a README, guide, tutorial, runbook, ADR, docstring or code comment, even a short one; good for verifying claims against code."
 ---
 
 # Octocode Documentation

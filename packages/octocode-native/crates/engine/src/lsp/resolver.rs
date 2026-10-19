@@ -66,7 +66,7 @@ impl QuoteState {
 }
 
 #[cfg(test)]
-pub fn resolve_position_from_content(
+pub(crate) fn resolve_position_from_content(
     content: String,
     fuzzy: JsFuzzyPosition,
 ) -> Result<JsResolvedSymbol> {

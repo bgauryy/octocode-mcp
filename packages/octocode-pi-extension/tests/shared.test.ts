@@ -10,10 +10,21 @@ import { findManifest, minimumPiVersion, packageRoot, versionBelow } from '../sr
 import { killTree, processAlive, stopTree } from '../src/shared/process.js';
 import { sweepStaleOutputs } from '../src/shared/sweep.js';
 import { formatCost, formatTokens, formatTokenUsage } from '../src/shared/format.js';
-import { addReply, capChars, capOutput, clipText, contentText, cutText, emptyTotals, entryMessage, settleWithin, spendOf, unpricedModel } from '../src/shared/util.js';
+import { addReply, capChars, capOutput, clipText, contentText, cutText, emptyTotals, entryMessage, finiteNumber, optionalString, settleWithin, spendOf, stringOrEmpty, unpricedModel } from '../src/shared/util.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 import { nonceFile } from './nonce-file.js';
+
+describe('untyped field guards', () => {
+  it('read a string, or nothing, from any value', () => {
+    expect(['a', '', 1, null, undefined, {}, ['a']].map(stringOrEmpty)).toEqual(['a', '', '', '', '', '', '']);
+    expect(['a', '', 1, null, undefined, {}, ['a']].map(optionalString)).toEqual(['a', '', undefined, undefined, undefined, undefined, undefined]);
+  });
+
+  it('read a finite number, never a stand-in zero', () => {
+    expect([0, -3.5, 7, Number.NaN, Infinity, -Infinity, '7', null, undefined].map(finiteNumber)).toEqual([0, -3.5, 7, undefined, undefined, undefined, undefined, undefined, undefined]);
+  });
+});
 
 describe('settleWithin', () => {
   it('ends on the work, the timeout or an abort, never rejects, and removes its abort listener', async () => {

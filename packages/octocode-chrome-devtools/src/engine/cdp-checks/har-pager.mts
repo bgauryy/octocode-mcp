@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { validateFlags } from '../cli-flags.mjs';
+import { flagArgs, validateFlags } from '../cli-flags.mjs';
 
 const argv = process.argv.slice(2);
-const getArg = (flag: string, def?: string) => {
-  const index = argv.indexOf(flag);
-  return index === -1 ? def : (argv[index + 1] ?? def);
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag, getLowerArg } = flagArgs(argv);
 
 if (!argv.length || hasFlag('--help') || hasFlag('-h')) {
   console.error(
@@ -39,7 +35,7 @@ const pageSize = Math.max(
   Math.min(200, Number.parseInt(getArg('--page-size', '25'), 10))
 );
 const filter = getArg('--filter', 'all');
-const kindFilter = (getArg('--kind', '') || '').toLowerCase();
+const kindFilter = getLowerArg('--kind');
 const statusFilter = getArg('--status', '');
 const urlRegexStr = getArg('--url-regex', '');
 const minMs = Math.max(0, Number.parseInt(getArg('--min-ms', '1000'), 10));

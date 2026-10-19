@@ -13,17 +13,14 @@ import {
   ROOT,
   contract,
   dataOf,
-  evidence,
   fieldsInEveryBranch,
   recoverUnfiltered,
   setup,
-  stable,
   startServer,
-  success,
   walk,
 } from './read-tool-selection/support.mjs';
 
-const require = createRequire(path.join(ROOT, 'package.json'));
+const require = createRequire(import.meta.url);
 const Ajv2020 = require('ajv/dist/2020').default;
 const ajv = new Ajv2020({
   strict: false,

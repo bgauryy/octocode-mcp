@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from './helpers.mjs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { nativeBinary as binary, binary as launcher, tempWorkspace, fastHeartbeatEnv, waitFor } from './helpers.mjs';
+import { binary, launcherCommand, tempWorkspace, fastHeartbeatEnv, waitFor } from './helpers.mjs';
 
 function fixture(t) {
   const workspace = tempWorkspace(t, 'communication-mcp-lifecycle-');
@@ -100,7 +100,7 @@ test('shipped launcher exposes managed stdio MCP with discovery, calls and EOF c
     {id:3,method:'tools/call',params:{name:'set_status',arguments:{status:'busy',task:'Verify launcher binding'}}},
     {id:4,method:'tools/call',params:{name:'inbox',arguments:{}}},
   ].map(frame=>JSON.stringify({jsonrpc:'2.0',...frame})).join('\n')+'\n';
-  const frames=execFileSync(launcher,['mcp','--managed','--name','launcher-check','--vendor','generic','--tools','messaging',...f.flags],{input:requests,encoding:'utf8',timeout:10000,stdio:['pipe','pipe','pipe']}).trim().split('\n').map(JSON.parse);
+  const frames=execFileSync(launcherCommand,['mcp','--managed','--name','launcher-check','--vendor','generic','--tools','messaging',...f.flags],{input:requests,encoding:'utf8',timeout:10000,stdio:['pipe','pipe','pipe']}).trim().split('\n').map(JSON.parse);
   assert.equal(frames.length,4,'Notifications emit no stdout frame');
   assert.deepEqual(frames[0].result.capabilities,{tools:{}});
   assert.deepEqual(frames[1].result.tools.map(tool=>tool.name),['peers','set_status','send_message','notify_all','inbox','complete','fetch']);

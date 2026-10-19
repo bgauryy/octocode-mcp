@@ -80,10 +80,9 @@ test('C2 row contract: error row without errorCode fails; full error/empty rows 
 test('C3 one base: 0-based text and column 0 fail; 1-based passes', () => {
   assert.equal(zeroBasedTexts({ lspSearch: { inputSchema: { properties: { position: { description: '0-based UTF-16 position' } } } } }).length, 1);
   assert.deepEqual(zeroBasedTexts({ lspSearch: { description: '1-based line' } }), []);
-  // Allow-listed by decision: offsets and ast-grep slice semantics.
+  // Allow-listed by decision: offsets.
   assert.deepEqual(zeroBasedTexts({ ghCloneRepo: { inputSchema: { properties: { responseOffset: { description: 'a zero-based page index' } } } } }), []);
-  assert.deepEqual(zeroBasedTexts({ astRewrite: { inputSchema: { $defs: { AR_transform: { anyOf: [{}, {}, { properties: { substring: { properties: { startChar: { description: 'Inclusive zero-based start' } } } } }] } } } } }), []);
-  assert.equal(zeroBasedTexts({ astRewrite: { inputSchema: { properties: { page: { description: 'zero-based page' } } } } }).length, 1);
+  assert.equal(zeroBasedTexts({ astSearch: { inputSchema: { properties: { page: { description: 'zero-based page' } } } } }).length, 1);
   assert.deepEqual(zeroCoordinates({ results: [{ data: { matches: [{ line: 3, column: 0 }] } }] }), ['.results[0].data.matches[0].column=0']);
   assert.deepEqual(zeroCoordinates({ results: [{ data: { matches: [{ line: 3, column: 1 }] } }] }), []);
 });

@@ -13,14 +13,14 @@ npx octocode schema localSearch --view query
 - Validation failure: fix the named field.
 - `extras:["hints"|"details"|"stats"|"receipts"|"echo"|"diagnostics"]` adds opt-in fields; continuations inherit it.
 
-## 16 public tools
+## 15 public tools
 
-The default catalog contains 12 tools over MCP and 13 in the CLI; the live catalog lists actual availability. The full schema inventory also includes gated and disabled tools. Inline `clasifyContext` needs a nonblank classification API credential; public `clasify` additionally needs beta. There is no separate selection switch.
+The default catalog contains 12 tools over MCP and 13 in the CLI; the live catalog lists actual availability. The full schema inventory also includes beta tools. Inline `clasifyContext` needs a nonblank classification API credential; public `clasify` additionally needs beta. There is no separate selection switch.
 
 - GitHub: `ghSearchCode`, `ghStructure`, `ghSearchRepo`, `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`, `ghCloneRepo`.
 - Local: `localSearch` (text), `structureSearch` (layout), `astSearch` (syntax), `localFetch` (content), `lspSearch` (identity).
 - Other: `astTopology`, `artifactSearch` (packages), `clasify`.
-- `ghCloneRepo` and `astTopology`: CLI-only; MCP never lists them. `astRewrite` is currently disabled even when its schema is inspectable.
+- `ghCloneRepo` and `astTopology`: CLI-only; MCP never lists them.
 - GitHub: `GH_TOKEN` or `GITHUB_TOKEN`. Classification credential: `OCTOCODE_CLASSIFICATION_API` (or `classification.api`); public `clasify` also needs `OCTOCODE_BETA=1`. `astTopology` needs beta too. Calls without `clasifyContext` perform ordinary retrieval without JEV.
 - `ghCloneRepo` needs `OCTOCODE_ENABLE_LOCAL` and persistent `OCTOCODE_STORAGE_MODE` (default); `ENABLE_CLONE` is ignored.
 - Settings (`OCTOCODE_ENABLE_LOCAL`, `OCTOCODE_STORAGE_MODE`, `OCTOCODE_LSP_PREWARM`) go in `<HOME>/.octocode/.env`. Inspect live config before changing it; never change it automatically or print credentials.

@@ -1,9 +1,6 @@
-use crate::contracts::tool_types::DefaultExcludes;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::Walk;
-use crate::tools::id::ToolId;
 use crate::tools::num::{u32_of, u32_of_usize, usize_of};
-use crate::tools::paging::clamp_page_size;
 use crate::tools::result::ToolError;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
@@ -12,8 +9,10 @@ use octocode_engine::search::walk::IgnorePolicy;
 use octocode_engine::types::FileSystemQueryOptions;
 use serde_json::{Value, json};
 
-use super::Walking;
+use super::{Listing, Walking};
 use crate::contracts::tool_types::StructureSearchQueryTree;
+
+super::impl_listing!(StructureSearchQueryTree);
 
 /// Engine-unit views over the generated `tree` query.
 impl StructureSearchQueryTree {
@@ -49,11 +48,6 @@ impl StructureSearchQueryTree {
     /// Walk entries (walk order) an earlier, time-cut walk inspected.
     fn walk_offset(&self) -> u32 {
         self.walk_offset.map_or(0, |offset| u32_of(offset.get()))
-    }
-    /// The caller's page size; `None` pages by the response budget.
-    fn page_size(&self) -> Option<usize> {
-        self.page_size
-            .map(|size| clamp_page_size(ToolId::StructureSearch, None, usize_of(size.get())))
     }
     /// A name or type filter narrows the listing, so what it skipped may
     /// hold the entries asked for.
@@ -176,26 +170,14 @@ pub fn execute_tree(
         requested,
         (detail.then_some(paths), cancel),
     )?;
-    let shown = Walk {
-        ignored: q.include_ignored == Some(true),
-        hidden: q.include_hidden == Some(true),
-        default_excludes: q.default_excludes.defaults(),
-    };
-    super::probe_empty(
+    super::probe_listing(
         &mut out,
         q,
         (&validated.canonical, paths),
         &walk.meta.uncovered,
-        shown,
         |relaxed, walking| {
-            let mut relaxed_query = q.clone();
-            relaxed_query.include_ignored = Some(relaxed.ignored);
-            relaxed_query.include_hidden = Some(relaxed.hidden);
-            relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
-            relaxed_query.scan_offset = None;
-            relaxed_query.walk_offset = None;
             walk_tree(
-                &relaxed_query,
+                relaxed,
                 &validated.canonical,
                 paths,
                 security,
@@ -446,17 +428,7 @@ fn tree_page(
     // states them once.
     if page == 1 {
         out["summary"] = walk.meta.summary();
-        super::lead_to_skipped(
-            &mut out,
-            q,
-            &walk.meta.uncovered,
-            Walk {
-                ignored: q.include_ignored == Some(true),
-                hidden: q.include_hidden == Some(true),
-                default_excludes: q.default_excludes.defaults(),
-            },
-            q.filtered(),
-        );
+        super::lead_to_skipped(&mut out, q, &walk.meta.uncovered, q.walk(), q.filtered());
         if !q.filtered()
             && let Some(read) = tree_read(&walk.rows, root)
         {

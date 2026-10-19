@@ -706,8 +706,8 @@ fn directory_match_over_a_grammar_family_infers_the_family() {
 }
 
 /// A directory whose files the walk skipped as ignored or hidden parsed
-/// nothing: the empty match leads to the same query with those walks on (the
-/// astRewrite probe), and does not offer a repair that drops `language`.
+/// nothing: the empty match leads to the same query with those walks on,
+/// and does not offer a repair that drops `language`.
 #[test]
 fn an_empty_match_over_ignored_and_hidden_files_leads_to_them() {
     for (dir, flag) in [("gen", "includeIgnored"), (".cfg", "includeHidden")] {

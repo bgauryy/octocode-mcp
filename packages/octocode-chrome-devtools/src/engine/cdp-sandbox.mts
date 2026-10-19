@@ -5,6 +5,8 @@ import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, realpathSync, mkdirSync, copyFileSync } from 'fs';
 import { propagateOctocodeEnv } from './octocode-config.mjs';
+import { flagArgs } from './cli-flags.mjs';
+import { octocodeOutputBase } from './engine-io.mjs';
 
 function requireNode24() {
   const [major] = process.versions.node.split('.').map(Number);
@@ -24,11 +26,7 @@ const RUNNER = resolve(__dir, 'cdp-runner.mjs');
 const CONFIG_ENTRY = resolve(__dir, 'octocode-config.mjs');
 
 const argv = process.argv.slice(2);
-const getArg = (flag: string, def?: string) => {
-  const i = argv.indexOf(flag);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag } = flagArgs(argv);
 
 const PORT = getArg('--port', '9222');
 const LIST_TARGETS = hasFlag('--list-targets');
@@ -60,12 +58,6 @@ if (!scriptArg && !LIST_TARGETS) {
 }
 
 propagateOctocodeEnv({ cwd: process.cwd(), trusted: true });
-
-function octocodeOutputBase() {
-  const workspace = resolve(process.cwd(), '.octocode');
-  mkdirSync(workspace, { recursive: true, mode: 0o700 });
-  return workspace;
-}
 
 const OCTOCODE_OUTPUT_BASE = octocodeOutputBase();
 const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -167,8 +159,9 @@ const readPaths = [
     safePath(resolve(__dir, 'frame-events.mjs')),
     CONFIG_ENTRY,
     CONFIG_ENTRY_REAL,
-    resolve(__dir, 'chrome-contract.mjs'),
-    safePath(resolve(__dir, 'chrome-contract.mjs')),
+    ...['chrome-contract.mjs', 'cli-flags.mjs', 'engine-io.mjs'].flatMap(
+      name => [resolve(__dir, name), safePath(resolve(__dir, name))]
+    ),
     OCTOCODE_OUTPUT_BASE,
     OCTOCODE_TREE_REAL,
     ...['dom-actionability.mjs', 'human-input.mjs', 'ax-snapshot.mjs'].flatMap(

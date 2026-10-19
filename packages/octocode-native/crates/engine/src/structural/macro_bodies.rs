@@ -92,23 +92,6 @@ impl MacroBodies {
             })
     }
 
-    /// Top-level expandable bodies of `root`, in document order (bodies
-    /// nested in them are found when their own re-parse is walked).
-    pub(super) fn bodies(&self, root: Node<'_>, content: &str) -> Vec<tree_sitter::Range> {
-        let mut found = Vec::new();
-        let mut stack = vec![(root, None::<Node<'_>>)];
-        while let Some((node, parent)) = stack.pop() {
-            if self.is_expandable(node, parent, content) {
-                found.push(node.range());
-                continue;
-            }
-            let mut cursor = node.walk();
-            let children: Vec<_> = node.children(&mut cursor).collect();
-            stack.extend(children.into_iter().rev().map(|child| (child, Some(node))));
-        }
-        found
-    }
-
     /// The source the parser reads right after a body. A `#define` body is
     /// an expression or statement without its terminator: read bare,
     /// `zfree(p)` is a macro-typed declaration, so the parser reads a `;`

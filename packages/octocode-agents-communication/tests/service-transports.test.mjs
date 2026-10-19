@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { createServer as createSocketServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
-import { nativeBinary as binary, tempWorkspace, commandArgs, jsonCall, waitFor } from './helpers.mjs';
+import { binary, tempWorkspace, commandArgs, jsonCall, waitFor } from './helpers.mjs';
 const exec = promisify(execFile);
 function fixture(t) {
   const workspace = tempWorkspace(t, 'communication-service-');

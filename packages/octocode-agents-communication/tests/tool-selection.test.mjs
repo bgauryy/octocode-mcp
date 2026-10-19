@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { binary, tempWorkspace } from './helpers.mjs';
+import { binary, spawnSync, tempWorkspace } from './helpers.mjs';
 
 function fixture(t) {
   const workspace = tempWorkspace(t, 'communication-tools-');

@@ -9,7 +9,7 @@ use crate::tools::id::query_limits::ast_search::r#match as limits;
 use crate::tools::num::{u32_of, u32_of_usize};
 use crate::tools::result::ToolError;
 use crate::{
-    policy::{path::PathPolicy, prune::PruneMode},
+    policy::{path::PathPolicy, prune},
     security::ContentSecurity,
     tools::cancel::CancellationCheck,
 };
@@ -879,7 +879,7 @@ fn infer_grammar(
         },
     ) {
         GrammarChoice::One(language) => Ok(Some(language)),
-        GrammarChoice::Several(_) | GrammarChoice::Invalid(_) => Ok(None),
+        GrammarChoice::Several(_) | GrammarChoice::Invalid => Ok(None),
         // A walk that admitted no file at all, or withheld some, names no
         // grammar to set: its empty result and disclosures are the answer.
         GrammarChoice::Absent
@@ -1094,9 +1094,7 @@ fn scan_directory(
             rule: q.rule(),
             include: q.include(),
             exclude: q.exclude(),
-            exclude_dir: Some(
-                PruneMode::SyntaxVisible.directories_before_policy(q.default_excludes()),
-            ),
+            exclude_dir: Some(prune::directories_before_policy(q.default_excludes())),
             ignore: octocode_engine::search::walk::IgnorePolicy::new(
                 q.include_ignored(),
                 q.include_hidden(),
@@ -2502,26 +2500,14 @@ fn skipped_walk(
     let keep = |path: &std::path::Path| {
         has_extension_in(path, extensions) || scope.parsers.extension(path).is_some()
     };
-    let probe = FileProbe::new(
-        &scope.canonical,
-        PruneMode::SyntaxVisible,
-        budget,
-        &permits,
-        &keep,
-    )
-    .within(Globs {
-        include: &include,
-        exclude: &exclude,
-    })
-    .stopping(&stop)
-    .beyond(walk);
-    let verdict = diagnose(
-        &scope.canonical,
-        PruneMode::SyntaxVisible,
-        walk,
-        |relaxed| probe.find(relaxed),
-    )
-    .ok()?;
+    let probe = FileProbe::new(&scope.canonical, budget, &permits, &keep)
+        .within(Globs {
+            include: &include,
+            exclude: &exclude,
+        })
+        .stopping(&stop)
+        .beyond(walk);
+    let verdict = diagnose(&scope.canonical, walk, |relaxed| probe.find(relaxed)).ok()?;
     let Verdict::Skipped(diagnosis) = verdict else {
         return None;
     };
@@ -2550,7 +2536,7 @@ fn directory_choice(
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
 ) -> Result<GrammarChoice, ToolError> {
-    let prune = PruneMode::SyntaxVisible.directories(q.default_excludes());
+    let prune = prune::directories(q.default_excludes());
     let (include, exclude) = (
         q.include().unwrap_or_default(),
         q.exclude().unwrap_or_default(),
@@ -2617,7 +2603,7 @@ fn other_language_repair(
         match directory_choice(q, &scope.canonical, &scope.parsers, paths, cancel).ok()? {
             GrammarChoice::One(language) => vec![language],
             GrammarChoice::Several(languages) => languages,
-            GrammarChoice::Invalid(_) | GrammarChoice::Absent => return None,
+            GrammarChoice::Invalid | GrammarChoice::Absent => return None,
         }
         .into_iter()
         .filter(|language| *language != requested)
@@ -2710,15 +2696,9 @@ mod bounded_text_tests {
 
 #[cfg(test)]
 mod memo_tests {
+    use super::super::test_rows::run_row;
     use super::*;
-    use crate::tools::cancel::NeverCancel;
     use crate::tools::test_support::{Fixture, simple_policy};
-
-    fn run(query: &Value, paths: &PathPolicy, security: &ContentSecurity) -> Value {
-        let query: super::super::AstSearchQuery =
-            serde_json::from_value(query.clone()).expect("typed astSearch row");
-        super::super::execute_ast(&query, paths, security, &NeverCancel, None).expect("astSearch")
-    }
 
     fn next_query(out: &Value, name: &str) -> Value {
         out["next"][name]["query"]["queries"][0].clone()
@@ -2741,7 +2721,7 @@ mod memo_tests {
         std::thread::sleep(
             octocode_engine::graph::SourceStamp::SETTLE + std::time::Duration::from_millis(200),
         );
-        let first = run(
+        let first = run_row(
             &json!({"operation":"match","path":root.0,"pattern":"console.log($A)","language":"typescript","pageSize":1,"matchPageSize":2}),
             &paths,
             &security,
@@ -2759,9 +2739,9 @@ mod memo_tests {
             if name == "nextPage" {
                 file_page_query = query.clone();
             }
-            let stored = run(&query, &paths, &security);
+            let stored = run_row(&query, &paths, &security);
             SCANS.evict(&snapshot);
-            let fresh = run(&query, &paths, &security);
+            let fresh = run_row(&query, &paths, &security);
             assert_eq!(
                 serde_json::to_string(&stored).expect("json"),
                 serde_json::to_string(&fresh).expect("json"),
@@ -2773,7 +2753,7 @@ mod memo_tests {
         }
         // An edit drops the stored scan: the page restarts from page 1.
         std::fs::write(root.0.join("c.ts"), "console.log(9);\n").expect("edit");
-        let page = run(&file_page_query, &paths, &security);
+        let page = run_row(&file_page_query, &paths, &security);
         assert_eq!(page["errorCode"], "staleSnapshot", "{page}");
         assert!(!SCANS.holds(&snapshot));
     }

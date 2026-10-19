@@ -15,7 +15,7 @@
 // Measures host-visible bytes (the selected view) against a direct full read.
 import fs from 'node:fs';
 import path from 'node:path';
-import { findHint, FIXTURES, REPOS, checks, collect, rowData, sourceLines, startServer, writeResults } from './mcp-client.mjs';
+import { findHint, FIXTURES, REPOS, checks, rowData, sourceLines, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('clasify');
 // Selection needs only the caller's provider key; beta exposes public clasify.

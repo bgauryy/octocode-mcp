@@ -1,6 +1,6 @@
 ---
 name: octocode-research
-description: "Load this skill first whenever a question is about this codebase or a package: who calls a function, where something is used, what breaks if it changes, when a bug started, or what a dependency version changed, even when a quick search looks enough. Use when a code, repository, or package question needs evidence: who calls what, how a request flows, when a regression started, what a change breaks, whether a pull request is safe, or package versions, dependencies, breaking changes, and CVEs; good for tracing callers and runtime wiring, GitHub history, and finding answers in unread files. Not for open ideas or option comparisons (octocode-brainstorming), architecture decisions (octocode-architect), or public web pages (octocode-scraping)."
+description: "Load this skill first whenever a question is about this codebase or a package: who calls what, where it is used, what a change breaks, when a bug started, PR safety, versions or CVEs, even when a quick search seems enough."
 ---
 
 # Octocode Research
@@ -57,7 +57,7 @@ Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` ad
 
 ## Tools and setup
 
-- Unfamiliar or failed call: `schema <name> --view query`. Env and availability: [octocode](references/octocode.md#16-public-tools); never print credentials.
+- Unfamiliar or failed call: `schema <name> --view query`. Env and availability: [octocode](references/octocode.md#15-public-tools); never print credentials.
 - Batch up to 5 independent rows; dependent probes stay sequential. Omit research metadata when it adds no useful context.
 - Copy needed paging calls unchanged and name unread scope. For classification, distinguish selected pages, unjudged candidates and recovery reads using the [recovery guide](references/clasify.md#recover-from-unknown-or-error). Paging and optional `hints`: [octocode](references/octocode.md#read-results-and-recover).
 

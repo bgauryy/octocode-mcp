@@ -3,10 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDriver, factSentences, leadsIn, statusClass, writes } from './driver.mjs';
-import { applyPatch } from './cases.mjs';
 import { createQueryDefaults } from '../query-defaults.mjs';
 
-const TOOLS = new Set(['t', 'u', 'clasify', 'ghCloneRepo', 'astRewrite', 'astSearch']);
+const TOOLS = new Set(['t', 'u', 'clasify', 'ghCloneRepo', 'astSearch']);
 const lead = (tool, row) => ({ tool, query: { queries: [row] } });
 const ok = data => ({ results: [{ index: 0, data }] });
 const empty = data => ({ results: [{ index: 0, data, status: 'empty' }] });
@@ -38,7 +37,7 @@ function surface(script) {
 }
 
 function driver({ validate = () => null, staticText = '', defaultsOf } = {}) {
-  return createDriver({ validate, staticText, tools: TOOLS, cliOnly: new Set(['ghCloneRepo', 'astRewrite']), defaultsOf });
+  return createDriver({ validate, staticText, tools: TOOLS, cliOnly: new Set(['ghCloneRepo',]), defaultsOf });
 }
 const rows = () => data => data.items ?? [];
 
@@ -176,16 +175,16 @@ test('a rejected lead and a contract-invalid response fail', async () => {
 });
 
 test('writing leads, and CLI-only tools on MCP, are skipped with a reason', async () => {
-  const script = (tool, row) => (tool === 't' ? ok({ hints: { apply: lead('astRewrite', { apply: true }), cloneRepo: lead('ghCloneRepo', { owner: 'o' }), preview: lead('astRewrite', { pattern: 'p' }) } }) : ok({ items: ['p'] }));
+  const script = tool => tool === 't' ? ok({ hints: { cloneRepo: lead('ghCloneRepo', { owner: 'o' }), read: lead('u', { n: 1 }) } }) : ok({ items: ['p'] });
   const cli = surface(script);
   const r = await driver().explore('t', { q: 'x' }, { surface: 'cli', call: cli.call, root: '/' });
-  assert.deepEqual(r.skipped.map(x => `${x.key}: ${x.reason.split(' (')[0]}`), ['hints.apply: writes the workspace', 'hints.cloneRepo: writes the clone cache']);
-  assert.deepEqual(cli.calls.map(c => c.tool), ['t', 'astRewrite'], 'the preview lead runs on the CLI');
+  assert.deepEqual(r.skipped.map(x => x.reason.split(' (')[0]), ['writes the clone cache']);
+  assert.deepEqual(cli.calls.map(c => c.tool), ['t', 'u']);
   const mcp = surface(script);
   const m = await driver().explore('t', { q: 'x' }, { surface: 'mcp', call: mcp.call, root: '/' });
-  assert.deepEqual(m.skipped.map(x => x.reason), ['astRewrite is CLI-only (not on MCP)', 'ghCloneRepo is CLI-only (not on MCP)', 'astRewrite is CLI-only (not on MCP)']);
-  assert.equal(mcp.calls.length, 1);
-  assert.equal(writes(lead('astRewrite', { pattern: 'p' })), null);
+  assert.deepEqual(m.skipped.map(x => x.reason), ['ghCloneRepo is CLI-only (not on MCP)']);
+  assert.deepEqual(mcp.calls.map(c => c.tool), ['t', 'u']);
+  assert.equal(writes(lead('u', { n: 1 })), null);
 });
 
 test('leadsIn reads {tool, query} leads, self-continuations and the envelope page', () => {
@@ -214,10 +213,4 @@ test('graph parity compares edges of calls both surfaces ran', async () => {
   const c = await d.explore('t', { q: 'x' }, { surface: 'mcp', call: surface(mk('lookB')).call, root: '/' });
   assert.equal(d.graphParity(a, b), null);
   assert.match(d.graphParity(a, c), /CLI-only 1 .*hints\.lookA.*MCP-only 1/);
-});
-
-test('applyPatch applies a previewed unified diff and rejects a stale one', () => {
-  const text = 'a\nb\nc\nd\n';
-  assert.equal(applyPatch(text, '--- a/f\n+++ b/f\n@@ -2,2 +2,2 @@\n b\n-c\n+C\n'), 'a\nb\nC\nd\n');
-  assert.throws(() => applyPatch(text, '@@ -2,1 +2,1 @@\n-x\n+y\n'), /patch removes "x"/);
 });

@@ -1129,13 +1129,13 @@ fn primary_limit(reset: u64) -> ResponseTemplate {
 #[tokio::test]
 async fn primary_limit_waits_for_a_short_reset_then_retries() {
     let server = MockServer::builder().start().await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
     let reset = epoch_secs() + 1;
     Mock::given(method("GET"))
         .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
         .expect(2)
         .mount(&server)
         .await;
-    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
     let page = transport
         .execute(
             RequestSpec::get(endpoint.rest(&["repos", "a", "b"]).expect("route")),
@@ -1151,16 +1151,18 @@ async fn primary_limit_waits_for_a_short_reset_then_retries() {
 /// request budget survives a 3–4 s reset wait, and the retried request still
 /// gets its own time. Without a call deadline past the request's, the same
 /// wait fails fast. The reset is whole seconds away, so the wait stays past
-/// the request budget even when a loaded machine delays the 403 by 2 s.
+/// the request budget even when a loaded machine delays the 403 by 2 s; it
+/// is set once the transport is built, which alone can take seconds on a
+/// loaded machine (the HTTP client loads the system's root certificates).
 #[tokio::test]
 async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     let server = MockServer::builder().start().await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
     let reset = epoch_secs() + 4;
     Mock::given(method("GET"))
         .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
         .mount(&server)
         .await;
-    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
     let mut context = with_token("t", Duration::from_millis(1_000), 1024);
     context.budget.wait_until = std::time::Instant::now() + Duration::from_secs(10);
     let page = transport
@@ -1173,13 +1175,13 @@ async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     assert_eq!(page.status, 200);
     assert!(context.budget.effective_deadline() > context.budget.deadline);
 
-    let reset = epoch_secs() + 4;
     let other = MockServer::builder().start().await;
+    let (transport, endpoint) = executor_transport(&other, GitHubBudget::relaxed(), short_retry());
+    let reset = epoch_secs() + 4;
     Mock::given(method("GET"))
         .respond_with(Sequence::new(vec![primary_limit(reset), ok_json()]))
         .mount(&other)
         .await;
-    let (transport, endpoint) = executor_transport(&other, GitHubBudget::relaxed(), short_retry());
     let error = transport
         .execute(
             RequestSpec::get(endpoint.rest(&["repos", "a", "b"]).expect("route")),

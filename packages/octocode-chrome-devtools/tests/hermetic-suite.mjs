@@ -18,6 +18,7 @@ const checks = [
   'unit/real-profile.test.mjs',
   'unit/cookie-jar.test.mjs',
   'unit/helper-inputs.test.mjs',
+  'unit/engine-io.test.mjs',
   'unit/plan.test.mjs',
   'unit/detached-ref.test.mjs',
   'unit/post-action-wait.test.mjs',

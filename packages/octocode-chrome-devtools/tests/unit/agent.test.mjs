@@ -419,3 +419,47 @@ test('MCP exact numeric continuations retain predicate lexemes; typed unsafe num
     assert.equal(unsafe.isError, true);
     assert.match(JSON.stringify(unsafe), /integer string/);
   }));
+
+test('typed numeric predicates compare source decimals exactly through MCP and typed CLI', async () =>
+  fixture(async ({ client, cwd, skill }) => {
+    const file = join(cwd, 'numeric-boundaries.json');
+    writeFileSync(
+      file,
+      '[{"id":"above","n":1.0000000000000001},{"id":"below","n":0.9999999999999999},{"id":"one","n":1},{"id":"huge","n":1e10000},{"id":"tiny","n":1e-10000}]'
+    );
+    for (const [op, value, expected] of [
+      ['eq', 1, ['one']],
+      ['gte', 1, ['above', 'one', 'huge']],
+      ['lte', 1, ['below', 'one', 'tiny']],
+      ['eq', 0, []],
+    ]) {
+      const where = [{ path: '/n', op, value }];
+      const mcp = data(
+        await client.callTool({ name: 'query', arguments: { file, where } })
+      );
+      const cli = spawnSync(
+        process.execPath,
+        [
+          join(skill, 'bin/octocode-chrome-devtools.mjs'),
+          '/cli',
+          'query',
+          '--file',
+          file,
+          '--where',
+          JSON.stringify(where),
+          '--json',
+        ],
+        { cwd, encoding: 'utf8', timeout: 10000 }
+      );
+      assert.equal(cli.status, 0, cli.stderr);
+      for (const response of [mcp, JSON.parse(cli.stdout).structuredContent]) {
+        assert.equal(response.ok, true, JSON.stringify(response));
+        assert.deepEqual(
+          response.data.rows.map(row => row.value.id),
+          expected,
+          `${op} ${value}`
+        );
+        assert.equal(response.data.scanned, 5);
+      }
+    }
+  }));

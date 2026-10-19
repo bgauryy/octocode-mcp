@@ -22,11 +22,9 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------- continuations ----------
-export const HINT_KEYS = ['hints', 'next'];
+const HINT_KEYS = ['hints', 'next'];
 export const isHintKey = key => HINT_KEYS.includes(key);
-/** Brief and presentation fields: never part of a continuation's identity. */
-export const BRIEF_KEYS = ['mainGoal', 'reasoning', 'extras'];
-export const isHint = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.tool === 'string' && v.query && typeof v.query === 'object';
+const isHint = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.tool === 'string' && v.query && typeof v.query === 'object';
 /** Executable calls from public string hints or structured continuation containers. */
 export function hintEntries(container, name = 'hints') {
   if (!container || typeof container !== 'object') return [];
@@ -45,11 +43,11 @@ export const envelopeContainer = sc => sc?.responsePagination?.next ?? sc?.respo
 /** True when a `hints`/`next` value holds executable continuations (error rows carry `hints` as prose strings). */
 export const isHintContainer = (key, value) => isHintKey(key) && hintEntries(value).length > 0;
 /** The emitting tool of a structured response when the caller does not know it: clasify answers carry `queries`. */
-export const responseTool = sc => (Array.isArray(sc?.queries) ? 'clasify' : '');
+const responseTool = sc => (Array.isArray(sc?.queries) ? 'clasify' : '');
 /** True when core classifies continuation `name` of `tool` as a page. */
 export const isPageName = (name, tool = '') => continuationChannel(tool, name) === 'page';
 /** Lead entries offered by one object: all of its `hints` entries plus lead-named `next` entries (legacy shape). */
-export function leadEntries(holder, tool = '') {
+function leadEntries(holder, tool = '') {
   if (!holder || typeof holder !== 'object' || Array.isArray(holder)) return [];
   return [...hintEntries(holder.hints), ...hintEntries(holder.next).filter(e => !isPageName(e.name, tool))];
 }
@@ -65,7 +63,7 @@ export function maxLeadEntries(node, tool = responseTool(node)) {
   return max;
 }
 /** Page continuations of a response: page-named `next` entries, plus the envelope `responsePagination.next`. */
-export function pageEntries(sc, tool = responseTool(sc)) {
+function pageEntries(sc, tool = responseTool(sc)) {
   const out = [];
   const walk = n => {
     if (!n || typeof n !== 'object') return;
@@ -104,7 +102,7 @@ export function leadBytes(value, tool = responseTool(value)) {
 
 // ---------- schema errors ----------
 /** Row error codes that mean the input did not validate (as opposed to a runtime miss). */
-export const SCHEMA_ERROR_CODES = new Set(['invalidInput', 'invalidPagination']);
+const SCHEMA_ERROR_CODES = new Set(['invalidInput', 'invalidPagination']);
 const CALL_VALIDATION = /Input validation error|Invalid arguments for tool|MCP error -32602/i;
 /**
  * Validation errors in one call: a whole-call rejection (MCP SDK input
@@ -161,7 +159,7 @@ export function keyShares(bytesByKey) {
   return Object.fromEntries(Object.entries(bytesByKey).map(([k, b]) => [k, total ? +(b / total).toFixed(3) : 0]));
 }
 /** The keys that grew most against a baseline's key bytes: "data.warnings +18,400 B". */
-export function keyGrowth(now = {}, was = {}, top = 2) {
+function keyGrowth(now = {}, was = {}, top = 2) {
   return Object.keys({ ...now, ...was })
     .map(k => ({ key: k, delta: (now[k] ?? 0) - (was[k] ?? 0) }))
     .filter(x => x.delta > 0)
@@ -171,7 +169,7 @@ export function keyGrowth(now = {}, was = {}, top = 2) {
 }
 
 // ---------- verbose-field report ----------
-export const VERBOSE_FIELDS_FILE = path.join(HERE, 'verbose-fields.json');
+const VERBOSE_FIELDS_FILE = path.join(HERE, 'verbose-fields.json');
 export function loadVerboseRules(file = VERBOSE_FIELDS_FILE) {
   const { rules } = JSON.parse(fs.readFileSync(file, 'utf8'));
   for (const r of rules) if (!VERBOSE_CHECKS[r.check]) throw new Error(`verbose-fields: unknown check ${r.check} (${r.id})`);

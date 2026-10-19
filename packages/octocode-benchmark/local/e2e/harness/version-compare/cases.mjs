@@ -75,16 +75,6 @@ export const CASES = {
       { kind: 'invalid', loc: { path: 'src', operation: 'summary' }, pub: { query: { path: 'src', operation: 'summary' } } },
     ],
   },
-  astRewrite: {
-    pub: null,
-    naReason: 'the published release has no rewrite tool',
-    checks: [
-      { kind: 'happy', loc: { path: 'src', language: 'typescript', pattern: 'shout($A)', rewrite: 'yell($A)' } },
-      { kind: 'page', loc: { path: 'src', language: 'typescript', pattern: 'shout($A)', rewrite: 'yell($A)', pageSize: 1 }, lead: { loc: 'nextPage' } },
-      { kind: 'empty', loc: { path: 'src', language: 'typescript', pattern: 'zzzNoSuchCall($A)', rewrite: 'yell($A)' } },
-      { kind: 'invalid', loc: { path: 'src', language: 'typescript', pattern: 'shout($A)' } },
-    ],
-  },
   ghSearchCode: {
     pub: 'ghSearch',
     checks: [

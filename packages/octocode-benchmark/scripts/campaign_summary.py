@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize one campaign into results/<campaign>/run.json (committed; campaigns/ is not).
+"""Summarize one campaign into results/<campaign>/run.json (local results; campaigns/ is raw scratch).
 
 Reads every <arm>-p<pass>-<Qn>.jsonl measured log, runs/<id>/result.json (usage, cost) and
 judge/<A>~<B>/p<pass>-<Qn>.md verdicts (de-blinded with that pair's MAP.secret.txt).

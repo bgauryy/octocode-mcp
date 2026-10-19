@@ -23,7 +23,7 @@ import { createQueryDefaults } from './query-defaults.mjs';
 
 const SUITE = 'lead-replay';
 const defaultsOf = createQueryDefaults(JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/octocode-config/contract/tool-contract.json'), 'utf8')).tools);
-const { check, skip, summary, results } = checks(SUITE);
+const { check, skip, summary } = checks(SUITE);
 const BUDGET_MS = Number(process.env.OCTOCODE_LEAD_REPLAY_BUDGET_MS ?? 140_000);
 const STARTED = Date.now();
 const PER_KEY = Number(process.env.OCTOCODE_LEAD_REPLAY_PER_KEY ?? 4);
@@ -166,10 +166,6 @@ const fixtures = () => [
   ['astTopology', { path: WABS, operation: 'dependencies', source: 'src/nope.ts', extras: H }, 'topology scope miss'],
   ['astTopology', { path: WABS, operation: 'drift', baseline: path.join(FIXTURES, 'lsp/esm-tsconfig'), extras: H }, 'topology drift'],
   ['astTopology', { path: path.join(REPOS, 'javascript'), operation: 'deadCode', pageSize: 3, extras: H }, 'topology javascript corpus paged'],
-  // astRewrite: the preview carries hints.apply (executed against the fixture workspace)
-  ['astRewrite', { path: `${W}/src`, pattern: 'helper($A)', rewrite: 'helper($A + 0)', language: 'typescript', extras: H }, 'rewrite preview'],
-  ['astRewrite', { path: `${W}/src`, pattern: 'zzqqNeverMatches($A)', rewrite: 'x($A)', language: 'typescript', extras: H }, 'rewrite empty'],
-  ['astRewrite', { path: `${W}/nope`, pattern: 'helper($A)', rewrite: 'x($A)', extras: H }, 'rewrite scope miss'],
 ];
 
 const GH = { owner: 'bgauryy', repo: 'octocode' }; // the canonical name: a renamed repo would make every lead differ from its source
@@ -201,7 +197,7 @@ buildWorkspace();
 const client = await startServer({ env: { OCTOCODE_BETA: 'true', PATH: `${path.join(ROOT, 'node_modules', '.bin')}${path.delimiter}${process.env.PATH}` }, timeoutMs: 90_000 });
 const mcpTools = new Set(client.tools.map(t => t.name));
 const onMcp = name => mcpTools.has(name);
-const CLI_ONLY = new Set(['astTopology', 'astRewrite']); // graph/rewrite tools reached through the CLI when the MCP server does not list them
+const CLI_ONLY = new Set(['astTopology',]); // graph/rewrite tools reached through the CLI when the MCP server does not list them
 const exec = (tool, args, label) => (onMcp(tool) ? client.raw(tool, args, label) : cliEntry(tool, args, { label, timeout: 90_000 }));
 // The published MCP schema leaves some fields out (e.g. astSearch includeIgnored); the CLI `schema --view query` lists every accepted field.
 const fieldProps = new Map();
@@ -218,7 +214,6 @@ async function pool(items, worker) {
 }
 
 const contract = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/octocode-config/contract/tool-contract.json'), 'utf8'));
-// A parked tool (contract `disabled`) runs on no surface; harness/rewrite.mjs proves the refusal.
 const PARKED = new Set(contract.tools.filter(t => t.disabled).map(t => t.name));
 const plan = fixtures().filter(([tool, , label]) => {
   if (PARKED.has(tool)) {
@@ -389,7 +384,6 @@ async function replay({ lead, source }) {
   if (child.depth < MAX_DEPTH) { const before = queue.length; enqueue(child); queue.slice(before).forEach(({ lead: l }) => bump(`${l.container}.${l.key}`, 'emitted')); }
 }
 
-// astRewrite's `apply` writes the fixture workspace, which stales every snapshot taken from it: run those last, one at a time.
 for (let cursor = 0; cursor < queue.length;) {
   const batch = queue.slice(cursor, cursor + CONCURRENCY).filter(item => item.lead.key !== 'apply');
   cursor += CONCURRENCY;

@@ -3,7 +3,7 @@ import type { CompactionEntry, ExtensionAPI, ExtensionContext, SessionBeforeComp
 import { PARENT_SESSION_ENV } from '../shared/env.js';
 import { repoKey } from '../shared/home.js';
 import { archiveFolder, archiveSearch, fence, headingText, inlineCode, LIBRARY_FILE, readSegments, segmentFile, segmentTldr, sessionLineage, writeSegment, type RecordMessage, type SessionRecord } from '../shared/archive.js';
-import { contentText, isRecord, isStaleSessionError, stringList } from '../shared/util.js';
+import { contentText, isRecord, isStaleSessionError, stringList, stringOrEmpty } from '../shared/util.js';
 
 /**
  * The archive of compacted history (`shared/archive.ts` owns where and how it is filed). Pi's JSONL holds the summarized
@@ -19,7 +19,7 @@ export const TLDR_HEADING = '## TL;DR';
 export const TOPICS_LABEL = 'Topics:';
 
 /** What a summary says of its own stretch of history, for the library. */
-export interface SummaryLabel {
+interface SummaryLabel {
   tldr?: string;
   topics: string[];
   /** The first line of the Goal section: the label when the summary has no TL;DR (Pi's default summary). */
@@ -81,7 +81,6 @@ function contentBlocks(content: unknown): string[] {
   });
 }
 
-const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 /** The body of one message under its heading, by role. */
 function messageBlocks(message: Record<string, unknown>): string[] {
@@ -91,14 +90,14 @@ function messageBlocks(message: Record<string, unknown>): string[] {
     case 'custom':
       return [...contentBlocks(message['content']), ...(typeof message['errorMessage'] === 'string' ? ['Error:', fence(message['errorMessage'])] : [])];
     case 'toolResult':
-      return [`Tool ${inlineCode(text(message['toolName']))} · call ${inlineCode(text(message['toolCallId']))}${message['isError'] === true ? ' · error' : ''}`, ...contentBlocks(message['content'])];
+      return [`Tool ${inlineCode(stringOrEmpty(message['toolName']))} · call ${inlineCode(stringOrEmpty(message['toolCallId']))}${message['isError'] === true ? ' · error' : ''}`, ...contentBlocks(message['content'])];
     case 'bashExecution': {
       const exit = message['cancelled'] === true ? 'cancelled' : `exit ${headingText(String(message['exitCode']))}`;
-      return [`Command (${exit}):`, fence(text(message['command']), 'sh'), ...(text(message['output']) ? [fence(text(message['output']))] : [])];
+      return [`Command (${exit}):`, fence(stringOrEmpty(message['command']), 'sh'), ...(stringOrEmpty(message['output']) ? [fence(stringOrEmpty(message['output']))] : [])];
     }
     case 'branchSummary':
     case 'compactionSummary':
-      return [fence(text(message['summary']))];
+      return [fence(stringOrEmpty(message['summary']))];
     default:
       return [fence(JSON.stringify(message, null, 2), 'json')];
   }
@@ -108,7 +107,7 @@ const isoTime = (timestamp: unknown): string | undefined => (typeof timestamp ==
 
 /** The session entry a summarized message came from. Messages are the entries' own objects unless a context edit copied them, so a copy is found by role, time and call. */
 function entryIndex(entries: readonly SessionEntry[]): (message: unknown) => string | undefined {
-  const key = (message: Record<string, unknown>): string => `${text(message['role'])}|${String(message['timestamp'])}|${text(message['toolCallId'])}${text(message['customType'])}`;
+  const key = (message: Record<string, unknown>): string => `${stringOrEmpty(message['role'])}|${String(message['timestamp'])}|${stringOrEmpty(message['toolCallId'])}${stringOrEmpty(message['customType'])}`;
   const byObject = new Map<unknown, string>();
   const byKey = new Map<string, string>();
   for (const entry of entries) {
@@ -125,7 +124,7 @@ function renderMessages(messages: readonly unknown[], entryOf: (message: unknown
   return messages
     .map((message) => {
       const record = isRecord(message) ? message : { role: 'unknown', value: message };
-      const role = record['role'] === 'custom' ? `custom (${headingText(text(record['customType']))})` : headingText(text(record['role'])) || 'unknown';
+      const role = record['role'] === 'custom' ? `custom (${headingText(stringOrEmpty(record['customType']))})` : headingText(stringOrEmpty(record['role'])) || 'unknown';
       const entry = entryOf(message);
       const heading = ['###', role, ...(isoTime(record['timestamp']) ? [`· ${isoTime(record['timestamp'])}`] : []), ...(entry ? [`· entry ${headingText(entry)}`] : [])].join(' ');
       return [heading, ...messageBlocks(record)].join('\n\n');

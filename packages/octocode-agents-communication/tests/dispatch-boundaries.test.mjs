@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { createServer as socketServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
-import { nativeBinary as binary, tempDir, commandArgs, jsonCall } from './helpers.mjs';
+import { binary, tempDir, commandArgs, jsonCall } from './helpers.mjs';
 const exec = promisify(execFile);
 function fixture(t) {
   const workspace = tempDir('communication-boundaries-');

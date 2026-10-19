@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from './helpers.mjs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { nativeBinary as binary, tempWorkspace } from './helpers.mjs';
+import { binary, tempWorkspace } from './helpers.mjs';
 
 function fixture(t){
  const workspace = tempWorkspace(t, 'communication-intent-', { real: true }),database=join(workspace,'communication.sqlite');

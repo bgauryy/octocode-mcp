@@ -6,7 +6,7 @@ import { BacklogError, priorityName, STATES, type BacklogStore, type Item, type 
 /** An item idle for longer than this (and not done) is listed under Attention in the page. */
 const IDLE_MS = 7 * DAY_MS;
 
-export interface SnapshotItem {
+interface SnapshotItem {
   ref: string;
   title: string;
   goal: string;

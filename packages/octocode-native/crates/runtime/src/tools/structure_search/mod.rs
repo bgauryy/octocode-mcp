@@ -20,7 +20,7 @@ fn max_walk() -> u32 {
 /// next entry and the page says where ([`Cut::time_cut`]).
 const WALK_BUDGET: std::time::Duration = octocode_engine::scan_budget::SCAN_TIME_BUDGET;
 
-use crate::policy::prune::PruneMode;
+use crate::policy::prune;
 use crate::tools::display_name;
 use crate::tools::empty_walk::{Cause, Hits, Verdict, Walk, diagnose_shown, lift};
 use crate::tools::num::u32_of_usize;
@@ -420,8 +420,7 @@ fn note_empty(
             .workspace_relative(path)
             .unwrap_or_else(|| path.to_string_lossy().into_owned())
     };
-    let (causes, hint) = match diagnose_shown(root, PruneMode::SyntaxVisible, walk, &shown, probe)?
-    {
+    let (causes, hint) = match diagnose_shown(root, walk, &shown, probe)? {
         Verdict::Skipped(diagnosis) => {
             let found = diagnosis.found();
             let hint = format!(
@@ -973,10 +972,7 @@ impl WalkLeft {
             hidden: std::sync::Mutex::default(),
             root: root.to_path_buf(),
             prune: defaults.then(|| {
-                octocode_engine::search::walk::Prune::new(
-                    PruneMode::SyntaxVisible.directories(true),
-                )
-                .at(root)
+                octocode_engine::search::walk::Prune::new(prune::directories(true)).at(root)
             }),
             pruned: std::sync::Mutex::default(),
         }
@@ -1320,6 +1316,70 @@ fn probe_empty<R: Sourced>(
             found.rows.iter().map(|row| row.seen().path.to_path_buf()),
             cut,
         ))
+    })
+}
+
+/// What the `files` and `tree` queries share: the walk's skip settings and
+/// the caller's page size, so both listings probe an empty result, and clamp
+/// their page, one way.
+trait Listing: Clone + serde::Serialize {
+    /// Which paths the request's own walk takes.
+    fn walk(&self) -> Walk;
+    /// This query with `relaxed` lifting skips, walking from its first
+    /// entry: the resume cursors of the request's own walk do not apply.
+    fn relaxed(&self, relaxed: Walk) -> Self;
+    /// The caller's page size; `None` pages by the response budget.
+    fn page_size(&self) -> Option<usize>;
+}
+
+macro_rules! impl_listing {
+    ($query:ty) => {
+        impl Listing for $query {
+            fn walk(&self) -> Walk {
+                Walk {
+                    ignored: self.include_ignored == Some(true),
+                    hidden: self.include_hidden == Some(true),
+                    default_excludes: crate::policy::prune::DefaultsFlag::defaults(
+                        &self.default_excludes,
+                    ),
+                }
+            }
+            fn relaxed(&self, relaxed: Walk) -> Self {
+                let mut query = self.clone();
+                query.include_ignored = Some(relaxed.ignored);
+                query.include_hidden = Some(relaxed.hidden);
+                query.default_excludes = Some(crate::contracts::tool_types::DefaultExcludes(
+                    relaxed.default_excludes,
+                ));
+                query.scan_offset = None;
+                query.walk_offset = None;
+                query
+            }
+            fn page_size(&self) -> Option<usize> {
+                self.page_size.map(|size| {
+                    crate::tools::paging::clamp_page_size(
+                        crate::tools::id::ToolId::StructureSearch,
+                        None,
+                        crate::tools::num::usize_of(size.get()),
+                    )
+                })
+            }
+        }
+    };
+}
+use impl_listing;
+
+/// [`probe_empty`] for a [`Listing`] query: `walk` re-walks `query` with the
+/// skips its relaxed copy lifts.
+fn probe_listing<Q: Listing, R: Sourced>(
+    out: &mut Value,
+    query: &Q,
+    at: (&std::path::Path, &crate::policy::path::PathPolicy),
+    seen: &Uncovered,
+    walk: impl Fn(&Q, Walking<'_>) -> Result<Walked<R>, ToolError>,
+) -> Result<(), ToolError> {
+    probe_empty(out, query, at, seen, query.walk(), |relaxed, walking| {
+        walk(&query.relaxed(relaxed), walking)
     })
 }
 

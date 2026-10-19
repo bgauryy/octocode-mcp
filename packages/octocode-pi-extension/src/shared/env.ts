@@ -65,11 +65,9 @@ const nonceStore = globalThis as { [NONCE_SLOT]?: string };
 /** The same slot for an injected environment (tests, embedders): one per environment object. */
 const injectedNonces = new WeakMap<NodeJS.ProcessEnv, string>();
 
-const slotOf = (env: NodeJS.ProcessEnv): string | undefined => (env === process.env ? nonceStore[NONCE_SLOT] : injectedNonces.get(env));
-
 /** The nonce this process took from its parent's file (`takeNonce`); undefined for a session that is no subagent, or before the take. */
 export function ownNonce(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return slotOf(env);
+  return env === process.env ? nonceStore[NONCE_SLOT] : injectedNonces.get(env);
 }
 
 /**
@@ -97,7 +95,7 @@ export function takeNonce(env: NodeJS.ProcessEnv = process.env): string | undefi
       else injectedNonces.set(env, nonce);
     }
   }
-  return slotOf(env);
+  return ownNonce(env);
 }
 
 /**

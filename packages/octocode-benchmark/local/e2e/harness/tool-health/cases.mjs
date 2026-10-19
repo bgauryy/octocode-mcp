@@ -25,7 +25,7 @@ import { suggestedCall } from '../lead-predicates.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { declarations, lspLocations, structureFiles, sourceView, inventoryRows } from '../mcp-client.mjs';
-import { dataOf, leadsIn, rowsOf } from './driver.mjs';
+import { dataOf, rowsOf } from './driver.mjs';
 import { checkMaterialization } from '../github-materialize.mjs';
 
 const files = data => (data?.files ?? []).flatMap(file => (file.matches ?? []).map(m => `${file.path}:${m.line}`));
@@ -41,30 +41,6 @@ function workspace(ctx, name, extra = {}) {
   fs.cpSync(ctx.fixture, dir, { recursive: true });
   for (const [rel, text] of Object.entries(extra)) { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); }
   return dir;
-}
-
-/** Apply a unified diff (as astRewrite previews it) to `text`. */
-export function applyPatch(text, patch) {
-  const src = text.split('\n');
-  const out = [];
-  let at = 0;
-  const lines = patch.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const h = /^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@/.exec(lines[i]);
-    if (!h) continue;
-    const start = Number(h[1]) - (h[2] === '0' ? 0 : 1);
-    while (at < start) out.push(src[at++]);
-    for (i++; i < lines.length && !lines[i].startsWith('@@'); i++) {
-      const line = lines[i];
-      if (line.startsWith('\\')) continue;
-      if (line.startsWith('+')) out.push(line.slice(1));
-      else if (line.startsWith('-')) { if (src[at] !== line.slice(1)) throw new Error(`patch removes "${line.slice(1)}" but line ${at + 1} is "${src[at]}"`); at++; }
-      else if (line.startsWith(' ')) { if (src[at] !== line.slice(1)) throw new Error(`patch context "${line.slice(1)}" but line ${at + 1} is "${src[at]}"`); out.push(src[at++]); }
-    }
-    i--;
-  }
-  while (at < src.length) out.push(src[at++]);
-  return out.join('\n');
 }
 
 /** Patch rows of a ghGetHistoryItem response: `path:line` per numbered patch line (`N\t+text`). */
@@ -261,38 +237,6 @@ export const CASES = {
       { label: 'reachability', query: { path: 'src', operation: 'reachability', entrypoints: ['src/app.ts'] }, deep: true },
       { label: 'path', query: { path: 'src', operation: 'path', source: 'src/app.ts', target: 'src/greeter.ts' }, deep: true },
     ],
-  },
-  astRewrite: {
-    budgetMs: LOCAL,
-    // A temp copy: previews never write, and the apply check below writes its own copy.
-    workspace: ctx => workspace(ctx, 'astRewrite'),
-    happy: { query: { path: 'src', language: 'typescript', pattern: 'shout($A)', rewrite: 'yell($A)' }, fields: ['mode', 'matches', 'files'], rows: data => (data.matches ?? []).map(m => `${m.path}:${m.line}`), min: 2, check: data => data.mode === 'preview' ? null : `mode ${data.mode} (expected preview)` },
-    page: { query: { path: 'src', language: 'typescript', pattern: 'shout($A)', rewrite: 'yell($A)', pageSize: 1 }, lead: 'nextPage' },
-    empty: { query: { path: 'src', language: 'typescript', pattern: 'zzzNoSuchCall($A)', rewrite: 'yell($A)' } },
-    invalid: { query: { path: 'src', language: 'typescript', pattern: 'shout($A)' } },
-    // Apply on a fresh copy writes exactly the previewed diff: each previewed file
-    // equals its original with the preview patch applied, every other file is untouched.
-    extra: async ({ tmp, fixture, cliCall, validateOutput }) => {
-      const dir = path.join(tmp, 'ws-astRewrite-apply');
-      fs.cpSync(fixture, dir, { recursive: true });
-      const before = Object.fromEntries(['src/app.ts', 'src/greeter.ts', 'src/util.ts', 'docs/notes.md', 'tsconfig.json'].map(f => [f, fs.readFileSync(path.join(dir, f), 'utf8')]));
-      const preview = await cliCall('astRewrite', { queries: [{ path: 'src', language: 'typescript', pattern: 'shout($A)', rewrite: 'yell($A)', extras: ['hints'] }] }, { cwd: dir });
-      const data = preview.json?.results?.[0]?.data;
-      const apply = leadsIn(preview.json, new Set(['astRewrite'])).find(l => l.key === 'apply');
-      if (!apply) return [['apply.lead', false, `preview has no hints.apply: ${preview.stdout.slice(0, 200)}`]];
-      const applied = await cliCall(apply.tool, apply.query, { cwd: dir });
-      const contractError = validateOutput('astRewrite', applied.raw);
-      const out = [['apply.exit', applied.status === 0 && applied.json?.results?.[0]?.data?.mode === 'apply', `exit ${applied.status}, mode ${applied.json?.results?.[0]?.data?.mode} ${applied.stdout.slice(0, 160)}`], ['apply.contract', !contractError, contractError ?? '']];
-      const patched = new Map((data?.files ?? []).map(f => [f.path, f.patch]));
-      for (const [file, text] of Object.entries(before)) {
-        const now = fs.readFileSync(path.join(dir, file), 'utf8');
-        let want = text, why = '';
-        try { if (patched.has(file)) want = applyPatch(text, patched.get(file)); } catch (error) { why = error.message; }
-        out.push([`apply.diff.${file}`, !why && now === want, why || (now === want ? '' : `${patched.has(file) ? 'written content differs from the previewed patch' : 'file outside the preview changed'}: ${JSON.stringify(now).slice(0, 160)}`)]);
-      }
-      out.push(['apply.previewed', patched.size === 2, `previewed files ${[...patched.keys()].join(', ')}`]);
-      return out;
-    },
   },
   ghSearchCode: {
     budgetMs: REMOTE,

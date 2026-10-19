@@ -124,15 +124,13 @@ fn minimized(tool: ToolId, query: Value, data: Value) -> Value {
 
 /// Which rows carry scan totals is the contract's `scanTotals` for the tool,
 /// not a name or trait branch: every localSearch row, an astSearch row only
-/// beside `matchCount`, and no row of a tool without the marker (astRewrite's
-/// `matchCount` sizes an edit).
+/// beside `matchCount`, and no row of a tool without the marker.
 #[test]
 fn scan_totals_follow_the_contract_marker() {
     let totals = |tool, data: Value| reports_scan_totals(tool, data.as_object().expect("row"));
     assert!(totals(ToolId::LocalSearch, json!({"filesScanned": 3})));
     assert!(totals(ToolId::AstSearch, json!({"matchCount": 1})));
     assert!(!totals(ToolId::AstSearch, json!({"filesScanned": 3})));
-    assert!(!totals(ToolId::AstRewrite, json!({"matchCount": 1})));
     assert!(!totals(ToolId::StructureSearch, json!({"matchCount": 1})));
 }
 
@@ -605,25 +603,6 @@ fn error_hint(tool: &str, query: &Value, code: &str, message: &str) -> String {
 }
 
 #[test]
-fn ast_rewrite_apply_errors_get_no_generic_before_hash_hint() {
-    // astRewrite attaches its own code-specific hints; the fallback only
-    // covers rows without recovery and never invents a hash instruction.
-    let apply = json!({"apply": true, "path": "/repo"});
-    for code in ["hashMismatch", "fileAccessFailed"] {
-        let hint = error_hint("astRewrite", &apply, code, "failed");
-        assert!(!hint.contains("beforeHash"), "{code}: {hint}");
-    }
-}
-
-#[test]
-fn ast_rewrite_unreachable_root_points_at_the_path_not_the_pattern() {
-    let query = json!({"path": "/repo/nope"});
-    let hint = error_hint("astRewrite", &query, "rootUnavailable", "x");
-    assert!(hint.contains("Verify the path exists"), "{hint}");
-    assert!(!hint.contains("Broaden"), "{hint}");
-}
-
-#[test]
 fn error_hints_match_exact_codes_not_substrings() {
     let query = json!({"owner":"o","keywords":["octocode"]});
     assert!(error_hint("ghSearchCode", &query, "rateLimited", "slow down").contains("Retry-After"));
@@ -632,7 +611,7 @@ fn error_hints_match_exact_codes_not_substrings() {
     let fallback = error_hint("ghSearchCode", &query, "authorizationPending", "x");
     assert!(fallback.contains("unproven absence"), "{fallback}");
     // The sandbox hint keys on the dedicated code, never on message text.
-    for tool in ["localSearch", "localFetch", "lspSearch", "astRewrite"] {
+    for tool in ["localSearch", "localFetch", "lspSearch"] {
         assert!(
             error_hint(
                 tool,
@@ -1406,12 +1385,12 @@ fn a_row_with_a_next_page_is_never_complete() {
         Some(&json!(true)),
         "{nested}"
     );
-    // A guarded apply or a restart is a follow-up, not unread rest.
+    // A restart is a follow-up, not unread rest.
     let preview = result_row(
-        ToolId::AstRewrite,
+        ToolId::AstSearch,
         0,
         &json!({}),
-        json!({"coverage":{"state":"complete"},"next":{"apply":page,"restart":page}}),
+        json!({"coverage":{"state":"complete"},"next":{"restart":page}}),
         None,
     );
     assert_eq!(

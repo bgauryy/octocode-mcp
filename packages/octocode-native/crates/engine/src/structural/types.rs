@@ -138,22 +138,6 @@ pub struct StructuralSearchFilesOptions {
     pub max_file_bytes: Option<u32>,
 }
 
-/// Options for in-process structural rewrite over a file tree. The rule config
-/// must be a complete ast-grep inline-rule JSON object (language, rule, fix, etc.).
-pub struct StructuralRewriteFilesOptions {
-    pub path: String,
-    /// Full ast-grep inline-rule config as a JSON string.
-    pub rule_config_json: String,
-    pub include: Option<Vec<String>>,
-    pub exclude: Option<Vec<String>>,
-    pub exclude_dir: Option<Vec<String>>,
-    /// Which ignore rules and dot entries the walk leaves out.
-    pub ignore: crate::search::walk::IgnorePolicy,
-    pub max_depth: Option<u32>,
-    pub max_files: Option<u32>,
-    pub max_file_bytes: Option<u32>,
-}
-
 pub struct StructuralSearchDetailedResult {
     pub path: String,
     pub status: String,

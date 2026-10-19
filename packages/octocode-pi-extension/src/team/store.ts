@@ -3,12 +3,12 @@ import type { DatabaseSync } from 'node:sqlite';
 import { dbStamp, openAgentDb, sharedAgentDb, type AgentDb } from '../agentdb/db.js';
 import { agentDbPath, canonicalPath, repoKey } from '../shared/home.js';
 import { sameProcess } from '../shared/process.js';
-import { HOUR_MS } from '../shared/util.js';
+import { HOUR_MS, optionalString } from '../shared/util.js';
 import { EditLog } from './edits.js';
 import { num, type Row } from '../agentdb/rows.js';
 import { ancestorKeys, leaseKey, overlappingRequests } from './lease-key.js';
 import type { Ask } from './asks.js';
-import { text, toAsk, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic, WAKE } from './model.js';
+import { toAsk, toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic, WAKE } from './model.js';
 
 /** Makes the `proof` of message `id` for `recipient` (see `userProof`); undefined for a recipient the caller cannot sign for. */
 type SignProof = (id: number, recipient: string) => string | undefined;
@@ -244,7 +244,7 @@ export class TeamStore {
   /** The process the row of `id` names; undefined when it has no row. */
   private processOf(id: string): ProcessIdentity | undefined {
     const row = this.db.prepare('SELECT pid, started FROM agents WHERE id = ?').get(id) as Row | undefined;
-    return row ? { pid: num(row['pid']), started: text(row['started']) } : undefined;
+    return row ? { pid: num(row['pid']), started: optionalString(row['started']) } : undefined;
   }
 
   /** Deletes the row, releases the leases and dead-letters the unread mail of `id`; the one place a member is dropped. */
@@ -263,7 +263,7 @@ export class TeamStore {
   sweep(now = Date.now()): void {
     const rows = this.db.prepare('SELECT id, pid, started FROM agents').all() as Row[];
     for (const row of rows) {
-      if (!sameProcess(num(row['pid']), text(row['started']), now)) this.reap(String(row['id']), { pid: num(row['pid']), started: text(row['started']) }, now);
+      if (!sameProcess(num(row['pid']), optionalString(row['started']), now)) this.reap(String(row['id']), { pid: num(row['pid']), started: optionalString(row['started']) }, now);
     }
   }
 
@@ -319,7 +319,7 @@ export class TeamStore {
   private reachable(): Set<string> {
     const rows = this.db.prepare('SELECT id, pid, started FROM agents WHERE workspace = ?').all(this.workspace) as Row[];
     const now = Date.now();
-    return new Set(rows.filter((row) => sameProcess(num(row['pid']), text(row['started']), now)).map((row) => String(row['id'])));
+    return new Set(rows.filter((row) => sameProcess(num(row['pid']), optionalString(row['started']), now)).map((row) => String(row['id'])));
   }
 
   // ── messages ──────────────────────────────────────────────────────────────

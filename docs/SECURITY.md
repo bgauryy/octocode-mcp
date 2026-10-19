@@ -48,13 +48,9 @@ Denial messages name the path as requested or relative to `~`; outside-root deni
 
 `OCTOCODE_ENABLE_LOCAL=false` disables local tools. `OCTOCODE_BETA=true` (or `local.beta: true`; shell or home config only; default off) gates beta tools, including the CLI-only `astTopology`.
 
-## Structural rewrite safety
-
-`astRewrite` is the only tool that writes files, and it is disabled in this build on every surface. It uses embedded engine primitives and launches no rewrite executable. Preview is read-only. Apply needs beta and exact preview identities, and keeps canonical-root and path-policy checks, per-root exclusion locks, before/after hashes and unchanged-source guards, explicit match selection, postcondition checks, staged multi-file transactions, crash journals with rollback, and cancellation checks between bounded steps. Public file paths are relative to the preview root; an apply resolves them against that root before revalidation.
-
 ## External processes
 
-Search, AST, rewrite, providers, response shaping, and bulk orchestration are embedded Rust. External processes run only for:
+Search, AST, providers, response shaping, and bulk orchestration are embedded Rust. External processes run only for:
 
 - system Git for `ghCloneRepo`: HTTPS-only remotes, bounded arguments and output, process-group cancellation, staged publication, no token in argv;
 - configured language servers, launched without a shell and owned by the native LSP pool;

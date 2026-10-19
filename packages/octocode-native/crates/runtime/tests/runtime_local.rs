@@ -424,26 +424,7 @@ async fn disabled_local_family_is_unavailable() {
 async fn beta_ast_tools_require_the_shared_opt_in() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[]);
-    assert!(!runtime.is_available("astRewrite"));
     assert!(!runtime.is_available("astTopology"));
-    let error = call(
-        &runtime,
-        "astRewrite",
-        json!({
-            "path": workspace.workspace,
-            "language": "typescript",
-            "pattern": "console.log($A)",
-            "rewrite": "logger.info($A)"
-        }),
-    )
-    .await
-    .expect_err("astRewrite is parked");
-    // Parked: disabled on every surface, so no opt-in enables it.
-    assert_eq!(error.code, "toolUnavailable", "{error:?}");
-    assert_eq!(
-        error.message,
-        "Tool astRewrite is not available in this native runtime: it is disabled in this build."
-    );
     let topology_error = call(
         &runtime,
         "astTopology",
@@ -459,7 +440,6 @@ async fn beta_ast_tools_require_the_shared_opt_in() {
     runtime.close().await;
 
     let enabled = workspace.runtime(&[("OCTOCODE_BETA", "true".into())]);
-    assert!(!enabled.is_available("astRewrite"), "parked");
     assert!(enabled.is_available("astTopology"));
     enabled.close().await;
 }
@@ -485,7 +465,8 @@ async fn host_options_environment_controls_embedded_tool_availability() {
     // Beta never opens a CLI-only tool on MCP.
     assert!(runtime.is_available("astSearch"));
     let catalog = runtime.catalog();
-    for name in ["astTopology", "astRewrite"] {
+    {
+        let name = "astTopology";
         assert!(!runtime.is_available(name), "{name}");
         let entry = catalog["tools"]
             .as_array()
@@ -494,13 +475,7 @@ async fn host_options_environment_controls_embedded_tool_availability() {
             .find(|tool| tool["name"] == name)
             .unwrap_or_else(|| panic!("{name} entry"));
         assert_eq!(entry["available"], false, "{name}");
-        // A parked tool's reason is that it is disabled, on any surface.
-        let reason = if name == "astRewrite" {
-            "disabled"
-        } else {
-            "cliOnly"
-        };
-        assert_eq!(entry["unavailableReason"], reason, "{name}");
+        assert_eq!(entry["unavailableReason"], "cliOnly", "{name}");
     }
     let error = runtime
         .run_mcp(

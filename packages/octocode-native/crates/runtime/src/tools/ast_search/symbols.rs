@@ -8,7 +8,7 @@ use crate::tools::paging::clamp_page_size;
 use crate::tools::result::ToolError;
 use crate::tools::symbol_outline::{declaration_rows, top_level_spans};
 use crate::{
-    policy::{path::PathPolicy, prune::PruneMode},
+    policy::{path::PathPolicy, prune},
     security::ContentSecurity,
     tools::cancel::CancellationCheck,
 };
@@ -263,7 +263,7 @@ fn note_skipped(
                     .as_ref()
                     .is_none_or(|rules| !rules.is_ignored(path, path.is_dir()))
         };
-        FileProbe::new(at, PruneMode::SyntaxVisible, budget, &permitted, &keep)
+        FileProbe::new(at, budget, &permitted, &keep)
             .stopping(&stop)
             .within(Globs {
                 include: &[],
@@ -277,17 +277,14 @@ fn note_skipped(
         hidden: q.include_hidden.unwrap_or(false),
         default_excludes: q.default_excludes.defaults(),
     };
-    let scanned = FileProbe::new(root, PruneMode::SyntaxVisible, budget, &permits, &keep)
+    let scanned = FileProbe::new(root, budget, &permits, &keep)
         .stopping(&stop)
         .within(Globs {
             include: &[],
             exclude: &exclude,
         })
         .beyond(walk);
-    let Ok(Verdict::Skipped(diagnosis)) =
-        diagnose(root, PruneMode::SyntaxVisible, walk, |relaxed| {
-            scanned.find(relaxed)
-        })
+    let Ok(Verdict::Skipped(diagnosis)) = diagnose(root, walk, |relaxed| scanned.find(relaxed))
     else {
         return;
     };
@@ -541,9 +538,9 @@ fn directory_scan_options(
 ) -> GraphFactsScanOptions {
     GraphFactsScanOptions {
         path: canonical.to_string_lossy().into_owned(),
-        exclude_dir: Some(
-            PruneMode::SyntaxVisible.directories_before_policy(q.default_excludes.defaults()),
-        ),
+        exclude_dir: Some(prune::directories_before_policy(
+            q.default_excludes.defaults(),
+        )),
         exclude: q.exclude(),
         max_files: q.max_files(),
         skip_files: Some(q.scan_offset()),

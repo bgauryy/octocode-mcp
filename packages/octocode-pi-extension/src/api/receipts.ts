@@ -6,7 +6,7 @@ export type RunResult = {
   stopReason?: string;
 };
 
-export interface Waiter {
+interface Waiter {
   resolve(result: RunResult): void;
   reject(error: Error): void;
 }

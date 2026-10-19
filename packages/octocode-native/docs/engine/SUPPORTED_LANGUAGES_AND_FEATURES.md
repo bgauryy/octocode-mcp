@@ -25,7 +25,7 @@ The default build registers **30 extensions in 12 language families**, from one 
 | JavaScript | `js` `jsx` `mjs` `cjs` | Yes | ESM and binding-safe CommonJS | `typescript-language-server` |
 | TypeScript | `ts` `tsx` `mts` `cts` | Yes | ESM and binding-safe CommonJS | `tsgo`, else `typescript-language-server` |
 
-`astTopology` (file links) is beta and CLI-only, and `astRewrite` is parked in this build; the matrix lists what their engine supports. A grammar does not install or guarantee a language server. Tree-sitter owns structural matching for every language, JS/TS included; OXC adds JS/TS symbols, in-file references, calls, and graph facts. Uppercase `.S` normalizes to `.s`.
+`astTopology` (file links) is beta and CLI-only; the matrix lists engine support. A grammar does not install or guarantee a language server. Tree-sitter owns structural matching for every language, JS/TS included; OXC adds JS/TS symbols, in-file references, calls, and graph facts. Uppercase `.S` normalizes to `.s`.
 
 Languages with no native grammar (Kotlin, PHP, CSS, HTML, JSON, TOML, YAML, Ruby, Swift, Shell, SQL, Lua, Zig, Vue, Svelte, Dart, and others) get a typed unsupported result from grammar-dependent operations; no other parser is substituted. Text search, reads, GitHub and history tools, `artifactSearch`, minification, and custom LSP routes work for any language.
 
@@ -39,16 +39,9 @@ Every grammar above ships in the default build. Assembly, C++, C#, CUDA and Scal
 
 ## Structural matchers
 
-`astSearch match` runs Octocode's own matcher (`crates/engine/src/structural/octo/`); `astRewrite` runs embedded ast-grep. Both read ast-grep pattern syntax over the same grammar registry, and `crates/engine/src/structural/parity_tests.rs` pins where they agree: single and multi metavariables (separators included in `$$$` captures), repeated captures, an empty `$$$` beside punctuation (`f($$$A, x)` matches `f(x)`), comments and trailing commas in candidates, `kind`, `regex`, `has`/`inside` (direct by default, any depth with `stopBy: end`), `all`/`any`/`not`, and UTF-16 columns. Differences:
+`astSearch match` uses Octocode's matcher (`crates/engine/src/structural/octo/`) over the shared grammar registry. It supports single and multi metavariables, repeated captures, comments and trailing commas in candidates, `kind`, `regex`, `has`/`inside` (direct by default, any depth with `stopBy: end`), and `all`/`any`/`not`. Unsupported rule keys are rejected with the supported list.
 
-- `astSearch` rule YAML accepts only `kind`, `pattern`, `regex`, `has`, `inside`, `all`, `any`, `not`, and `stopBy: end`; other ast-grep keys (`constraints`, `follows`, `precedes`, …) are rejected with the supported list.
-- A statement pattern ending in `;` matches the expression anywhere in `astSearch` (span without `;`); ast-grep selects only that statement, `;` included.
-- `$K: $V` selects object pairs in `astSearch`; ast-grep parses it as a labeled statement.
-- A bare C call pattern (`foo($X)`) gets statement context in `astSearch`; ast-grep parses it as a declaration and selects nothing.
-- A pattern with several top-level nodes (`a(); b()`) is rejected by both.
-- Rewrite captures can include ast-grep's internal `secondary` node from relational rules.
-
-C++ function patterns repair a narrow C++11 initializer-list ambiguity; C# member patterns get a synthetic class wrapper; Java method-call patterns get statement context. A search result never authorizes an apply: only an `astRewrite` preview's selection, snapshot, and hashes do.
+A pattern must contain one complete node. Several top-level nodes (`a(); b()`) are rejected. C calls and Java method calls receive statement context; C# member patterns receive class context; C++ function patterns handle initializer-list ambiguity. Results identify syntax, not symbol identity.
 
 ## Signatures and graph facts
 

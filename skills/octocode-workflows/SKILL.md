@@ -1,6 +1,6 @@
 ---
 name: octocode-workflows
-description: "Load this skill first whenever the user asks to choose, compose, coordinate, resume, or verify an agentic workflow; to run a whole-system audit, a role-based investigation, runtime surgery, independent acceptance, or a resource-flow audit, even if the domain is already known. Use when sustained work needs one orchestrator, actor roles, a single evidence ledger, handoffs, recovery, or a choice among workflow families; good for routing domain skills without duplicating them. Not for an ordinary direct domain task, a single code or package fact (octocode-research), or an architecture judgment (octocode-architect)."
+description: "Load this skill first whenever the user asks to choose, compose, coordinate, resume or verify an agentic workflow, or run a whole-system audit, role-based investigation, runtime surgery or independent acceptance."
 ---
 
 # Octocode Workflows

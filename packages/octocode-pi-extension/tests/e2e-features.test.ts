@@ -49,13 +49,20 @@ type Reply = () => ReturnType<typeof fauxAssistantMessage>;
 let session: Awaited<ReturnType<typeof createAgentSession>>['session'];
 let faux: ReturnType<typeof createFauxCore>;
 const turns: Turn[] = [];
+/** A run started and Pi has not emitted its `agent_settled` yet: a prompt sent now is deferred until the run settles, and may never reach the model. */
+let unsettled = false;
 const ui = fakeCtx({ cwd: root }).ui;
+
+/**
+ * Waits until no turn runs or settles. A turn started earlier (a delivered team message or a background report wakes
+ * one, and a reload can start another) makes `prompt` throw "Agent is already processing" while it runs, and Pi defers
+ * a prompt or command sent while it settles (`isStreaming` is already false then).
+ */
+const settled = () => vi.waitFor(() => expect(session.isStreaming || unsettled).toBe(false), { timeout: 10_000 });
 
 async function run(prompt: string, replies: Reply[]): Promise<Turn[]> {
   const start = turns.length;
-  // A turn the previous test left running (a delivered team message or a background report wakes one, and a reload
-  // can start another) makes `prompt` throw "Agent is already processing": the test starts once the session is idle.
-  await vi.waitFor(() => expect(session.isStreaming).toBe(false), { timeout: 10_000 });
+  await settled();
   faux.setResponses(replies.map((reply) => (context: TranscriptContext) => (turns.push(snapshot(context)), reply())));
   await session.prompt(prompt);
   return turns.slice(start);
@@ -118,6 +125,10 @@ beforeAll(async () => {
   });
   await resourceLoader.reload();
   ({ session } = await createAgentSession({ cwd, agentDir: path.join(root, 'agent'), resourceLoader, settingsManager, sessionManager: SessionManager.inMemory(cwd) }));
+  session.subscribe((event) => {
+    if (event.type === 'agent_start') unsettled = true;
+    else if (event.type === 'agent_settled') unsettled = false;
+  });
   await session.bindExtensions({ uiContext: ui, mode: 'rpc', shutdownHandler: () => undefined } as never);
   await session.setModel(session.modelRuntime.getModel('faux', 'faux-1')!);
 }, 60_000);
@@ -284,18 +295,26 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
   }, 60_000);
 
   it('runs background subagents: answers arrive as messages and /agents kill stops one', async () => {
+    const before = turns.length;
     const t = await run('background', [calls(fauxToolCall('agent', { goal: 'check things', task: 'report later', background: true }), fauxToolCall('agent', { goal: 'check things', task: 'slow job', background: true })), say('waiting'), say('got it'), say('ok'), say('ok')]);
     const [later, slow] = t[1]!.results;
-    expect(later!.text).toMatch(/background/i);
-    const slowId = /\b(\S+-\w{4})\b/.exec(slow!.text)?.[1] ?? '';
-    await vi.waitFor(() => expect(turns.at(-1)!.context).toMatch(/report \{/), { timeout: 20_000 });
+    const laterId = /^Started (\S+) .* in the background/.exec(later!.text)![1]!;
+    const slowId = /^Started (\S+) .* in the background/.exec(slow!.text)![1]!;
+    // The finished child's own report reaches the model in a turn of this test (it wakes the session when it arrives
+    // after the run). Earlier tests' reports are in the transcript too: only this child's id proves its report arrived.
+    const report = new RegExp(`Background subagent ${laterId} \\([^)]*\\) (reported \\w+|finished) \\(`);
+    await vi.waitFor(() => expect(turns.slice(before).some((turn) => report.test(turn.context))).toBe(true), { timeout: 20_000 });
+    await settled();
     await session.prompt('/agents kill');
     expect(note(/Running: /)).toBeDefined();
-    const running = /Running: (.+)$/.exec(note(/Running: /)!)![1]!.split(', ');
-    expect(running.some((id) => slow!.text.includes(id) || id === slowId)).toBe(true);
-    await session.prompt(`/agents kill ${running[0]}`);
-    expect(note(/^Stopping /)).toBeDefined();
-    await vi.waitFor(() => expect(turns.at(-1)!.context).toMatch(/stopped|cancelled/), { timeout: 20_000 });
+    // The reported child is done: the slow one alone still runs.
+    expect(/Running: (.+)$/.exec(note(/Running: /)!)![1]!.split(', ')).toEqual([slowId]);
+    await session.prompt(`/agents kill ${slowId}`);
+    expect(note(new RegExp(`^Stopping ${slowId}`))).toBeDefined();
+    // A stop the user asked for wakes no turn: its report is delivered as a session message.
+    const cancelled = new RegExp(`Background subagent ${slowId} \\([^)]*\\) cancelled by the user`);
+    const delivered = () => session.sessionManager.getEntries().flatMap((entry) => (entry.type === 'custom_message' && entry.customType === 'octocode-agent-result' ? [JSON.stringify(entry.content)] : []));
+    await vi.waitFor(() => expect(delivered().some((content) => cancelled.test(content))).toBe(true), { timeout: 20_000 });
   }, 60_000);
 
   it('tracks backlog items and memories with the tools, refuses secrets, and recalls memories in later prompts', async () => {

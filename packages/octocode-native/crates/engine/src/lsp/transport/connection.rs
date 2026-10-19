@@ -377,9 +377,9 @@ impl JsonRpcConnection {
     /// time grew, or a `$/progress` token is open), and never past the
     /// budget's ceiling (the caller's deadline under
     /// [`super::with_caller_deadline`], else twice the base; retries that
-    /// pass one [`WaitBudget`] share it). A server with no progress times out at the base, so a cold
-    /// server on an oversubscribed machine answers while a hung one still
-    /// fails. Dropping the future cancels the request at any point of the
+    /// pass one [`WaitBudget`] share it). A server with no progress times
+    /// out at the base, so a cold server on an oversubscribed machine
+    /// answers while a hung one still fails. Dropping the future cancels the request at any point of the
     /// wait.
     ///
     /// Timeout policy: a request that consumes its whole wait is cancelled

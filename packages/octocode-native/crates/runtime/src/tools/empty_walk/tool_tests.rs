@@ -4,8 +4,6 @@
 //! causes that held matches and runs to the match. When nothing sits behind
 //! the skipped paths there is no lead.
 use super::Cause;
-use crate::policy::path::PathPolicy;
-use crate::security::ContentSecurity;
 use crate::tools::cancel::NeverCancel;
 use crate::tools::test_support::{Fixture, simple_policy};
 use serde_json::{Value, json};
@@ -199,37 +197,6 @@ fn structure(operation: &'static str, skips: &'static [Cause]) -> Tool {
     }
 }
 
-fn ast_rewrite() -> Tool {
-    Tool {
-        name: "astRewrite",
-        skips: &FLAGGED,
-        channel: |_| "includeSkipped",
-        query: |root| {
-            row(
-                root,
-                json!({"language": "typescript", "pattern": "function needle() {}", "rewrite": "function pin() {}"}),
-            )
-        },
-        run: |root, query| {
-            use crate::tools::ast_rewrite::{
-                AstRewriteRuntimeOptions, RewriteRequest, execute_ast_rewrite_with_options,
-            };
-            let (paths, security): (PathPolicy, ContentSecurity) = simple_policy(root);
-            let query: RewriteRequest = serde_json::from_value(query.clone()).expect("query");
-            execute_ast_rewrite_with_options(
-                query,
-                &paths,
-                &security,
-                &NeverCancel,
-                &AstRewriteRuntimeOptions::default(),
-            )
-        },
-        found: |out| out["matchCount"].as_u64().is_some_and(|count| count > 0),
-        lifts: by_flag,
-        prose_when_nothing_found: false,
-    }
-}
-
 fn tools() -> Vec<Tool> {
     vec![
         local_search(),
@@ -237,7 +204,6 @@ fn tools() -> Vec<Tool> {
         ast_symbols(),
         structure("tree", &FLAGGED),
         structure("files", &FLAGGED),
-        ast_rewrite(),
     ]
 }
 

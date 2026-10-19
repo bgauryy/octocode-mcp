@@ -1,6 +1,6 @@
 ---
 name: octocode-architect
-description: "Load this skill first whenever the question is about module dependencies, cycles, layering, a split or refactor, critical paths, or architecture review of protocols and running systems. Use when deciding or changing architecture: boundaries, data flow, coupling, reachability, algorithms, efficiency, memory lifetime, modularity, or unifying responsibilities; good for proving changed code boundaries and their consequences. Not for choosing or coordinating a workflow (octocode-workflows), a written decision document (octocode-rfc-generator), a single code or symbol lookup (octocode-research), or isolated behavior-preserving cleanup (octocode-clean-agentic-code)."
+description: "Load this skill first whenever the question is module dependencies, cycles, layering, boundaries, coupling, a split or refactor, or an architecture review; good for proving consequences."
 ---
 
 # Octocode Architect

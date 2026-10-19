@@ -70,7 +70,10 @@ const FLAVOR_DIRS: &[&str] = &[
     "commonjs",
     "src",
 ];
-const JS_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
+/// Source suffixes (leading dot) in the order TypeScript probes an
+/// extensionless module path. Not the engine's `JS_EXTENSIONS`, which holds
+/// the dotless JavaScript-only set.
+const MODULE_SUFFIXES: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
 const DECLARATION_EXTENSIONS: &[&str] = &[".d.ts", ".d.mts", ".d.cts"];
 
 /// Pattern keys (`./sub/*`, `#internal/*`, `@app/*`) with ordered targets.
@@ -809,7 +812,7 @@ fn resolve_targets(dir: &str, targets: &[String], known: &BTreeSet<String>) -> O
 fn strip_code_extension(path: &str) -> &str {
     DECLARATION_EXTENSIONS
         .iter()
-        .chain(JS_EXTENSIONS)
+        .chain(MODULE_SUFFIXES)
         .find_map(|ext| path.strip_suffix(ext))
         .unwrap_or(path)
 }
@@ -844,12 +847,12 @@ fn source_equivalent(dir: &str, target: &str, known: &BTreeSet<String>) -> Optio
 /// `.js`→`.ts` style swaps, extension probing, and `index` files.
 pub(crate) fn probe_js(stem: &str, known: &BTreeSet<String>) -> Option<String> {
     if stem.is_empty() || stem == "." {
-        return JS_EXTENSIONS
+        return MODULE_SUFFIXES
             .iter()
             .map(|ext| format!("index{ext}"))
             .find(|candidate| known.contains(candidate));
     }
-    if JS_EXTENSIONS.iter().any(|ext| stem.ends_with(ext)) {
+    if MODULE_SUFFIXES.iter().any(|ext| stem.ends_with(ext)) {
         if known.contains(stem) {
             return Some(stem.to_owned());
         }
@@ -863,7 +866,7 @@ pub(crate) fn probe_js(stem: &str, known: &BTreeSet<String>) -> Option<String> {
     }
     // `./x` is `x.ts` … or `x.d.ts`, then the directory's `index`.
     let probed = |name: String| {
-        JS_EXTENSIONS
+        MODULE_SUFFIXES
             .iter()
             .chain(&DECLARATION_EXTENSIONS[..1])
             .map(|ext| format!("{name}{ext}"))

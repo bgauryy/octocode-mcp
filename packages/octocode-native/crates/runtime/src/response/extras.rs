@@ -172,7 +172,6 @@ mod tests {
             ToolId::AstTopology => {
                 json!({"nodes":[{"file":"a.rs"}],"graphSummary":{},"coverage":{"state":"complete"}})
             }
-            ToolId::AstRewrite => json!({"matches":[]}),
             ToolId::LocalFetch => json!({"path":"a.rs","content":"x"}),
             ToolId::LspSearch => {
                 json!({"kind":"references","files":[{"path":"a.ts","matches":[{"line":1}]}],"lsp":{},"coverage":{"state":"complete"}})
@@ -440,7 +439,6 @@ mod tests {
             ("tools/gh_structure/mod.rs", 1),
             ("tools/gh_structure/refs.rs", 1),
             // Extras-gated output not yet moved into core's extra classes.
-            ("tools/ast_rewrite/output.rs", 5),
             ("tools/artifact_search/mod.rs", 1),
             // Line counts and modified times: reading them costs I/O per entry.
             ("tools/structure_search/files.rs", 1),

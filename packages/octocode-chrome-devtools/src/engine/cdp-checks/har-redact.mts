@@ -8,14 +8,11 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
-import { validateFlags } from '../cli-flags.mjs';
+import { flagArgs, validateFlags } from '../cli-flags.mjs';
+import { octocodeWorkspace } from '../engine-io.mjs';
 
 const argv = process.argv.slice(2);
-const getArg = (flag: string, def?: string) => {
-  const i = argv.indexOf(flag);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag } = flagArgs(argv);
 
 if (!argv.length || hasFlag('--help') || hasFlag('-h')) {
   console.error(
@@ -31,7 +28,7 @@ const [inPath] = validateFlags(
 );
 if (!inPath) throw new Error('An input HAR file is required');
 
-const workspaceOutputBase = resolve(process.cwd(), '.octocode');
+const workspaceOutputBase = octocodeWorkspace();
 const defaultName = basename(inPath).replace(/\.har$/i, '') + '.redacted.har';
 const outPath = resolve(
   getArg(

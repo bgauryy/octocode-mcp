@@ -15,7 +15,6 @@ impl ToolId {
             ToolId::AstSearch => &crate::tools::ast_search::Output,
             ToolId::LspSearch => &crate::tools::lsp_search::Output,
             ToolId::AstTopology => &crate::tools::ast_graph::Output,
-            ToolId::AstRewrite => &crate::tools::ast_rewrite::Output,
             ToolId::GhSearchRepo => &crate::tools::gh_search_repo::Output,
             ToolId::GhSearchCode => &crate::tools::gh_search_code::Output,
             ToolId::GhStructure => &crate::tools::gh_structure::Output,

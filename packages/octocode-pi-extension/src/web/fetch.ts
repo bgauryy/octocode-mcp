@@ -23,17 +23,6 @@ const CACHE_TTL_MS = 15 * 60_000;
 const CACHE_MAX = 64;
 const CACHE_MAX_BYTES = 32 * 1024 * 1024;
 
-/** Least recently used first (a Map keeps insertion order; a hit re-inserts). */
-const fetchCache = new Map<string, { at: number; text: string; bytes: number }>();
-let cachedBytes = 0;
-
-function uncache(key: string): void {
-  cachedBytes -= fetchCache.get(key)?.bytes ?? 0;
-  fetchCache.delete(key);
-}
-/** Fetches under way, shared by callers asking for the same page; aborted once every caller has stopped waiting. */
-const inFlight = new Map<string, { promise: Promise<Fetched>; controller: AbortController; waiting: number }>();
-
 /** An image the server sent: its real format (by signature) and bytes, at most `MAX_BODY_BYTES`. */
 export interface FetchedImage {
   url: string;
@@ -43,12 +32,6 @@ export interface FetchedImage {
 
 /** What a URL holds: text (a page, JSON, a notice) or an image. */
 export type Fetched = string | FetchedImage;
-
-/** Forgets cached pages; tests start each case from an empty cache. */
-export function clearFetchCache(): void {
-  fetchCache.clear();
-  cachedBytes = 0;
-}
 
 /** The system's locale (Node follows LC_ALL / LANG), e.g. `en-US`. */
 const systemLocale = (): string => Intl.DateTimeFormat().resolvedOptions().locale;
@@ -64,11 +47,6 @@ export function language(locale = systemLocale()): string {
   return tags.map((tag, index) => (index === 0 ? tag : `${tag};q=${(1 - index / 10).toFixed(1)}`)).join(',');
 }
 
-/**
- * A URL as text: HTML reduced to its readable content with a note when a browser may show something else, JSON
- * pretty-printed, other text as is; or, for a PNG, JPEG, GIF or WebP, the image itself. Transient failures are retried; a
- * successful page is cached for 15 minutes (an image is not); a redirect to another host is reported instead of followed.
- */
 const REDIRECT_NOTE = 'The target is server-supplied and not verified; fetch it with web if you trust it.';
 const UNREAD_NOTE = '; web cannot read it. Download it with bash (curl -o) if you need the file.';
 /** Content types an image is read from; SVG is not one: it is XML text, shown as its source and never rendered. */
@@ -83,52 +61,76 @@ export function unreadReason(text: string): 'redirect' | 'unsupported' | undefin
   return undefined;
 }
 
-/** `private`: the first request may reach a private address (the user approved this URL as a `net.private` ask). */
-export async function fetchUrl(url: string, signal?: AbortSignal, options: { private?: boolean } = {}): Promise<Fetched> {
-  signal?.throwIfAborted();
-  const cached = fetchCache.get(url);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    fetchCache.delete(url);
-    fetchCache.set(url, cached);
-    return cached.text;
-  }
-  let entry = inFlight.get(url);
-  if (!entry) {
-    const controller = new AbortController();
-    const promise = loadUrl(url, controller.signal, options).finally(() => {
-      if (inFlight.get(url)?.promise === promise) inFlight.delete(url);
-    });
-    // Every caller may have stopped waiting; the abort rejection then has no other handler.
-    promise.catch(() => undefined);
-    entry = { promise, controller, waiting: 0 };
-    inFlight.set(url, entry);
-  }
-  entry.waiting += 1;
-  try {
-    return await untilAborted(entry.promise, signal);
-  } finally {
-    entry.waiting -= 1;
-    if (entry.waiting === 0 && signal?.aborted) entry.controller.abort(signal.reason);
-  }
-}
+/**
+ * A URL as text: HTML reduced to its readable content with a note when a browser may show something else, JSON
+ * pretty-printed, other text as is; or, for a PNG, JPEG, GIF or WebP, the image itself. Transient failures are retried; a
+ * successful page is cached for 15 minutes (an image is not); a redirect to another host is reported instead of followed.
+ * `private`: the first request may reach a private address (the user approved this URL as a `net.private` ask).
+ */
+export type PageFetcher = (url: string, signal?: AbortSignal, options?: { private?: boolean }) => Promise<Fetched>;
 
-/** Fetches one URL and caches its text. */
-async function loadUrl(url: string, signal: AbortSignal, options: { private?: boolean }): Promise<Fetched> {
-  let text: Fetched;
-  try {
-    text = await fetchResource(url, signal, options);
-  } catch (error) {
-    // The model decides whether a server-supplied target is worth fetching; it is not followed on the page's word.
-    if (error instanceof CrossHostRedirect) return `${error.message}\n${REDIRECT_NOTE}`;
-    throw error;
+/**
+ * A fetcher that owns its page cache and its fetches under way: the web tool makes one per registration, so a reload starts
+ * empty, and a test makes one per case. Callers asking for the same page share a request, which is aborted once every
+ * caller has stopped waiting.
+ */
+export function pageFetcher(): PageFetcher {
+  /** Least recently used first (a Map keeps insertion order; a hit re-inserts). */
+  const cache = new Map<string, { at: number; text: string; bytes: number }>();
+  let cachedBytes = 0;
+  const inFlight = new Map<string, { promise: Promise<Fetched>; controller: AbortController; waiting: number }>();
+
+  function uncache(key: string): void {
+    cachedBytes -= cache.get(key)?.bytes ?? 0;
+    cache.delete(key);
   }
-  if (typeof text !== 'string') return text;
-  uncache(url);
-  const bytes = Buffer.byteLength(text);
-  fetchCache.set(url, { at: Date.now(), text, bytes });
-  cachedBytes += bytes;
-  while (fetchCache.size > 1 && (fetchCache.size > CACHE_MAX || cachedBytes > CACHE_MAX_BYTES)) uncache(fetchCache.keys().next().value!);
-  return text;
+
+  /** Fetches one URL and caches its text. */
+  async function loadUrl(url: string, signal: AbortSignal, options: { private?: boolean }): Promise<Fetched> {
+    let text: Fetched;
+    try {
+      text = await fetchResource(url, signal, options);
+    } catch (error) {
+      // The model decides whether a server-supplied target is worth fetching; it is not followed on the page's word.
+      if (error instanceof CrossHostRedirect) return `${error.message}\n${REDIRECT_NOTE}`;
+      throw error;
+    }
+    if (typeof text !== 'string') return text;
+    uncache(url);
+    const bytes = Buffer.byteLength(text);
+    cache.set(url, { at: Date.now(), text, bytes });
+    cachedBytes += bytes;
+    while (cache.size > 1 && (cache.size > CACHE_MAX || cachedBytes > CACHE_MAX_BYTES)) uncache(cache.keys().next().value!);
+    return text;
+  }
+
+  return async function fetchUrl(url, signal, options = {}) {
+    signal?.throwIfAborted();
+    const cached = cache.get(url);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      cache.delete(url);
+      cache.set(url, cached);
+      return cached.text;
+    }
+    let entry = inFlight.get(url);
+    if (!entry) {
+      const controller = new AbortController();
+      const promise = loadUrl(url, controller.signal, options).finally(() => {
+        if (inFlight.get(url)?.promise === promise) inFlight.delete(url);
+      });
+      // Every caller may have stopped waiting; the abort rejection then has no other handler.
+      promise.catch(() => undefined);
+      entry = { promise, controller, waiting: 0 };
+      inFlight.set(url, entry);
+    }
+    entry.waiting += 1;
+    try {
+      return await untilAborted(entry.promise, signal);
+    } finally {
+      entry.waiting -= 1;
+      if (entry.waiting === 0 && signal?.aborted) entry.controller.abort(signal.reason);
+    }
+  };
 }
 
 /** Retry-After in milliseconds (seconds or an HTTP date); undefined when absent or unreadable. */

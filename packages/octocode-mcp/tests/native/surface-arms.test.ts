@@ -129,7 +129,7 @@ describe('read-tool selection schema', () => {
           clasifyListed
         );
         for (const name of TOOLS.filter(
-          name => !['clasify', 'ghCloneRepo', 'astRewrite'].includes(name)
+          name => !['clasify', 'ghCloneRepo'].includes(name)
         )) {
           const schema = queryRow(
             server.listed.find(tool => tool.name === name)!.inputSchema
@@ -228,9 +228,9 @@ describe('deferred tools', () => {
     // An unknown or unavailable tool is native's typed tool error too.
     await deferred.client.callTool({
       name: DEFERRED_TOOL_DISPATCHER,
-      arguments: { tool: 'astRewrite', query: {} },
+      arguments: { tool: 'notATool', query: {} },
     });
-    expect(executions.at(-1)).toEqual({ tool: 'astRewrite', input: {} });
+    expect(executions.at(-1)).toEqual({ tool: 'notATool', input: {} });
     await deferred.close();
   });
 
@@ -247,7 +247,7 @@ describe('deferred tools', () => {
 
   it('ignores deferral of an unavailable tool', async () => {
     const control = await connect();
-    const none = await connect({ deferred: ['astRewrite'] });
+    const none = await connect({ deferred: [] });
     expect(none.listed.map(t => t.name)).toEqual(
       control.listed.map(t => t.name)
     );

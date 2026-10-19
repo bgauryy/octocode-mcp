@@ -20,7 +20,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[1]

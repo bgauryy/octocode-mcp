@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -32,14 +31,6 @@ export const canon = value =>
         )
       : value;
 export const stable = value => JSON.stringify(canon(value));
-export const hash = value =>
-  createHash('sha256')
-    .update(
-      typeof value === 'string' || Buffer.isBuffer(value)
-        ? value
-        : stable(value)
-    )
-    .digest('hex');
 export const dataOf = result => result.json?.results?.[0]?.data;
 export function success(result) {
   assert.ok(

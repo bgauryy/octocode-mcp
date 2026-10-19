@@ -7,9 +7,7 @@ import {
   applyOctocodeEnv,
   DEFAULT_CONFIG,
   ENV_TOKEN_VARS,
-  getConfigFilePath,
   getOctocodeHome,
-  getProjectConfigFilePath,
   loadOctocodeEnv,
   propagateOctocodeEnv,
 } from '../src/index.js';
@@ -105,7 +103,6 @@ describe('PROTECTED_KEYS', () => {
       'WORKSPACE_ROOT',
       'OCTOCODE_BETA',
       'OCTOCODE_CARGO',
-      'OCTOCODE_AST_REWRITE_STATE_DIR',
       'OCTOCODE_LSP_AUTO_INSTALL',
       'OCTOCODE_LSP_CACHE_DIR',
     ]) {
@@ -144,8 +141,6 @@ describe('PROTECTED_KEYS', () => {
       // Storage mode decides what persists on disk: home-trusted only.
       'OCTOCODE_STORAGE_MODE',
       'OCTOCODE_CARGO',
-      // astRewrite journals are replayed by a later apply: a workspace .env must not choose where.
-      'OCTOCODE_AST_REWRITE_STATE_DIR',
       'GITHUB_API_URL',
       'OCTOCODE_BETA',
       'ALLOWED_PATHS',
@@ -455,19 +450,5 @@ describe('DEFAULT_CONFIG', () => {
     expect(DEFAULT_CONFIG.lsp.cacheDir).toBeUndefined();
     const field = CONFIG_FIELDS.find(field => field.path === 'lsp.cacheDir')!;
     expect(field).toEqual(expect.objectContaining({ type: 'path', defaultValue: null }));
-  });
-});
-
-describe('getConfigFilePath', () => {
-  it('returns path ending in .octocoderc', () => {
-    expect(getConfigFilePath('/some/home')).toBe('/some/home/.octocoderc');
-  });
-});
-
-describe('getProjectConfigFilePath', () => {
-  it('lives at <cwd>/.octocode/.octocoderc', () => {
-    expect(getProjectConfigFilePath('/work/repo')).toBe(
-      join('/work/repo', '.octocode', '.octocoderc')
-    );
   });
 });

@@ -55,14 +55,14 @@ const OUT = path.resolve(ROOT, opt('out') ?? `.octocode/evals/${new Date().toISO
 /** Native module that owns each ToolId (tools/<module>). */
 const MODULE = {
   localSearch: 'local_search', localFetch: 'local_fetch', structureSearch: 'structure_search', astSearch: 'ast_search',
-  lspSearch: 'lsp_search', astTopology: 'ast_graph', astRewrite: 'ast_rewrite', ghSearchRepo: 'gh_search_repo',
+  lspSearch: 'lsp_search', astTopology: 'ast_graph', ghSearchRepo: 'gh_search_repo',
   ghSearchCode: 'gh_search_code', ghStructure: 'gh_structure', ghGetFileContent: 'gh_get_file_content',
   ghSearchHistory: 'gh_search_history', ghGetHistoryItem: 'gh_get_history_item', artifactSearch: 'artifact_search',
   ghCloneRepo: 'gh_clone_repo', clasify: 'clasify',
 };
 /** PLAN.md §4 targets: `ToolId::X` references allowed in shared runtime/ + response/ production code. */
 const REF_TARGET = {
-  localSearch: 5, localFetch: 5, structureSearch: 3, astSearch: 5, lspSearch: 5, astTopology: 3, astRewrite: 3,
+  localSearch: 5, localFetch: 5, structureSearch: 3, astSearch: 5, lspSearch: 5, astTopology: 3,
   ghSearchRepo: 3, ghSearchCode: 3, ghStructure: 3, ghGetFileContent: 3, ghSearchHistory: 3, ghGetHistoryItem: 5,
   artifactSearch: 3, ghCloneRepo: 3, clasify: 3,
 };
@@ -93,7 +93,7 @@ const NATURAL_NEXT = {
   astSearch: ['localFetch', 'lspSearch'], lspSearch: ['localFetch'], ghSearchRepo: ['ghSearchCode', 'ghStructure'],
   ghSearchCode: ['ghGetFileContent'], ghStructure: ['ghGetFileContent', 'localSearch', 'localFetch'],
   ghSearchHistory: ['ghGetHistoryItem'], artifactSearch: ['ghStructure', 'ghGetFileContent', 'artifactSearch'],
-  clasify: ['localFetch', 'ghGetFileContent'], astTopology: ['localFetch', 'lspSearch'], astRewrite: ['astRewrite'],
+  clasify: ['localFetch', 'ghGetFileContent'], astTopology: ['localFetch', 'lspSearch'],
   ghCloneRepo: ['localSearch', 'structureSearch', 'astSearch', 'localFetch', 'lspSearch'],
   ghGetHistoryItem: ['ghGetHistoryItem', 'ghGetFileContent'],
   localFetch: null, ghGetFileContent: null, // final reads
@@ -107,7 +107,7 @@ const SAMPLES = {
   localSearch: ['L07', 'L01'], localFetch: ['L06', 'L02'], structureSearch: ['L13', 'L12'], astSearch: ['L17', 'L16'],
   lspSearch: ['L18', { id: 'Q3', inline: { tool: 'lspSearch', queries: [{ operation: 'documentSymbols', path: 'packages/octocode-benchmark/local/e2e/harness/mcp-client.mjs' }] } }], ghSearchRepo: ['G09'], ghSearchCode: ['G16'], ghStructure: ['G08'], ghGetFileContent: ['G02'],
   ghSearchHistory: ['G11'], ghGetHistoryItem: ['G13'], artifactSearch: ['G04'], clasify: ['C01'],
-  ghCloneRepo: [{ id: 'L20', drop: ['forceRefresh'] }], astTopology: ['L04'], astRewrite: [{ id: 'L19', drop: ['ruleKind'] }],
+  ghCloneRepo: [{ id: 'L20', drop: ['forceRefresh'] }], astTopology: ['L04'],
 };
 
 /** C2 probes: one empty and one error row per tool (`null` = no stable probe). */
@@ -122,7 +122,6 @@ const PROBES = {
   astSearch: { empty: { operation: 'symbols', path: CFG, symbolName: NEVER }, error: { operation: 'symbols', path: 'nope/dir', symbolName: 'x' } },
   lspSearch: { empty: null, error: { path: 'nope/x.ts', symbolName: 'foo', line: 1, operation: 'definition' } },
   astTopology: { empty: null, error: { operation: 'cycles', path: 'nope/dir' } },
-  astRewrite: { empty: { path: CFG, language: 'typescript', pattern: `${NEVER}($A)`, rewrite: 'x($A)' }, error: { path: 'nope/dir', language: 'typescript', pattern: 'f($A)', rewrite: 'g($A)' } },
   ghSearchRepo: { empty: { keywords: [NEVER] }, error: null },
   ghSearchCode: { empty: { ...GH, keywords: [NEVER] }, error: { ...NO_REPO, keywords: ['x'] } },
   ghStructure: { empty: { ...GH, path: 'src', include: [`*.${NEVER}`] }, error: { ...NO_REPO } },
@@ -140,7 +139,6 @@ const walkRank = name => { const i = WALK_ORDER.indexOf(name); return i < 0 ? WA
 
 // ---------- small helpers ----------
 const uniq = xs => [...new Set(xs)];
-const B = v => (v === undefined ? 0 : Buffer.byteLength(JSON.stringify(v)));
 const short = (s, n = 160) => { s = String(s ?? ''); return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 const addonStamp = () => {
   const f = fs.readdirSync(ADDON_DIR).find(x => /^octocode-native\..+\.node$/.test(x));
@@ -564,7 +562,7 @@ async function liveChecks(tools, contract, tasks) {
     }
     // Replay each lead verbatim (up to LEAD_REPLAYS; clasify leads only with --clasify; GitHub targets only with GitHub on).
     for (const { name, hint, from } of [...leadsSeen.values()].slice(0, LEAD_REPLAYS)) {
-      // Never replay a lead that writes (astRewrite apply): it would edit the corpus.
+      // Never replay a lead that writes: it would change the corpus.
       if ((hint.query?.queries ?? [hint.query]).some(q => q?.apply === true)) { res.communicate.replays.push({ name, tool: hint.tool, ok: null, detail: 'skipped (writes files)' }); continue; }
       if (hint.tool === 'clasify' && !PAID) { res.communicate.replays.push({ name, tool: hint.tool, ok: null, detail: 'skipped (paid)' }); continue; }
       if ((remote.has(hint.tool) || hint.tool === 'artifactSearch') && !GITHUB) { res.communicate.replays.push({ name, tool: hint.tool, ok: null, detail: 'skipped (GitHub off)' }); continue; }
@@ -610,7 +608,6 @@ async function liveChecks(tools, contract, tasks) {
 // ---------- main ----------
 const contract = JSON.parse(fs.readFileSync(CONTRACT, 'utf8'));
 // A parked (`disabled`) tool runs on no surface, so it has no chain to check;
-// harness/rewrite.mjs proves astRewrite's refusal.
 const ALL_TOOLS = contract.tools.filter(t => !t.disabled).map(t => t.name);
 const TOOLS = opt('tools')?.split(',') ?? ALL_TOOLS;
 const tasks = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/octocode-benchmark/local/e2e/harness/competitor-tasks.json'), 'utf8')).tasks;

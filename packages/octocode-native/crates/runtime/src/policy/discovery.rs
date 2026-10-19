@@ -346,7 +346,7 @@ impl SearchWalk {
     ) -> Self {
         let defaults = defaults.then(|| {
             octocode_engine::search::walk::Prune::new(
-                super::prune::PruneMode::SyntaxVisible.directories_with_includes(true, include),
+                crate::policy::prune::directories_with_includes(true, include),
             )
             .at(&root)
         });
@@ -483,11 +483,7 @@ mod tests {
 
     #[test]
     fn discovery_and_access_lists_cover_sensitive_paths() {
-        assert!(
-            crate::policy::prune::PruneMode::SyntaxVisible
-                .defaults()
-                .any(|name| name == ".ssh")
-        );
+        assert!(crate::policy::prune::defaults().any(|name| name == ".ssh"));
         assert!(
             CREDENTIAL_FILE_EXTENSIONS
                 .iter()

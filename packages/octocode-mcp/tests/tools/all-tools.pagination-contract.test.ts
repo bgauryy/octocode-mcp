@@ -43,7 +43,6 @@ const TOOL_PAGINATION_CONTRACT: Record<
   astTopology: {
     controls: ['page', 'pageSize', 'diagnosticPage', 'diagnosticPageSize'],
   },
-  astRewrite: { controls: ['page', 'pageSize'] },
   localFetch: { controls: ['unit', 'offset', 'length'] },
   lspSearch: { controls: ['page', 'pageSize'] },
   clasify: {

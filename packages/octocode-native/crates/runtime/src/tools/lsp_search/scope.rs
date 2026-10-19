@@ -710,8 +710,7 @@ async fn scan_text(
             include_ignored: lifted,
             include_hidden: false,
         },
-        exclude_dir: lifted
-            .then(|| crate::policy::prune::PruneMode::SyntaxVisible.directories(true)),
+        exclude_dir: lifted.then(|| crate::policy::prune::directories(true)),
         walk_threads: lifted.then_some(LIFTED_SCAN_THREADS),
         ..TextSearchOptions::default()
     };

@@ -12,7 +12,7 @@ export interface Launch {
   env: Record<string, string>;
 }
 
-export type ServerState = 'idle' | 'connecting' | 'connected' | 'failed' | 'disconnected' | 'closed';
+type ServerState = 'idle' | 'connecting' | 'connected' | 'failed' | 'disconnected' | 'closed';
 
 export interface ServerStatus {
   state: ServerState;

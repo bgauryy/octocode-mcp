@@ -403,7 +403,7 @@ impl IgnoreRules {
 
     /// Whether the root lies in a git work tree (it or a directory above it
     /// holds `.git`): only there do `.gitignore` rules apply.
-    pub fn in_repository(&self) -> bool {
+    pub(crate) fn in_repository(&self) -> bool {
         self.chain(&self.root).any_git
     }
 
@@ -417,7 +417,7 @@ impl IgnoreRules {
     /// The walker's ignore verdict on the entry `path` itself (its
     /// directories above taken as walked): left out, re-included by a `!`
     /// rule (which also keeps a dot entry), or no rule.
-    pub fn decide_entry(&self, path: &Path, is_dir: bool) -> Match<()> {
+    pub(crate) fn decide_entry(&self, path: &Path, is_dir: bool) -> Match<()> {
         self.decide(path, is_dir, |_| ())
     }
 

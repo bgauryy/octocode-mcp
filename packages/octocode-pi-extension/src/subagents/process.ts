@@ -189,7 +189,7 @@ const MAX_EVENT_BYTES = 16 * 1024 * 1024;
 const EXIT_GRACE_MS = 1_000;
 
 /** A model stream silent this long has stalled; busy time is bounded by each call's own deadline, else 15 minutes (bash's default). */
-export const WATCHDOG: WatchdogLimits = { idleMs: 10 * 60_000, busyMs: 15 * 60_000 };
+const WATCHDOG: WatchdogLimits = { idleMs: 10 * 60_000, busyMs: 15 * 60_000 };
 
 /** Why a child ended without a usable answer: its exit code, or the signal that killed it. */
 export function exitReason(code: number | null, signal: NodeJS.Signals | null): string {

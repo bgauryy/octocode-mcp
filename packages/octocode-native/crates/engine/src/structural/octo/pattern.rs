@@ -49,41 +49,25 @@ pub(super) struct CompiledPattern {
     tree: Option<Tree>,
     special: Option<SpecialPattern>,
     candidate_plan: CandidatePlan,
-    context: Option<PatternContext>,
+    selected_node: Option<(usize, usize, u16)>,
 }
 
-/// The parse context a pattern compiled in, in ast-grep's contextual pattern
-/// form: the pattern text as parsed (terminator, synthetic wrapper,
-/// disambiguating `;`) with `$` metavariables intact, and the kind of the
-/// node it names. `None` when the pattern parsed as written.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PatternContext {
-    pub context: String,
-    pub selector: String,
-}
-
-/// A pattern's parse text in both spellings: `source`, with metavariables
-/// substituted for the grammar, and `raw`, with their `$` sigils. The
-/// substitution maps one character to one, so the same edit at the same
-/// character index keeps them aligned.
+/// Pattern text with metavariables substituted for the selected grammar.
 #[derive(Clone)]
 struct PatternText {
     source: String,
-    raw: String,
 }
 
 impl PatternText {
     fn new(lang: &AgLanguage, pattern: &str) -> Self {
         Self {
             source: lang.preprocess_pattern(pattern).into_owned(),
-            raw: lang.wrap_class(pattern).into_owned(),
         }
     }
 
     fn plain(lang: &AgLanguage, pattern: &str) -> Self {
         Self {
-            source: lang.preprocess_rewrite_pattern(pattern).into_owned(),
-            raw: pattern.to_owned(),
+            source: lang.preprocess_metavariables(pattern).into_owned(),
         }
     }
 
@@ -98,35 +82,13 @@ impl PatternText {
     fn map(&self, edit: impl Fn(&str) -> String) -> Self {
         Self {
             source: edit(&self.source),
-            raw: edit(&self.raw),
         }
     }
 
-    /// Insert `ch` at byte `offset` of `source`, and at the same character
-    /// index of `raw`.
+    /// Insert `ch` at byte `offset` of the parser input.
     fn insert(&mut self, offset: usize, ch: char) {
-        let index = self.source[..offset].chars().count();
-        let raw_offset = self
-            .raw
-            .char_indices()
-            .nth(index)
-            .map_or(self.raw.len(), |(byte, _)| byte);
         self.source.insert(offset, ch);
-        self.raw.insert(raw_offset, ch);
     }
-}
-
-/// The first node of `kind` in pre-order: the node ast-grep's contextual
-/// pattern selects.
-fn first_of_kind<'a>(root: Node<'a>, kind: &str) -> Option<Node<'a>> {
-    let mut pending = vec![root];
-    while let Some(node) = pending.pop() {
-        if node.kind() == kind {
-            return Some(node);
-        }
-        pending.extend(children(node).into_iter().rev());
-    }
-    None
 }
 
 enum SpecialPattern {
@@ -151,11 +113,11 @@ impl CompiledPattern {
                 expando: lang.expando(),
                 source: pattern.to_owned(),
                 tree: None,
+                selected_node: None,
                 special: Some(SpecialPattern::JsxTagName {
                     capture: capture.to_owned(),
                 }),
                 candidate_plan: CandidatePlan::from_kinds(JSX_TAG_KINDS.map(str::to_owned)),
-                context: None,
             });
         }
 
@@ -167,12 +129,12 @@ impl CompiledPattern {
                 expando: lang.expando(),
                 source: pattern.to_owned(),
                 tree: None,
+                selected_node: None,
                 special: Some(SpecialPattern::KeyValuePair {
                     key_capture: key_capture.to_owned(),
                     value_capture: value_capture.to_owned(),
                 }),
                 candidate_plan: CandidatePlan::from_kind("pair"),
-                context: None,
             });
         }
 
@@ -280,7 +242,7 @@ impl CompiledPattern {
                 tree = contextual_tree;
             }
         }
-        let PatternText { source, raw } = text;
+        let PatternText { source } = text;
         let root = effective_pattern_root(tree.root_node(), &source);
         if root.is_error() {
             return Err(CompileError::grammar(
@@ -305,24 +267,75 @@ impl CompiledPattern {
         } else {
             CandidatePlan::from_kind(root.kind())
         };
-        // A pattern parsed in context is its root node: the first node of
-        // that kind in the context, so a context + kind selector names it.
-        let context = (raw != pattern
-            && !is_meta
-            && first_of_kind(tree.root_node(), root.kind()) == Some(root))
-        .then(|| PatternContext {
-            context: raw,
-            selector: root.kind().to_owned(),
-        });
+        Ok(Self {
+            language,
+            expando: lang.expando(),
+            source,
+            tree: Some(tree),
+            selected_node: None,
+            special: None,
+            candidate_plan,
+        })
+    }
+
+    pub(super) fn contextual(
+        lang: &AgLanguage,
+        context: &str,
+        selector: &str,
+    ) -> Result<Self, CompileError> {
+        if context.len() > 64_000 {
+            return Err(CompileError::rule(
+                "structural pattern exceeds 64000 byte limit",
+            ));
+        }
+        let language = lang.tree_sitter_language();
+        let kind = named_kind_id(&language, selector).ok_or_else(|| {
+            CompileError::grammar(format!(
+                "unknown selector kind '{selector}' for this language grammar"
+            ))
+        })?;
+        let source = lang.preprocess_metavariables(context).into_owned();
+        let tree = parse_tree(&language, &source)?;
+        if tree.root_node().has_error() {
+            return Err(CompileError::grammar(
+                "contextual pattern must parse without syntax errors",
+            ));
+        }
+        let mut pending = vec![tree.root_node()];
+        let mut selected = None;
+        while let Some(node) = pending.pop() {
+            if node.kind_id() == kind {
+                selected = Some((node.start_byte(), node.end_byte(), node.kind_id()));
+                break;
+            }
+            pending.extend(children(node).into_iter().rev());
+        }
+        let selected_node = selected.ok_or_else(|| {
+            CompileError::grammar(format!("context contains no '{selector}' node"))
+        })?;
         Ok(Self {
             language,
             expando: lang.expando(),
             source,
             tree: Some(tree),
             special: None,
-            candidate_plan,
-            context,
+            candidate_plan: CandidatePlan::from_kind(selector),
+            selected_node: Some(selected_node),
         })
+    }
+
+    fn root(&self) -> Option<Node<'_>> {
+        let tree = self.tree.as_ref()?;
+        let Some((start, end, kind)) = self.selected_node else {
+            return Some(effective_pattern_root(tree.root_node(), &self.source));
+        };
+        let mut node = tree
+            .root_node()
+            .named_descendant_for_byte_range(start, end)?;
+        while node.kind_id() != kind || node.start_byte() != start || node.end_byte() != end {
+            node = node.parent()?;
+        }
+        Some(node)
     }
 
     pub(super) fn language(&self) -> &Language {
@@ -333,8 +346,7 @@ impl CompiledPattern {
     /// gives that node a `name` field, with the name node's kind and text
     /// unless the name is a metavariable. `None` for any other pattern.
     pub(super) fn declaration(&self) -> Option<PatternDeclaration> {
-        let tree = self.tree.as_ref()?;
-        let root = effective_pattern_root(tree.root_node(), &self.source);
+        let root = self.root()?;
         let name = root.child_by_field_name("name")?;
         let named = meta_from_node(name, &self.source, self.expando)
             .is_none()
@@ -348,11 +360,6 @@ impl CompiledPattern {
             kind: root.kind().to_owned(),
             name: named,
         })
-    }
-
-    /// See [`PatternContext`].
-    pub(super) fn context(&self) -> Option<&PatternContext> {
-        self.context.as_ref()
     }
 
     pub(super) fn is_special(&self) -> bool {
@@ -420,10 +427,9 @@ impl CompiledPattern {
             return Ok(self.matches_special(special, candidate, content, captures));
         }
 
-        let Some(tree) = &self.tree else {
+        let Some(root) = self.root() else {
             return Ok(false);
         };
-        let root = effective_pattern_root(tree.root_node(), &self.source);
         let mut budget = MatchBudget {
             attempts: MAX_MULTI_CAPTURE_ATTEMPTS,
             deadline,

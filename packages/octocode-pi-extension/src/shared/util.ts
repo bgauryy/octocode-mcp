@@ -184,6 +184,15 @@ export function partText(part: unknown): string | undefined {
   return isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? part['text'] : undefined;
 }
 
+/** `value` when it is a string, else an empty string: the untyped field a caller reads as text. */
+export const stringOrEmpty = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/** `value` when it is a string, else undefined: tells a missing or mistyped field from an empty one. */
+export const optionalString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+/** `value` when it is a finite number, else undefined (not 0, so a missing count is not read as zero). */
+export const finiteNumber = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+
 /** `value` when it is an array of strings, else undefined. */
 export const stringList = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every((item) => typeof item === 'string') ? (value as string[]) : undefined);
 

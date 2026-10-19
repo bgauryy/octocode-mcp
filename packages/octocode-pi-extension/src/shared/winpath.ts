@@ -8,7 +8,7 @@ import path from 'node:path';
  * path arithmetic (`path.win32`), so it runs and is tested on any platform.
  */
 
-export type Env = Readonly<Record<string, string | undefined>>;
+type Env = Readonly<Record<string, string | undefined>>;
 
 const DEFAULT_ROOT = 'C:\\Windows';
 
@@ -35,7 +35,7 @@ export function system32Executable(file: string, env: Env = process.env): string
   return path.win32.join(systemRoot(env), 'System32', file);
 }
 
-export interface LookupOptions {
+interface LookupOptions {
   env?: Env;
   /** The folder a bare name would resolve in first; PATH entries that are it, or are relative, are skipped. */
   cwd?: string;

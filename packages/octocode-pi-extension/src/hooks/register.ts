@@ -88,7 +88,7 @@ const START_SOURCE: Record<string, string> = { startup: 'startup', reload: 'star
 const hookCount = (config: HookConfig): number => HOOK_EVENTS.reduce((sum, event) => sum + config[event].reduce((n, group) => n + group.hooks.length, 0), 0);
 
 /** What `/hooks` and `/octocode` show about hooks. */
-export interface HooksView {
+interface HooksView {
   /** One line for the `/octocode` status. */
   summary(): string;
   /** On/off, the loaded commands per event, the files read (✓ = exists) and any config errors. */

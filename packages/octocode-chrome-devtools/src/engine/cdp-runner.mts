@@ -6,6 +6,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { propagateOctocodeEnv } from './octocode-config.mjs';
+import { flagArgs } from './cli-flags.mjs';
+import { cdpHttp, cdpRequest, octocodeOutputBase } from './engine-io.mjs';
 import {
   applyMandatoryStealth,
   stealthEnabled,
@@ -13,14 +15,6 @@ import {
 } from './mandatory-stealth.mjs';
 
 propagateOctocodeEnv({ cwd: process.cwd(), trusted: true });
-
-function octocodeOutputBase() {
-  const workspace = resolve(process.cwd(), '.octocode');
-  // Under the sandbox the folder exists and its root is not writable (only octocode-chrome-devtools/tmp below it is).
-  if (!existsSync(workspace))
-    mkdirSync(workspace, { recursive: true, mode: 0o700 });
-  return workspace;
-}
 
 const OCTOCODE_OUTPUT_BASE = octocodeOutputBase();
 function workspaceOutputPath(candidate, label) {
@@ -47,11 +41,7 @@ const argv = process.argv.slice(2);
 const scriptArg = argv.find(
   a => !a.startsWith('--') && (a.endsWith('.mjs') || a.endsWith('.js'))
 );
-const getArg = (flag: string, def?: string) => {
-  const i = argv.indexOf(flag);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag } = flagArgs(argv);
 
 const PORT = getArg('--port', '9222');
 const NEW_TAB = getArg('--new-tab', '');
@@ -116,33 +106,25 @@ function writeJson(filePath, value) {
   });
 }
 
-async function cdpHttp(path, method = 'GET') {
-  const res = await fetch(`http://localhost:${PORT}${path}`, {
-    method,
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!res.ok) throw new Error(`CDP HTTP ${res.status} for ${path}`);
-  return res.json();
-}
-
 async function getVersion() {
-  return cdpHttp('/json/version');
+  return cdpHttp(PORT, '/json/version');
 }
 async function getTargets() {
-  return cdpHttp('/json');
+  return cdpHttp(PORT, '/json');
 }
 async function openTab(url) {
-  return cdpHttp(`/json/new?${encodeURIComponent(url)}`, 'PUT');
+  return cdpHttp(PORT, `/json/new?${encodeURIComponent(url)}`, {
+    method: 'PUT',
+  });
 }
+// Chrome answers /json/activate with the plain text `Target activated` (labelled JSON), so only the status counts.
 async function activateTarget(id) {
-  return cdpHttp(`/json/activate/${id}`);
+  await cdpRequest(PORT, `/json/activate/${id}`);
 }
 async function closeTab(id) {
   try {
-    const res = await fetch(`http://localhost:${PORT}/json/close/${id}`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    return res.ok;
+    await cdpRequest(PORT, `/json/close/${id}`, { timeoutMs: 3000 });
+    return true;
   } catch {
     return false;
   }
@@ -390,7 +372,7 @@ async function main() {
       browser.close();
     }
   };
-  cdp.protocol = () => cdpHttp('/json/protocol');
+  cdp.protocol = () => cdpHttp(PORT, '/json/protocol');
   cdp.skillScriptsDir = dirname(fileURLToPath(import.meta.url));
   cdp.saveArtifact = (name, data, format = 'json') => {
     if (!name || basename(name) !== name || name === '.' || name === '..')

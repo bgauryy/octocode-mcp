@@ -107,13 +107,13 @@ xychart-beta
 
 In October 2026, on the same campaign and agent, Octocode v20 MCP tied correctness with a lean `gh` setup (`--json`/`--jq` plus `grep`/`sed` filters), which used 0.71× Octocode's characters.
 
-Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/overview/SUMMARY.md) · [clasify guide](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md).
+Details: [benchmark method](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/docs/method.md) · [clasify guide](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md).
 
 ---
 
 ## Tools
 
-**16 tools.** Your agent gets 12 tools over MCP and 13 in the CLI (which adds `ghCloneRepo`). Beta (`OCTOCODE_BETA=true`) adds `clasify` to both when a classification key is set, and `astTopology` to the CLI. `astRewrite` is disabled in this build.
+**15 tools.** Your agent gets 12 tools over MCP and 13 in the CLI (which adds `ghCloneRepo`). Beta (`OCTOCODE_BETA=true`) adds `clasify` to both when a classification key is set, and `astTopology` to the CLI.
 
 | You want to | Tool |
 |---|---|
@@ -232,7 +232,7 @@ All docs: [documentation hub](https://github.com/bgauryy/octocode/blob/main/docs
 | Tools | [Tool reference](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md) · [Data contract](https://github.com/bgauryy/octocode/blob/main/docs/TOOL_DATA_CONTRACT.md) · [clasify](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md) |
 | Setup | [Configuration](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md) · [All settings](https://github.com/bgauryy/octocode/blob/main/docs/generated/CONFIG_SETTINGS.md) · [Authentication](https://github.com/bgauryy/octocode/blob/main/docs/AUTHENTICATION.md) · [Security](https://github.com/bgauryy/octocode/blob/main/docs/SECURITY.md) |
 | Engine | [Languages](https://github.com/bgauryy/octocode/blob/main/packages/octocode-native/docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md) · [Language servers](https://github.com/bgauryy/octocode/blob/main/packages/octocode-native/docs/engine/LSP_SERVER_LIFECYCLE.md) · [Code graph](https://github.com/bgauryy/octocode/blob/main/packages/octocode-native/docs/engine/CODE_GRAPH.md) |
-| Results | [Benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/overview/SUMMARY.md) · [Changelog](https://github.com/bgauryy/octocode/blob/main/CHANGELOG.md) |
+| Results | [Benchmark](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/README.md) · [Changelog](https://github.com/bgauryy/octocode/blob/main/CHANGELOG.md) |
 | Contributing | [AGENTS.md](https://github.com/bgauryy/octocode/blob/main/AGENTS.md) · [Development](https://github.com/bgauryy/octocode/blob/main/skills-dev/octocode-dev/docs/DEVELOPMENT.md) · [Release](https://github.com/bgauryy/octocode/blob/main/skills-dev/octocode-dev/docs/RELEASE.md) |
 | Legal | [Privacy](https://github.com/bgauryy/octocode/blob/main/PRIVACY.md) · [Terms](https://github.com/bgauryy/octocode/blob/main/TERMS.md) · [MIT license](https://github.com/bgauryy/octocode/blob/main/LICENSE) |
 

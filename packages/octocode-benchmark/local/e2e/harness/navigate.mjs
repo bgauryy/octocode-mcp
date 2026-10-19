@@ -5,7 +5,7 @@
 // hops and bytes, and fails when a hop's promised handoff is missing.
 import fs from 'node:fs';
 import path from 'node:path';
-import { REPOS, checks, collect, declarations, rowData, sourcePath, rootPath, startServer, structureFiles, writeResults, lspLocations } from './mcp-client.mjs';
+import { REPOS, checks, declarations, rowData, sourcePath, rootPath, startServer, structureFiles, writeResults, lspLocations } from './mcp-client.mjs';
 
 const { check, summary } = checks('navigate');
 const client = await startServer();

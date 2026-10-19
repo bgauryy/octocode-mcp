@@ -19,8 +19,6 @@ workspace = true
 
 [dependencies]
 aho-corasick = "1"
-ast-grep-core = "0.51.0"
-ast-grep-config = "0.51.0"
 grep-matcher = "0.1.9"
 grep-pcre2 = "0.1.10"
 grep-regex = "0.1.14"

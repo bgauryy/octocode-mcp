@@ -1,12 +1,6 @@
+use super::super::test_rows::run_row;
 use super::*;
-use crate::tools::cancel::NeverCancel;
 use crate::tools::test_support::{Fixture, simple_policy};
-
-fn run(query: &Value, paths: &PathPolicy, security: &ContentSecurity) -> Value {
-    let query: super::super::AstSearchQuery =
-        serde_json::from_value(query.clone()).expect("typed astSearch row");
-    super::super::execute_ast(&query, paths, security, &NeverCancel, None).expect("astSearch")
-}
 
 fn query(path: &std::path::Path, rule: bool) -> Value {
     let mut query =
@@ -42,10 +36,10 @@ fn copied_match_pages_reject_same_count_source_edits() {
                 } else {
                     file.as_path()
                 };
-                let first = run(&query(scope, rule), &paths, &security);
+                let first = run_row(&query(scope, rule), &paths, &security);
                 let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
                 assert!(next.is_object(), "{first}");
-                let copied = run(&next, &paths, &security);
+                let copied = run_row(&next, &paths, &security);
                 assert_eq!(copied["files"][0]["matches"][0]["value"], "target(\"v1\")");
                 SCANS.evict(first["snapshot"].as_str().expect("snapshot"));
                 let modified = std::fs::metadata(&file)
@@ -61,7 +55,7 @@ fn copied_match_pages_reject_same_count_source_edits() {
                         .set_times(std::fs::FileTimes::new().set_modified(modified))
                         .expect("restore mtime");
                 }
-                let changed = run(&next, &paths, &security);
+                let changed = run_row(&next, &paths, &security);
                 assert_eq!(
                     changed["errorCode"], "staleSnapshot",
                     "rule={rule}, directory={directory}: {changed}"
@@ -87,13 +81,13 @@ fn same_runtime_match_memo_rejects_restored_mtime_edits() {
             } else {
                 file.as_path()
             };
-            let first = run(&query(scope, rule), &paths, &security);
+            let first = run_row(&query(scope, rule), &paths, &security);
             let snapshot = first["snapshot"].as_str().expect("snapshot");
             if cfg!(unix) {
                 assert!(SCANS.holds(snapshot), "settled scan must exercise the memo");
             }
             let next = first["next"]["nextMatchPage"]["query"]["queries"][0].clone();
-            let copied = run(&next, &paths, &security);
+            let copied = run_row(&next, &paths, &security);
             assert_eq!(copied["files"][0]["matches"][0]["value"], "target(\"v1\")");
             let modified = std::fs::metadata(&file)
                 .expect("metadata")
@@ -106,7 +100,7 @@ fn same_runtime_match_memo_rejects_restored_mtime_edits() {
                 .expect("open")
                 .set_times(std::fs::FileTimes::new().set_modified(modified))
                 .expect("restore mtime");
-            let changed = run(&next, &paths, &security);
+            let changed = run_row(&next, &paths, &security);
             assert_eq!(
                 changed["errorCode"], "staleSnapshot",
                 "rule={rule}, directory={directory}: {changed}"

@@ -13,14 +13,10 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { validateFlags } from '../cli-flags.mjs';
+import { flagArgs, validateFlags } from '../cli-flags.mjs';
 
 const argv = process.argv.slice(2);
-const getArg = (flag: string, def?: string) => {
-  const i = argv.indexOf(flag);
-  return i === -1 ? def : (argv[i + 1] ?? def);
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag, getLowerArg } = flagArgs(argv);
 
 if (hasFlag('--help') || hasFlag('-h')) {
   console.error(`Usage:
@@ -71,8 +67,8 @@ validateFlags(
 );
 const view = getArg('--view', 'summary');
 const codeFilter = getArg('--code', '');
-const kindFilter = (getArg('--kind', '') || '').toLowerCase();
-const domainFilter = (getArg('--domain', '') || '').toLowerCase();
+const kindFilter = getLowerArg('--kind');
+const domainFilter = getLowerArg('--domain');
 const urlRegexStr = getArg('--url-regex', '');
 const nameRegexStr = getArg('--name-regex', '');
 const minMs = Math.max(

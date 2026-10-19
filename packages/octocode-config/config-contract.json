@@ -65,11 +65,6 @@
       "dotenv": "never",
       "description": "Overrides the Octocode configuration directory (default: <os-home>/.octocode)"
     },
-    "OCTOCODE_AST_REWRITE_STATE_DIR": {
-      "documentation": true,
-      "dotenv": "home",
-      "description": "Override the astRewrite transaction/recovery state directory."
-    },
     "OCTOCODE_CARGO": {
       "documentation": true,
       "dotenv": "home",

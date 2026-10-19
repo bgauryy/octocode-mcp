@@ -1,5 +1,5 @@
-//! octocode's own native TypeScript server (`tsgo`), found in the install
-//! tree beside the bundled `typescript-language-server`.
+//! octocode's own native TypeScript server (`tsgo`), found in octocode's
+//! install tree (`octocode-mcp` and `octocode` depend on it).
 //!
 //! The server is the platform package of `@typescript/native-preview`
 //! (`@typescript/native-preview-<platform>`), whose `lib/tsgo` is the real

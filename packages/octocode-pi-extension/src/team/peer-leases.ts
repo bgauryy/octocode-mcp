@@ -46,7 +46,7 @@ interface Row {
   vendorSession: string | null;
 }
 
-export interface PeerLeaseOptions {
+interface PeerLeaseOptions {
   /** This Pi session's id: a package session bound to it (`vendorSession`) is this agent itself, whose leases never refuse its own edits. */
   self?: () => string | undefined;
   /** Shows a warning to the agent; false when it could not be shown yet (then the warning is offered again). */

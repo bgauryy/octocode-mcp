@@ -3,7 +3,7 @@ import path from 'node:path';
 import { atomicWriteFile } from '../shared/atomic.js';
 import { globalPaths, privateDir } from '../shared/home.js';
 import { envFlag } from '../shared/env.js';
-import { DAY_MS, HOUR_MS, isRecord } from '../shared/util.js';
+import { DAY_MS, finiteNumber, HOUR_MS, isRecord } from '../shared/util.js';
 
 /**
  * Model metadata from models.dev (https://models.dev, MIT), an open catalog of model capabilities, limits and
@@ -18,7 +18,7 @@ export const CATALOG_TTL_MS = DAY_MS;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /** What Octocode reads from one models.dev model entry (prices per million tokens). */
-export interface CatalogModel {
+interface CatalogModel {
   description?: string;
   /** Model family (`claude-haiku`, `gpt-mini`): its newest release is the current one. */
   family?: string;
@@ -46,7 +46,6 @@ export interface Catalog {
   providers: string[];
 }
 
-const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
 const str = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value : undefined);
 
 /** `{ [key]: value }`, or nothing when the value is missing, so an absent field is not written. */
@@ -58,7 +57,7 @@ function entry(raw: Record<string, unknown>): CatalogModel {
   const limit = isRecord(raw['limit']) ? raw['limit'] : {};
   const cost = isRecord(raw['cost']) ? raw['cost'] : undefined;
   const input = isRecord(raw['modalities']) && Array.isArray(raw['modalities']['input']) ? raw['modalities']['input'].filter((item): item is string => typeof item === 'string') : undefined;
-  const price = cost && num(cost['input']) !== undefined && num(cost['output']) !== undefined ? { input: num(cost['input'])!, output: num(cost['output'])! } : undefined;
+  const price = cost && finiteNumber(cost['input']) !== undefined && finiteNumber(cost['output']) !== undefined ? { input: finiteNumber(cost['input'])!, output: finiteNumber(cost['output'])! } : undefined;
   const canonical = str(raw['canonical_model_id']);
   return {
     ...field('description', str(raw['description'])),
@@ -69,7 +68,7 @@ function entry(raw: Record<string, unknown>): CatalogModel {
     ...(typeof raw['tool_call'] === 'boolean' ? { toolCall: raw['tool_call'] } : {}),
     ...(typeof raw['reasoning'] === 'boolean' ? { reasoning: raw['reasoning'] } : {}),
     ...field('input', input),
-    ...field('context', num(limit['context']) || undefined),
+    ...field('context', finiteNumber(limit['context']) || undefined),
     ...field('cost', price),
   };
 }

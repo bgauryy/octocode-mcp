@@ -3,7 +3,8 @@
 //! The CLI is a native executable, so `current_exe` is octocode's install
 //! tree. Under the MCP server the engine is a Node addon: `current_exe` is
 //! the `node` binary, and only the addon's own file leads to octocode's
-//! `node_modules` (the bundled `typescript-language-server`).
+//! `node_modules` (the bundled `tsgo`, and a `typescript-language-server`
+//! installed there).
 
 use std::path::PathBuf;
 

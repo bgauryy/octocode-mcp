@@ -23,7 +23,7 @@
 //    is a static note repeated in responses (factsFailures);
 // 6. the caller compares the CLI and MCP query graphs (graphParity).
 //
-// Leads that write (astRewrite `apply`, ghCloneRepo's clone cache) and leads to
+// Leads that write (the clone cache) and leads to
 // tools a surface does not expose are recorded as skipped with their reason.
 import { atoms, canon, isLead, judgeLead, outcomeOf, rowOf, short, suggestedCall } from '../lead-predicates.mjs';
 
@@ -31,7 +31,6 @@ import { atoms, canon, isLead, judgeLead, outcomeOf, rowOf, short, suggestedCall
 export const ADVANCING = /^(next[A-Za-z]*Page|continue[A-Za-z]*)$/;
 /** Why the driver never executes a lead in a shared workspace (it writes), or null. */
 export function writes(lead) {
-  if (lead.tool === 'astRewrite' && (lead.query.queries ?? []).some(q => q.apply === true)) return 'writes the workspace (exercised on a temp copy by the astRewrite case)';
   if (lead.tool === 'ghCloneRepo') return 'writes the clone cache (exercised by the ghCloneRepo case)';
   return null;
 }

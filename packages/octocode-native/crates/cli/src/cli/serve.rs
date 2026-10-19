@@ -76,7 +76,7 @@ const REPLY_DEADLINE: std::time::Duration =
 /// that writes the clone cache or the user's files runs in process.
 pub(super) const fn runs_on_server(tool: ToolId) -> bool {
     match tool {
-        ToolId::GhCloneRepo | ToolId::AstRewrite => false,
+        ToolId::GhCloneRepo => false,
         ToolId::Clasify
         | ToolId::GhSearchRepo
         | ToolId::GhSearchCode
@@ -1250,7 +1250,7 @@ mod tests {
     #[test]
     fn every_read_only_tool_runs_on_the_server() {
         for tool in ToolId::ALL {
-            let mutates = matches!(tool, ToolId::GhCloneRepo | ToolId::AstRewrite);
+            let mutates = matches!(tool, ToolId::GhCloneRepo);
             assert_eq!(runs_on_server(tool), !mutates, "{tool}");
         }
     }
@@ -1765,9 +1765,9 @@ mod tests {
                     "{refused:?}"
                 );
                 // So is a tool that changes files.
-                let refused = fixture.ask(&socket, &cwd, "astRewrite", &json!({}), true).await;
+                let refused = fixture.ask(&socket, &cwd, "ghCloneRepo", &json!({}), true).await;
                 assert!(
-                    matches!(&refused, Err(Failed::Fallback(reason)) if reason.contains("astRewrite")),
+                    matches!(&refused, Err(Failed::Fallback(reason)) if reason.contains("ghCloneRepo")),
                     "{refused:?}"
                 );
                 // Idle, the server stops serving.

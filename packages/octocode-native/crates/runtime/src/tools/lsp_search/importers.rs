@@ -60,9 +60,10 @@ const IGNORED_UNFINISHED_NOTICE: &str = "The scan for gitignored files that spel
 /// Settle/ready bounds for the last candidate open of a window; the load it
 /// triggers covers every candidate opened before it. Shorter than a
 /// request's anchor open (the server already loaded the anchor's project),
-/// so a request that verifies several windows stays bounded.
-const OPEN_SETTLE_MS: u32 = 200;
-const OPEN_READY_TIMEOUT_MS: u32 = 10_000;
+/// so a request that verifies several windows stays bounded. They override
+/// the engine's `OPEN_SETTLE_MS` and `OPEN_READY_TIMEOUT_MS` defaults.
+const LAST_OPEN_SETTLE_MS: u32 = 200;
+const LAST_OPEN_READY_TIMEOUT_MS: u32 = 10_000;
 
 /// One verified occurrence (zero-based LSP position) in an importing file.
 pub(super) struct Anchor {
@@ -804,8 +805,8 @@ async fn open_candidates(
                 .open_document_and_wait(
                     file.clone(),
                     &source.content,
-                    Some(OPEN_SETTLE_MS),
-                    Some(OPEN_READY_TIMEOUT_MS),
+                    Some(LAST_OPEN_SETTLE_MS),
+                    Some(LAST_OPEN_READY_TIMEOUT_MS),
                 )
                 .await
                 .map(|_| ())

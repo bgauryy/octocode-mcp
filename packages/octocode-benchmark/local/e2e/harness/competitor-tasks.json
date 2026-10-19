@@ -1000,40 +1000,6 @@
       ]
     },
     {
-      "id": "L19",
-      "tool": "astRewrite",
-      "kind": "local",
-      "beta": true,
-      "surface": "cli",
-      "source": "W4 (preview only)",
-      "question": "Preview rewriting $A.indexOf($B) !== -1 to $A.includes($B) in excalidraw common/src.",
-      "truth": {
-        "text": [
-          "\\.includes\\(\"Chrome\"\\)",
-          "\\.includes\\(\"Safari\"\\)",
-          "editorInterface\\.ts"
-        ]
-      },
-      "truthSource": "2 matches, packages/common/src/editorInterface.ts:45,47",
-      "octocode": [
-        {
-          "cli": "astRewrite",
-          "args": {
-            "path": "{{T}}/tsx/packages/common/src",
-            "language": "typescript",
-            "pattern": "$A.indexOf($B) !== -1",
-            "rewrite": "$A.includes($B)"
-          }
-        }
-      ],
-      "competitor": [
-        {
-          "sh": "ast-grep run -p '$A.indexOf($B) !== -1' -r '$A.includes($B)' -l ts $T/tsx/packages/common/src",
-          "parse": "text"
-        }
-      ]
-    },
-    {
       "id": "L20",
       "tool": "ghCloneRepo",
       "kind": "github",

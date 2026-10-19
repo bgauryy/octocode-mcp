@@ -11,11 +11,7 @@ import {
 
 export { CONFIG_FIELDS, ENV_TOKEN_VARS } from './config/contract.generated.js';
 export type { RuntimeSurface } from './config/contract.generated.js';
-export {
-  getOctocodeHome,
-  getConfigFilePath,
-  getProjectConfigFilePath,
-} from './home.js';
+export { getOctocodeHome } from './home.js';
 export {
   loadOctocodeEnv,
   applyOctocodeEnv,

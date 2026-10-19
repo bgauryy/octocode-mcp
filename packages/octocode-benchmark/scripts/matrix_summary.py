@@ -24,6 +24,8 @@ import statistics as st
 from collections import defaultdict
 from pathlib import Path
 
+from accounting import complete_sum
+
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 HISTORICAL = {  # id in per_question_summary.json → group
@@ -133,11 +135,6 @@ def load_groups(question_set: str = "github-v2"):
     return groups, chars, scores, pairs, secs
 
 
-def complete_sum(values):
-    values = list(values)
-    return sum(values) if values and all(v is not None for v in values) else None
-
-
 def build(anchor: str | None, question_set: str = "github-v2"):
     groups, chars, scores, pairs, secs = load_groups(question_set)
     questions = sorted({q for group in chars.values() for q in group}, key=lambda q: int(q[1:]))
@@ -176,8 +173,8 @@ def build(anchor: str | None, question_set: str = "github-v2"):
             "anchor_leaner_on": leaner[anchor][g],
             "calls": sum(r["calls"] for r in runs) if runs else None,
             "failed": sum(r["failed"] for r in runs) if runs else None,
-            "cost_usd": complete_sum(r.get("cost_usd") for r in runs),
-            "input_tokens": complete_sum(r.get("input_tokens") for r in runs),
+            "cost_usd": complete_sum(runs, "cost_usd"),
+            "input_tokens": complete_sum(runs, "input_tokens"),
         }
         if g in timed:
             per_q = [[t for t in secs[g][q]] for q in questions]

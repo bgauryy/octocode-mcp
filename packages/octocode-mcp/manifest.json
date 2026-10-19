@@ -35,55 +35,55 @@
   "tools": [
     {
       "name": "clasify",
-      "description": "Classify unread text/images or held data; answers without source bodies (beta: requires OCTOCODE_BETA and OCTOCODE_CLASSIFICATION_API)"
+      "description": "Screen text or images with structured factual questions (beta: requires OCTOCODE_BETA and OCTOCODE_CLASSIFICATION_API)"
     },
     {
       "name": "ghSearchRepo",
-      "description": "Discover GitHub repositories by keywords, owner, or filters"
+      "description": "Find GitHub repositories or repository facts"
     },
     {
       "name": "ghSearchCode",
-      "description": "Find default-branch code or file paths in a GitHub owner or repo"
+      "description": "Find code and paths in GitHub's default-branch index"
     },
     {
       "name": "ghStructure",
-      "description": "Browse a GitHub repository's tree, refs, or languages"
+      "description": "Explore GitHub files, refs and languages"
     },
     {
       "name": "ghGetFileContent",
-      "description": "Read a known GitHub file or exact source region"
+      "description": "Read GitHub source at a known path and revision"
     },
     {
       "name": "ghSearchHistory",
-      "description": "Find GitHub pull requests, issues, or commits"
+      "description": "Find GitHub PRs, issues and commits"
     },
     {
       "name": "ghGetHistoryItem",
-      "description": "Read a known pull request, issue, commit, or comparison"
+      "description": "Read GitHub discussions, changes and comparisons"
     },
     {
       "name": "artifactSearch",
-      "description": "Find package versions, dependencies, or upstream release source"
+      "description": "Find registry packages, versions, dependencies and source"
     },
     {
       "name": "localSearch",
-      "description": "Find literal or regex matches in local files"
+      "description": "Find text or regex matches in local files"
     },
     {
       "name": "structureSearch",
-      "description": "Outline local directories or find files by name or metadata"
+      "description": "Explore local directories and find file paths"
     },
     {
       "name": "astSearch",
-      "description": "Find declarations, syntax trees, or structural code matches"
+      "description": "Find syntax patterns, declarations and syntax trees"
     },
     {
       "name": "localFetch",
-      "description": "Read a known local file or exact source region"
+      "description": "Read local source regions or file outlines"
     },
     {
       "name": "lspSearch",
-      "description": "Resolve callers, references, same-name symbols, types, or diagnostics"
+      "description": "Resolve symbols, references, calls, types and diagnostics"
     }
   ],
   "keywords": [

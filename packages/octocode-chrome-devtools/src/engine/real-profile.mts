@@ -7,7 +7,7 @@ import { execFileSync } from 'child_process';
 import { existsSync, readdirSync, readlinkSync } from 'fs';
 import { basename, dirname, join } from 'path';
 
-export type BrowserFamily =
+type BrowserFamily =
   'chrome' | 'chrome-canary' | 'chrome-for-testing' | 'chromium' | 'brave';
 
 const FAMILY_PATTERNS: [BrowserFamily, RegExp][] = [
@@ -19,7 +19,7 @@ const FAMILY_PATTERNS: [BrowserFamily, RegExp][] = [
 ];
 
 /** Branded Google Chrome ignores remote debugging on its default data dir from 136. */
-export const REMOTE_DEBUGGING_DEFAULT_DIR_BLOCKED_FROM = 136;
+const REMOTE_DEBUGGING_DEFAULT_DIR_BLOCKED_FROM = 136;
 const BRANDED: BrowserFamily[] = ['chrome', 'chrome-canary'];
 
 export function browserFamily(chromePath: string): BrowserFamily | null {
@@ -132,7 +132,7 @@ export function dataDirInUse(dataDir: string, os: NodeJS.Platform): boolean {
 }
 
 /** Profile directories Chrome created in the data dir (Default, Profile 1, ...). */
-export function listProfiles(dataDir: string): string[] {
+function listProfiles(dataDir: string): string[] {
   try {
     return readdirSync(dataDir, { withFileTypes: true })
       .filter(

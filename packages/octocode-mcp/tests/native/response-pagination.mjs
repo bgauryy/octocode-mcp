@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -7,9 +8,14 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { buildMcpInstructions } from '@octocodeai/config/mcp';
 import { getDirectToolDefinitionsWithAddons } from '@octocodeai/config/schema';
 
-const [referenceServer, nativeServer, addon] = process.argv.slice(2);
-assert.ok(referenceServer && nativeServer && addon,
-  'usage: node response-pagination.mjs <reference> <native> <addon>');
+// A candidate addon to check; without one, the packaged runtime the servers load.
+const [
+  referenceServer,
+  nativeServer,
+  addon = createRequire(import.meta.url).resolve('@octocodeai/octocode-native/runtime'),
+] = process.argv.slice(2);
+assert.ok(referenceServer && nativeServer,
+  'usage: node response-pagination.mjs <reference> <native> [<addon>]');
 
 const fixture = await mkdtemp(path.join(tmpdir(), 'octocode-native-mcp-'));
 const source = path.join(fixture, 'unicode.txt');
@@ -52,7 +58,10 @@ function withoutOpaqueCursors(value) {
 async function collect(client) {
   let args = {
     queries: [{ path: source, fullContent: true, mainGoal: 'page', reasoning: 'Exercise response pagination parity.' }],
+    // Whole rows are the default page unit; windows of the rendered text split
+    // the multi-byte characters this harness exists to check.
     responseLength: 96,
+    responseScope: 'text',
   };
   const pages = [];
   for (let index = 0; index < 100; index += 1) {
@@ -74,11 +83,32 @@ async function collect(client) {
   return pages;
 }
 
+function nativeInstructions() {
+  const { NativeRuntime } = createRequire(import.meta.url)(path.resolve(addon));
+  const runtime = new NativeRuntime({
+    surface: 'mcp',
+    env: Object.fromEntries(
+      Object.entries(env).filter(([, value]) => typeof value === 'string'),
+    ),
+  });
+  try {
+    const catalog = runtime.catalog();
+    return buildMcpInstructions({
+      availableTools: catalog.tools.filter(tool => tool.available).map(tool => tool.name),
+      selection: catalog.presentation?.selection === true,
+    });
+  } finally {
+    void runtime.close();
+  }
+}
+
 const reference = await connect(referenceServer);
 const native = await connect(nativeServer);
 try {
   const nativeTools = await native.listTools();
-  assert.equal(native.getInstructions(), buildMcpInstructions());
+  // The server composes instructions from the native catalog (available tools
+  // and the selection switch); rebuild them from the same addon.
+  assert.equal(native.getInstructions(), nativeInstructions());
   const localFetch = nativeTools.tools.find(tool => tool.name === 'localFetch');
   assert.ok(localFetch, 'native catalog must advertise localFetch');
   assert.ok(localFetch.title);

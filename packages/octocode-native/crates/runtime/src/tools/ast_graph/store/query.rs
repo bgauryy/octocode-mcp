@@ -58,7 +58,7 @@ pub struct QueryOptions {
     /// exactly one id.
     pub graph: Option<String>,
     pub workspace: Option<PathBuf>,
-    /// Edge kinds to follow (`contains`, `imports`, `calls`).
+    /// Edge kinds to follow (`contains`, `imports`, `uses`, `calls`, `inherits`).
     pub edges: Vec<String>,
     /// Node kind filter (`file`, `symbol`, `package`).
     pub kind: Option<String>,

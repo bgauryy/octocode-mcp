@@ -9,7 +9,7 @@ import { shortPath } from '../shared/format.js';
 import { capChars, cutText, errorMessage, textResult } from '../shared/util.js';
 import type { Permission } from '../permission/ask.js';
 import { actionWhy } from '../permission/mode.js';
-import { fetchUrl, unreadReason, type FetchedImage } from './fetch.js';
+import { pageFetcher, unreadReason, type FetchedImage } from './fetch.js';
 import { classifyHost } from './guard.js';
 import { savedPageLead, savedPageTools } from './leads.js';
 import { collapseLinkRuns } from './html.js';
@@ -97,6 +97,7 @@ async function approveFetch(permission: Permission, ctx: ExtensionContext, toolC
 }
 
 export function registerWebTool(pi: ExtensionAPI, permission: Permission): void {
+  const fetchUrl = pageFetcher();
   pi.registerTool(timedTool({
     name: 'web',
     label: 'Web',

@@ -4,9 +4,6 @@ use super::{ExecutionContext, ExecutionError, FailureKind};
 use crate::policy::path::PathPolicy;
 use crate::security::ContentSecurity;
 use crate::tools::ast_graph::{AstTopologyQuery, AstTopologyRuntimeOptions, execute_topology};
-use crate::tools::ast_rewrite::{
-    AstRewriteRuntimeOptions, RewriteRequest, execute_ast_rewrite_with_options,
-};
 use crate::tools::ast_search::{AstSearchQuery, execute_ast};
 use crate::tools::id::ToolId;
 use crate::tools::local_fetch::{LocalFetchQuery, LocalFetchRegex};
@@ -150,7 +147,6 @@ pub(super) struct LocalEnv<'a> {
     pub security: &'a ContentSecurity,
     pub regex: &'a LocalFetchRegex,
     pub views: &'a crate::security::scan::SanitizedViewMemo,
-    pub rewrite: &'a AstRewriteRuntimeOptions,
     pub topology: &'a AstTopologyRuntimeOptions,
     pub selection: Option<&'a crate::tools::selection::Runtime>,
 }
@@ -168,7 +164,6 @@ pub(super) fn execute_local(
         security,
         regex,
         views,
-        rewrite,
         topology,
         selection,
     } = env;
@@ -268,11 +263,6 @@ pub(super) fn execute_local(
                     Err(error) => error.into(),
                 },
             )
-        }
-        ToolId::AstRewrite => {
-            let request = parsed!(RewriteRequest);
-            let data = execute_ast_rewrite_with_options(request, paths, security, context, rewrite);
-            Ok(value_result(data))
         }
         ToolId::GhSearchRepo
         | ToolId::GhSearchCode
@@ -514,11 +504,6 @@ mod provider_failure_tests {
             ),
             (ToolId::AstSearch, json!({"path": path})),
             (ToolId::AstTopology, json!({"path": 5})),
-            (
-                ToolId::AstRewrite,
-                json!({"path": path, "language": "typescript",
-                       "pattern": "a($A)", "rewrite": "b($A)", "allowSyntaxRegression": true}),
-            ),
         ] {
             let row = execute_local(
                 tool,
@@ -529,7 +514,6 @@ mod provider_failure_tests {
                     security: &security,
                     regex: &LocalFetchRegex,
                     views: &views,
-                    rewrite: &AstRewriteRuntimeOptions::default(),
                     topology: &AstTopologyRuntimeOptions::default(),
                     selection: None,
                 },
@@ -570,7 +554,6 @@ mod provider_failure_tests {
                     security: &ContentSecurity::new(),
                     regex: &LocalFetchRegex,
                     views: &crate::security::scan::SanitizedViewMemo::default(),
-                    rewrite: &AstRewriteRuntimeOptions::default(),
                     topology: &AstTopologyRuntimeOptions::default(),
                     selection: None,
                 },

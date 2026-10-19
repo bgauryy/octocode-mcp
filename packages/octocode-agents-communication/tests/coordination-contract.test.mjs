@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as childProcess from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { execFileSync, nativeBinary as binary, root, tempWorkspace, withReasoning } from './helpers.mjs';
+import { execFileSync, binary, root, tempWorkspace, withReasoning } from './helpers.mjs';
 
 /**
  * The reservation rules this package shares with Pi's team (packages/octocode-pi-extension/src/team/lease-key.ts).
@@ -13,7 +12,7 @@ const contract = JSON.parse(readFileSync(new URL('../../../test-utils/agent-coor
 const python = process.env.OCTOCODE_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 
 /** The package's own path functions (communication.paths), evaluated for every vector in one interpreter run. */
-const functions = JSON.parse(childProcess.execFileSync(python, ['-B', '-c', `
+const functions = JSON.parse(execFileSync(python, ['-B', '-c', `
 import json, sys
 sys.path.insert(0, ${JSON.stringify(join(root, 'scripts'))})
 from communication.paths import lease_key, overlap

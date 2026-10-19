@@ -6,13 +6,11 @@ import { existsSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 import { getOctocodeHome, propagateOctocodeEnv } from './octocode-config.mjs';
 import { browserMajorVersion, planRealProfile } from './real-profile.mjs';
+import { flagArgs } from './cli-flags.mjs';
+import { cdpHttp } from './engine-io.mjs';
 
 const argv = process.argv.slice(2);
-const getArg = (flag: string, def?: string) => {
-  const i = argv.indexOf(flag);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag } = flagArgs(argv);
 
 if (hasFlag('--help') || hasFlag('-h')) {
   console.log(`Usage: open-browser.mjs [options]
@@ -173,12 +171,10 @@ function findChrome() {
 
 async function checkRunning() {
   try {
-    const res = await fetch(`http://localhost:${PORT}/json/version`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    if (res.ok) return await res.json();
-  } catch {}
-  return null;
+    return await cdpHttp(PORT, '/json/version', { timeoutMs: 2000 });
+  } catch {
+    return null;
+  }
 }
 
 function readSession(sessionFile = SESSION_FILE) {

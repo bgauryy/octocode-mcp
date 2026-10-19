@@ -1,7 +1,7 @@
 //! The one directory-prune policy every local walk uses.
 //!
 //! Structure, text and AST walks (`structureSearch`, `localSearch`,
-//! `astSearch`, `astRewrite`) prune the same names: dependency/build output,
+//! `astSearch`) prune the same names: dependency/build output,
 //! caches, VCS metadata, and credential stores. Tool-config directories such
 //! as `.github` or `.config` are not on the list: their workflows and scripts
 //! are real text and syntax, and they are dot directories, so the walk
@@ -9,7 +9,7 @@
 //!
 //! A caller `exclude` glob skips more paths; it never replaces the defaults.
 //! The engine walkers carry no default list of their own: they prune exactly
-//! the names [`PruneMode::directories`] hands them, and report each pruned
+//! the names [`directories`] hands them, and report each pruned
 //! directory so a listing or an empty result can disclose it.
 //!
 //! Names that are routinely real source (`output/`, `cache/`, `vendor/`,
@@ -43,7 +43,7 @@ const GENERATED_DIRECTORY_NAMES: &[&str] = &[
     "DerivedData",
 ];
 
-/// Credential stores: never walked by any mode.
+/// Credential stores: never walked.
 const CREDENTIAL_DIRECTORY_NAMES: &[&str] = &[
     ".ssh",
     ".aws",
@@ -54,58 +54,50 @@ const CREDENTIAL_DIRECTORY_NAMES: &[&str] = &[
     ".password-store",
 ];
 
-/// Which walk a prune list is for. See the module docs.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PruneMode {
-    SyntaxVisible,
+/// The default directory names a walk prunes at any depth.
+pub fn defaults() -> impl Iterator<Item = &'static str> {
+    GENERATED_DIRECTORY_NAMES
+        .iter()
+        .chain(CREDENTIAL_DIRECTORY_NAMES)
+        .copied()
 }
 
-impl PruneMode {
-    /// The default directory names this mode prunes at any depth.
-    pub fn defaults(self) -> impl Iterator<Item = &'static str> {
-        GENERATED_DIRECTORY_NAMES
-            .iter()
-            .chain(CREDENTIAL_DIRECTORY_NAMES)
-            .copied()
+/// The names a walk prunes: the defaults, or none when the
+/// caller set `defaultExcludes: false`.
+pub fn directories(defaults: bool) -> Vec<String> {
+    if defaults {
+        self::defaults().map(str::to_owned).collect()
+    } else {
+        Vec::new()
     }
+}
 
-    /// The names a walk prunes: this mode's defaults, or none when the
-    /// caller set `defaultExcludes: false`.
-    pub fn directories(self, defaults: bool) -> Vec<String> {
-        if defaults {
-            self.defaults().map(str::to_owned).collect()
-        } else {
-            Vec::new()
-        }
-    }
+/// [`directories`] less the names an `include` glob reaches into by
+/// name (`build/*.rs`, `**/dist/**`, a bare `build` read as `*build*`): a
+/// segment that matches the name, other than a bare wildcard (`*`,
+/// `**`), asks for its files. Credential stores stay pruned.
+pub fn directories_with_includes(defaults: bool, include: &[String]) -> Vec<String> {
+    let segments = include
+        .iter()
+        .flat_map(|glob| glob.split(['/', '\\']))
+        .filter(|segment| !segment.is_empty() && segment.chars().any(|c| c != '*'))
+        .filter_map(|segment| globset::Glob::new(segment).ok())
+        .map(|glob| glob.compile_matcher())
+        .collect::<Vec<_>>();
+    let named = |name: &str| segments.iter().any(|segment| segment.is_match(name));
+    let mut names = directories(defaults);
+    names.retain(|name| CREDENTIAL_DIRECTORY_NAMES.contains(&name.as_str()) || !named(name));
+    names
+}
 
-    /// [`Self::directories`] less the names an `include` glob reaches into by
-    /// name (`build/*.rs`, `**/dist/**`, a bare `build` read as `*build*`): a
-    /// segment that matches the name, other than a bare wildcard (`*`,
-    /// `**`), asks for its files. Credential stores stay pruned.
-    pub fn directories_with_includes(self, defaults: bool, include: &[String]) -> Vec<String> {
-        let segments = include
-            .iter()
-            .flat_map(|glob| glob.split(['/', '\\']))
-            .filter(|segment| !segment.is_empty() && segment.chars().any(|c| c != '*'))
-            .filter_map(|segment| globset::Glob::new(segment).ok())
-            .map(|glob| glob.compile_matcher())
-            .collect::<Vec<_>>();
-        let named = |name: &str| segments.iter().any(|segment| segment.is_match(name));
-        let mut names = self.directories(defaults);
-        names.retain(|name| CREDENTIAL_DIRECTORY_NAMES.contains(&name.as_str()) || !named(name));
-        names
-    }
-
-    /// [`Self::directories`] without the credential stores. The read policy
-    /// withholds those anyway, so a walk whose path-policy callback records
-    /// what it denies (`discovery::Withheld`) meets them there and can
-    /// disclose them instead of pruning them unseen.
-    pub fn directories_before_policy(self, defaults: bool) -> Vec<String> {
-        let mut names = self.directories(defaults);
-        names.retain(|name| !CREDENTIAL_DIRECTORY_NAMES.contains(&name.as_str()));
-        names
-    }
+/// [`directories`] without the credential stores. The read policy
+/// withholds those anyway, so a walk whose path-policy callback records
+/// what it denies (`discovery::Withheld`) meets them there and can
+/// disclose them instead of pruning them unseen.
+pub fn directories_before_policy(defaults: bool) -> Vec<String> {
+    let mut names = directories(defaults);
+    names.retain(|name| !CREDENTIAL_DIRECTORY_NAMES.contains(&name.as_str()));
+    names
 }
 
 /// `defaultExcludes` as the generated query types spell it (a plain flag or
@@ -127,12 +119,6 @@ impl DefaultsFlag for Option<crate::contracts::tool_types::DefaultExcludes> {
     }
 }
 
-impl DefaultsFlag for Option<crate::contracts::tool_types::ArDefaultExcludes> {
-    fn defaults(&self) -> bool {
-        self.as_ref().is_none_or(|flag| ***flag)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -143,8 +129,7 @@ mod tests {
                 "{name} would be walked"
             );
             assert!(
-                !super::PruneMode::SyntaxVisible
-                    .directories_before_policy(true)
+                !super::directories_before_policy(true)
                     .iter()
                     .any(|kept| kept == name)
             );
@@ -155,7 +140,7 @@ mod tests {
 
     #[test]
     fn the_prune_list_keeps_tool_config_and_source_like_names_walkable() {
-        let names = PruneMode::SyntaxVisible.defaults().collect::<Vec<_>>();
+        let names = defaults().collect::<Vec<_>>();
         for name in [".git", ".ssh", "node_modules", "target"] {
             assert!(names.contains(&name), "{name}");
         }
@@ -181,27 +166,21 @@ mod tests {
             "*.ts".to_owned(),
             ".ssh/*".to_owned(),
         ];
-        let names = PruneMode::SyntaxVisible.directories_with_includes(true, &include);
+        let names = directories_with_includes(true, &include);
         assert!(!names.iter().any(|name| name == "build"), "{names:?}");
         assert!(names.iter().any(|name| name == "dist"), "{names:?}");
         assert!(names.iter().any(|name| name == ".ssh"), "{names:?}");
         // A bare word reaches the include as `*word*` and `**/*word*/**`.
         let bare = crate::policy::include::include_globs(&["dist".to_owned()]);
-        let names = PruneMode::SyntaxVisible.directories_with_includes(true, &bare);
+        let names = directories_with_includes(true, &bare);
         assert!(!names.iter().any(|name| name == "dist"), "{names:?}");
         assert!(names.iter().any(|name| name == "build"), "{names:?}");
-        assert_eq!(
-            PruneMode::SyntaxVisible.directories_with_includes(true, &[]),
-            PruneMode::SyntaxVisible.directories(true)
-        );
+        assert_eq!(directories_with_includes(true, &[]), directories(true));
     }
 
     #[test]
     fn default_excludes_false_prunes_nothing() {
-        assert!(PruneMode::SyntaxVisible.directories(false).is_empty());
-        assert_eq!(
-            PruneMode::SyntaxVisible.directories(true).len(),
-            PruneMode::SyntaxVisible.defaults().count()
-        );
+        assert!(directories(false).is_empty());
+        assert_eq!(directories(true).len(), defaults().count());
     }
 }

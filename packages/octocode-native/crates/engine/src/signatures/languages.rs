@@ -3,6 +3,33 @@ use tree_sitter::Language;
 
 use crate::text::JS_EXTENSIONS;
 
+#[derive(Clone, Copy)]
+pub(crate) struct PatternSyntax {
+    pub expando: char,
+    pub member_context: bool,
+    pub function_context: bool,
+    pub terminated_fragment_kind: Option<&'static str>,
+}
+
+impl PatternSyntax {
+    const DEFAULT: Self = Self {
+        expando: 'µ',
+        member_context: false,
+        function_context: false,
+        terminated_fragment_kind: None,
+    };
+    const DOLLAR: Self = Self {
+        expando: '$',
+        ..Self::DEFAULT
+    };
+    const C_FAMILY: Self = Self {
+        expando: '\u{10000}',
+        function_context: true,
+        terminated_fragment_kind: Some("call_expression"),
+        ..Self::DEFAULT
+    };
+}
+
 pub struct LanguageEntry {
     /// Human-readable grammar family name exposed to tools and agent context.
     pub name: &'static str,
@@ -27,6 +54,7 @@ pub struct LanguageEntry {
     /// signature extractor drops. Every first-class grammar has a body query;
     /// structural, signature, and graph capability inventories therefore agree.
     pub body_query: &'static str,
+    pub(crate) pattern_syntax: PatternSyntax,
     pub comment_style: &'static str,
 }
 
@@ -113,6 +141,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
     vec![
         LanguageEntry {
             name: "TypeScript",
+            pattern_syntax: PatternSyntax::DOLLAR,
             selector_aliases: &[],
             // `.mts`/`.cts` are first-class TS (oxc + LSP already treat them so);
             // align signature/structural with that.
@@ -125,6 +154,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         },
         LanguageEntry {
             name: "TSX",
+            pattern_syntax: PatternSyntax::DOLLAR,
             selector_aliases: &["typescript"],
             extensions: &["tsx"],
             also_parses: &[],
@@ -135,6 +165,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         },
         LanguageEntry {
             name: "JavaScript",
+            pattern_syntax: PatternSyntax::DOLLAR,
             selector_aliases: &[],
             extensions: JS_EXTENSIONS,
             also_parses: &[],
@@ -145,6 +176,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         },
         LanguageEntry {
             name: "Python",
+            pattern_syntax: PatternSyntax::DEFAULT,
             selector_aliases: &[],
             // `.pyi` stubs parse with the Python grammar (LSP already maps them).
             extensions: &["py", "pyi"],
@@ -156,6 +188,10 @@ fn init_language_table() -> Vec<LanguageEntry> {
         },
         LanguageEntry {
             name: "Go",
+            pattern_syntax: PatternSyntax {
+                terminated_fragment_kind: Some("call_expression"),
+                ..PatternSyntax::DEFAULT
+            },
             selector_aliases: &[],
             extensions: &["go"],
             also_parses: &[],
@@ -166,6 +202,10 @@ fn init_language_table() -> Vec<LanguageEntry> {
         },
         LanguageEntry {
             name: "Rust",
+            pattern_syntax: PatternSyntax {
+                terminated_fragment_kind: Some("call_expression"),
+                ..PatternSyntax::DEFAULT
+            },
             selector_aliases: &[],
             extensions: &["rs"],
             also_parses: &[],
@@ -176,6 +216,10 @@ fn init_language_table() -> Vec<LanguageEntry> {
         },
         LanguageEntry {
             name: "Java",
+            pattern_syntax: PatternSyntax {
+                terminated_fragment_kind: Some("method_invocation"),
+                ..PatternSyntax::DOLLAR
+            },
             selector_aliases: &[],
             extensions: &["java"],
             also_parses: &[],
@@ -186,6 +230,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         },
         LanguageEntry {
             name: "C",
+            pattern_syntax: PatternSyntax::C_FAMILY,
             selector_aliases: &[],
             extensions: &["c", "h"],
             also_parses: &[],
@@ -197,6 +242,10 @@ fn init_language_table() -> Vec<LanguageEntry> {
         #[cfg(feature = "tree-sitter-asm")]
         LanguageEntry {
             name: "Assembly",
+            pattern_syntax: PatternSyntax {
+                expando: 'Q',
+                ..PatternSyntax::DEFAULT
+            },
             selector_aliases: &[],
             extensions: &["asm", "assembly", "s"],
             also_parses: &[],
@@ -212,6 +261,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         #[cfg(feature = "tree-sitter-scala")]
         LanguageEntry {
             name: "Scala",
+            pattern_syntax: PatternSyntax::DEFAULT,
             selector_aliases: &[],
             extensions: &["scala", "sc", "sbt"],
             also_parses: &[],
@@ -223,6 +273,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         #[cfg(feature = "tree-sitter-cpp")]
         LanguageEntry {
             name: "C++",
+            pattern_syntax: PatternSyntax::C_FAMILY,
             selector_aliases: &[],
             // Include the `.hh`/`.hxx` header variants the structural expando table
             // already anticipates.
@@ -236,6 +287,7 @@ fn init_language_table() -> Vec<LanguageEntry> {
         #[cfg(feature = "tree-sitter-cuda")]
         LanguageEntry {
             name: "CUDA",
+            pattern_syntax: PatternSyntax::C_FAMILY,
             selector_aliases: &[],
             extensions: &["cu", "cuh"],
             also_parses: &[],
@@ -247,6 +299,10 @@ fn init_language_table() -> Vec<LanguageEntry> {
         #[cfg(feature = "tree-sitter-c-sharp")]
         LanguageEntry {
             name: "C#",
+            pattern_syntax: PatternSyntax {
+                member_context: true,
+                ..PatternSyntax::DEFAULT
+            },
             selector_aliases: &[],
             extensions: &["cs"],
             also_parses: &[],
@@ -264,7 +320,7 @@ pub fn find_entry(ext: &str) -> Option<&'static LanguageEntry> {
 
 /// Whether `ext` is a C-family source (C, C++, CUDA): its grammar's language
 /// id is one the C-family server answers.
-pub fn is_c_family_extension(ext: &str) -> bool {
+pub(crate) fn is_c_family_extension(ext: &str) -> bool {
     find_entry(ext).is_some_and(|entry| crate::lsp::family::is_c_family(entry.language_id))
 }
 
@@ -301,7 +357,7 @@ pub fn select(selector: &str) -> impl Iterator<Item = &'static LanguageEntry> {
 
 /// The one grammar `selector` names by name, language id or extension;
 /// `None` when it names none, or several.
-pub fn select_one(selector: &str) -> Option<&'static LanguageEntry> {
+pub(crate) fn select_one(selector: &str) -> Option<&'static LanguageEntry> {
     let selector = selector.trim();
     let mut named = LANGUAGE_TABLE.iter().filter(|entry| names(entry, selector));
     let entry = named.next()?;
@@ -398,7 +454,7 @@ pub fn all_entries() -> &'static [LanguageEntry] {
     &LANGUAGE_TABLE
 }
 
-pub fn supported_extensions() -> Vec<&'static str> {
+pub(crate) fn supported_extensions() -> Vec<&'static str> {
     LANGUAGE_TABLE
         .iter()
         .flat_map(|e| e.extensions.iter().copied())

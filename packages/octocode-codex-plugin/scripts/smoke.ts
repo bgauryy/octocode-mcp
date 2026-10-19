@@ -23,12 +23,12 @@ const env = {
   CODEX_HOME: codexHome,
   OCTOCODE_HOME: join(home, '.octocode'),
   GH_CONFIG_DIR: join(home, '.config/gh'),
-  OCTOCODE_STORAGE_MODE: 'ephemeral',
+  OCTOCODE_STORAGE_MODE: 'memory',
   OCTOCODE_ENABLE_LOCAL: 'true',
 };
 const goal = 'Verify installed plugin behavior against isolated fixtures';
 const query = (extra: Record<string, unknown>) => ({
-  queries: [{ goal, reasoning: goal, ...extra }],
+  queries: [{ mainGoal: goal, reasoning: goal, ...extra }],
 });
 const token = 'octocode-plugin-synthetic-fixture';
 let authenticatedRequests = 0;
@@ -184,23 +184,22 @@ try {
         }),
       });
       assert.ok(
-        JSON.stringify(outside).includes('pathOutsideAllowedRoots'),
+        JSON.stringify(outside).includes('outsideAllowedRoots'),
         'Unrelated plugin cache must not become a project root.'
       );
       if (project === 'project-a') {
-        const status = JSON.parse(
-          (
-            await run(
-              process.execPath,
-              [
-                join(repoRoot, 'packages/octocode/out/octocode.js'),
-                'auth',
-                '--json',
-              ],
-              { cwd, env: runtimeEnv, timeout: 15_000 }
-            )
-          ).stdout
+        const auth = await run(
+          process.execPath,
+          [
+            join(repoRoot, 'packages/octocode/out/octocode.js'),
+            'auth',
+            'status',
+            '--json',
+          ],
+          { cwd, env: runtimeEnv, timeout: 15_000 }
         );
+        assert.doesNotMatch(auth.stderr, /config warning/, auth.stderr);
+        const status = JSON.parse(auth.stdout);
         assert.equal(status.tokenSource, 'gh-cli');
         const github = await client.callTool({
           name: 'ghGetFileContent',
@@ -208,7 +207,7 @@ try {
             owner: 'fixture',
             repo: 'private',
             path: 'README.md',
-            branch: 'a'.repeat(40),
+            ref: 'a'.repeat(40),
             fullContent: true,
           }),
         });
@@ -236,7 +235,7 @@ try {
             owner: 'fixture',
             repo: 'private',
             path: 'README.md',
-            branch: 'a'.repeat(40),
+            ref: 'a'.repeat(40),
             fullContent: true,
             forceRefresh: true,
           }),
@@ -247,6 +246,11 @@ try {
           /401|unauthorized|authentication|credential/i
         );
       }
+      assert.doesNotMatch(
+        stderr,
+        /config warning/,
+        'The smoke environment must use only valid settings.'
+      );
     } catch (error) {
       throw new Error(
         `Local runtime smoke failed: ${String(error)}\n${stderr.replaceAll(token, '[REDACTED]')}`

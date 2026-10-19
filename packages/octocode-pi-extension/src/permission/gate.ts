@@ -8,6 +8,7 @@ import type { AskReason } from './mode.js';
 import { isMcpTool } from '../shared/octocode-tools.js';
 import type { Classification } from '../shared/winclassify.js';
 import { classifyPowerShell } from '../shared/winhelper.js';
+import { optionalString } from '../shared/util.js';
 import { catastrophicCommand, SHELL_TOOLS, simpleCommand } from './shell.js';
 
 /**
@@ -66,7 +67,6 @@ export async function powershellDestructive(command: string, classifier: (comman
   return !verdict.parsed || verdict.destructive !== undefined;
 }
 
-const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 /** The paths an MCP call names: its `path` and each of its `queries[].path`. */
 const mcpPaths = (input: Record<string, unknown>): string[] => [input, ...(Array.isArray(input['queries']) ? input['queries'] : [])].flatMap((query) => (query && typeof query === 'object' && typeof (query as Record<string, unknown>)['path'] === 'string' ? [(query as Record<string, string>)['path']!] : []));
 /** The call's arguments, whole: the user approves exactly what is shown. */
@@ -91,14 +91,14 @@ function classOf(tool: string, input: Record<string, unknown>, cwd: string, anno
     return { file, root, inside: root !== undefined && isWithin(file, root) };
   };
   if (SHELL_TOOLS.has(tool)) {
-    const command = text(input['command']) ?? '';
+    const command = optionalString(input['command']) ?? '';
     const simple = simpleCommand(command);
     if (forceDestructive || destructive(command, cwd)) return { action: 'shell.destructive', title: 'Run this destructive command?', what: [command, `cwd: ${cwd}`] };
     const grant = simple ? { key: JSON.stringify([tool, canonicalPath(cwd), simple]), label: `\`${simple}\` with ${tool} in ${cwd}` } : undefined;
     return { action: 'shell', title: 'Run this command?', what: [command, `cwd: ${cwd}`], ...(grant ? { grant } : {}) };
   }
-  if (CHANGE_TOOLS.has(tool) && text(input['path'])) {
-    const { file, root, inside } = inRepo(text(input['path'])!);
+  if (CHANGE_TOOLS.has(tool) && optionalString(input['path'])) {
+    const { file, root, inside } = inRepo(optionalString(input['path'])!);
     if (inside && runsLater(file, root!)) {
       return { action: 'file.outside', title: 'Change a file that runs in later sessions?', what: [`${tool} ${file}`], reason: 'it loads code, hooks or instructions in later sessions', grant: dirGrant(file, 'file changes') };
     }
@@ -107,18 +107,18 @@ function classOf(tool: string, input: Record<string, unknown>, cwd: string, anno
       : { action: 'file.outside', title: 'Change a file outside the workspace?', what: [`${tool} ${file}`], grant: dirGrant(file, 'file changes') };
   }
   if (READ_TOOLS.has(tool)) {
-    const { file, inside } = inRepo(text(input['path']) ?? cwd);
+    const { file, inside } = inRepo(optionalString(input['path']) ?? cwd);
     // History the session may read (its own, its forks' sources, its parent's, its repository's) is read like the workspace (`shared/history.ts`).
     if (inside || readableHistory(file, cwd)) return undefined;
     return { action: 'read.outside', title: 'Read outside the workspace?', what: [`${tool} ${file}`], grant: dirGrant(file, 'reads') };
   }
   if (tool === 'web') {
     // A URL is checked by the web tool, which resolves its host: public is `web`, private is `net.private`.
-    if (text(input['url'])) return undefined;
-    return { action: 'web', title: 'Search the web?', what: [text(input['query']) ?? ''], grant: { key: 'search', label: 'web searches' } };
+    if (optionalString(input['url'])) return undefined;
+    return { action: 'web', title: 'Search the web?', what: [optionalString(input['query']) ?? ''], grant: { key: 'search', label: 'web searches' } };
   }
   if (tool === 'browser') {
-    const action = text(input['action']) ?? '';
+    const action = optionalString(input['action']) ?? '';
     if (BROWSER_CONTROL.has(action)) return { action: 'browser.control', title: action === 'attach' ? 'Attach to a browser?' : 'Run script in the page?', what: [`${action} ${args(input)}`] };
     if (!BROWSER_ACTS.has(action)) return undefined;
     // A page action is granted per kind: the gate cannot see the page's host.
@@ -159,14 +159,14 @@ export function permissionGate(options: PermissionGateOptions) {
   const { permission, provenance, annotations, powershell = powershellDestructive } = options;
   return async (event: ToolCallEvent, ctx: ExtensionContext, prior?: GateVerdict): Promise<ToolCallEventResult | undefined> => {
     const input = event.input as Record<string, unknown>;
-    const target = CHANGE_TOOLS.has(event.toolName) ? text(input['path']) : undefined;
+    const target = CHANGE_TOOLS.has(event.toolName) ? optionalString(input['path']) : undefined;
     const refused = target && stateFolderRefusal(resolveToolPath(ctx.cwd, target), target, `Pi ${event.toolName}`);
     if (refused) {
       permission.refused([`${event.toolName} ${target}`], refused, event.toolName);
       return { block: true, reason: refused };
     }
     // PowerShell's grammar is parsed by the Windows helper (async); classify itself stays synchronous.
-    const forceDestructive = event.toolName === 'powershell' && (await powershell(text(input['command']) ?? ''));
+    const forceDestructive = event.toolName === 'powershell' && (await powershell(optionalString(input['command']) ?? ''));
     const request = classify(event, ctx, annotations, forceDestructive);
     const hit = provenance.check(event, ctx);
     const reasons: AskReason[] = [...(hit ? (['provenance'] as const) : []), ...(prior?.ask ? (['hook.ask'] as const) : [])];

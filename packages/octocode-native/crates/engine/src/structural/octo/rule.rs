@@ -44,10 +44,13 @@ struct RawRuleDocument {
 #[serde(deny_unknown_fields)]
 pub(in crate::structural) struct RawRule {
     kind: Option<String>,
-    pub(in crate::structural) pattern: Option<String>,
+    pub(in crate::structural) pattern: Option<RawPattern>,
     regex: Option<String>,
     pub(in crate::structural) has: Option<Box<Self>>,
     pub(in crate::structural) inside: Option<Box<Self>>,
+    precedes: Option<Box<Self>>,
+    follows: Option<Box<Self>>,
+    field: Option<String>,
     pub(in crate::structural) all: Option<Vec<Self>>,
     pub(in crate::structural) any: Option<Vec<Self>>,
     not: Option<Box<Self>>,
@@ -55,22 +58,109 @@ pub(in crate::structural) struct RawRule {
     stop_by: Option<RawStopBy>,
 }
 
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(in crate::structural) enum RawPattern {
+    Text(String),
+    Context(ContextPattern),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(in crate::structural) struct ContextPattern {
+    context: String,
+    selector: String,
+}
+
+impl RawPattern {
+    pub(in crate::structural) fn literal(&self) -> Option<&str> {
+        match self {
+            Self::Text(text) => Some(text),
+            // The wrapper is not required in the searched source.
+            Self::Context(_) => None,
+        }
+    }
+
+    fn compile(&self, lang: &AgLanguage) -> Result<CompiledPattern, CompileError> {
+        match self {
+            Self::Text(text) => CompiledPattern::new(lang, text),
+            Self::Context(pattern) => {
+                CompiledPattern::contextual(lang, &pattern.context, &pattern.selector)
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
 enum RawStopBy {
+    Kind(StopKind),
+    Rule(Box<RawRule>),
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum StopKind {
+    #[default]
+    Neighbor,
     End,
+}
+
+#[derive(Clone, Copy)]
+enum Direction {
+    Descendant,
+    Ancestor,
+    Next,
+    Previous,
+}
+
+struct Relation {
+    direction: Direction,
+    rule: CompiledRule,
+    field: Option<std::num::NonZeroU16>,
+    stop: Stop,
+}
+
+enum Stop {
+    Neighbor,
+    End,
+    Rule(Box<CompiledRule>),
+}
+
+impl RawRule {
+    fn relations(&self) -> impl Iterator<Item = (Direction, &Self)> {
+        [
+            (Direction::Descendant, self.has.as_deref()),
+            (Direction::Ancestor, self.inside.as_deref()),
+            (Direction::Next, self.precedes.as_deref()),
+            (Direction::Previous, self.follows.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(direction, rule)| rule.map(|rule| (direction, rule)))
+    }
+
+    fn children(&self) -> impl Iterator<Item = &Self> {
+        self.all
+            .iter()
+            .flatten()
+            .chain(self.any.iter().flatten())
+            .chain(self.relations().map(|(_, rule)| rule))
+            .chain(self.not.iter().map(Box::as_ref))
+            .chain(match self.stop_by.as_ref() {
+                Some(RawStopBy::Rule(rule)) => Some(rule.as_ref()),
+                _ => None,
+            })
+    }
 }
 
 pub(super) struct CompiledRule {
     kind: Option<String>,
     pattern: Option<CompiledPattern>,
     regex: Option<Regex>,
-    has: Option<Box<Self>>,
-    inside: Option<Box<Self>>,
+    relations: Vec<Relation>,
     all: Vec<Self>,
     any: Vec<Self>,
     not: Option<Box<Self>>,
-    stop_by_end: bool,
     pub(super) candidate_plan: CandidatePlan,
 }
 
@@ -88,6 +178,16 @@ pub(in crate::structural) fn parse_rule(rule: &str) -> Result<RawRule, CompileEr
         ));
     }
     let value = crate::text::yaml_utils::yaml_to_json(rule).map_err(|err| yaml_error(&err))?;
+    parse_rule_value(value)
+}
+
+pub fn validate_rule_shape(value: &serde_json::Value) -> Result<(), String> {
+    parse_rule_value(value.clone())
+        .map(|_| ())
+        .map_err(|error| error.diagnostic().message)
+}
+
+fn parse_rule_value(value: serde_json::Value) -> Result<RawRule, CompileError> {
     let wrapped = value
         .as_object()
         .is_some_and(|mapping| mapping.contains_key("rule"));
@@ -128,21 +228,57 @@ thread_local! {
 }
 
 fn validate_rule_depth(rule: &RawRule, depth: usize) -> Result<(), CompileError> {
+    validate_rule_position(rule, depth, false)
+}
+
+fn validate_rule_position(
+    rule: &RawRule,
+    depth: usize,
+    relation: bool,
+) -> Result<(), CompileError> {
     if depth >= 64 {
         return Err(CompileError::rule(
             "structural rule exceeds 64 nesting levels",
         ));
     }
-    for child in rule
-        .all
-        .iter()
-        .flatten()
-        .chain(rule.any.iter().flatten())
-        .chain(rule.has.iter().map(Box::as_ref))
-        .chain(rule.inside.iter().map(Box::as_ref))
-        .chain(rule.not.iter().map(Box::as_ref))
+    if rule.kind.is_none()
+        && rule.pattern.is_none()
+        && rule.regex.is_none()
+        && rule.relations().next().is_none()
+        && rule.all.is_none()
+        && rule.any.is_none()
+        && rule.not.is_none()
     {
-        validate_rule_depth(child, depth + 1)?;
+        return Err(CompileError::rule("rule must contain at least one matcher"));
+    }
+    if !relation && (rule.field.is_some() || rule.stop_by.is_some()) {
+        return Err(CompileError::rule(
+            "field and stopBy are only valid on a relation",
+        ));
+    }
+    for rules in [rule.all.as_ref(), rule.any.as_ref()].into_iter().flatten() {
+        if rules.is_empty() || rules.len() > 50 {
+            return Err(CompileError::rule(
+                "all and any require between 1 and 50 rules",
+            ));
+        }
+        for child in rules {
+            validate_rule_position(child, depth + 1, false)?;
+        }
+    }
+    for (direction, child) in rule.relations() {
+        if matches!(direction, Direction::Next | Direction::Previous) && child.field.is_some() {
+            return Err(CompileError::rule(
+                "field is only supported in has and inside relations",
+            ));
+        }
+        validate_rule_position(child, depth + 1, true)?;
+    }
+    if let Some(child) = &rule.not {
+        validate_rule_position(child, depth + 1, false)?;
+    }
+    if let Some(RawStopBy::Rule(child)) = &rule.stop_by {
+        validate_rule_position(child, depth + 1, false)?;
     }
     Ok(())
 }
@@ -156,13 +292,7 @@ fn check_kinds(language: &tree_sitter::Language, rule: &RawRule) -> Result<(), C
             "unknown node kind '{kind}' for this language grammar"
         )));
     }
-    rule.all
-        .iter()
-        .flatten()
-        .chain(rule.any.iter().flatten())
-        .chain(rule.has.iter().map(Box::as_ref))
-        .chain(rule.inside.iter().map(Box::as_ref))
-        .chain(rule.not.iter().map(Box::as_ref))
+    rule.children()
         .try_for_each(|child| check_kinds(language, child))
 }
 
@@ -187,8 +317,8 @@ impl CompiledRule {
     fn compile_checked(lang: &AgLanguage, raw: &RawRule) -> Result<Self, CompileError> {
         let pattern = raw
             .pattern
-            .as_deref()
-            .map(|pattern| CompiledPattern::new(lang, pattern))
+            .as_ref()
+            .map(|pattern| pattern.compile(lang))
             .transpose()?;
         let regex = raw
             .regex
@@ -196,16 +326,10 @@ impl CompiledRule {
             .map(Regex::new)
             .transpose()
             .map_err(|err| CompileError::rule(format!("invalid rule regex: {err}")))?;
-        let has = raw
-            .has
-            .as_deref()
-            .map(|rule| Self::compile_checked(lang, rule).map(Box::new))
-            .transpose()?;
-        let inside = raw
-            .inside
-            .as_deref()
-            .map(|rule| Self::compile_checked(lang, rule).map(Box::new))
-            .transpose()?;
+        let relations = raw
+            .relations()
+            .map(|(direction, rule)| Relation::compile(lang, direction, rule))
+            .collect::<Result<Vec<_>, _>>()?;
         let all = raw
             .all
             .as_deref()
@@ -230,12 +354,10 @@ impl CompiledRule {
             kind: raw.kind.clone(),
             pattern,
             regex,
-            has,
-            inside,
+            relations,
             all,
             any,
             not,
-            stop_by_end: raw.stop_by == Some(RawStopBy::End),
             candidate_plan: CandidatePlan::Any,
         };
         if compiled.is_empty() {
@@ -260,8 +382,7 @@ impl CompiledRule {
     fn only_kind(&self) -> bool {
         self.pattern.is_none()
             && self.regex.is_none()
-            && self.has.is_none()
-            && self.inside.is_none()
+            && self.relations.is_empty()
             && self.all.is_empty()
             && self.any.is_empty()
             && self.not.is_none()
@@ -325,17 +446,11 @@ impl CompiledRule {
             captures.rollback(checkpoint);
             return Ok(false);
         }
-        if let Some(rule) = &self.has
-            && !matches_descendant(rule, candidate, document, captures)?
-        {
-            captures.rollback(checkpoint);
-            return Ok(false);
-        }
-        if let Some(rule) = &self.inside
-            && !matches_ancestor(rule, candidate, ancestors, document, captures)?
-        {
-            captures.rollback(checkpoint);
-            return Ok(false);
+        for relation in &self.relations {
+            if !relation.matches(candidate, ancestors, document, captures)? {
+                captures.rollback(checkpoint);
+                return Ok(false);
+            }
         }
         for rule in &self.all {
             if !rule.matches(candidate, ancestors, document, captures)? {
@@ -377,64 +492,179 @@ pub(super) struct Document<'a, 't> {
     pub(super) root: Node<'t>,
 }
 
-fn matches_descendant<'t>(
-    rule: &CompiledRule,
-    candidate: Node<'t>,
-    document: &Document<'_, 't>,
-    captures: &mut CaptureEnv,
-) -> Result<bool, ExecutionError> {
-    let mut stack = named_children(candidate);
-    stack.reverse();
-    while let Some(child) = stack.pop() {
-        ExecutionError::check(document.deadline)?;
-        if rule.matches_candidate(child) && rule.matches(child, None, document, captures)? {
-            captures.capture_replace(
-                SECONDARY_CAPTURE,
-                node_text(child, document.content).to_owned(),
-                raw_range(child),
-            );
-            return Ok(true);
-        }
-        if rule.stop_by_end {
-            stack.extend(named_children(child).into_iter().rev());
+impl Relation {
+    fn compile(
+        lang: &AgLanguage,
+        direction: Direction,
+        raw: &RawRule,
+    ) -> Result<Self, CompileError> {
+        let language = lang.tree_sitter_language();
+        let field = raw
+            .field
+            .as_deref()
+            .map(|field| {
+                if matches!(direction, Direction::Next | Direction::Previous) {
+                    return Err(CompileError::rule(
+                        "field is only supported in has and inside relations",
+                    ));
+                }
+                language.field_id_for_name(field).ok_or_else(|| {
+                    CompileError::grammar(format!(
+                        "unknown field '{field}' for this language grammar"
+                    ))
+                })
+            })
+            .transpose()?;
+        let stop = match raw.stop_by.as_ref() {
+            None | Some(RawStopBy::Kind(StopKind::Neighbor)) => Stop::Neighbor,
+            Some(RawStopBy::Kind(StopKind::End)) => Stop::End,
+            Some(RawStopBy::Rule(rule)) => {
+                Stop::Rule(Box::new(CompiledRule::compile_checked(lang, rule)?))
+            }
+        };
+        Ok(Self {
+            direction,
+            rule: CompiledRule::compile_checked(lang, raw)?,
+            field,
+            stop,
+        })
+    }
+
+    fn stops<'t>(
+        &self,
+        node: Node<'t>,
+        document: &Document<'_, 't>,
+        captures: &mut CaptureEnv,
+    ) -> Result<bool, ExecutionError> {
+        match &self.stop {
+            Stop::Neighbor => Ok(true),
+            Stop::End => Ok(false),
+            Stop::Rule(rule) => {
+                let checkpoint = captures.checkpoint();
+                let matched = rule.matches(node, None, document, captures);
+                captures.rollback(checkpoint);
+                matched
+            }
         }
     }
-    Ok(false)
-}
 
-fn matches_ancestor<'t>(
-    rule: &CompiledRule,
-    candidate: Node<'t>,
-    ancestors: Option<&[Node<'t>]>,
-    document: &Document<'_, 't>,
-    captures: &mut CaptureEnv,
-) -> Result<bool, ExecutionError> {
-    // One chain per candidate: `Node::parent()` searches down from the root on
-    // every call, so walking `stopBy: end` with it was O(depth²) per candidate.
-    let owned;
-    let chain = match ancestors {
-        Some(chain) => chain,
-        None => {
-            owned = ancestors_from_root(document.root, candidate, document.deadline)?;
-            owned.as_slice()
-        }
-    };
-    for index in (0..chain.len()).rev() {
-        ExecutionError::check(document.deadline)?;
-        let node = chain[index];
-        if rule.matches_candidate(node)
-            && rule.matches(node, Some(&chain[..index]), document, captures)?
-        {
-            captures.capture_replace(
-                SECONDARY_CAPTURE,
-                node_text(node, document.content).to_owned(),
-                raw_range(node),
-            );
-            return Ok(true);
-        }
-        if !rule.stop_by_end {
+    fn accepts<'t>(
+        &self,
+        node: Node<'t>,
+        ancestors: Option<&[Node<'t>]>,
+        document: &Document<'_, 't>,
+        captures: &mut CaptureEnv,
+    ) -> Result<bool, ExecutionError> {
+        if !self.rule.matches(node, ancestors, document, captures)? {
             return Ok(false);
         }
+        captures.capture_replace(
+            SECONDARY_CAPTURE,
+            node_text(node, document.content).to_owned(),
+            raw_range(node),
+        );
+        Ok(true)
     }
-    Ok(false)
+
+    fn matches<'t>(
+        &self,
+        candidate: Node<'t>,
+        ancestors: Option<&[Node<'t>]>,
+        document: &Document<'_, 't>,
+        captures: &mut CaptureEnv,
+    ) -> Result<bool, ExecutionError> {
+        match self.direction {
+            Direction::Descendant => {
+                let mut stack = if let Some(field) = self.field {
+                    candidate
+                        .children_by_field_id(field, &mut candidate.walk())
+                        .filter(Node::is_named)
+                        .collect::<Vec<_>>()
+                } else {
+                    named_children(candidate)
+                };
+                stack.reverse();
+                while let Some(node) = stack.pop() {
+                    ExecutionError::check(document.deadline)?;
+                    if self.accepts(node, None, document, captures)? {
+                        return Ok(true);
+                    }
+                    if !self.stops(node, document, captures)? {
+                        stack.extend(named_children(node).into_iter().rev());
+                    }
+                }
+            }
+            Direction::Ancestor => {
+                let owned;
+                let chain = match ancestors {
+                    Some(chain) => chain,
+                    None => {
+                        owned = ancestors_from_root(document.root, candidate, document.deadline)?;
+                        owned.as_slice()
+                    }
+                };
+                let mut branch = candidate;
+                for index in (0..chain.len()).rev() {
+                    ExecutionError::check(document.deadline)?;
+                    let node = chain[index];
+                    let in_field = self.field.is_none_or(|field| {
+                        node.children_by_field_id(field, &mut node.walk())
+                            .any(|child| child == branch)
+                    });
+                    if in_field && self.accepts(node, Some(&chain[..index]), document, captures)? {
+                        return Ok(true);
+                    }
+                    if self.stops(node, document, captures)? {
+                        break;
+                    }
+                    branch = node;
+                }
+            }
+            Direction::Next | Direction::Previous => {
+                // A cursor rooted at the candidate cannot leave its root.
+                let owned;
+                let chain = match ancestors {
+                    Some(chain) => chain,
+                    None => {
+                        owned = ancestors_from_root(document.root, candidate, document.deadline)?;
+                        owned.as_slice()
+                    }
+                };
+                let Some(parent) = chain.last() else {
+                    return Ok(false);
+                };
+                let mut cursor = parent.walk();
+                if !cursor.goto_first_child() {
+                    return Ok(false);
+                }
+                while cursor.node() != candidate {
+                    ExecutionError::check(document.deadline)?;
+                    if !cursor.goto_next_sibling() {
+                        return Ok(false);
+                    }
+                }
+                loop {
+                    ExecutionError::check(document.deadline)?;
+                    let advanced = match self.direction {
+                        Direction::Next => cursor.goto_next_sibling(),
+                        _ => cursor.goto_previous_sibling(),
+                    };
+                    if !advanced {
+                        break;
+                    }
+                    let node = cursor.node();
+                    if !node.is_named() {
+                        continue;
+                    }
+                    if self.accepts(node, Some(chain), document, captures)? {
+                        return Ok(true);
+                    }
+                    if self.stops(node, document, captures)? {
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
 }

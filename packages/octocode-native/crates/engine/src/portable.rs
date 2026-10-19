@@ -93,22 +93,6 @@ pub fn sanitize_leaf(content: &str, source_path: &str) -> Result<SanitizationRes
         .map_err(|_| Error::new("content sanitization failed on pathological input"))
 }
 
-/// The symbols outline of `content`, or the typed reason it has none.
-pub fn extract_signatures(
-    content: &str,
-    file_path: &str,
-) -> std::result::Result<String, crate::signatures::OutlineUnavailable> {
-    let content = content.to_owned();
-    let file_path = file_path.to_owned();
-    // The pool's fallback (no pool, a panic) is `None`: no tree.
-    crate::signatures::run_on_deep_stack(move || {
-        Some(crate::signatures::extract_signatures_inner(
-            &content, &file_path,
-        ))
-    })
-    .unwrap_or(Err(crate::signatures::OutlineUnavailable::ParseFailed))
-}
-
 /// The grammar inventory, built once.
 #[must_use]
 pub fn grammar_capabilities() -> &'static [GrammarCapability] {

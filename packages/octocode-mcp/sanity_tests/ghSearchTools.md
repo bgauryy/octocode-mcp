@@ -7,7 +7,7 @@ Manual runtime checks for the three GitHub discovery tools.
 - [ ] Each tool exposes one query shape with no `operation` field; sending `operation` is rejected as an unknown field.
 - [ ] `ghSearchCode` requires `owner`; `ghStructure` requires `owner` and `repo`; `ghSearchRepo` needs keywords, topics, owner, or a filter.
 - [ ] Removed tool names (`ghSearch`) and legacy aliases are rejected with a short canonical-field hint.
-- [ ] `pageSize` controls results returned on one page (1–100 search, 1–200 structure); `page` selects the page.
+- [ ] `pageSize` controls results returned on one page (1–100 search, 1–500 structure); `page` selects the page.
 - [ ] No `limit` is advertised as a client total cap when GitHub provides no such distinct contract.
 
 ## Workflow

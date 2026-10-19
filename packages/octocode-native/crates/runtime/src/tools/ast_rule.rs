@@ -213,8 +213,8 @@ pub(crate) fn compile_check(
 pub(crate) enum GrammarChoice {
     /// Exactly one candidate compiles the rule.
     One(String),
-    /// Candidates exist, and none compiles it: the first compile error.
-    Invalid(RuleError),
+    /// Candidates exist, and none compiles the rule.
+    Invalid,
     /// The scope holds no candidate grammar.
     Absent,
     /// Several candidates compile it.
@@ -252,7 +252,7 @@ pub(crate) fn choose_grammar(
         .collect();
     match (parsing.len(), first_error) {
         (1, _) => GrammarChoice::One(parsing.remove(0)),
-        (0, Some(error)) => GrammarChoice::Invalid(error),
+        (0, Some(_)) => GrammarChoice::Invalid,
         (0, None) => GrammarChoice::Absent,
         _ => GrammarChoice::Several(parsing),
     }
@@ -355,7 +355,7 @@ pub(crate) fn rank_grammars(seen: BTreeMap<String, usize>) -> Vec<(String, BTree
 }
 
 /// The one message for a `language` no structural grammar answers to
-/// (astSearch and astRewrite, error code `languageUnsupported`).
+/// (astSearch, error code `languageUnsupported`).
 pub(crate) fn unsupported_language_message(language: &str) -> String {
     format!(
         "language \"{language}\" is not a supported structural grammar. Use a language name, id, or extension such as \"typescript\", \"rust\", or \"py\"."

@@ -25,3 +25,18 @@ export function validateFlags(
   }
   return positional;
 }
+
+/**
+ * Value and presence readers over one argv. A flag with no value, or an empty one, reads as `def`,
+ * so `--page ""` falls back to the default instead of becoming NaN downstream.
+ */
+export function flagArgs(argv: string[]) {
+  const getArg = (flag: string, def?: string) => {
+    const i = argv.indexOf(flag);
+    return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
+  };
+  const hasFlag = (flag: string) => argv.includes(flag);
+  /** A case-insensitive filter value: lowercase, empty when the flag is absent. */
+  const getLowerArg = (flag: string) => (getArg(flag, '') ?? '').toLowerCase();
+  return { getArg, hasFlag, getLowerArg };
+}

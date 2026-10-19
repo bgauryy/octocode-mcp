@@ -136,7 +136,7 @@ function windowOf(text: string, max: number, line = 1): Window {
   return { text: lines.slice(first, last).join(''), first: first + 1, last, total, cut: true };
 }
 
-export interface Restored {
+interface Restored {
   /** The message body: each file in a `<file>` block. */
   content: string;
   /** `stamp`: the file's stat when it was read back (`settleRestoredFiles` checks it is unchanged). */

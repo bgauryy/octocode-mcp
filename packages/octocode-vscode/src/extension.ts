@@ -97,10 +97,23 @@ async function logoutFromGitHub(): Promise<void> {
   }
 }
 
+/** A client's config path, or undefined after logging why it cannot be resolved (the platform's home directory is unreadable). */
+function clientConfigPath(client: McpClientDef): string | undefined {
+  try {
+    return client.getConfigPath();
+  } catch (err) {
+    outputChannel.appendLine(
+      `Cannot resolve the ${client.name} config path: ${err}`
+    );
+    return undefined;
+  }
+}
+
 async function syncTokenToAllConfigs(token: string | undefined): Promise<void> {
   const editorInfo = getEditorInfo();
   const configPaths: { name: string; path: string; configKey: ConfigKey }[] =
     [];
+  const failures: string[] = [];
 
   if (editorInfo.mcpConfigPath) {
     configPaths.push({
@@ -111,18 +124,18 @@ async function syncTokenToAllConfigs(token: string | undefined): Promise<void> {
   }
 
   for (const client of Object.values(MCP_CLIENTS)) {
-    try {
-      configPaths.push({
-        name: client.name,
-        path: client.getConfigPath(),
-        configKey: client.configKey,
-      });
-    } catch {
-      void 0;
+    const clientPath = clientConfigPath(client);
+    if (clientPath === undefined) {
+      failures.push(client.name);
+      continue;
     }
+    configPaths.push({
+      name: client.name,
+      path: clientPath,
+      configKey: client.configKey,
+    });
   }
 
-  const failures: string[] = [];
   const seen = new Set<string>();
   for (const { name, path: configPath, configKey } of configPaths) {
     if (seen.has(configPath)) continue;
@@ -159,8 +172,8 @@ async function checkGitHubAuthStatus(): Promise<{
         tokenSource: 'oauth',
       };
     }
-  } catch {
-    void 0;
+  } catch (err) {
+    outputChannel.appendLine(`Error checking GitHub session: ${err}`);
   }
 
   const config = vscode.workspace.getConfiguration('octocode');
@@ -472,25 +485,24 @@ export async function activate(
       vscode.commands.registerCommand('octocode.installForAll', async () => {
         const results: string[] = [];
         for (const client of Object.values(MCP_CLIENTS)) {
-          try {
-            const configPath = client.getConfigPath();
-            const installed = await installMcpServer(
-              configPath,
-              false,
-              client.name,
-              client.configKey
+          const configPath = clientConfigPath(client);
+          const installed =
+            configPath === undefined
+              ? 'failed'
+              : await installMcpServer(
+                  configPath,
+                  false,
+                  client.name,
+                  client.configKey
+                );
+          if (installed === 'installed') {
+            results.push(`✅ ${client.name}`);
+          } else {
+            results.push(
+              installed === 'unchanged'
+                ? `⏭️ ${client.name} (already configured)`
+                : `❌ ${client.name} (failed)`
             );
-            if (installed === 'installed') {
-              results.push(`✅ ${client.name}`);
-            } else {
-              results.push(
-                installed === 'unchanged'
-                  ? `⏭️ ${client.name} (already configured)`
-                  : `❌ ${client.name} (failed)`
-              );
-            }
-          } catch {
-            results.push(`❌ ${client.name} (failed)`);
           }
         }
         vscode.window.showInformationMessage(

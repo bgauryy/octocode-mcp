@@ -6,7 +6,6 @@ use crate::{
     security::ContentSecurity,
     tools::{
         ast_graph::AstTopologyRuntimeOptions,
-        ast_rewrite::AstRewriteRuntimeOptions,
         id::{ToolFamily, ToolId},
         local_fetch::LocalFetchRegex,
         lsp_search::{LspExecutionConfig, prewarm},
@@ -400,17 +399,6 @@ impl DomainDispatcher {
             response_window: (window > 0).then_some(window),
             ..context.clone()
         };
-        // OCTOCODE_BETA is the shared gate for beta local tools. For astRewrite,
-        // enabling beta permits both preview and hash-guarded apply.
-        let rewrite = AstRewriteRuntimeOptions {
-            allow_apply: self.config.resolved.local.beta,
-            state_dir: self
-                .config
-                .env_value(crate::config::environment::OCTOCODE_AST_REWRITE_STATE_DIR)
-                .filter(|dir| !dir.is_empty())
-                .map(PathBuf::from),
-            ..Default::default()
-        };
         let topology = AstTopologyRuntimeOptions {
             cargo: self
                 .config
@@ -443,7 +431,6 @@ impl DomainDispatcher {
                         security: &self.security,
                         regex: &self.regex,
                         views: &self.local_views,
-                        rewrite: &rewrite,
                         topology: &topology,
                         selection: Some(&selection),
                     },

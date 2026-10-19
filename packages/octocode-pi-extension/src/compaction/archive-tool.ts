@@ -23,7 +23,7 @@ interface ArchiveParams {
   page?: number;
 }
 
-export interface ArchiveDetails {
+interface ArchiveDetails {
   goal: string;
   reason: string;
   mode: 'list' | 'search' | 'read';

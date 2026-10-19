@@ -1,6 +1,5 @@
 pub(crate) mod artifact_search;
 pub mod ast_graph;
-pub(crate) mod ast_rewrite;
 pub(crate) mod ast_rule;
 pub(crate) mod ast_search;
 pub(crate) mod bounded_process;
@@ -72,14 +71,13 @@ pub(crate) fn display_name(path: &std::path::Path) -> String {
 
 /// The directory names a tool's own file walk prunes: the syntax-visible
 /// defaults (dependency/build output, caches, VCS metadata, credential
-/// stores; [`crate::policy::prune::PruneMode`]) plus the tool's `extra`
+/// stores; [`crate::policy::prune`]) plus the tool's `extra`
 /// names.
 pub(crate) fn syntax_prune(
     extra: impl IntoIterator<Item = String>,
 ) -> octocode_engine::search::walk::Prune {
     octocode_engine::search::walk::Prune::new(
-        crate::policy::prune::PruneMode::SyntaxVisible
-            .defaults()
+        crate::policy::prune::defaults()
             .map(str::to_owned)
             .chain(extra),
     )

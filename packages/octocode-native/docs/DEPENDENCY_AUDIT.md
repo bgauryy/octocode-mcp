@@ -7,7 +7,6 @@ Every direct dependency of the native crates and the job it owns. A passing unus
 | Dependency | Owned job |
 |---|---|
 | `aho-corasick` | Literal prescans for secret detection and search classification |
-| `ast-grep-core`, `ast-grep-config` | `astRewrite` matching, metavariables, replacement, and YAML rule documents |
 | `grep-matcher`, `grep-regex`, `grep-pcre2`, `grep-searcher` | In-process text search: the Rust-regex lane, the opt-in PCRE2 lane (`regex:"pcre2"`), and per-file searching |
 | `ignore` | Gitignore-aware traversal (the local walk policy) |
 | `toml`, `globset` | Reading a Cargo workspace's `members`/`exclude` globs to find the language-server workspace root |

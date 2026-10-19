@@ -37,14 +37,14 @@ Each `errorCode` is one camelCase name with one exit class (2, 3, 4, 5, or 7), d
 
 ## Internal, external, and hybrid tools
 
-"External" names the data or provider boundary, not the MCP transport. All sixteen contract tools share the MCP and CLI contracts; availability gates hide or reject a tool per surface.
+"External" names the data or provider boundary, not the MCP transport. All fifteen contract tools share the MCP and CLI contracts; availability gates hide or reject a tool per surface.
 
 | Boundary | Tools |
 | --- | --- |
 | External (GitHub) | `ghSearchRepo`, `ghSearchCode`, `ghStructure`, `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem` |
 | External (package registries) | `artifactSearch` |
 | Hybrid (provider credentials, then a local checkout) | `ghCloneRepo` |
-| Internal (allowed local paths) | `localSearch`, `structureSearch`, `astSearch`, `localFetch`, `astTopology`, `astRewrite` (disabled) |
+| Internal (allowed local paths) | `localSearch`, `structureSearch`, `astSearch`, `localFetch`, `astTopology` |
 | Internal, with a language-server process | `lspSearch` |
 | External classification provider (vendor: Jev) | `clasify` |
 
@@ -54,7 +54,6 @@ Availability:
 - Local tools are on unless `local.enabled` (`OCTOCODE_ENABLE_LOCAL`) is `false`.
 - `ghCloneRepo` is CLI-only (MCP never registers it) and needs persistent storage.
 - `astTopology` is CLI-only beta: it needs `local.beta` (`OCTOCODE_BETA=true`). Without it, `schema` and root help omit it, and `schema astTopology` reports `availability: {enabled:false, envVar:"OCTOCODE_BETA"}`.
-- `astRewrite` (CLI-only beta) is disabled in this build: it is off on every surface even with `OCTOCODE_BETA`, and a call returns `toolUnavailable`.
 - MCP never registers the CLI-only tools, and no MCP description or lead names them.
 - LSP needs a compatible server for the file language.
 - Public `clasify` needs beta and a nonblank classification API credential; `clasifyContext` on four readers needs only the credential. See the [availability table](OCTOCODE_CLASIFY.md#availability).
@@ -432,7 +431,7 @@ astSearch(operation="match", path="src", rule="rule:\n  pattern: await $C\n  ins
 |---|---|---|
 | `operation` | all | `match`, `syntaxTree`, `symbols`. |
 | `path` | all | File or directory (`syntaxTree`: one source file). |
-| `pattern` / `rule` | `match` | Exactly one. `pattern`: a complete ast-grep node with `$VARS` (an omitted trailing `;` or `,` still matches). `rule`: an ast-grep rule as a YAML string, the rule object, or `{rule: …}`; all match alike. |
+| `pattern` / `rule` | `match` | Exactly one. `pattern`: a complete structural node with `$VARS` (an omitted trailing `;` or `,` still matches). `rule`: a structural rule as a YAML string, the rule object, or `{rule: …}`; all match alike. |
 | `language` | all | Grammar name, alias, or `.ext`; `cpp` parses `.h` as C++ (default C). A directory `match` without it uses the one grammar under `path` that parses the query (`inferredLanguage`; continuations pin it); several candidates return `languageRequired`. `symbols`: single file only. |
 | `languageGlobs` | `symbols`, `match` | Directory parser map, `{"cpp":["include/**/*.h"]}`; not for clangd. A directory `match` that skips files no grammar parses warns with the count and example paths. |
 | `include`, `exclude`, `defaultExcludes`, `includeHidden`, `includeIgnored`, `maxDepth` | `match` (`exclude`, `defaultExcludes`, `includeIgnored`, `includeHidden` also `symbols`) | [Shared local rules](#shared-local-rules). `maxDepth: 1` includes root files; depth filtering runs before the scan cap. |
@@ -449,6 +448,12 @@ astSearch(operation="match", path="src", rule="rule:\n  pattern: await $C\n  ins
 | `kinds` | `symbols` | ≤100 declaration kinds (`function`, `method`, `class`, `constant`, `module`, …). |
 | `symbolName` | `symbols` | A name or a list (any matches): an entry equal to a declaration name matches only it, else a substring; a directory scan parses only files whose text contains an entry. |
 
+Rules support `pattern` (text or `{context, selector}`), `kind`, `regex`, `all`, `any`, `not`, and the relations `has`, `inside`, `precedes`, and `follows`. A contextual pattern parses the supplied context and selects its first node of the named grammar kind in source order. Only that selected node is matched: a wrapper such as `class Example { … }` need not occur in searched files. The context must parse without syntax errors. `selector` is a grammar kind, not a text or CSS selector.
+
+Relations search immediate named nodes by default (`stopBy: "neighbor"`); `stopBy: "end"` searches to the end of the direction. A rule in `stopBy` stops inclusively: its node can still satisfy the relation, but traversal does not continue past it. Stop checks do not contribute captures. `has.field` restricts the first child edge to a grammar field and then searches that subtree; `inside.field` requires the path to the matching ancestor to cross that ancestor's named field. Sibling relations stay within one parent and do not accept `field`.
+
+For example, `{kind: "function_declaration", has: {kind: "identifier", regex: "^run$", field: "name"}}` selects functions named `run` without relying on their return types or modifiers. To relate statements, select statement nodes explicitly: `{pattern: {context: "start();", selector: "expression_statement"}, precedes: {kind: "expression_statement", regex: "^finish", stopBy: "end"}}`. A bare call pattern selects a call node, whose siblings differ from the surrounding statement's siblings.
+
 Scans, limits, and errors:
 
 - A cut scan gets a `structural.scan.truncated` warning and, on the last page, `next.expandScan`; pages plus `expandScan` list every file once. A cut at an explicit `maxFiles` (`partialReasons:["maxFiles"]`) continues with doubled `maxFiles` after the files already evaluated; a scan without `maxFiles` cut at its time budget (`partialReasons:["scanBudget"]`) resumes at `scanOffset` under the same budget. A cut at the `maxFiles` maximum or the walk ceiling is terminal: narrow `path`.
@@ -461,7 +466,7 @@ Patterns:
 
 - A pattern matches exactly as written; use a rule for alternatives. Modifiers are exact: Rust `fn $N()` does not match `pub fn` (a named child): when the scope holds nodes of the pattern's declaration kind that it missed, the row adds a `structural.pattern.exact` diagnostic counting them and a `broadenSearch` rule lead in `hints` listing them; write `pub fn …` or a rule on the item kind.
 - Java call patterns can omit the trailing semicolon: the compiler adds grammar-checked statement context, direct or nested in a rule; complete patterns keep their parse, ranges, and captures.
-- Matches inside Rust macro invocations and `macro_rules!` bodies, and inside C, C++ and CUDA `#define` bodies, are listed (each body is re-parsed in place, in the file's own grammar, so positions are file positions; `astRewrite` reaches the same bodies). A body that is not code (`a ## b`, a type, a brace) adds no match, no error and no noise.
+- Matches inside Rust macro invocations and `macro_rules!` bodies, and inside C, C++ and CUDA `#define` bodies, are listed (each body is re-parsed in place, in the file's own grammar, so positions are file positions). A body that is not code (`a ## b`, a type, a brace) adds no match, no error and no noise.
 
 Results:
 
@@ -510,7 +515,7 @@ Directory outlines (`tree`, the default) and file metadata (`files`), with no pa
 Rows are `{dir, files}` groups with a workspace-relative `dir` (`dir + "/" + name` is a local path); entry and cut fields (`clipped`, `atLeast`, `totalAvailable`): [search result shapes](TOOL_DATA_CONTRACT.md#search-result-shapes). Entries have one shape in both operations: `name (bytes[, symlink])`, `name/` for a directory, and `extras: ["details"]` adds `totalLines=N` and `modifiedMs=N` to each file. `tree` lists `path`'s own group first, then subdirectories in walk order. A bare `"name/"` entry is left out when that directory has its own group on any page; every other entry appears once. Later pages reuse the first page's walk while the listed entries are unchanged. `summary` counts what was left out: `.gitignore`d entries, policy-withheld entries (the warning counts only entries the filters could match), default-excluded directories (named, such as `build, node_modules`), and, without `includeHidden`, dot entries (pruned directories such as `.git` excluded).
 
 - A listing cut at `maxEntries` offers `next.expandScan` on its last page (doubled `maxEntries`, `scanOffset` = rows already listed); pages plus `expandScan` list every entry once.
-- A walk is bounded by time as well (10 s, the same budget as `astSearch`'s scan window). A listing that runs out of time returns the entries it read with `isPartial`, `partialReasons:["walkDeadline"]` and a warning naming the first unscanned entry (walk order is name-sorted, depth-first). It is never `empty`. The last page offers `next.continueWalk`: the same query with `walkOffset` = the walk entries inspected so far, which resumes at the first unscanned entry, so pages plus `continueWalk` list every entry of an unchanged tree once. A resumed walk replays the leading `walkOffset` entries without listing them (it still reads their directories, so a deep resume costs time before its fresh budget starts), and a resumed window with no rows is not `empty`. Warnings about skipped or withheld entries may count a replayed entry again. A cut with nothing inspected (no progress), `walkOffset` past its maximum, or a window also cut at `maxEntries` or the walk ceiling is a terminal limit: `terminalLimit`, a warning, and `narrowScope` in `hints` to a narrower `tree`. A window cut by both `maxEntries` and time offers `next.expandScan` first (its widened walk offers `continueWalk` if time cuts it again). An unnarrowed whole-tree walk with every ignore rule lifted (`includeIgnored` with `defaultExcludes:false`) over a build directory is the usual cause.
+- A walk is bounded by time as well (10 s, the same budget as `astSearch`'s scan window). A listing that runs out of time returns the entries it read with `isPartial`, `partialReasons:["walkDeadline"]` and a warning naming the first unscanned entry (walk order is name-sorted, depth-first). It is never `empty`. The last page offers `next.continueWalk`: the same query with `walkOffset` = the walk entries inspected so far, which resumes at the first unscanned entry, so pages plus `continueWalk` list every entry of an unchanged tree once. A resumed walk continues where the window it resumes stopped when the process that ran that window still holds the position (two minutes at most, and none of the directories it was inside changed, nor their ignore rules), so a deep resume costs only its own entries. Otherwise it replays the leading `walkOffset` entries without listing them (it still reads their directories, so a deep resume costs time before its fresh budget starts). A resumed window with no rows is not `empty`. The skipped, withheld, hidden and ignored counts of a window cover the entries it inspected and no others: a window ended at its `maxEntries`-th row counts only through that row, and the window that resumes there counts the rest, so the windows of one walk count each entry once. A cut with nothing inspected (no progress), `walkOffset` past its maximum, or a window also cut at `maxEntries` or the walk ceiling is a terminal limit: `terminalLimit`, a warning, and `narrowScope` in `hints` to a narrower `tree`. A window cut by both `maxEntries` and time offers `next.expandScan` first (its widened walk offers `continueWalk` if time cuts it again). An unnarrowed whole-tree walk with every ignore rule lifted (`includeIgnored` with `defaultExcludes:false`) over a build directory is the usual cause.
 - With `extras:["hints"]`, `files` page 1 offers `read` in `hints`: the `minify:"symbols"` outline of the first source or doc file.
 - A filtered `tree` that skipped dot entries offers `includeHidden` in `hints`. An empty listing whose skipped entries (`.gitignore`, dot entries, the default prune) hold matches offers `next.includeSkipped` with only the flags that find them, and a warning naming the rule, entry or directory; `files` lists `.gitignore`d entries once `defaultExcludes:false`, so that one flag is its lead for a pruned directory.
 - A missing `path`: `pathNotFound` with `viewTree` in `hints` (nearest existing parent). A file as `path`: `notADirectory` with `next.read`, its `minify:"symbols"` outline.
@@ -600,10 +605,6 @@ Results: paged; an operation whose answer rows are empty (no importer, no cycle,
 `deadCode` rows and dead clusters (mutually importing unreachable files) are candidates; confirm with `lspSearch` before removal. In a reachable file an export stays live when an import or re-export chain consumes one of its public names (`import foo from` consumes `default`), or when same-file call and containment edges reach it from a live declaration, a module-level call, or a value escape (a syntax-aware reference other than the declaration, an export clause, or a call target; never comments or strings). JS/TS counts resolved references of the declaration's own symbol; other languages count identifier tokens by name. `viaHeuristic` names the basis: `reexport-chain`, `semantic-references` (JS/TS), `syntax-references`, or `qualified-path-name` (a Rust export kept live only by an unresolved `module::name` call; a qualified call that resolves through the caller's `use`/`mod` binding credits the export exactly). Callers are keyed by declaration identity (a method `run` and a function `run` do not share liveness), and an uncalled private caller keeps nothing live. Exports renamed at the export site carry `exportedAs`; namespace imports retain all target exports. Declaration IDs identify scoped occurrences; unresolved call references do not prove identity, and value-reference counts are conservative. A file whose extraction hit its deadline keeps its gathered facts and carries `graph.traversal.deadlineExceeded`.
 
 `npx octocode graph ingest|query` ([OCTOCODE_CLI.md](../packages/octocode/docs/OCTOCODE_CLI.md)) uses the same builder with persisted snapshots, symbol-level callers/callees/impact, and issue detectors. Its `deps`/`dependents`/`path`/`cycles` file sets match `astTopology` on the same tree, except `reexportVia` rows and Rust `mod` declarations (containment in `graph`).
-
-### `astRewrite`
-
-A structural codemod: a preview by default, then an apply bound to the preview snapshot and per-file SHA-256 hashes. It is CLI-only beta and disabled in this build ([availability](#internal-external-and-hybrid-tools)): every call returns `toolUnavailable`, even with `OCTOCODE_BETA`. `npx octocode schema astRewrite` still prints its contract.
 
 ## LSP tools reference
 

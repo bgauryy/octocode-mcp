@@ -210,7 +210,6 @@ Start with `npx octocode auth status --json` (token source, identity), `npx octo
 | Token, login, Enterprise, or `clasify` key problem | [AUTHENTICATION.md troubleshooting](AUTHENTICATION.md#troubleshooting) |
 | `ghCloneRepo` unavailable | Use the CLI with `OCTOCODE_STORAGE_MODE=persistent`; MCP never exposes cloning. |
 | `astTopology` unavailable | Beta and CLI-only: set `OCTOCODE_BETA=true` or `local.beta: true` (shell or home config) and run `npx octocode astTopology`. MCP never registers it. |
-| `astRewrite` unavailable | Disabled in this build on every surface; no setting turns it on. |
 | Local tools off | Neither `OCTOCODE_ENABLE_LOCAL` nor `local.enabled` may be `false`. |
 | A tool is missing | `npx octocode schema <name>`; check `TOOLS_TO_RUN` / `tools.enabled` and `DISABLE_TOOLS` / `tools.disabled`. |
 | Slow or timeouts | The 30 s request timeout is fixed; narrow the query (path, `include`, `pageSize`) or check the network or GitHub Enterprise host. |

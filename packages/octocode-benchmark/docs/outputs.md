@@ -1,6 +1,6 @@
 # Output
 
-Saved results go to `packages/octocode-benchmark/results/` (committed); raw runs, transcripts
+Saved results go to `packages/octocode-benchmark/results/` (local, gitignored); raw runs, transcripts
 and verdicts stay in `packages/octocode-benchmark/campaigns/` (gitignored scratch). A finished
 campaign produces:
 
@@ -8,7 +8,7 @@ campaign produces:
   every judgment, from `campaign_summary.py`.
 - `results/overview/MATRIX.md` and `results/overview/matrix_summary.json` — rebuilt by `matrix_summary.py`.
 - `results/overview/index.html` — the dashboard as one static file (`build_datasets.py --static`).
-- The shareable dashboard, updated per [references/dashboard.md](dashboard.md).
+- The shareable dashboard, updated per [dashboard.md](dashboard.md).
 - `results/<campaign>/report.md` — the write-up, plus a row in `results/README.md`.
 
 Organize the write-up around what the evidence establishes. Include the arm and model

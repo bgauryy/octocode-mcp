@@ -5,7 +5,7 @@ import path from 'node:path';
 import { initTheme, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicFetchInit } from '../src/web/guard.js';
-import { clearFetchCache, fetchUrl, language, unreadReason } from '../src/web/fetch.js';
+import { language, pageFetcher, unreadReason, type PageFetcher } from '../src/web/fetch.js';
 import { search } from '../src/web/search.js';
 import { IMAGE_MAX_CHARS } from '../src/shared/spill.js';
 import { registerWebTool, webSummary } from '../src/web/web.js';
@@ -28,9 +28,13 @@ vi.mock('../src/web/guard.js', async (importOriginal) => {
 });
 
 const servers: http.Server[] = [];
+/** Each case reads through its own fetcher, so no case sees a page another one cached (the tool makes its own per registration). */
+let fetchUrl: PageFetcher;
+beforeEach(() => {
+  fetchUrl = pageFetcher();
+});
 afterEach(async () => {
   guard.stub = undefined;
-  clearFetchCache();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))));
@@ -149,6 +153,17 @@ describe('fetchUrl against a local server', () => {
     expect(await fetchUrl(`${base}/c`, undefined, privateOk)).toBe('visit 1');
     expect(await fetchUrl(`${base}/c`, undefined, privateOk)).toBe('visit 1');
     expect(languages).toEqual([language()]);
+  });
+
+  it('keeps each fetcher\'s pages to itself: another one (a reloaded web tool) reads the site again', async () => {
+    let visits = 0;
+    const base = await serve((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(`visit ${++visits}`);
+    });
+    expect(await fetchUrl(`${base}/own`, undefined, privateOk)).toBe('visit 1');
+    expect(await pageFetcher()(`${base}/own`, undefined, privateOk)).toBe('visit 2');
+    expect(await fetchUrl(`${base}/own`, undefined, privateOk)).toBe('visit 1');
   });
 
   it('asks for the system language first and English as the fallback', () => {

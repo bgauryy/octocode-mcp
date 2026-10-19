@@ -1,4 +1,4 @@
-use super::{Cause, FileProbe, Globs, Hits, PruneMode, Verdict, Walk, diagnose, ignore_rule, lift};
+use super::{Cause, FileProbe, Globs, Hits, Verdict, Walk, diagnose, ignore_rule, lift};
 use crate::tools::test_support::Fixture;
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
@@ -42,13 +42,13 @@ fn typescript(root: &Path) -> impl FnMut(Walk) -> Result<Hits, String> + '_ {
 }
 
 fn typescript_probe(root: &Path) -> FileProbe<'_> {
-    FileProbe::new(root, PruneMode::SyntaxVisible, 1_000, &|_| true, &|path| {
+    FileProbe::new(root, 1_000, &|_| true, &|path| {
         path.extension().is_some_and(|ext| ext == "ts")
     })
 }
 
 fn skipped(root: &Path, walk: Walk) -> super::Diagnosis {
-    match diagnose(root, PruneMode::SyntaxVisible, walk, typescript(root)).expect("probe") {
+    match diagnose(root, walk, typescript(root)).expect("probe") {
         Verdict::Skipped(diagnosis) => diagnosis,
         other => panic!("expected skipped matches: {other:?}"),
     }
@@ -172,7 +172,7 @@ fn separate_causes_are_unioned_and_an_empty_cause_stays_out() {
 fn causes_that_reach_the_same_files_are_alternatives() {
     let root = repo("gen/\n", &["gen"]);
     let reach = root.0.join("gen/needle.ts");
-    let verdict = diagnose(&root.0, PruneMode::SyntaxVisible, DEFAULTS, |walk| {
+    let verdict = diagnose(&root.0, DEFAULTS, |walk| {
         // Lifting the ignore files or the default prune each finds it.
         let found = walk.ignored || !walk.default_excludes;
         Ok::<_, String>(Hits {
@@ -196,12 +196,7 @@ fn nothing_behind_the_skipped_paths_is_absent() {
     let root = repo("gen/\n", &[]);
     std::fs::create_dir_all(root.0.join("gen")).expect("gen");
     std::fs::write(root.0.join("gen/a.md"), "x\n").expect("file");
-    let verdict = diagnose(
-        &root.0,
-        PruneMode::SyntaxVisible,
-        DEFAULTS,
-        typescript(&root.0),
-    );
+    let verdict = diagnose(&root.0, DEFAULTS, typescript(&root.0));
     assert!(matches!(verdict, Ok(Verdict::Absent)), "{verdict:?}");
 }
 
@@ -213,15 +208,10 @@ fn a_walk_that_skips_nothing_is_not_probed() {
         hidden: true,
         default_excludes: false,
     };
-    let verdict = diagnose(
-        Path::new("/nowhere"),
-        PruneMode::SyntaxVisible,
-        walk,
-        |_| {
-            calls.set(calls.get() + 1);
-            Ok::<_, String>(Hits::default())
-        },
-    );
+    let verdict = diagnose(Path::new("/nowhere"), walk, |_| {
+        calls.set(calls.get() + 1);
+        Ok::<_, String>(Hits::default())
+    });
     assert!(matches!(verdict, Ok(Verdict::Absent)));
     assert_eq!(calls.get(), 0);
 }
@@ -230,17 +220,12 @@ fn a_walk_that_skips_nothing_is_not_probed() {
 /// claim absence.
 #[test]
 fn a_cut_probe_that_found_nothing_is_unproven() {
-    let verdict = diagnose(
-        Path::new("/nowhere"),
-        PruneMode::SyntaxVisible,
-        DEFAULTS,
-        |_| {
-            Ok::<_, String>(Hits {
-                cut: true,
-                ..Hits::default()
-            })
-        },
-    );
+    let verdict = diagnose(Path::new("/nowhere"), DEFAULTS, |_| {
+        Ok::<_, String>(Hits {
+            cut: true,
+            ..Hits::default()
+        })
+    });
     assert!(matches!(verdict, Ok(Verdict::Unproven)), "{verdict:?}");
 }
 
@@ -273,7 +258,7 @@ fn probes_are_few() {
         (DEFAULTS, 4),
     ] {
         let count = Cell::new(0);
-        let verdict = diagnose(Path::new("/r"), PruneMode::SyntaxVisible, walk, |walk| {
+        let verdict = diagnose(Path::new("/r"), walk, |walk| {
             count.set(count.get() + 1);
             found(walk)
         });
@@ -342,10 +327,7 @@ fn a_probe_counts_only_files_the_requested_walk_did_not_reach() {
 fn nothing_behind_skipped_paths_is_absent_even_when_files_were_reached() {
     let root = repo("", &["src"]);
     let probe = typescript_probe(&root.0).beyond(DEFAULTS);
-    let verdict = diagnose(&root.0, PruneMode::SyntaxVisible, DEFAULTS, |walk| {
-        probe.find(walk)
-    })
-    .expect("probe");
+    let verdict = diagnose(&root.0, DEFAULTS, |walk| probe.find(walk)).expect("probe");
     assert!(matches!(verdict, Verdict::Absent), "{verdict:?}");
 }
 
@@ -394,12 +376,8 @@ fn one_walk_answers_every_relaxed_walk() {
         true
     };
     let keep = |path: &Path| path.extension().is_some_and(|ext| ext == "ts");
-    let probe =
-        FileProbe::new(&root.0, PruneMode::SyntaxVisible, 1_000, &permits, &keep).beyond(DEFAULTS);
-    let verdict = diagnose(&root.0, PruneMode::SyntaxVisible, DEFAULTS, |walk| {
-        probe.find(walk)
-    })
-    .expect("probe");
+    let probe = FileProbe::new(&root.0, 1_000, &permits, &keep).beyond(DEFAULTS);
+    let verdict = diagnose(&root.0, DEFAULTS, |walk| probe.find(walk)).expect("probe");
     let Verdict::Skipped(diagnosis) = verdict else {
         panic!("{verdict:?}")
     };

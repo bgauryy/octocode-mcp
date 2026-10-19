@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { globalPaths, projectHookFiles, resolveToolPath } from '../shared/home.js';
-import { errorMessage, isRecord } from '../shared/util.js';
+import { errorMessage, isRecord, stringOrEmpty } from '../shared/util.js';
 
 /**
  * Claude Code / Codex command hooks, read from the files those agents use. The shape is theirs:
@@ -115,14 +115,13 @@ interface HookCall {
   tool_input: unknown;
 }
 
-const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 /** One `file` query in Claude Code's shape: Edit / MultiEdit `{file_path, old_string, new_string | edits}`, Write `{file_path, content}`. */
 function fileQueryCall(query: Record<string, unknown>, cwd: string): HookCall {
-  const file_path = resolveToolPath(cwd, text(query['path']));
-  if (query['type'] === 'write') return { names: ['file', 'Write'], tool_name: 'Write', tool_input: { file_path, content: text(query['content']) } };
+  const file_path = resolveToolPath(cwd, stringOrEmpty(query['path']));
+  if (query['type'] === 'write') return { names: ['file', 'Write'], tool_name: 'Write', tool_input: { file_path, content: stringOrEmpty(query['content']) } };
   if (query['type'] === 'delete') return { names: ['file', 'Delete'], tool_name: 'Delete', tool_input: { file_path } };
-  const edits = (Array.isArray(query['edits']) ? query['edits'] : []).filter(isRecord).map((edit) => ({ old_string: text(edit['oldText']), new_string: text(edit['newText']) }));
+  const edits = (Array.isArray(query['edits']) ? query['edits'] : []).filter(isRecord).map((edit) => ({ old_string: stringOrEmpty(edit['oldText']), new_string: stringOrEmpty(edit['newText']) }));
   if (edits.length === 1) return { names: ['file', 'Edit'], tool_name: 'Edit', tool_input: { file_path, ...edits[0] } };
   return { names: ['file', 'MultiEdit'], tool_name: 'MultiEdit', tool_input: { file_path, edits } };
 }
@@ -139,7 +138,7 @@ export function hookCalls(tool: string, input: Record<string, unknown>, cwd: str
   const claude = { read: 'Read', edit: 'Edit', write: 'Write' }[tool];
   if (claude) {
     const { path: file, ...rest } = input;
-    return [{ names: toolAliases(tool), tool_name: claude, tool_input: { ...rest, file_path: resolveToolPath(cwd, text(file)) } }];
+    return [{ names: toolAliases(tool), tool_name: claude, tool_input: { ...rest, file_path: resolveToolPath(cwd, stringOrEmpty(file)) } }];
   }
   return [{ names: toolAliases(tool), tool_name: tool, tool_input: input }];
 }

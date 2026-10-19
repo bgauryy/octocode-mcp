@@ -34,7 +34,7 @@ const DATE = i => new Date(Date.UTC(2025, 0, 1 + i, 12)).toISOString().replace('
 const USER = { login: 'octo-dev', id: 1, type: 'User', html_url: 'https://github.com/octo-dev' };
 
 /** The model: repositories, commits, pull requests, issues, npm packages. */
-export function buildModel(fixtureDir) {
+function buildModel(fixtureDir) {
   const files = readTree(fixtureDir);
   const paths = Object.keys(files);
   // Three commits on `main`: each adds a slice of the files, newest first in listings.

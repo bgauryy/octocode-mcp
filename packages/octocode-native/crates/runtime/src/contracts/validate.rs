@@ -1,5 +1,4 @@
 mod artifact;
-mod ast_rewrite;
 mod content;
 mod depth_range;
 mod enum_value;
@@ -17,15 +16,13 @@ mod qualifiers;
 mod repair;
 mod repository;
 mod shape;
+mod structural_rule;
 pub(crate) use qualifiers::qualifier_terms;
 pub(crate) use repair::repair_input;
 mod schema;
 mod topology;
 mod union;
 use artifact::validate_artifact_registry_url;
-use ast_rewrite::{
-    validate_ast_rewrite_batch, validate_ast_rewrite_queries, validate_ast_rewrite_rules,
-};
 use github_search::{GithubSearchKind, validate_github_search_queries};
 use history::{validate_history_keyword_scope, validate_history_repository_scope};
 use local_search::validate_local_search_queries;
@@ -520,7 +517,6 @@ pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractVali
         issues.dedup();
         return Err(ContractValidationError { issues });
     }
-    apply_batch_rules(&tool["rules"], &input)?;
     Ok(input)
 }
 
@@ -578,22 +574,6 @@ impl RowPlan {
             envelope,
         }
     }
-}
-
-/// Rules that judge the whole batch once every row passed its own rules
-/// (row rules see a one-row batch): an astRewrite batch's apply count.
-fn apply_batch_rules(rules: &Value, input: &Value) -> Result<(), ContractValidationError> {
-    let has = |opcode: &str| {
-        rules.as_array().is_some_and(|rules| {
-            rules
-                .iter()
-                .any(|rule| rule["phase"] == "validate" && rule["opcode"] == opcode)
-        })
-    };
-    if has("ast_rewrite_apply") {
-        validate_ast_rewrite_batch(input)?;
-    }
-    Ok(())
 }
 
 /// The one input shape every host's call takes: a bare query row (an object
@@ -865,7 +845,6 @@ fn apply_validation_rules(rules: &Value, input: &Value) -> Result<(), ContractVa
             Some("github_repo_search_runnable") => {
                 validate_github_search_queries(input, GithubSearchKind::Repositories)
             }
-            Some("ast_rewrite_apply") => validate_ast_rewrite_queries(input),
             Some("local_search_mode") => validate_local_search_queries(input),
             Some("ast_topology") => validate_topology_queries(input),
             Some("history_keyword_scope") => validate_history_keyword_scope(input),
@@ -881,8 +860,8 @@ fn apply_validation_rules(rules: &Value, input: &Value) -> Result<(), ContractVa
                 rule["id"].as_str().unwrap_or("operation_controls"),
                 &rule["args"],
             ),
-            Some("ast_rewrite_rule") => validate_ast_rewrite_rules(input),
             Some("depth_range") => depth_range::validate(input),
+            Some("structural_rule") => structural_rule::validate(input),
             Some(opcode) => {
                 return Err(issue(
                     "contract.unsupported-validator",
@@ -1274,7 +1253,7 @@ mod tests {
     fn an_unknown_rule_key_shows_one_valid_rule() {
         let unknown = validate(
             "astSearch",
-            json!({"queries":[{"operation":"match","path":"/tmp","rule":{"kind":"function_item","has":{"field":"name"}},"mainGoal":"test","reasoning":"Exercise rule validation."}]}),
+            json!({"queries":[{"operation":"match","path":"/tmp","rule":{"kind":"function_item","has":{"constraints":{}}},"mainGoal":"test","reasoning":"Exercise rule validation."}]}),
         )
         .expect_err("unknown rule key");
         let error = format_input_error("astSearch", &unknown);
@@ -1426,14 +1405,6 @@ mod tests {
             ),
             "{owner}"
         );
-        let swapped = details(
-            "astRewrite",
-            json!({"path":"/r","language":"typescript","pattern":"a($A)","fix":"b($A)"}),
-        );
-        assert!(
-            swapped.contains("Missing required field: rewrite (pattern takes rewrite"),
-            "{swapped}"
-        );
         let dependents = details("astTopology", json!({"operation":"dependents","path":"/r"}));
         assert!(
             dependents.contains("Missing required field: source (Set source to the start file"),
@@ -1494,6 +1465,27 @@ mod tests {
             formatted["error"],
             "Remove 'state' from queries[0]: it applies only with operation one of \"pullRequest\", \"issue\".",
             "{formatted}"
+        );
+    }
+
+    #[test]
+    fn offers_either_fix_for_a_field_of_clasify_sections() {
+        let legacy = json!({
+            "id":"legacy",
+            "resources":[{"id":"evidence","value":"Supplied evidence."}],
+            "questions":[{"id":"bounded","type":"yesno","ask":"Is evidence supplied?"}]
+        });
+        let error = validate("clasify", json!({"queries":[legacy]}))
+            .expect_err("resources belongs to the sections form");
+        assert_eq!(
+            format_input_error("clasify", &error),
+            json!({
+                "error":"'resources' in queries[0] applies only with operation:\"sections\": set it, or remove 'resources'.",
+                "details":[
+                    "queries.0.questions: Expected object",
+                    "queries.0: Send exactly one of: state, source."
+                ]
+            })
         );
     }
 

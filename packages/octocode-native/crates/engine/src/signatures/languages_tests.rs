@@ -12,7 +12,6 @@ fn excluded_grammars_report_unsupported_across_native_capabilities() {
     ] {
         assert!(find_entry(ext).is_none(), ".{ext} must not load a grammar");
         assert!(!supported_extensions().contains(&ext));
-        assert!(!supported_extensions().contains(&ext));
         let file = format!("fixture.{ext}");
         assert!(crate::lsp::grammar::grammar_for_file(&file).is_none());
         let result = crate::structural::search_detailed(

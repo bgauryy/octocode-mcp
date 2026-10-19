@@ -24,11 +24,11 @@ scripts/run_campaign.sh $CAMP mcp,gh-lean 1 all 4       # arms · passes · ques
 python3 scripts/question_catalog.py external/questions |
   xargs -P 4 -I{} scripts/judge_pair.sh $CAMP mcp gh-lean 1 {}
 
-# 3. Summarize the campaign into committed results, then rebuild the matrix.
+# 3. Summarize the campaign into results/ (local), then rebuild the matrix.
 python3 scripts/campaign_summary.py $CAMP --octocode-label "Octocode v20 (local 20.1.1)"
 python3 scripts/matrix_summary.py                       # → results/overview/MATRIX.md, results/overview/matrix_summary.json
 
-# 4. Show it: static page in the repo, and the shareable dashboard (references/dashboard.md).
+# 4. Show it: static page in the repo, and the shareable dashboard (`docs/dashboard.md`).
 python3 dashboard/build_datasets.py --static results/overview/index.html
 ```
 
@@ -114,7 +114,7 @@ fixed tool sequences. Preserve only fields consumed by the harness.
 
 ## Outputs
 
-- `results/<campaign>/run.json` — every run and judgment of a campaign (committed).
+- `results/<campaign>/run.json` — every run and judgment of a campaign (local, gitignored).
 - `results/overview/MATRIX.md`, `results/overview/matrix_summary.json` — every arm against the anchor and each other.
 - `results/overview/index.html` — the dashboard as one static file.
 - The shareable dashboard artifact — `docs/dashboard.md`.

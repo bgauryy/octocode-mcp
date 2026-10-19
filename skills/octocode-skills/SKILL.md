@@ -1,6 +1,6 @@
 ---
 name: octocode-skills
-description: "Load this skill first whenever a SKILL.md or skill folder is created, changed, reviewed, installed, or synced, including turning a workflow into a skill, before asking which skill or host. Use when creating, finding, reviewing, rating, simplifying, repairing, installing, or syncing Agent Skills: SKILL.md lobbies, descriptions and activation triggers, references, scripts, folder structure, and installs for Claude, Cursor, Codex, and other hosts; good for making a skill easy for agents to discover and follow. Not for writing a skill's domain content or prompts (octocode-agentic-prompts) or measuring activation (octocode-eval-benchmark)."
+description: "Load this skill first whenever a SKILL.md or skill folder is created, changed, reviewed, installed or synced, or a workflow becomes a skill; good for descriptions, triggers, structure and host installs."
 ---
 
 # Octocode Skills
@@ -28,7 +28,7 @@ Add a field or file only for a real consumer.
 | Component | Rule |
 |---|---|
 | `name` | Matches the folder; stable; changes only with scope; never tied to one example or implementation. |
-| `description` | "Load this skill first whenever <concrete triggers>, even if ... . Use when ...; good for ...; Not for ... (neighbor)". Assertive trigger first (hosts under-trigger); load before asking for missing details. Related intents in varied natural phrasing; setup and execution rules in the body. |
+| `description` | "Load this skill first whenever <concrete triggers>, even if ...; good for <one distinctive capability>." Assertive trigger first (hosts under-trigger); load before asking for missing details. Each intent once, in natural phrasing; no "Not for" list (Related skills in the body routes neighbors); about 300 characters, since every session loads every description; no apostrophes (Pi sends each as `&apos;`). Setup and execution rules in the body. |
 | Frontmatter | [Spec](https://agentskills.io/specification): required `name` and `description` (format and length checked by `skill-review.mjs`); optional `license` (name or bundled file), `compatibility` (real environment needs, ≤500 characters), `metadata` (string map, consumer only), experimental `allowed-tools` (space-separated). Prefer portable fields; verify a host extension or `allowed-tools` in that host's docs or loader and state the requirement; never copy one host's metadata, hooks, or permissions into every skill; no invented mandatory metadata. Advanced YAML or publishing: a YAML-aware validator (`skill-review.mjs` checks only common scalars). |
 | `SKILL.md` lobby | Purpose, one Mermaid flow, sections named for situations or steps, Resources, Related skills, Output route. |
 | Mermaid | Real flow, branches, retries, or handoffs, with labeled decision edges; none for a simple instruction; file inventories go in route tables. |

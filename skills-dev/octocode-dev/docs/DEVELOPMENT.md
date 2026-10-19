@@ -2,7 +2,7 @@
 
 This page owns the native crate map, the contract pipeline, build commands, development-only environment variables, and ownership rules. Repository-wide agent rules are in `<repo>/AGENTS.md`. The tool concept is in `<repo>/docs/OCTOCODE_PROTOCOL.md`.
 
-Other dev docs: [ADDING_CONFIG.md](ADDING_CONFIG.md) (new settings), [TOOL_QUALITY.md](TOOL_QUALITY.md) (acceptance criteria), [RELEASE.md](RELEASE.md) (release gates), [scripts/README.md](../scripts/README.md) (root automation), and the [benchmark results](../../../packages/octocode-benchmark/results/SUMMARY.md).
+Other dev docs: [ADDING_CONFIG.md](ADDING_CONFIG.md) (new settings), [TOOL_QUALITY.md](TOOL_QUALITY.md) (acceptance criteria), [RELEASE.md](RELEASE.md) (release gates), [scripts/README.md](../scripts/README.md) (root automation), and the [benchmark package](../../../packages/octocode-benchmark/README.md) (its results stay local in `packages/octocode-benchmark/results/`).
 
 ## Runtime flow
 
@@ -24,7 +24,7 @@ The package map is in `<repo>/AGENTS.md`. Native Cargo crates under `packages/oc
 | Crate dir | Cargo name | Owns |
 |---|---|---|
 | `runtime` | `octocode-native` | Tool catalog, validation, config resolution, GitHub auth, providers, security, response shaping, pagination, `clasify`; `build.rs` embeds `packages/octocode-config/contract/` |
-| `engine` | `octocode-engine` | Primitives: text search, tree-sitter AST and rewrite, LSP client pool, minification, secret scanning, code graph |
+| `engine` | `octocode-engine` | Primitives: text search, tree-sitter AST, LSP client pool, minification, secret scanning, code graph |
 | `github` | `octocode-github` | GitHub REST/GraphQL transport, bounded provider operations, credential traits |
 | `cli` | `octocode-cli` | The native `octocode` binary: tool commands, `schema`, `config`, `auth`, `graph`, `skill`, `install` |
 | `runtime-napi` | `octocode-runtime-napi` | N-API adapter the MCP server loads in-process |
@@ -113,7 +113,6 @@ Run from the repo root. Repo-wide tasks run through `node skills-dev/octocode-de
 - **latency**: every call fits the tool's budget; all timings are recorded;
 - **extra**: tool-specific checks, such as clone auth and the clone's local follow-up leads.
 
-A parked tool (contract `disabled`, currently `astRewrite`) is checked only for its `toolUnavailable` error on the CLI and its absence from MCP.
 
 It is hermetic: a temp `OCTOCODE_HOME`/`HOME`, no user token, fixtures in `packages/octocode-benchmark/local/e2e/fixtures/tool-health/` (or a per-tool temp copy with extra files), and a loopback mock (`harness/tool-health/mock-server.mjs`) for GitHub REST (`GITHUB_API_URL`), git smart HTTP, an npm registry (`registryUrl` with `OCTOCODE_ALLOW_PRIVATE_REGISTRY`) and the classification provider (`OCTOCODE_CLASSIFICATION_API_HOST`). Every proxy variable points at a dead loopback port, so a request that would leave the machine fails the run. Each tool and surface gets its own fake GitHub token and its own MCP server. The runtime paces GitHub searches per token, so all tools run in parallel; a run takes about 15 s. `--deep` adds seeds for more operations and allows more leads per seed (about 25 s). A contract tool without a case fails the run. Cases live in `harness/tool-health/cases.mjs`.
 

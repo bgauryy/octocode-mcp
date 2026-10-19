@@ -1,6 +1,6 @@
 ---
 name: octocode-roast
-description: "Load this skill first whenever the user asks for a roast or a savage, brutal, harsh, or no-mercy critique of code, a pull request, or a design. Use when someone asks for a blunt, brutal, or harsh critique or roast of code, a repository, a config, or a design; good for ranking defects, debt, hot paths, and cleanup priorities with evidence, then fixing the worst offenders when asked. Not for a neutral pull-request review (octocode-research) or cleanup without a critique (octocode-clean-agentic-code)."
+description: "Load this skill first whenever the user asks for a roast or brutal critique of code, a PR or a design; ranks defects and debt with evidence, fixes the worst on request."
 ---
 
 # Octocode Roast

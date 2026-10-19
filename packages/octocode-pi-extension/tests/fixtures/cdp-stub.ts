@@ -27,7 +27,7 @@ export interface StubPage {
 }
 
 /** A target the browser attaches a session to by itself. */
-export interface AutoAttachSpec {
+interface AutoAttachSpec {
   id: string;
   type: string;
   url?: string;

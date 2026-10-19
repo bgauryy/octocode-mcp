@@ -36,7 +36,7 @@ known-key lists.
 
 ## Ownership
 
-- `src/home.ts` owns `OCTOCODE_HOME`, the platform default, and the `.octocoderc` paths.
+- `src/home.ts` owns `OCTOCODE_HOME` and the platform default.
 - `src/dotenv.ts` owns `.env` parsing, precedence, propagation, protected keys, and workspace override restrictions.
 - `.octocoderc` parsing and setting resolution are native (`npx octocode config` shows the result).
 - The root export exposes generated `CONFIG_FIELDS` and `DEFAULT_CONFIG` for configuration editors.

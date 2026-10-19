@@ -59,7 +59,7 @@ allow-wildcard-paths = true # versionless path deps between our publish=false cr
 # Each entry is a duplicate that upstream crates force; a new duplicate, or one
 # whose version moves, shows up as a warning until it is listed here.
 skip = [
-    # Upstream: ast-grep and oxc pin syn 2; newer proc-macro crates use syn 3.
+    # Upstream: oxc pins syn 2; newer proc-macro crates use syn 3.
     { name = "syn", version = "2.0.119" },
     # Upstream: num-bigint 0.4 (oxc) and 0.5 (newer numeric crates) coexist.
     { name = "num-bigint", version = "0.4.8" },

@@ -67,7 +67,7 @@ function randomControlPoints(start, end) {
 }
 
 /** Bezier-curve mouse movement from (startX, startY) to (endX, endY): array of {method, params, delayMs}. */
-export function buildMouseMoveEvents(
+function buildMouseMoveEvents(
   startX,
   startY,
   endX,
@@ -155,7 +155,7 @@ export function buildMouseMoveEvents(
 }
 
 /** mouseDown -> wait -> mouseUp at (x, y): array of {method, params, delayMs}. */
-export function buildClickEvents(x, y, opts: ClickOptions = {}) {
+function buildClickEvents(x, y, opts: ClickOptions = {}) {
   const {
     isInput = false,
     aimDelayMs = isInput ? [60, 180] : [30, 100],
@@ -216,7 +216,7 @@ const MODIFIERS = {
 };
 
 /** CDP key fields for a named key (Enter, ArrowDown…) or one character. */
-export function keyDefinition(key) {
+function keyDefinition(key) {
   const named =
     NAMED_KEYS[
       key === ' '
@@ -398,7 +398,7 @@ export function buildScrollEvents(x, y, deltaY, opts: ScrollOptions = {}) {
 }
 
 /** Move from (fromX, fromY) to (targetX, targetY) then click: combined event sequence. */
-export function buildHumanClickSequence(
+function buildHumanClickSequence(
   fromX,
   fromY,
   targetX,

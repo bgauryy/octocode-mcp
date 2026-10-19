@@ -5,7 +5,7 @@ import {rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
-import { nativeBinary as binary, tempDir, jsonCall } from './helpers.mjs';
+import { binary, tempDir, jsonCall } from './helpers.mjs';
 function fixture(t){
  const workspace=tempDir('communication-stop-', { real: true }),database=join(workspace,'mail.sqlite');
  const call=jsonCall(binary,workspace,database,{stdio:'pipe',timeout:10000});

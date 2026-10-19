@@ -10,7 +10,7 @@
 
 // Pauses new child targets until their overrides are set, so their first request
 // already carries them.
-export const STEALTH_AUTO_ATTACH = {
+const STEALTH_AUTO_ATTACH = {
   autoAttach: true,
   waitForDebuggerOnStart: true,
   flatten: true,
@@ -40,7 +40,7 @@ const HOST_PROBE = `(async () => {
  * Reads the browser's own identity from a fresh target. navigator.userAgentData
  * needs a secure context; chrome://version is one and carries no overrides.
  */
-export async function readHostIdentity(cdp) {
+async function readHostIdentity(cdp) {
   const { targetId } = await cdp.send('Target.createTarget', {
     url: 'chrome://version/',
     background: true,
@@ -83,7 +83,7 @@ type UserAgentOs = {
 };
 
 // The OS a user agent string names, in the shape its client hints report. Null when it names none: nothing can then be matched to it.
-export function userAgentOs(userAgent: string): UserAgentOs | null {
+function userAgentOs(userAgent: string): UserAgentOs | null {
   const os = (fields: Partial<UserAgentOs>): UserAgentOs => ({
     platform: '',
     mobile: false,

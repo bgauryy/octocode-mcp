@@ -11,9 +11,9 @@ import { canonicalPath, isWithin, repoKey, sessionsRoot } from './home.js';
  * (`readableHistory`); another repository's asks. The `archive` tool searches and reads them here.
  */
 
-export type Relation = 'this session' | 'forked from' | 'parent session' | 'same repository';
+type Relation = 'this session' | 'forked from' | 'parent session' | 'same repository';
 
-export interface HistorySession {
+interface HistorySession {
   /** The session's folder name (its id as a folder name). */
   id: string;
   /** Its archive folder. */
@@ -131,7 +131,7 @@ export function filesUnder(files: readonly HistoryFile[], target: string): Histo
 }
 
 /** Lines shown around each hit. */
-export const HIT_CONTEXT = 4;
+const HIT_CONTEXT = 4;
 /**
  * A context line (not a hit) longer than this is shown as a pointer to read it with `file` and `line`, never as a part of
  * it. A hit line is always whole, split across pages when it is longer than one.
@@ -179,13 +179,13 @@ function paginate(blocks: ReadonlyArray<{ heading?: string; lines: string[] }>):
   return pages.map((page) => page.join('\n'));
 }
 
-export interface HistoryPage {
+interface HistoryPage {
   text: string;
   page: number;
   pages: number;
 }
 
-export interface SearchResult extends HistoryPage {
+interface SearchResult extends HistoryPage {
   hits: number;
   files: number;
 }
@@ -246,7 +246,7 @@ export function searchHistory(files: readonly HistoryFile[], pattern: RegExp, pa
   return { text: pages[index - 1] ?? '', page: index, pages: blocks.length === 0 ? 0 : pages.length, hits, files: blocks.length };
 }
 
-export interface ReadResult extends HistoryPage {
+interface ReadResult extends HistoryPage {
   first: number;
   last: number;
   total: number;

@@ -11,7 +11,7 @@ The native `crates/engine` crate owns the reusable code graph model and algorith
 - `SnapshotMetadata` holds the scan root, the graph-fact schema, and each normalized source path with its content digest.
 - `GraphCompleteness` records whether the scan was complete and why not.
 
-The implementation is in `src/graph/model.rs` and `src/graph/diff.rs`. Native graph-fact extraction crosses the Rust package boundary as `GraphFactsMappedScan<T>`: `scan_graph_facts` hands each parsed file to the caller's map as a borrowed `GraphFactsView`, and the scan keeps only what the map returns. `FactsSource` picks full graph facts (`Graph`) or the caller's cached declarations (`Declarations`).
+The implementation is in `src/graph/model.rs` and `src/graph/diff.rs`. Native graph-fact extraction crosses the Rust package boundary as `GraphFactsMappedScan<T>`: `scan_walked_graph_facts` takes a `walk_graph_fact_files` walk, hands each parsed file to the caller's map as a borrowed `GraphFactsView`, and keeps only what the map returns. `FactsSource` picks full graph facts (`Graph`) or the caller's cached declarations (`Declarations`).
 
 ## Ingestion flow
 
@@ -78,7 +78,7 @@ reported fresh.
 - **`DIAG`, `FDIG`, `FCMP`, `ENTR`:** diagnostics, per-file digests,
   components, and entrypoints.
 - **`FSTM`** (optional): per-file size, mtime, ctime and inode, recorded only
-  for files untouched for 2 seconds before the scan. An unchanged-tree re-ingest
+  for files untouched for 2 seconds (`SourceStamp::SETTLE`) before the scan. An unchanged-tree re-ingest
   compares these stamps before hashing a source; a file without a stamp, or with
   a different one, is hashed.
 - **Adjacency:** both CSR directions are rebuilt on load in O(V + E) instead

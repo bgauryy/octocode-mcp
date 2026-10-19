@@ -39,10 +39,9 @@ Capture artifacts and state live in `<cwd>/.octocode/octocode-chrome-devtools/tm
 ```sh
 yarn workspace @octocodeai/octocode-chrome-devtools verify
 yarn workspace @octocodeai/octocode-chrome-devtools test:live
-yarn workspace @octocodeai/octocode-chrome-devtools test:webmcp
 ```
 
-`verify` builds, typechecks all TypeScript sources (strict checking at the shared boundaries), checks tooling syntax and the guidance-only skill boundary, runs the hermetic groups, then runs the same advanced local Chrome fixtures through raw CLI, MCP and typed CLI. It also packs and extracts the package outside the monorepo, launches isolated Chrome, executes the documented research capture through both transports, verifies a typed CLI CDP call and checks a synthetic cookie round trip. Run `test:package` for that archive smoke test alone. `build` rewrites every generated engine/adapter/config output and deletes obsolete ones.
+`verify` builds, typechecks all TypeScript sources (strict checking at the shared boundaries), checks tooling syntax and the guidance-only skill boundary, runs the hermetic groups, then runs the same advanced local Chrome fixtures through raw CLI, MCP and typed CLI. It also packs and extracts the package outside the monorepo, launches isolated Chrome, executes the documented research capture through both transports, verifies a typed CLI CDP call and checks a synthetic cookie round trip. `test:webmcp` is part of `verify`: it launches a headless Chrome with the WebMCP feature and checks tool listing and invocation on a local fixture (about 8 s). Run `test:package` for that archive smoke test alone. `build` rewrites every generated engine/adapter/config output and deletes obsolete ones.
 
 The protocol suite plan-validates every advertised command/event offline (`planValidatedCommands`) and reports the methods its fixtures send to Chrome (`testedMethods`). Representative fixtures cover DOM/CSS/accessibility, trusted input, workers, interception, debugger/CPU profiling, heap chunks, trace/PDF streams, WebSockets, storage, emulation, large plans, readiness and fail-stop evidence. Use `--only <name>`, `--transport legacy|mcp|typed-cli` and `--report /absolute/coverage.json` for focused verification.
 

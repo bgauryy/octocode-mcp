@@ -82,7 +82,7 @@ describe('generated tool types', () => {
     for (const tool of ['GhGetFileContentQuery', 'LocalFetchQuery']) {
       expect(JSON.stringify(defs[tool])).toContain('"$ref":"#/$defs/WindowUnit"');
     }
-    expect(defs.AstRule).toBeDefined();
+    expect(defs.AstSearchRule).toBeDefined();
     // No positional or heuristic names leak out of the bundle.
     expect(Object.keys(defs).filter((name) => /^Shared|__schema/.test(name))).toEqual([]);
   });

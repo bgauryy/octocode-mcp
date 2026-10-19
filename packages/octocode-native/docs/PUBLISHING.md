@@ -49,7 +49,7 @@ yarn workspace @octocodeai/octocode-native verify
 npm pack --dry-run --workspace @octocodeai/octocode-native
 ```
 
-Before publishing, confirm that all 12 artifacts exist, the host addon loads, each staged binary prints the package version on its own platform, and the dry-run tarballs hold only release files. Platform packages have no `prepublishOnly` hook. The generated-contract provenance test needs a clean, current Core source receipt; never regenerate it to hide a dirty source tree.
+Before publishing, confirm that all 14 artifacts (a binary and an addon for each of the seven platforms) exist, the host addon loads, each staged binary prints the package version on its own platform, and the dry-run tarballs hold only release files. Platform packages have no `prepublishOnly` hook. The generated-contract provenance test needs a clean, current Core source receipt; never regenerate it to hide a dirty source tree.
 
 ## Canary and promotion
 

@@ -7,7 +7,7 @@ import { FIXTURES, ROOT, checks, collect, declarations, lspCallers, findHint, ne
 
 const { check, summary } = checks('workflows');
 const client = await startServer();
-const { call, raw } = client;
+const { call } = client;
 const NATIVE = path.join(ROOT, 'packages/octocode-native');
 const LSP = path.join(FIXTURES, 'lsp');
 const locations = e => lspLocations(e).map(l => rootPath(e, l.path));

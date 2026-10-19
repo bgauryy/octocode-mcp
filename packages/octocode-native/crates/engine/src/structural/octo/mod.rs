@@ -15,8 +15,8 @@ mod rule;
 
 pub(super) use error::CompileError;
 pub(super) use matching::{ExecutionError, named_children, node_text, parse_tree_with_deadline};
-pub use rule::EXAMPLE_RULE;
-pub(super) use rule::{RawRule, parse_rule};
+pub use rule::{EXAMPLE_RULE, validate_rule_shape};
+pub(super) use rule::{RawPattern, RawRule, parse_rule};
 
 #[cfg(test)]
 pub(super) use matching::INTERRUPT_NEXT_COMPILE_PARSE;
@@ -28,7 +28,6 @@ use line_index_support::{to_structural_match, to_structural_match_with_index};
 use matching::{CandidateVisitor, CaptureEnv, collect_kind_matches, visit_named_expanding_macros};
 pub(super) use matching::{Found, MatchWithKind};
 use pattern::CompiledPattern;
-pub(super) use pattern::PatternContext;
 pub use pattern::PatternDeclaration;
 use recovery::Recovery;
 pub use rule::RULE_INVALID;
@@ -66,12 +65,6 @@ pub(super) fn matches_with_recovery(
     run(content, &mut found)?;
     let recovered = found.recovered();
     Ok((found.into_matches(), recovered))
-}
-
-/// The parse context `pattern` compiles in for `lang`, when it needs one
-/// ([`PatternContext`]).
-pub(super) fn pattern_context(lang: &AgLanguage, pattern: &str) -> Option<PatternContext> {
-    CompiledPattern::new(lang, pattern).ok()?.context().cloned()
 }
 
 /// The declaration `pattern` spells in `lang` ([`CompiledPattern::declaration`]).

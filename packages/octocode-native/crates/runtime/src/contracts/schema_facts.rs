@@ -324,10 +324,6 @@ mod tests {
             (ToolId::GhSearchCode, None, "pageSize", "maximum"),
             (ToolId::GhSearchRepo, None, "pageSize", "maximum"),
             (ToolId::GhStructure, None, "pageSize", "maximum"),
-            (ToolId::AstRewrite, None, "maxFiles", "default"),
-            (ToolId::AstRewrite, None, "maxMatches", "default"),
-            (ToolId::AstRewrite, None, "page", "default"),
-            (ToolId::AstRewrite, None, "pageSize", "default"),
             (ToolId::AstSearch, Some("match"), "matchPageSize", "maximum"),
             (
                 ToolId::AstSearch,

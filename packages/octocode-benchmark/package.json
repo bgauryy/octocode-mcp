@@ -4,7 +4,9 @@
   "version": "20.2.0",
   "bugs": "https://github.com/bgauryy/octocode/issues",
   "devDependencies": {
-    "@octocodeai/config": "workspace:*"
+    "@octocodeai/config": "workspace:*",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
   },
   "engines": {
     "node": "^24.15.0"

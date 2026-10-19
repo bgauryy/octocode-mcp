@@ -86,7 +86,7 @@ export function toStorageStateCookie(c) {
 }
 
 /** RFC 6265 domain match: host-only cookies match their exact host. */
-export function cookieMatchesHost(c, host: string) {
+function cookieMatchesHost(c, host: string) {
   const domain = String(c.domain || '').toLowerCase();
   if (!domain) return false;
   host = host.toLowerCase();

@@ -95,10 +95,13 @@ See [method and isolation](docs/method.md), [runner configuration](docs/running.
 
 ## Find and save results
 
-- [Results index](results/README.md): each result has its own directory and brief `README.md`.
+Results live in `results/`, which is local and gitignored (repository `.gitignore`); share a
+result by publishing its directory, not by committing it.
+
+- `results/README.md`: the local results index; each result has its own directory and brief `README.md`.
 - `results/<campaign>/run.json`: measured runs, attempts and judgments, written by the summary.
 - `results/<result>/report.md`: detailed analysis; related dashboards and data stay beside it.
-- [Overview](results/overview/README.md): default matrix, dashboard and historical aggregate data.
+- `results/overview/README.md`: default matrix, dashboard and historical aggregate data.
 - `campaigns/<name>/`: raw transcripts, sealed answers, receipts and judge attempts; gitignored.
 
 A result README states the comparison and links its evidence. Preserve existing reports and

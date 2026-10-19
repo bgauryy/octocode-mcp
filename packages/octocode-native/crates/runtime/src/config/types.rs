@@ -382,13 +382,6 @@ pub struct ConfigInspectorData {
     pub project_config_keys: Vec<String>,
     pub diagnostics: Vec<ConfigDiagnostic>,
 }
-impl ConfigInspectorData {
-    pub fn is_set(&self, key: &str, effective_env: &BTreeMap<String, String>) -> bool {
-        effective_env
-            .get(key)
-            .is_some_and(|value| !value.is_empty())
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoadConfigResult {

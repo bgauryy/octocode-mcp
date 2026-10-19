@@ -37,8 +37,7 @@ Settings: [configuration](https://github.com/bgauryy/octocode/blob/main/docs/CON
 | `astTopology` | Beta, CLI only: dependency and reachability topology. |
 | `clasify` | Beta: typed answers about unread text, images, or held data. Also needs `OCTOCODE_CLASSIFICATION_API` ([clasify](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md)). |
 
-Beta means `OCTOCODE_BETA=true` (or `local.beta: true`). `astRewrite` is parked
-in this build: no surface lists or runs it, with or without beta.
+Beta means `OCTOCODE_BETA=true` (or `local.beta: true`).
 
 ### System
 

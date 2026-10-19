@@ -1,5 +1,5 @@
 //! Why a local walk came back empty: the one diagnosis `localSearch`,
-//! `structureSearch`, `astSearch` and `astRewrite` share.
+//! `structureSearch` and `astSearch` share.
 //!
 //! A walk skips three kinds of path: `.gitignore`d ones, hidden (dot) ones and
 //! default-excluded ones (`node_modules/`, `build/`, …). An empty result may
@@ -11,7 +11,7 @@
 //! excluded directory, and sets exactly those flags on the tool's lead query.
 //! Each tool builds the lead itself through its own continuation builder.
 
-use crate::policy::prune::PruneMode;
+use crate::policy::prune;
 use octocode_engine::error::Error;
 use octocode_engine::search::walk::{IgnorePolicy, IgnoreRules, Prune, pruned_walk_builder};
 use serde_json::{Value, json};
@@ -293,18 +293,16 @@ pub(crate) enum Verdict {
 /// union of those that reach different files).
 pub(crate) fn diagnose<E>(
     root: &Path,
-    mode: PruneMode,
     walk: Walk,
     probe: impl FnMut(Walk) -> Result<Hits, E>,
 ) -> Result<Verdict, E> {
-    diagnose_shown(root, mode, walk, &|path| below(root, path), probe)
+    diagnose_shown(root, walk, &|path| below(root, path), probe)
 }
 
 /// [`diagnose`] whose reasons spell paths with `shown` (a tool whose rows
 /// name paths relative to the workspace names its rules the same way).
 pub(crate) fn diagnose_shown<E>(
     root: &Path,
-    mode: PruneMode,
     walk: Walk,
     shown: &dyn Fn(&Path) -> String,
     mut probe: impl FnMut(Walk) -> Result<Hits, E>,
@@ -391,7 +389,7 @@ pub(crate) fn diagnose_shown<E>(
         let causes = subset(*mask);
         for file in found.sample.iter().take(SAMPLE_FILES) {
             let rules = rules.get_or_init(|| IgnoreRules::new(root));
-            if let Some(skip) = skip_of(root, rules, mode, file, &causes, shown)
+            if let Some(skip) = skip_of(root, rules, file, &causes, shown)
                 && !skips.iter().any(|known| known.reason == skip.reason)
             {
                 skips.push(skip);
@@ -421,14 +419,13 @@ impl Tagged {
     /// skip.
     pub(crate) fn found(
         root: &Path,
-        mode: PruneMode,
         globs: Globs<'_>,
         files: impl IntoIterator<Item = PathBuf>,
         cut: bool,
     ) -> Result<Self, String> {
         let overrides = globs.overrides(root).map_err(|error| error.reason)?;
         let rules = IgnoreRules::new(root);
-        let prune = Prune::new(mode.directories(true)).at(root);
+        let prune = Prune::new(prune::directories(true)).at(root);
         let files = files
             .into_iter()
             .map(|file| {
@@ -491,7 +488,6 @@ impl Tagged {
 /// `globs`, ignore rules and prune list the tool's scan honors.
 pub(crate) struct FileProbe<'a> {
     root: PathBuf,
-    mode: PruneMode,
     budget: usize,
     deadline: std::time::Instant,
     globs: Globs<'a>,
@@ -507,14 +503,12 @@ pub(crate) struct FileProbe<'a> {
 impl<'a> FileProbe<'a> {
     pub(crate) fn new(
         root: &Path,
-        mode: PruneMode,
         budget: usize,
         permits: &'a dyn Fn(&Path) -> bool,
         keep: &'a dyn Fn(&Path) -> bool,
     ) -> Self {
         Self {
             root: root.to_path_buf(),
-            mode,
             budget,
             deadline: std::time::Instant::now() + probe_budget(),
             globs: Globs::default(),
@@ -557,7 +551,7 @@ impl<'a> FileProbe<'a> {
             .overrides(overrides.clone())
             .sort_by_file_name(std::ffi::OsStr::cmp);
         let rules = IgnoreRules::new(&self.root);
-        let prune = Prune::new(self.mode.directories(true));
+        let prune = Prune::new(prune::directories(true));
         // Tag bits of each directory on the way to the current entry, by depth.
         let mut inherited: Vec<u8> = vec![0];
         let (mut files, mut walked) = (Vec::new(), 0_usize);
@@ -621,7 +615,6 @@ impl<'a> FileProbe<'a> {
 fn skip_of(
     root: &Path,
     rules: &IgnoreRules,
-    mode: PruneMode,
     file: &Path,
     causes: &[Cause],
     shown: &dyn Fn(&Path) -> String,
@@ -633,7 +626,7 @@ fn skip_of(
             let (entry, reason) = match cause {
                 Cause::Ignored => ignored_entry(rules, file, shown),
                 Cause::Hidden => hidden_entry(root, file, shown),
-                Cause::DefaultExcluded => excluded_entry(root, mode, file, shown),
+                Cause::DefaultExcluded => excluded_entry(root, file, shown),
             }?;
             Some(Skip {
                 cause,
@@ -647,16 +640,11 @@ fn skip_of(
 /// a probe that ran out of time can still name what it could not search.
 /// Directories only, found as the children the ignore-aware walk did not
 /// enter, within `stop`.
-pub(crate) fn ignored_directories(
-    root: &Path,
-    mode: PruneMode,
-    walk: Walk,
-    stop: &dyn Fn() -> bool,
-) -> Vec<Skip> {
+pub(crate) fn ignored_directories(root: &Path, walk: Walk, stop: &dyn Fn() -> bool) -> Vec<Skip> {
     if walk.ignored {
         return Vec::new();
     }
-    let pruned = mode.directories(walk.default_excludes);
+    let pruned = prune::directories(walk.default_excludes);
     let Ok(walker) = walk.walker(root, &pruned, Globs::default()) else {
         return Vec::new();
     };
@@ -753,11 +741,10 @@ fn hidden_entry(
 /// when it is a generated one the default excludes skip (`*.min.js`).
 fn excluded_entry(
     root: &Path,
-    mode: PruneMode,
     file: &Path,
     shown: &dyn Fn(&Path) -> String,
 ) -> Option<(PathBuf, String)> {
-    let prune = Prune::new(mode.directories(true));
+    let prune = Prune::new(prune::directories(true));
     let directory = prefixes(root, file)
         .into_iter()
         .filter(|(prefix, is_dir)| {

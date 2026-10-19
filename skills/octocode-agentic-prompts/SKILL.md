@@ -1,6 +1,6 @@
 ---
 name: octocode-agentic-prompts
-description: "Load this skill first whenever you write or fix a system prompt, a subagent brief, an AGENTS.md or CLAUDE.md rule, or a tool description, or an agent ignores its instructions, even when the ask is to check whether smaller models understand a protocol or tool schema. Use when an instruction an agent reads needs writing or produces the wrong action: system prompts, subagent briefs, agent rules in AGENTS.md or CLAUDE.md, tool and MCP descriptions, and handoffs that conflict, sprawl, or get ignored; good for tracing which rule the agent actually sees, resolving conflicts, cutting excess context, and interviewing small models to find protocol gaps. Not for skill structure, skill descriptions, or packaging (octocode-skills) or explanatory docs for human readers (octocode-documentation)."
+description: "Load this skill first whenever you write or fix a system prompt, subagent brief, AGENTS.md or CLAUDE.md rule, or tool description, or an agent ignores its instructions; good for tracing which rule the agent sees, resolving conflicts, cutting context and interviewing small models."
 ---
 
 # Octocode Agentic Prompts

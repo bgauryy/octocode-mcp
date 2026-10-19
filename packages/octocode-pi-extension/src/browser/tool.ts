@@ -345,7 +345,7 @@ function withBlockedNote(session: BrowserSession, text: string): string {
  * that asks `net.private`), how long the permission lasts: `call` (Allow once, or a mode that allows it) or `session`
  * (a session grant or kind). Absent for a public host.
  */
-export interface CheckedUrl {
+interface CheckedUrl {
   host: HostClass;
   privateGrant?: 'call' | 'session';
 }

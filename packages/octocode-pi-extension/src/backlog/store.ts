@@ -62,7 +62,7 @@ export interface Item {
 }
 
 /** `note`: text an agent or the user wrote; `change`: what an update changed, written by the store. */
-export type NoteKind = 'note' | 'change';
+type NoteKind = 'note' | 'change';
 
 export interface Note {
   at: number;

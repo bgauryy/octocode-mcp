@@ -306,16 +306,6 @@ impl BeneathDir {
         }
     }
 
-    /// Flush the directory's entries. Windows cannot open a directory to sync
-    /// it; there renames rest on the filesystem's own ordering.
-    pub(crate) fn sync(&self) -> io::Result<()> {
-        #[cfg(unix)]
-        let result = self.directory.sync_all();
-        #[cfg(not(unix))]
-        let result = Ok(());
-        result
-    }
-
     /// Unix: each component is an `openat` relative to its parent's
     /// descriptor with `O_NOFOLLOW`, so no path is resolved twice.
     #[cfg(unix)]
@@ -486,7 +476,6 @@ mod tests {
         );
         held.rename(OsStr::new("stage"), OsStr::new("a.ts"))
             .unwrap();
-        held.sync().unwrap();
         let mut read = String::new();
         held.open_file(OsStr::new("a.ts"))
             .unwrap()

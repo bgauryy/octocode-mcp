@@ -1,16 +1,20 @@
 import http from 'node:http';
 import zlib from 'node:zlib';
 import type { AddressInfo, LookupFunction } from 'node:net';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { classifyHost, isBlockedIp, publicFetch, type HostLookup } from '../src/web/guard.js';
-import { clearFetchCache, decodeBody, fetchUrl, isBinaryType, readCapped } from '../src/web/fetch.js';
+import { decodeBody, isBinaryType, pageFetcher, readCapped, type PageFetcher } from '../src/web/fetch.js';
 import { asText } from './helpers.js';
 import { collapseLinkRuns, describeHtml, htmlToText, mainContent } from '../src/web/html.js';
 import { parseDuckDuckGo } from '../src/web/search.js';
 
 const servers: http.Server[] = [];
+/** Each case reads through its own fetcher, so no case sees a page another one cached. */
+let fetchUrl: PageFetcher;
+beforeEach(() => {
+  fetchUrl = pageFetcher();
+});
 afterEach(async () => {
-  clearFetchCache();
   vi.restoreAllMocks();
   await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))));
 });

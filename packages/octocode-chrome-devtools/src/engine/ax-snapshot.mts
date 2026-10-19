@@ -2,7 +2,7 @@
 // Library: checks import it relatively; task scripts import .octocode/octocode-chrome-devtools/tmp/helpers/ax-snapshot.mjs
 // (cdp-sandbox stages it there); never run as a CLI.
 
-export const INTERACTIVE_ROLES = new Set([
+const INTERACTIVE_ROLES = new Set([
   'button',
   'link',
   'textbox',
@@ -21,7 +21,7 @@ export const INTERACTIVE_ROLES = new Set([
   'listbox',
   'treeitem',
 ]);
-export const REGION_ROLES = new Set([
+const REGION_ROLES = new Set([
   'banner',
   'navigation',
   'main',

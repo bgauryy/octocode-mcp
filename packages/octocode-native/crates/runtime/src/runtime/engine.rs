@@ -2074,9 +2074,9 @@ mod batch_budget_tests {
     use super::*;
 
     #[test]
-    fn independent_batches_fan_out_one_thread_per_query_and_rewrites_stay_ordered() {
+    fn independent_batches_fan_out_one_thread_per_query_and_classification_stays_ordered() {
         for id in ToolId::ALL {
-            let ordered = matches!(id, ToolId::AstRewrite | ToolId::Clasify);
+            let ordered = matches!(id, ToolId::Clasify);
             let width = BatchBudget::new(id, 5, 12).width;
             assert_eq!(width, if ordered { 1 } else { 5 }, "{id}");
             assert_eq!(BatchBudget::new(id, 1, 12).width, 1, "{id}");
@@ -2100,10 +2100,7 @@ mod batch_budget_tests {
             Some(1)
         );
         // Ordered tools run one row at a time with the full default.
-        assert_eq!(
-            BatchBudget::new(ToolId::AstRewrite, 5, 12).walk_threads,
-            None
-        );
+        assert_eq!(BatchBudget::new(ToolId::Clasify, 5, 12).walk_threads, None);
     }
 }
 

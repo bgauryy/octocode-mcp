@@ -16,7 +16,7 @@ Why the explicit config (this is the whole trick — do not remove it):
 
 One-shot, non-reversible: this does NOT run the proxy or the CCR retrieve loop,
 so the chars written here are the chars that actually enter the agent's context.
-That keeps SCORING.md's "chars in" honest — there is no hidden re-expansion.
+That keeps the benchmark's "chars in" (docs/method.md) honest — there is no hidden re-expansion.
 
 Run it with Headroom's own interpreter (the uv-tool venv), not system python:
     HR_PY="$HOME/.local/share/uv/tools/headroom-ai/bin/python"

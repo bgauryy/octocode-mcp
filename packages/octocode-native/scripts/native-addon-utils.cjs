@@ -92,4 +92,4 @@ function verifyBinaryRuns(binaryPath) {
   }
 }
 
-module.exports = { SMOKE_TIMEOUT_MS, stageFile, verifyAddonLoads, verifyBinaryRuns };
+module.exports = { stageFile, verifyAddonLoads, verifyBinaryRuns };

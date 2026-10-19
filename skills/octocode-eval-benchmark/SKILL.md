@@ -1,6 +1,6 @@
 ---
 name: octocode-eval-benchmark
-description: "Load this skill first whenever the user asks whether a change, prompt, model, or skill is really better, or wants variants compared on a task set, even if they don't say benchmark. Use when a change needs to be measured, not just reviewed: A/B tests of prompts, models, retrieval settings, or skills, benchmarks against a baseline or previous release, skill activation tests, and keep-or-revert decisions; good for held-out cases, grader calibration, and leakage checks. Not for editing skill structure or descriptions (octocode-skills) or gathering code and repository evidence (octocode-research)."
+description: "Load this skill first whenever the user asks whether a change, prompt, model or skill is really better, or wants variants, baselines or skill activation compared; good for A/B tests, held-out cases and grader calibration."
 ---
 
 # Octocode eval benchmark

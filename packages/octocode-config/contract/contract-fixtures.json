@@ -909,66 +909,6 @@
     }
   },
   {
-    "id": "astRewrite.example-pattern",
-    "tool": "astRewrite",
-    "input": {
-      "queries": [
-        {
-          "path": "src",
-          "language": "typescript",
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "src",
-          "language": "typescript",
-          "apply": false,
-          "maxFiles": 2000,
-          "maxMatches": 10000,
-          "page": 1,
-          "pageSize": 100,
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astRewrite.example-rule",
-    "tool": "astRewrite",
-    "input": {
-      "queries": [
-        {
-          "path": "src",
-          "language": "typescript",
-          "rule": "pattern: console.log($A)",
-          "fix": "logger.info($A)"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "src",
-          "language": "typescript",
-          "apply": false,
-          "maxFiles": 2000,
-          "maxMatches": 10000,
-          "page": 1,
-          "pageSize": 100,
-          "rule": "pattern: console.log($A)",
-          "fix": "logger.info($A)"
-        }
-      ]
-    }
-  },
-  {
     "id": "localFetch.example-localFetch",
     "tool": "localFetch",
     "input": {
@@ -1402,30 +1342,6 @@
   {
     "id": "astTopology.reject-saved-response-with-queries",
     "tool": "astTopology",
-    "input": {
-      "responseSnapshot": "saved",
-      "queries": [
-        {}
-      ]
-    },
-    "accepted": false
-  },
-  {
-    "id": "astRewrite.saved-response",
-    "tool": "astRewrite",
-    "input": {
-      "responseSnapshot": "saved",
-      "responseOffset": 1
-    },
-    "accepted": true,
-    "normalized": {
-      "responseOffset": 1,
-      "responseSnapshot": "saved"
-    }
-  },
-  {
-    "id": "astRewrite.reject-saved-response-with-queries",
-    "tool": "astRewrite",
     "input": {
       "responseSnapshot": "saved",
       "queries": [
@@ -2764,6 +2680,99 @@
     }
   },
   {
+    "id": "ast-search.rule-position-0",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "has": {
+              "field": "name"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.rule-position-1",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "kind": "identifier",
+            "field": "name"
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.rule-position-2",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "kind": "identifier",
+            "stopBy": "end"
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.rule-position-3",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "follows": {
+              "kind": "identifier",
+              "field": "name"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.rule-position-4",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "inside": {
+              "kind": "identifier",
+              "stopBy": {
+                "kind": "identifier",
+                "field": "name"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
     "id": "structure-search.depth-range",
     "tool": "structureSearch",
     "input": {
@@ -2789,7 +2798,7 @@
           "rule": {
             "kind": "identifier",
             "precedes": {
-              "kind": "identifier"
+              "matches": "helper"
             }
           }
         }
@@ -2808,7 +2817,7 @@
           "rule": {
             "kind": "identifier",
             "follows": {
-              "kind": "identifier"
+              "matches": "helper"
             }
           }
         }
@@ -2842,8 +2851,7 @@
           "path": "/r/a.ts",
           "rule": {
             "pattern": {
-              "context": "foo($X)",
-              "selector": "call_expression"
+              "context": "foo($X)"
             }
           }
         }
@@ -2863,7 +2871,7 @@
             "kind": "identifier",
             "inside": {
               "kind": "program",
-              "stopBy": "neighbor"
+              "stopBy": "invalid"
             }
           }
         }
@@ -2884,7 +2892,7 @@
             "inside": {
               "kind": "program",
               "stopBy": {
-                "kind": "program"
+                "matches": "helper"
               }
             }
           }
@@ -2906,7 +2914,7 @@
               {
                 "kind": "identifier",
                 "precedes": {
-                  "kind": "identifier"
+                  "matches": "helper"
                 }
               }
             ]
@@ -2928,7 +2936,7 @@
             "rule": {
               "kind": "identifier",
               "precedes": {
-                "kind": "identifier"
+                "matches": "helper"
               }
             }
           }
@@ -3379,37 +3387,6 @@
           "language": "ts",
           "pattern": "$A",
           "rule": "kind: call"
-        }
-      ]
-    },
-    "accepted": false
-  },
-  {
-    "id": "ast-rewrite.apply-guards",
-    "tool": "astRewrite",
-    "input": {
-      "queries": [
-        {
-          "path": "/r",
-          "language": "ts",
-          "pattern": "$A",
-          "rewrite": "$A",
-          "apply": true
-        }
-      ]
-    },
-    "accepted": false
-  },
-  {
-    "id": "ast-rewrite.empty-rule",
-    "tool": "astRewrite",
-    "input": {
-      "queries": [
-        {
-          "path": "/r",
-          "language": "ts",
-          "rule": {},
-          "fix": "x"
         }
       ]
     },

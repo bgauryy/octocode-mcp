@@ -25,14 +25,6 @@ packages/octocode-benchmark/local/e2e/fixtures/scratch/
 packages/octocode-benchmark/local/e2e/fixtures/rating-*/
 packages/octocode-benchmark/local/e2e/results/
 packages/octocode-benchmark/local/e2e/.octocode/
-packages/octocode-benchmark/local/e2e/validate/*/raw/
-packages/octocode-benchmark/local/e2e/validate/*/out/
-packages/octocode-benchmark/local/e2e/validate/*/probes/
-packages/octocode-benchmark/local/e2e/validate/*/tools/
-packages/octocode-benchmark/local/e2e/validate/*/bin/
-packages/octocode-benchmark/local/e2e/validate/local/fixtures/
-packages/octocode-benchmark/local/e2e/validate/github/runs.jsonl
-packages/octocode-benchmark/local/e2e/validate/github/results.json
 # Package READMEs are authored source and must remain trackable.
 !packages/*/README.md
 !packages/*/npm/*/README.md

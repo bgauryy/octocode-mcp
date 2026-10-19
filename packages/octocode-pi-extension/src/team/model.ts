@@ -1,4 +1,5 @@
 import { num, type Row } from '../agentdb/rows.js';
+import { optionalString } from '../shared/util.js';
 import type { Ask } from './asks.js';
 
 /** The team's records as the rest of the extension sees them, and how they are read from database rows. */
@@ -98,14 +99,12 @@ export interface Lease {
 
 export type LeaseRequest = Pick<Lease, 'path' | 'kind' | 'reason'>;
 
-export const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
-
 export function toMember(row: Row): Member {
-  const goal = text(row['task']);
-  const activity = text(row['activity']);
-  const parentId = text(row['parent_id']);
-  const model = text(row['model']);
-  const started = text(row['started']);
+  const goal = optionalString(row['task']);
+  const activity = optionalString(row['activity']);
+  const parentId = optionalString(row['parent_id']);
+  const model = optionalString(row['model']);
+  const started = optionalString(row['started']);
   return {
     id: String(row['id']),
     role: String(row['role']),
@@ -162,8 +161,8 @@ export const WAKE = { none: 0, wake: 1, interrupt: 2 } as const;
 export function toMessage(row: Row, to: string): Message {
   const replyTo = row['reply_to'];
   const wake = row['wake'];
-  const role = text(row['sender_role']);
-  const goal = text(row['sender_goal']);
+  const role = optionalString(row['sender_role']);
+  const goal = optionalString(row['sender_goal']);
   return {
     id: num(row['id']), from: String(row['sender']), to, text: String(row['body']), at: num(row['created_at']), replyRequired: row['reply_required'] === 1,
     ...(typeof replyTo === 'number' ? { replyTo } : {}),

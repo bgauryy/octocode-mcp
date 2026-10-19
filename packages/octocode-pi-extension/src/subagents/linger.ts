@@ -17,7 +17,7 @@ interface LingeringRun {
 }
 
 /** The message a resumed run starts with, and the text the user or parent sent. */
-export interface Resumption {
+interface Resumption {
   text: string;
   message: string;
 }

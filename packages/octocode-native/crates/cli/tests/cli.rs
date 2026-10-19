@@ -37,7 +37,7 @@ fn root_help_lists_only_available_tools() {
     let output = workspace.cli().arg("--help").output().expect("help");
     assert!(output.status.success());
     let text = stdout(&output);
-    for gated in ["clasify", "astRewrite", "astTopology"] {
+    for gated in ["clasify", "astTopology"] {
         assert!(
             !text.contains(gated),
             "{gated} offered while disabled: {text}"
@@ -90,8 +90,6 @@ fn help_lists_only_the_minimal_command_surface() {
         );
     }
     // Retired wrappers and hidden maintenance commands stay out of the surface.
-    // astRewrite is parked: disabled on every surface, beta included.
-    assert!(!text.contains("\n  astRewrite"), "{text}");
     for removed in [
         "\n  search",
         "\n  read",
@@ -818,7 +816,6 @@ fn schema_and_tool_help_are_served_by_the_binary() {
         .collect();
     assert!(listed.contains(&"localSearch"), "{listed:?}");
     // Disabled tools stay out of the listing, as in MCP tools/list.
-    assert!(!listed.contains(&"astRewrite"), "{listed:?}");
     assert_eq!(catalog["toolCount"], listed.len());
 
     let query = json(&["schema", "localSearch", "--view", "query"]);
@@ -845,8 +842,8 @@ fn schema_and_tool_help_are_served_by_the_binary() {
         selected["querySchema"]["properties"]["symbolName"].is_object(),
         "{selected}"
     );
-    // A disabled tool is still described, with its gate.
-    let gated = json(&["schema", "astRewrite", "--view", "variants"]);
+    // A beta tool is still described, with its gate.
+    let gated = json(&["schema", "astTopology", "--view", "variants"]);
     assert_eq!(gated["availability"]["enabled"], false);
 
     for (args, message) in [
@@ -1019,39 +1016,6 @@ fn localsearch_emits_structured_results() {
     // A complete single page carries no stats: the listed rows are the counts.
     assert!(data.get("stats").is_none(), "{data}");
     assert_eq!(data["files"][0]["matches"][0]["value"], "needle", "{data}");
-}
-
-/// astRewrite is parked: the contract disables it on every surface, so even
-/// with beta a call is refused and writes nothing.
-#[test]
-fn parked_astrewrite_is_refused_even_with_beta() {
-    let workspace = Workspace::new();
-    let path = workspace.write("rewrite.rs", "pub const VALUE: u32 = 2;\n");
-    let query = serde_json::json!({"queries":[{
-        "path": path,
-        "language": "rust",
-        "pattern": "pub const $NAME: u32 = $VALUE;",
-        "rewrite": "pub const $NAME: u64 = $VALUE;"
-    }]});
-    let output = workspace
-        .cli()
-        .env("OCTOCODE_BETA", "true")
-        .args(["astRewrite", &query.to_string()])
-        .output()
-        .expect("astRewrite call");
-    assert_eq!(exit_code(&output), Some(5), "{}", stdout(&output));
-    let error: serde_json::Value = serde_json::from_slice(&output.stdout).expect("envelope");
-    assert_eq!(
-        error,
-        serde_json::json!({
-            "error": "Tool astRewrite is not available in this native runtime: it is disabled in this build.",
-            "errorCode": "toolUnavailable"
-        })
-    );
-    assert_eq!(
-        std::fs::read_to_string(path).expect("source"),
-        "pub const VALUE: u32 = 2;\n"
-    );
 }
 
 #[test]

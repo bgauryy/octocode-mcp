@@ -1,6 +1,6 @@
 ---
 name: octocode-scraping
-description: "Load this skill first whenever a task needs text, tables, or links from public web pages (pricing pages, docs sites, changelogs, careers or blog pages), before asking for the URL. Use when content from public web pages is the evidence: fetch a page, crawl a docs site or blog, extract pricing tables, changelogs, posts, or link maps, and build a searchable local corpus with cited sources; good for static pages and source-backed extraction. Not for repository, package, or code facts (octocode-research) or pages that need a live, logged-in, or interactive browser (octocode-chrome-devtools)."
+description: "Load this skill first whenever a task needs text, tables or links from public web pages (pricing, docs, changelogs, blogs), before asking for the URL; good for crawls and cited local corpora."
 ---
 
 # Octocode Scraping

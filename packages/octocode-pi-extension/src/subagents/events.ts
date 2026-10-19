@@ -3,7 +3,7 @@ import { NEEDS_APPROVAL } from '../permission/ask.js';
 import { AUDIT_NOTIFY_PREFIX } from '../permission/audit.js';
 import { redactSecrets, visibleControls } from '../shared/sanitize.js';
 import { Thought, thoughtGist } from '../shared/thought.js';
-import { addUsage, contentText, emptyUsage, isRecord, toolHint } from '../shared/util.js';
+import { addUsage, contentText, emptyUsage, finiteNumber, isRecord, toolHint } from '../shared/util.js';
 import { imagesOf } from './screenshots.js';
 
 export interface WatchdogLimits {
@@ -35,7 +35,7 @@ export interface Compactions {
 }
 
 /** A warning or error the child's extensions showed (`notify` with `notifyType` warning or error): the child has no screen, the parent keeps them. Whole, whatever its length. */
-export interface ChildNotice {
+interface ChildNotice {
   level: 'warning' | 'error';
   text: string;
   /** How many times the child showed this exact notice (same level and text): repeats fold into one. */
@@ -186,15 +186,13 @@ function promptResponse(event: Record<string, unknown>): ChildEffect[] {
   return isRecord(event['data']) && event['data']['disposition'] === 'handled' ? [{ kind: 'close' }] : [];
 }
 
-const count = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
-
 /** A compaction ended: counts it, and adds the summary's own model usage to the run (it is no reply, so no `message_end` carries it). */
 function endCompaction(state: ChildState, event: Record<string, unknown>): void {
   const result = event['result'];
   if (isRecord(result)) {
     const tally = state.compactions;
     tally.done += 1;
-    const [before, after] = [count(result['tokensBefore']), count(result['estimatedTokensAfter'])];
+    const [before, after] = [finiteNumber(result['tokensBefore']), finiteNumber(result['estimatedTokensAfter'])];
     if (before !== undefined) tally.tokensBefore = before;
     if (after !== undefined) tally.tokensAfter = after;
     addUsage(state.usage, result['usage']);

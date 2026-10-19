@@ -21,7 +21,7 @@ import type { ReportStatus } from './report.js';
  * its transcript file once written, and the folder of its archive of compacted history (`shared/archive.ts`) once it
  * compacted: Markdown the parent can search with the Octocode tools.
  */
-export interface ChildSessionDetails {
+interface ChildSessionDetails {
   id: string;
   file?: string;
   archive?: string;

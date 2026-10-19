@@ -29,9 +29,9 @@ missing or invalid, startup fails closed.
 
 ## Tool registration
 
-The native catalog has sixteen tools. On MCP the runtime marks the CLI-only
+The native catalog has fifteen tools. On MCP the runtime marks the CLI-only
 `ghCloneRepo` and `astTopology` `unavailableReason: "cliOnly"` and refuses
-direct calls; `astRewrite` is parked (`disabled`) on every surface; `clasify`
+direct calls; `clasify`
 needs `OCTOCODE_BETA` and a nonblank `OCTOCODE_CLASSIFICATION_API`. That leaves
 twelve tools by default and thirteen with `clasify`.
 

@@ -12,7 +12,7 @@ const FAILED_TICKS_NOTICE = 30;
 const WAKE_STUCK_MS = 10_000;
 
 /** What delivery needs from the agent's membership (`Team`), read when used so it always sees the current session. */
-export interface DeliveryHost {
+interface DeliveryHost {
   /** This agent's id, undefined while it has not joined. */
   id(): string | undefined;
   parentId(): string | undefined;

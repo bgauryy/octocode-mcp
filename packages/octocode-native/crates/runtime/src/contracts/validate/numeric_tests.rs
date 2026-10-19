@@ -42,30 +42,6 @@ fn integral_numeric_lexemes_reach_generated_query_types() {
 }
 
 #[test]
-fn nested_integer_refs_arrays_and_unions_reach_generated_query_types() {
-    let mut input: Value = serde_json::from_str(
-        r#"{"queries":[{"path":"a.ts","rule":{"pattern":"target($A)"},"fix":"$PART","transform":{"PART":{"substring":{"source":"$A","startChar":-1.0,"endChar":0e0}}},"postconditions":[{"kind":"remainingMatches","equals":0.0}]}]}"#,
-    )
-    .expect("nested numeric input");
-    input["queries"][0]["apply"] = json!(true);
-    input["queries"][0]["snapshot"] = json!("0".repeat(64));
-    input["queries"][0]["expectedHashes"] = json!({"a.ts":"0".repeat(64)});
-    let mut rows = prepare_many_and_validate("astRewrite", input).expect("valid typed apply query");
-    let row = rows.pop().expect("one query");
-    assert_eq!(row["postconditions"][0]["equals"].as_u64(), Some(0));
-    assert_eq!(
-        row["transform"]["PART"]["substring"]["startChar"].as_i64(),
-        Some(-1)
-    );
-    assert_eq!(
-        row["transform"]["PART"]["substring"]["endChar"].as_u64(),
-        Some(0)
-    );
-    serde_json::from_value::<tool_types::AstRewriteQuery>(row)
-        .expect("nested integers decode without enabling the parked tool");
-}
-
-#[test]
 fn fractional_string_and_out_of_range_numbers_stay_rejected() {
     for raw in [
         r#"{"path":"a.ts","length":1.25}"#,

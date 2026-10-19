@@ -72,6 +72,15 @@ pub(super) fn run(
     execute_row(query, &paths, &security, &NeverCancel)
 }
 
+/// A row run under `paths`, the result a successful run returns.
+pub(super) fn run_row(
+    query: &serde_json::Value,
+    paths: &PathPolicy,
+    security: &ContentSecurity,
+) -> serde_json::Value {
+    execute_row(query.clone(), paths, security, &NeverCancel).expect("astSearch")
+}
+
 /// The localFetch read rows of the one `expandValues` lead, by path. The
 /// lead has one name (never `expandValues2`…) and batches its rows within
 /// localFetch's input limit.

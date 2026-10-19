@@ -11,7 +11,6 @@ export type McpClientDef = {
 export type EditorInfo = {
   configKey: ConfigKey;
   name: string;
-  scheme: string;
   mcpConfigPath: string | null;
 };
 
@@ -101,7 +100,6 @@ export function detectEditorInfo(
           : path.join(homeDir, '.cursor', 'mcp.json');
       return {
         name: 'Cursor',
-        scheme: 'cursor',
         configKey: 'mcpServers',
         mcpConfigPath: cursorConfigPath,
       };
@@ -110,7 +108,6 @@ export function detectEditorInfo(
     if (normalizedAppName.includes('windsurf')) {
       return {
         name: 'Windsurf',
-        scheme: 'windsurf',
         configKey: 'mcpServers',
         mcpConfigPath: path.join(
           homeDir,
@@ -124,7 +121,6 @@ export function detectEditorInfo(
     if (normalizedAppName.includes('antigravity')) {
       return {
         name: 'Antigravity',
-        scheme: 'antigravity',
         configKey: 'mcpServers',
         mcpConfigPath: path.join(
           homeDir,
@@ -138,7 +134,6 @@ export function detectEditorInfo(
     if (normalizedAppName.includes('trae')) {
       return {
         name: 'Trae',
-        scheme: 'trae',
         configKey: 'mcpServers',
         mcpConfigPath: path.join(
           getPlatformConfigBase(options),
@@ -150,7 +145,6 @@ export function detectEditorInfo(
 
     return {
       name: 'VS Code',
-      scheme: 'vscode',
       configKey: 'servers',
       mcpConfigPath: path.join(
         getPlatformConfigBase(options),
@@ -162,7 +156,6 @@ export function detectEditorInfo(
   } catch {
     return {
       name: 'VS Code',
-      scheme: 'vscode',
       configKey: 'servers',
       mcpConfigPath: null,
     };

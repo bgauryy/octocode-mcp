@@ -52,7 +52,7 @@ clangd, jdtls, and Metals also start headless, on every launch path, with user a
 
 TypeScript and JavaScript routing is documented once, in [TypeScript backends](../../../../docs/OCTOCODE_TOOLS.md#typescript-backends). Engine specifics:
 
-- The install tree that supplies the bundled `tsgo` (`@typescript/native-preview`, a dependency of `octocode-mcp` and `octocode`, pinned exactly because it is a nightly prerelease) and the `typescript-language-server` fallback is found from the loaded module (`lsp/module_path.rs`: the N-API addon or the CLI binary), not from `current_exe()`, which is `node` under MCP.
+- The install tree that supplies the bundled `tsgo` (`@typescript/native-preview`, a dependency of `octocode-mcp` and `octocode`, pinned exactly because it is a nightly prerelease) and any `typescript-language-server` installed there (it is not a runtime dependency, so installs usually take it from `PATH`) is found from the loaded module (`lsp/module_path.rs`: the N-API addon or the CLI binary), not from `current_exe()`, which is `node` under MCP.
 - A workspace's own `tsgo` is used only with `lsp.trustProjectConfig`. Its `typescript-language-server` is also used when the workspace is the directory Octocode started in, or inside it; a start directory that is `/` or the home directory trusts nothing under it. An untrusted checkout (a clone, say) never supplies either.
 - When the chosen `tsgo` fails to start, the request falls back to `typescript-language-server` and the answer says so; an `lsp-servers.json` entry gets no substitute.
 - tsgo answers independent requests in parallel, so importer verification sends up to 8 files at once to it; `typescript-language-server` gets one request at a time.
@@ -133,7 +133,7 @@ cargo-zigbuild test -p octocode-engine --all-features --target aarch64-unknown-l
 cargo-zigbuild clippy -p octocode-native --no-default-features --all-targets --target aarch64-unknown-linux-gnu -- -D warnings
 ```
 
-Running the Linux tests (kernel `/proc`, address-space reservations past the cap, the RSS watchdog, SIGSTOP/SIGKILL of a `setsid` grandchild) still needs a real Linux kernel; run `cargo test -p octocode-engine --all-features` on a Linux host (CI does not run Rust).
+Running the Linux tests (kernel `/proc`, address-space reservations past the cap, the RSS watchdog, SIGSTOP/SIGKILL of a `setsid` grandchild) still needs a real Linux kernel; run `cargo test -p octocode-engine --all-features` on a Linux host (CI's `native` job runs it on `ubuntu-latest`).
 
 `start` and `stop` take the client's locks in one order (`child` → `connection` → `stderr_task`) and hold `child` throughout, so a `stop` that overlaps a `start` waits for it and then shuts down the server it published.
 

@@ -545,7 +545,7 @@ impl RegistryClient<'_> {
         value
             .map(|value| match value {
                 serde_json::Value::String(text) => Ok(text),
-                _ => Err(invalid_response(artifact_type)),
+                _ => Err(super::util::invalid(artifact_type)),
             })
             .transpose()
     }
@@ -573,7 +573,7 @@ impl RegistryClient<'_> {
         let Some(bytes) = self.status(artifact_type, response, not_found_is_empty)? else {
             return Ok(None);
         };
-        let (value, weight) = decode(&bytes).ok_or_else(|| invalid_response(artifact_type))?;
+        let (value, weight) = decode(&bytes).ok_or_else(|| super::util::invalid(artifact_type))?;
         if let Some(cache) = self.cache {
             cache.0.put(key, value.clone(), weight, REGISTRY_ANSWER);
         }
@@ -705,16 +705,6 @@ fn rejection_detail(body: &[u8]) -> Option<String> {
     let line = detail.split_whitespace().collect::<Vec<_>>().join(" ");
     let clipped = line.chars().take(200).collect::<String>();
     (!clipped.is_empty()).then_some(clipped)
-}
-
-pub(crate) fn invalid_response(artifact_type: ArtifactType) -> ArtifactError {
-    ArtifactError::new(
-        "providerError",
-        format!(
-            "{} returned an invalid registry response.",
-            artifact_type.as_str()
-        ),
-    )
 }
 
 #[cfg(test)]

@@ -6,7 +6,8 @@ This package owns distribution metadata, onboarding, and assembly of public skil
 
 - `src/plugin.json` owns plugin identity and presentation; `package.json` owns the release version.
 - `src/skills/octocode-get-started/` owns plugin onboarding. Build substitutes the CLI version and Node.js requirement from the CLI package.
-- Root `skills/` owns all public workflows. Reuse `packages/octocode/scripts/stage-skills.mjs`, including per-skill file lists. Beta and repository development skills are outside this source collection.
+- `scripts/build.ts` runs `buildPlugin` from `packages/octocode/scripts/build-plugin.mjs`, the build both host plugins share (skills, onboarding, license); this package adds only the Codex manifest, `mcp.json` and the logo.
+- Root `skills/` owns all public workflows. `buildPlugin` stages them with `packages/octocode/scripts/stage-skills.mjs`, including per-skill file lists. Beta and repository development skills are outside this source collection.
 - The MCP package's version becomes an exact `npx -y octocode-mcp@VERSION` pin in generated `mcp.json`. No token variables or fixed working directory are embedded.
 - Root `assets/logo.png` and `LICENSE` supply existing branding and licensing.
 

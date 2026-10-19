@@ -706,14 +706,14 @@ fn pasted_ast_grep_rule_file_metadata_is_tolerated() {
 fn an_unknown_rule_key_comes_with_a_working_example() {
     let query = StructuralQuery::new(
         None,
-        Some("kind: class_declaration\nhas:\n  field: superclasses\n"),
+        Some("kind: class_declaration\nhas:\n  constraints: {}\n"),
     )
     .unwrap();
     let error = compile_matcher(&lang("ts"), &query)
         .err()
         .unwrap()
         .to_string();
-    assert!(error.contains("unknown field `field`"), "{error}");
+    assert!(error.contains("unknown field `constraints`"), "{error}");
     let (_, example) = error.split_once("Example rule: ").expect("an example");
     let example = StructuralQuery::new(None, Some(example)).unwrap();
     assert!(compile_matcher(&lang("ts"), &example).is_ok());
@@ -725,14 +725,14 @@ fn an_unknown_rule_key_comes_with_a_working_example() {
 fn an_unknown_rule_key_is_refused_with_an_example_rule() {
     let query = StructuralQuery::new(
         None,
-        Some("kind: class_declaration\nhas:\n  field: superclasses\n"),
+        Some("kind: class_declaration\nhas:\n  constraints: {}\n"),
     )
     .unwrap();
     let error = compile_matcher(&lang("ts"), &query)
         .err()
         .unwrap()
         .to_string();
-    assert!(error.contains("unknown field `field`"), "{error}");
+    assert!(error.contains("unknown field `constraints`"), "{error}");
     assert!(error.contains("expected one of `kind`"), "{error}");
     let example = error.split("Example rule: ").nth(1).expect("example rule");
     let query = StructuralQuery::new(None, Some(example.trim())).unwrap();
@@ -1154,4 +1154,178 @@ fn the_match_budget_scales_with_the_source_size() {
         match_budget(crate::signatures::MAX_PARSE_SIZE),
         AST_EXECUTION_TIMEOUT * 9
     );
+}
+
+#[test]
+fn owned_core_context_selects_only_the_requested_node() {
+    let rule = r#"pattern: {context: 'class ContextOnly { $K = $V; }', selector: public_field_definition}"#;
+    let matches = run_rule("class Actual { value = 42; other = 7; }", "ts", rule);
+    assert_eq!(matches.len(), 2);
+    assert_eq!(matches[0].metavars["K"], ["value"]);
+    assert_eq!(matches[0].metavars["V"], ["42"]);
+}
+
+#[test]
+fn owned_core_context_has_no_wrapper_prefilter_anchor() {
+    let query = StructuralQuery::new(None, Some(r#"pattern: {context: 'class OnlyInPattern { $K = $V; }', selector: public_field_definition}"#)).unwrap();
+    assert_eq!(query.prefilter(), Prefilter::None);
+    assert_eq!(query.recovery_anchors(), None);
+}
+
+#[test]
+fn owned_core_context_rejects_missing_unknown_and_broken_selections() {
+    for rule in [
+        r#"pattern: {context: 'foo($X)', selector: absent_kind}"#,
+        r#"pattern: {context: 'foo($X)', selector: class_declaration}"#,
+        r#"pattern: {context: 'class C {', selector: class_declaration}"#,
+        r#"pattern: {context: 'foo($X)'}"#,
+        r#"pattern: {context: 'foo($X)', selector: call_expression, strictness: relaxed}"#,
+    ] {
+        assert!(CompiledRule::new(&lang("ts"), rule).is_err(), "{rule}");
+    }
+}
+
+#[test]
+fn owned_core_field_relations_distinguish_names_values_and_ancestor_edges() {
+    let source = "function alpha() { beta(); } function beta() { alpha(); }";
+    let names = run_rule(
+        source,
+        "ts",
+        r#"kind: function_declaration
+has: {kind: identifier, regex: '^alpha$', field: name}"#,
+    );
+    assert_eq!(names.len(), 1);
+    assert!(names[0].text.starts_with("function alpha"));
+    let calls = run_rule(
+        source,
+        "ts",
+        r#"kind: identifier
+regex: '^alpha$'
+inside: {kind: function_declaration, field: body, stopBy: end}"#,
+    );
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].start_col > names[0].start_col);
+    assert!(
+        run_rule(
+            source,
+            "ts",
+            r#"kind: function_declaration
+has: {kind: call_expression, field: name, stopBy: end}"#
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn owned_core_sibling_relations_skip_tokens_and_search_in_both_directions() {
+    let source = "function f() { first(); middle(); last(); }";
+    for rule in [
+        "kind: expression_statement\nprecedes: {kind: expression_statement, regex: '^last', stopBy: end}",
+        "kind: expression_statement\nfollows: {kind: expression_statement, regex: '^first', stopBy: end}",
+    ] {
+        assert_eq!(run_rule(source, "ts", rule).len(), 2, "{rule}");
+    }
+    let first = "pattern: {context: 'first();', selector: expression_statement}";
+    assert_eq!(
+        run_rule(
+            source,
+            "ts",
+            &format!("{first}\nprecedes: {{kind: expression_statement, regex: '^last'}}")
+        )
+        .len(),
+        0
+    );
+    assert_eq!(run_rule(source, "ts", &format!("{first}\nprecedes: {{kind: expression_statement, regex: '^middle', stopBy: neighbor}}")).len(), 1);
+    assert!(
+        run_rule(
+            "first(); function f() { last(); }",
+            "ts",
+            &format!(
+                "{first}\nprecedes: {{kind: expression_statement, regex: '^last', stopBy: end}}"
+            )
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn owned_core_custom_stops_are_inclusive_and_do_not_leak_bindings() {
+    let source = "function f() { first(); middle(); last(); }";
+    let first = "pattern: {context: 'first();', selector: expression_statement}";
+    let stopped = format!(
+        "{first}\nprecedes: {{kind: expression_statement, regex: '^last', stopBy: {{regex: '^middle'}}}}"
+    );
+    assert!(run_rule(source, "ts", &stopped).is_empty());
+    let inclusive = format!(
+        "{first}\nprecedes: {{kind: expression_statement, regex: '^middle', stopBy: {{regex: '^middle'}}}}"
+    );
+    assert_eq!(run_rule(source, "ts", &inclusive).len(), 1);
+    let no_leak = format!(
+        "{first}\nprecedes: {{kind: expression_statement, regex: '^last', stopBy: {{pattern: {{context: '$HIT($X);', selector: expression_statement}}, regex: never}}}}"
+    );
+    let matches = run_rule(source, "ts", &no_leak);
+    assert_eq!(matches.len(), 1);
+    assert!(matches[0].metavars.is_empty());
+}
+
+#[test]
+fn owned_core_ancestor_and_descendant_custom_stops_bound_the_search() {
+    let source = "function outer() { function inner() { target(); } }";
+    let blocked = run_rule(
+        source,
+        "ts",
+        "kind: function_declaration\nhas: {pattern: target(), stopBy: {kind: function_declaration}}",
+    );
+    assert_eq!(blocked.len(), 1);
+    assert!(blocked[0].text.starts_with("function inner"));
+    assert!(
+        run_rule(
+            source,
+            "ts",
+            "pattern: target()\ninside: {kind: program, stopBy: {kind: function_declaration}}"
+        )
+        .is_empty()
+    );
+    assert_eq!(run_rule(source, "ts", "pattern: target()\ninside: {kind: function_declaration, stopBy: {kind: function_declaration}}" ).len(), 1);
+}
+
+#[test]
+fn owned_core_rejects_unknown_fields_and_stop_rule_grammar_kinds() {
+    for rule in [
+        "kind: identifier\ninside: {kind: function_declaration, field: absent_field}",
+        "kind: identifier\nfollows: {kind: identifier, field: name}",
+        "kind: identifier\ninside: {kind: function_declaration, stopBy: {kind: absent_kind}}",
+    ] {
+        assert!(CompiledRule::new(&lang("ts"), rule).is_err(), "{rule}");
+    }
+}
+
+#[test]
+fn owned_core_stop_rule_depth_and_interruption_remain_explicit() {
+    let mut rule = serde_json::json!({"kind":"identifier"});
+    for _ in 0..65 {
+        rule = serde_json::json!({"kind":"identifier","inside":{"kind":"program","stopBy":rule}});
+    }
+    assert!(CompiledRule::new(&lang("ts"), &rule.to_string()).is_err());
+    let language = lang("ts").tree_sitter_language();
+    let tree = parse_tree(&language, "first(); middle(); last();").unwrap();
+    let rule = CompiledRule::new(
+        &lang("ts"),
+        "not: {precedes: {kind: expression_statement, stopBy: {kind: expression_statement}}}",
+    )
+    .unwrap();
+    let document = Document {
+        content: "first(); middle(); last();",
+        root: tree.root_node(),
+        deadline: Instant::now(),
+    };
+    let error = rule
+        .matches(
+            tree.root_node(),
+            None,
+            &document,
+            &mut CaptureEnv::default(),
+        )
+        .expect_err("an expired relation cannot satisfy negation");
+    assert_eq!(error.code, "structural.match.deadline");
 }

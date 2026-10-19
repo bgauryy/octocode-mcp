@@ -1,6 +1,6 @@
 import * as childProcess from 'node:child_process';
 import { runtimeCommand } from '../scripts/cli-command.mjs';
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { closeSync, existsSync, mkdtempSync, openSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,9 +19,36 @@ function invocationFor(executable, args) {
   return invocation;
 }
 
-export function execFileSync(executable, args = [], ...rest) {
+/**
+ * Runs a synchronous spawn with `options.input` delivered from a private file instead of a stdin pipe. On macOS,
+ * Node's synchronous spawn writes `input` into a socketpair and can miss the write-ready wakeup: the child then waits in
+ * read() and the call stalls until its timeout (about 1 in 100 one-MiB writes to python3; asynchronous stdin and file
+ * stdin never stalled in 1500 runs each). A file gives the child the same bytes followed by EOF.
+ */
+export function withFileInput(options, run) {
+  if (options?.input === undefined) return run(options);
+  const { input, ...rest } = options;
+  const directory = mkdtempSync(join(tmpdir(), 'communication-stdin-'));
+  const path = join(directory, 'stdin');
+  writeFileSync(path, input, { mode: 0o600 });
+  const descriptor = openSync(path, 'r');
+  try {
+    const stdio = typeof rest.stdio === 'string' ? [rest.stdio, rest.stdio, rest.stdio] : [...(rest.stdio ?? ['pipe', 'pipe', 'pipe'])];
+    stdio[0] = descriptor;
+    return run({ ...rest, stdio });
+  } finally {
+    closeSync(descriptor);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+export function execFileSync(executable, args = [], options) {
   const invocation = invocationFor(executable, args);
-  return childProcess.execFileSync(invocation.command, invocation.args, ...rest);
+  return withFileInput(options, resolved => childProcess.execFileSync(invocation.command, invocation.args, resolved));
+}
+export function spawnSync(executable, args = [], options) {
+  const invocation = invocationFor(executable, args);
+  return withFileInput(options, resolved => childProcess.spawnSync(invocation.command, invocation.args, resolved));
 }
 export function execFile(executable, args = [], ...rest) {
   const invocation = invocationFor(executable, args);
@@ -38,10 +65,8 @@ export function spawn(executable, args = [], ...rest) {
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 const scripts = join(root, 'scripts');
-/** Portable runtime entry; the historical name stays local to these fixtures. */
-export const nativeBinary = process.env.COMMUNICATION_BINARY || join(scripts, 'communication.py');
 /** COMMUNICATION_BINARY override, else the portable Python entry point. */
-export const binary = process.env.COMMUNICATION_BINARY || nativeBinary;
+export const binary = process.env.COMMUNICATION_BINARY || join(scripts, 'communication.py');
 /** Shipped POSIX launcher. */
 export const launcher = join(scripts, 'agents-communication');
 /** COMMUNICATION_BINARY override, else the shipped launcher. */

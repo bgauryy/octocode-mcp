@@ -257,24 +257,24 @@ mod tests {
     /// beta gate, local switch, or tool list says, and names why.
     #[test]
     fn a_disabled_tool_is_off_on_every_surface_whatever_the_configuration() {
-        let parked = |id: ToolId| id == ToolId::AstRewrite;
+        let parked = |id: ToolId| id == ToolId::AstSearch;
         for surface in [RuntimeSurface::Cli, RuntimeSurface::Mcp] {
             let tools = availability_with(
                 &[
                     ("OCTOCODE_BETA", "true"),
-                    ("TOOLS_TO_RUN", "astRewrite,localSearch"),
+                    ("TOOLS_TO_RUN", "astSearch,localSearch"),
                 ],
                 surface,
                 parked,
             );
-            let rewrite = tools.get("astRewrite").expect("known");
-            assert_eq!(rewrite, &Availability::Disabled, "{surface:?}");
-            assert!(!tools.is_available("astRewrite"));
-            assert!(!tools.available().contains(&"astRewrite"));
-            assert_eq!(rewrite.reason_code(), Some("disabled"));
-            assert_eq!(rewrite.reason_text(), "it is disabled in this build.");
-            assert!(rewrite.env_vars().is_empty());
-            assert!(!rewrite.needs_opt_in());
+            let search = tools.get("astSearch").expect("known");
+            assert_eq!(search, &Availability::Disabled, "{surface:?}");
+            assert!(!tools.is_available("astSearch"));
+            assert!(!tools.available().contains(&"astSearch"));
+            assert_eq!(search.reason_code(), Some("disabled"));
+            assert_eq!(search.reason_text(), "it is disabled in this build.");
+            assert!(search.env_vars().is_empty());
+            assert!(!search.needs_opt_in());
             assert!(tools.is_available("localSearch"));
         }
     }
@@ -328,8 +328,6 @@ mod tests {
         let clasify = beta.get("clasify").expect("known");
         assert_eq!(clasify.env_vars(), ["OCTOCODE_CLASSIFICATION_API"]);
         assert!(clasify.needs_opt_in());
-        // astRewrite is parked: beta does not enable it.
-        assert!(!beta.is_available("astRewrite"));
         assert!(cli.get("noSuchTool").is_none());
         assert!(!cli.is_available("noSuchTool"));
     }

@@ -4,7 +4,7 @@
 //! signals) reads these lists.
 
 /// Language ids the TypeScript server answers.
-pub const TYPESCRIPT_FAMILY: &[&str] = &[
+pub(crate) const TYPESCRIPT_FAMILY: &[&str] = &[
     "typescript",
     "typescriptreact",
     "javascript",
@@ -12,7 +12,7 @@ pub const TYPESCRIPT_FAMILY: &[&str] = &[
 ];
 
 /// Language ids clangd answers.
-pub const C_FAMILY: &[&str] = &["c", "cpp", "cuda", "objective-c", "objective-cpp"];
+pub(crate) const C_FAMILY: &[&str] = &["c", "cpp", "cuda", "objective-c", "objective-cpp"];
 
 const FAMILIES: [&[&str]; 2] = [TYPESCRIPT_FAMILY, C_FAMILY];
 

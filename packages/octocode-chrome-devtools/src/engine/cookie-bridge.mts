@@ -31,15 +31,12 @@ import {
   toStorageStateCookie,
 } from './cookie-jar.mjs';
 import { fileURLToPath } from 'url';
-import { validateFlags } from './cli-flags.mjs';
+import { flagArgs, validateFlags } from './cli-flags.mjs';
+import { cdpHttp, octocodeWorkspace } from './engine-io.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
-const getArg = (flag: string, def?: string) => {
-  const i = argv.indexOf(flag);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag } = flagArgs(argv);
 
 if (hasFlag('--help') || hasFlag('-h') || argv.length === 0) {
   console.error(`Usage: node cookie-bridge.mjs --i-understand-secrets --to-port 9222 \\
@@ -80,7 +77,7 @@ const URLS = (getArg('--urls', '') || '')
   .map(s => s.trim())
   .filter(Boolean);
 const DRY_RUN = hasFlag('--dry-run');
-const WORKSPACE_OUTPUT_BASE = resolve(process.cwd(), '.octocode');
+const WORKSPACE_OUTPUT_BASE = octocodeWorkspace();
 
 function fail(msg) {
   console.error(`[COOKIE_BRIDGE] ${msg}`);
@@ -114,14 +111,6 @@ if (!Number.isFinite(nodeMajor) || nodeMajor < 24 || !WS) {
   fail(
     `Node.js 24+ required (you have ${process.versions.node}). Native WebSocket is unavailable.`
   );
-}
-
-async function cdpHttp(port, path) {
-  const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!res.ok) throw new Error(`CDP HTTP ${res.status} ${path}`);
-  return res.json();
 }
 
 /** Browser-level session: Storage cookies cover every context and partition. */

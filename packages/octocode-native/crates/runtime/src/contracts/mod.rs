@@ -424,21 +424,6 @@ mod contract_owner_tests {
     }
 
     #[test]
-    fn rewrite_replacement_is_rejected_without_core_alias() {
-        assert!(
-            prepare_and_validate(
-                "astRewrite",
-                json!({
-                    "path":"/tmp/src/lib.rs",
-                    "pattern":"fn $N() {}",
-                    "replacement":"fn $N() {}"
-                }),
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
     fn each_tool_span_parses_to_its_contract_entry() {
         // `tool_contract` parses one tool from its span when the full contract
         // is not yet parsed; every span must yield exactly `tools[i]`.

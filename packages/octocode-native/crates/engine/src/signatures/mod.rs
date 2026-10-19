@@ -204,15 +204,6 @@ pub fn extract_graph_facts(content: &str, file_path: &str) -> Option<String> {
         .and_then(|extraction| serde_json::to_string(&extraction.facts).ok())
 }
 
-#[must_use]
-pub fn extract_graph_facts_with_extension(
-    content: &str,
-    file_path: &str,
-    extension: &str,
-) -> Option<String> {
-    graph_facts::extract_graph_facts_with_metadata_with_extension(content, file_path, extension)
-        .and_then(|extraction| serde_json::to_string(&extraction.facts).ok())
-}
 pub mod languages;
 pub(crate) mod renderer;
 
@@ -280,7 +271,7 @@ impl OutlineUnavailable {
 
 /// Extract a structural skeleton from `content`: `N\ttext` lines, or the
 /// typed reason there is none.
-pub fn extract_signatures_inner(
+pub(crate) fn extract_signatures_inner(
     content: &str,
     file_path: &str,
 ) -> Result<String, OutlineUnavailable> {
@@ -365,6 +356,15 @@ fn extract_by_ext(content: &str, ext: &str) -> Result<String, OutlineUnavailable
 mod tests {
     use super::*;
 
+    fn extract_graph_facts_with_extension(
+        content: &str,
+        file_path: &str,
+        extension: &str,
+    ) -> Option<String> {
+        graph_facts::extract_graph_facts_with_metadata_with_extension(content, file_path, extension)
+            .and_then(|extraction| serde_json::to_string(&extraction.facts).ok())
+    }
+
     /// The declarations-only extraction (outlines, enclosing names) skips
     /// call facts, reference counts and import uses, and keeps every other
     /// fact identical to the full graph extraction, in every grammar.
@@ -388,7 +388,7 @@ mod tests {
             ("notes.txt", "plain text\n"),
         ] {
             let (outline, declarations) = extract_signatures_with_declarations(source, path);
-            let alone = crate::portable::extract_signatures(source, path);
+            let alone = extract_signatures_inner(source, path);
             assert_eq!(outline, alone, "{path}");
             assert_eq!(
                 declarations.and_then(|facts| serde_json::to_value(facts).ok()),

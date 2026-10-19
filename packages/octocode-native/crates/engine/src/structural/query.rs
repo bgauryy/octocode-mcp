@@ -277,7 +277,8 @@ fn rule_anchors(rule: &super::octo::RawRule, anchor_use: AnchorUse) -> Option<Ve
     let mut required = Vec::new();
     if let Some(anchor) = rule
         .pattern
-        .as_deref()
+        .as_ref()
+        .and_then(super::octo::RawPattern::literal)
         .and_then(|pattern| derive_literal_anchor(pattern, anchor_use))
     {
         required.push(vec![anchor.to_owned()]);

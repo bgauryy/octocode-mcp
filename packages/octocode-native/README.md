@@ -136,8 +136,7 @@ On a terminal they print the text MCP clients read; on a pipe, one line of JSON
 (`--json` forces JSON, indented on a terminal). `octocode --help` lists the tools available under the
 current configuration: by default the 12 MCP tools plus the CLI-only
 `ghCloneRepo`. Beta tools (`astTopology`, and `clasify` with a classification
-key) appear with `OCTOCODE_BETA=true`; `astRewrite` is parked in this build and
-stays off on every surface. Gates: [OCTOCODE_TOOLS.md](../../docs/OCTOCODE_TOOLS.md)
+key) appear with `OCTOCODE_BETA=true`. Gates: [OCTOCODE_TOOLS.md](../../docs/OCTOCODE_TOOLS.md)
 and [clasify availability](../../docs/OCTOCODE_CLASIFY.md#availability).
 
 | Command | What it does |
@@ -158,7 +157,7 @@ tool server, started automatically). Exit codes are printed by
 
 ### Warm tool server
 
-Every read-only tool call (all tools except `ghCloneRepo` and `astRewrite`)
+Every read-only tool call (all tools except `ghCloneRepo`)
 runs on `octocode serve`, so a later page reuses what an earlier call computed,
 as it does in one MCP session: page memos, stored scans, outlines, symbol
 pages, graph reports, and warm language servers. The first call of a workspace
@@ -188,8 +187,7 @@ starts the server, detached, behind a socket in `<temp dir>/octocode-<uid>`
   rate-limit state file) match an in-process call. Ctrl-C cancels the call on
   the server.
 - **In process instead** with `storage.mode = memory`
-  (`OCTOCODE_STORAGE_MODE=memory`), on Windows, or for `ghCloneRepo` and
-  `astRewrite`. A server that cannot be reached, refuses a call, or fails
+  (`OCTOCODE_STORAGE_MODE=memory`), on Windows, or for `ghCloneRepo`. A server that cannot be reached, refuses a call, or fails
   mid-call is named on stderr and the call runs in process; a server that
   sends no reply within the request budget answers `timeout`.
 - **Bounded.** At most `MAX_SERVERS` servers per user: a starting server asks

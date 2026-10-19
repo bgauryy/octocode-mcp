@@ -41,16 +41,16 @@ Native validates arguments once, as on the CLI, and an invalid call gets the sam
 
 ## Tool catalog
 
-The contract has 16 tools. With default settings MCP registers 12; beta plus a classification credential adds `clasify` (13). Unavailable tools are left out of `tools/list`, not registered as failing calls.
+The contract has 15 tools. With default settings MCP registers 12; beta plus a classification credential adds `clasify` (13). Unavailable tools are left out of `tools/list`, not registered as failing calls.
 
 | Family | Tools |
 |--------|-------|
 | GitHub | `ghSearchRepo`, `ghSearchCode`, `ghStructure`, `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`, `ghCloneRepo` (CLI-only) |
-| Local | `localSearch`, `localFetch`, `structureSearch`, `astSearch`, `lspSearch`, `astTopology` (CLI-only beta), `astRewrite` (CLI-only beta, disabled in this build) |
+| Local | `localSearch`, `localFetch`, `structureSearch`, `astSearch`, `lspSearch`, `astTopology` (CLI-only beta) |
 | Package | `artifactSearch` |
 | Semantic assessment | `clasify` |
 
-- `ghCloneRepo`, `astTopology`, and `astRewrite` are never registered on MCP, with or without `OCTOCODE_BETA`, and no MCP description or lead names them. Run `npx octocode ghCloneRepo`, or `npx octocode astTopology` with `OCTOCODE_BETA=true`. `astRewrite` is off on every surface in this build.
+- `ghCloneRepo` and `astTopology` are never registered on MCP, with or without `OCTOCODE_BETA`, and no MCP description or lead names them. Run `npx octocode ghCloneRepo`, or `npx octocode astTopology` with `OCTOCODE_BETA=true`.
 - `clasify` needs beta and a nonblank classification API credential; `clasifyContext` on four readers needs only the credential. See [availability](OCTOCODE_CLASIFY.md#availability).
 - Every tool takes up to 5 `queries` per call. MCP publishes input schemas, titles, and descriptions, not output schemas.
 - Server instructions are one prompt of at most 2,000 characters, because hosts truncate near 2 KB; only its `<clasify>` line depends on the enabled classification features. The CLI adds a `<cli>` line and the grammar inventory; MCP clients get schemas through `tools/list`.

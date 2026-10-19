@@ -97,7 +97,6 @@ Tokens first choose the highest-priority source: process environment → workspa
 |---|---|
 | `OCTOCODE_GITHUB_CLIENT_ID` | GitHub OAuth client override |
 | `OCTOCODE_HOME` | Overrides the Octocode configuration directory (default: <os-home>/.octocode) |
-| `OCTOCODE_AST_REWRITE_STATE_DIR` | Override the astRewrite transaction/recovery state directory. |
 | `OCTOCODE_CARGO` | Override the cargo executable used for Rust dependency-graph analysis. |
 
 ## Home-only environment variables
@@ -107,7 +106,6 @@ A workspace `.octocode/.env` cannot set these; the value is skipped and listed u
 | Environment variable | Workspace may set only |
 |---|---|
 | `OCTOCODE_GITHUB_CLIENT_ID` | — |
-| `OCTOCODE_AST_REWRITE_STATE_DIR` | — |
 | `OCTOCODE_CARGO` | — |
 | `GITHUB_API_URL` | — |
 | `OCTOCODE_ENABLE_LOCAL` | `false` |

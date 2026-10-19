@@ -19,7 +19,7 @@ export class ApiCallError extends Error {
 /** A `tool.start`/`tool.end` for a call another tool made (it carries `parentId`). */
 export const isNestedToolEvent = (event: ApiEvent): boolean => (event.type === 'tool.start' || event.type === 'tool.end') && typeof event.data['parentId'] === 'string';
 
-export interface ApiCallOptions {
+interface ApiCallOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
 }

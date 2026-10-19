@@ -21,16 +21,15 @@ import argparse
 import json
 import re
 import statistics as st
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PKG = HERE.parent
+sys.path.insert(0, str(PKG / "scripts"))  # so `python3 build_datasets.py` works from this folder
+
+from accounting import complete_sum
 RESULTS = PKG / "results"
-
-
-def complete_sum(rows, key):
-    values = [r.get(key) for r in rows]
-    return sum(values) if values and all(v is not None for v in values) else None
 
 
 def rounded(value, digits=1):

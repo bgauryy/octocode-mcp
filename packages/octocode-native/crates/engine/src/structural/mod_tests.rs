@@ -187,11 +187,11 @@ fn finds_call_and_captures_single_metavar() {
     );
 }
 
-/// Search and rewrite compile a pattern the same way: trailing punctuation
+/// Trailing punctuation
 /// the pattern omits (a trailing argument comma, a statement terminator) is
 /// not required of the candidate, as in ast-grep.
 #[test]
-fn pattern_search_matches_what_rewrite_matches() {
+fn pattern_search_preserves_optional_trailing_punctuation() {
     let src = "throw new Error(\"one\");\nthrow new Error(\n  `two ${x}`,\n);\nexport const answer = 42;\n";
     let errors = run_pattern(src, "ts", "new Error($MSG)");
     assert_eq!(
@@ -1433,59 +1433,6 @@ fn structural_review_compile_interruption_keeps_mixed_language_evidence() {
     assert_eq!(detailed.status, "truncated");
     assert_eq!(detailed.total_matches, 1);
     assert_eq!(detailed.diagnostics[0].code, "structural.parse.interrupted");
-}
-
-/// astSearch and astRewrite must agree on what a pattern matches: the same
-/// pattern over the same source yields the same match spans on both paths.
-#[test]
-fn search_and_rewrite_agree_on_pattern_matches() {
-    let cases = [
-        (
-            "ts",
-            "typescript",
-            "throw new Error(\"a\");\nthrow new Error(\n  `b ${x}`,\n);\nf(new Error(c, { cause }));\n",
-            "new Error($MSG)",
-        ),
-        (
-            "ts",
-            "typescript",
-            "export const a = 1;\nexport const b = f(\n  2,\n);\nconst c = 3;\n",
-            "export const $N = $V",
-        ),
-        (
-            "rs",
-            "rust",
-            "fn main() {\n    foo(1);\n    foo(\n        2,\n    );\n    foo(3, 4);\n}\n",
-            "foo($A)",
-        ),
-        (
-            "py",
-            "python",
-            "foo(1)\nfoo(\n    2,\n)\nfoo(3, 4)\n",
-            "foo($A)",
-        ),
-    ];
-    for (ext, language, source, pattern) in cases {
-        let searched = run_pattern(source, ext, pattern)
-            .into_iter()
-            .map(|m| (m.start_line - 1, m.start_col))
-            .collect::<Vec<_>>();
-        let rewritten = rewrite(
-            source,
-            serde_json::json!({
-                "id": "parity",
-                "language": language,
-                "rule": {"pattern": pattern},
-                "fix": "X",
-            }),
-        )
-        .expect("rewrite compiles")
-        .into_iter()
-        .map(|m| (m.range.start.line, m.range.start.column))
-        .collect::<Vec<_>>();
-        assert!(!searched.is_empty(), "{ext} {pattern}");
-        assert_eq!(searched, rewritten, "{ext} {pattern}");
-    }
 }
 
 fn scan_options(root: &std::path::Path, skip: u32) -> StructuralSearchFilesOptions {

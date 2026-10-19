@@ -304,3 +304,11 @@ test('operation discovery exposes extraction vocabulary and executable public ex
     );
     assert(!existsSync(join(cwd, '.octocode')));
   }));
+
+test('the CLI and MCP report the package version', async () => {
+  const { spec } = await import('../../dist/runtime.js');
+  const manifest = JSON.parse(
+    readFileSync(join(skill, 'package.json'), 'utf8')
+  );
+  assert.equal(spec.version, manifest.version);
+});

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded MCP receipts: actual catalog gates and local path-policy denial."""
 from __future__ import annotations
-import argparse, hashlib, json, os, queue, signal, subprocess, tempfile, threading, time
+import argparse, hashlib, json, os, queue, signal, subprocess, threading, time
 from pathlib import Path
 
 class McpClient:

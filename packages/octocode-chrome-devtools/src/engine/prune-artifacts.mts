@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 import { readdirSync, statSync, rmSync, existsSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { validateFlags } from './cli-flags.mjs';
+import { flagArgs, validateFlags } from './cli-flags.mjs';
+import { octocodeWorkspace } from './engine-io.mjs';
 
 const argv = process.argv.slice(2);
-const getArg = (flag: string, def?: string) => {
-  const i = argv.indexOf(flag);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
-};
-const hasFlag = flag => argv.includes(flag);
+const { getArg, hasFlag } = flagArgs(argv);
 
 if (hasFlag('--help') || hasFlag('-h')) {
   console.error(
@@ -39,7 +36,7 @@ const failures = [];
 const DRY_RUN = hasFlag('--dry-run');
 const BASE_OVERRIDE = getArg('--base', null);
 
-const WORKSPACE_OUTPUT_BASE = resolve(process.cwd(), '.octocode');
+const WORKSPACE_OUTPUT_BASE = octocodeWorkspace();
 const BASE = BASE_OVERRIDE
   ? resolve(BASE_OVERRIDE)
   : join(WORKSPACE_OUTPUT_BASE, 'octocode-chrome-devtools', 'tmp');

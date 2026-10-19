@@ -93,6 +93,15 @@ fn is_marker(head: &[u8], edge: &str) -> bool {
     text.contains(edge) && text.contains("PRIVATE KEY")
 }
 
+/// Where a window that holds bytes starts.
+#[derive(Clone, Copy)]
+struct WindowStart {
+    /// The requested lines' byte the window starts at.
+    base: usize,
+    /// The first line the window holds bytes of.
+    line: usize,
+}
+
 /// The requested lines of one window kept while a source streams past:
 /// byte-capped, with every line inside a private-key block replaced. The
 /// bytes seen are counted whole, so the view's size is known whatever the
@@ -104,10 +113,8 @@ struct Held {
     /// (moved on to the next character boundary).
     from: usize,
     window: Vec<u8>,
-    /// The requested lines' byte `window` starts at.
-    base: usize,
-    /// The first line `window` holds bytes of.
-    window_first: Option<usize>,
+    /// Where `window` starts; `None` while it holds no byte.
+    start: Option<WindowStart>,
     /// Bytes of the requested lines seen so far, key blocks replaced.
     view_pos: usize,
     /// `view_pos` at the current line's start.
@@ -130,8 +137,7 @@ impl Held {
             last: want.last,
             from: want.from,
             window: Vec::new(),
-            base: 0,
-            window_first: None,
+            start: None,
             view_pos: 0,
             line_view_start: 0,
             line_start: 0,
@@ -175,8 +181,10 @@ impl Held {
             return;
         }
         if self.window.is_empty() {
-            self.base = start + skip;
-            self.window_first = Some(line);
+            self.start = Some(WindowStart {
+                base: start + skip,
+                line,
+            });
         }
         let piece = &bytes[skip..];
         let room = WINDOW_BYTES.saturating_sub(self.window.len());
@@ -213,7 +221,7 @@ impl Held {
                 if !held {
                     self.window.truncate(self.line_start);
                     if self.window.is_empty() {
-                        self.window_first = None;
+                        self.start = None;
                     }
                     if self.cut_line == Some(line) {
                         self.cut_line = None;
@@ -346,7 +354,6 @@ impl WindowLines {
             held.held_last = point.line - 1;
             // Before the window every replaced line counts.
             held.key_lines = point.inside_lines;
-            held.inside_lines = point.inside_lines;
         }
         lines
     }
@@ -532,11 +539,11 @@ impl<C: CancellationCheck> LineSink<'_, C> {
             .map(|held| Streamed {
                 digest: digest.to_owned(),
                 total_lines,
-                first: held.window_first.unwrap_or(held.first),
+                first: held.start.map_or(held.first, |start| start.line),
                 last: held.held_last.min(total_lines),
                 key_lines: held.key_lines,
                 origin: ByteOrigin {
-                    base: held.base,
+                    base: held.start.map_or(0, |start| start.base),
                     total: held.view_pos,
                 },
                 window: held.window,
@@ -1916,6 +1923,78 @@ mod tests {
             assert_same_window(&paged, &whole_pass(&source, page(from)));
             assert!(!String::from_utf8_lossy(&paged.window).contains("SECRET"));
         }
+    }
+
+    /// View points that fall inside a key block (a giant body line, then a
+    /// line of another shape that ends the block), CRLF line ends and an
+    /// unterminated last line page exactly as a whole pass does, up to and
+    /// past the range's end.
+    #[test]
+    fn byte_pages_with_points_inside_a_key_block_match_a_whole_pass() {
+        let mut text = "x".repeat(2 * VIEW_POINT_BYTES + 17);
+        text.push_str("\r\n-----BEGIN PRIVATE KEY-----\r\n");
+        text.push_str(&"A".repeat(2 * VIEW_POINT_BYTES + 5));
+        text.push_str("\r\n!!");
+        text.push_str(&"B".repeat(VIEW_POINT_BYTES + 3));
+        text.push_str("\r\n-----END PRIVATE KEY-----\r\n\r\n");
+        text.push_str(&"€".repeat(VIEW_POINT_BYTES));
+        let file = temp(text.as_bytes());
+        let source = opened(file.path());
+        let stamp = crate::tools::source::cache_stamp(&source.metadata().expect("meta"));
+        let path = file.path().canonicalize().expect("canonical");
+        let page = |from: usize| Want::bytes(1, 7, from);
+        let first = read_windows(&source, &path, stamp, &[page(0)], &NeverCancel)
+            .expect("index")
+            .pop()
+            .expect("window");
+        let total = first.origin.total;
+        for from in [
+            1,
+            VIEW_POINT_BYTES + 1,
+            2 * VIEW_POINT_BYTES + 18,
+            total / 2,
+            total - WINDOW_BYTES / 2,
+            total - 1,
+            total,
+            total + 9,
+        ] {
+            let paged = read_windows(&source, &path, stamp, &[page(from)], &NeverCancel)
+                .expect("page")
+                .pop()
+                .expect("window");
+            let whole = whole_pass(&source, page(from));
+            assert_eq!(paged.window, whole.window, "from {from}");
+            assert_eq!(
+                (paged.first, paged.last, paged.key_lines, paged.origin.total),
+                (whole.first, whole.last, whole.key_lines, whole.origin.total),
+                "from {from}"
+            );
+            assert_eq!(paged.origin.base, whole.origin.base, "from {from}");
+            assert_eq!(
+                (&paged.digest, paged.total_lines),
+                (&whole.digest, whole.total_lines)
+            );
+            // The base64 body stays replaced; the `!!` line is not base64,
+            // so it ends the block (`LineShape::Other`) and shows as text.
+            assert!(
+                !String::from_utf8_lossy(&paged.window).contains("AAAA"),
+                "from {from}"
+            );
+        }
+    }
+
+    /// A byte page whose start lies past the view a key block shrank to holds
+    /// no byte, so it sits at no offset of the view.
+    #[test]
+    fn an_empty_window_after_a_key_block_shrank_the_view_has_no_base() {
+        let mut text = String::from("-----BEGIN PRIVATE KEY-----\n");
+        text.push_str(&"A".repeat(5_000));
+        text.push_str("\n-----END PRIVATE KEY-----\n");
+        let file = temp(text.as_bytes());
+        let streamed = whole_pass(&opened(file.path()), Want::bytes(1, 3, 2_000));
+        assert!(streamed.window.is_empty());
+        assert!(streamed.origin.total < 2_000);
+        assert_eq!(streamed.origin.base, 0);
     }
 
     #[test]

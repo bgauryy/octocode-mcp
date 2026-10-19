@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
+import { flagArgs } from '../dist/engine/cli-flags.mjs';
+
 const __dir = dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = resolve(__dir, '..');
 const OPEN_BROWSER = join(SKILL_DIR, 'dist/engine', 'open-browser.mjs');
@@ -17,10 +19,7 @@ const TARGET_SCRIPT = join(
 const FIXTURE_URL = `file://${join(__dir, 'fixtures', 'webmcp-fixture.html')}`;
 
 const argv = process.argv.slice(2);
-const getArg = (flag, def) => {
-  const i = argv.indexOf(flag);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
-};
+const { getArg } = flagArgs(argv);
 if (argv.includes('--help') || argv.includes('-h')) {
   console.log('Usage: webmcp-tools.check.mjs [--port 9245]');
   process.exit(0);

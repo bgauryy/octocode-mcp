@@ -5,9 +5,9 @@ Use the live MCP tool or built CLI. Read the schema first; keep these checks ali
 ## Contract
 
 - [ ] Catalog exposes `artifactSearch` and no obsolete package-tool alias.
-- [ ] Each query requires one ecosystem `type`: npm, pypi, crates, maven, nuget, go, packagist, or rubygems.
+- [ ] Each query requires one `ecosystem`: npm, pypi, crates, maven, nuget, go, packagist, or rubygems.
 - [ ] Exactly one selector: exact `packageName` or non-empty `keywords` array.
-- [ ] Discovery accepts `cursor` and `pageSize` (default 10, maximum 100); exact reads reject both. Numbered `page` is rejected.
+- [ ] Discovery accepts `page`, `cursor` and `pageSize` (default 50, maximum 100); exact reads reject all three.
 - [ ] `registryUrl` is npm-only; secrets do not appear in query examples or output.
 - [ ] PyPI keyword discovery returns a typed unsupported error and a concise exact-lookup hint.
 

@@ -345,7 +345,11 @@ mod tests {
         let view = inspector_data(&i, &out);
         assert_eq!((view.global_key_count, view.project_key_count), (1, 1));
         assert_eq!(view.storage_mode, "memory");
-        assert!(view.is_set("HOST", &out.effective_env));
+        assert!(
+            out.effective_env
+                .get("HOST")
+                .is_some_and(|value| !value.is_empty())
+        );
         let printed = serde_json::to_string(&view).expect("test fixture operation should succeed");
         assert!(!printed.contains("private-"));
         assert!(!format!("{out:?}").contains("private-"));

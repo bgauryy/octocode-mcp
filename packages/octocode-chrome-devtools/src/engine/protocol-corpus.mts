@@ -4,13 +4,11 @@ import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { resolveScrapingTool } from './scraping-bridge.mjs';
-import { validateFlags } from './cli-flags.mjs';
+import { flagArgs, validateFlags } from './cli-flags.mjs';
+import { octocodeWorkspace } from './engine-io.mjs';
 
 const argv = process.argv.slice(2);
-const getArg = (flag, def = '') => {
-  const i = argv.indexOf(flag);
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : def;
-};
+const { getArg } = flagArgs(argv);
 if (argv.includes('--help') || argv.includes('-h')) {
   console.log(
     'Usage: protocol-corpus.mjs [--scraping-skill-dir <dir>] [--out .octocode/octocode-chrome-devtools/tmp/cdp-protocol] [--domains Network,Storage,DOMStorage,Page,Runtime,Input]'
@@ -18,7 +16,7 @@ if (argv.includes('--help') || argv.includes('-h')) {
   process.exit(0);
 }
 validateFlags(argv, ['--scraping-skill-dir', '--out', '--domains']);
-const workspaceOutputBase = resolve(process.cwd(), '.octocode');
+const workspaceOutputBase = octocodeWorkspace();
 const out = resolve(
   getArg('--out', '.octocode/octocode-chrome-devtools/tmp/cdp-protocol')
 );

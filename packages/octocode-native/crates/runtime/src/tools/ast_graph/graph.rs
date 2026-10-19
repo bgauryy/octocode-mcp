@@ -219,8 +219,7 @@ fn discover_facts(
     extras: &BuildExtras,
     root: &Path,
 ) -> Result<FactScan, ToolError> {
-    let mut exclude =
-        crate::policy::prune::PruneMode::SyntaxVisible.directories(q.default_excludes());
+    let mut exclude = crate::policy::prune::directories(q.default_excludes());
     exclude.extend(extras.extra_excludes.iter().cloned());
     let options = |max_files: u32| GraphFactsScanOptions {
         path: root.to_string_lossy().into_owned(),

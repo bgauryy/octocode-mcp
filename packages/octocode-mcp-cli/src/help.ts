@@ -307,7 +307,7 @@ function sentence(text: string): string {
   return end === -1 ? flat : flat.slice(0, end + 1);
 }
 
-export function commandIndexLine(command: CliCommand, width = command.name.length + 1): string {
+function commandIndexLine(command: CliCommand, width = command.name.length + 1): string {
   const blurb = sentence(command.description);
   const label = command.title && command.title !== command.name ? command.title : '';
   const detail = label && blurb && label !== blurb ? `${label} — ${blurb}` : (blurb || label);

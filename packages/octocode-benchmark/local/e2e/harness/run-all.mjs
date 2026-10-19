@@ -28,7 +28,6 @@ const HERMETIC = {
   acceptance: ['--test', '--test-reporter=spec', path.join(TESTING, 'harness', 'acceptance.test.mjs')],
   'usage-regressions': script('usage-regressions'),
   'lsp-importers': script('lsp-importers'),
-  rewrite: script('rewrite'),
   grammar: script('grammar'),
   workflows: script('workflows'),
   'chain-check': script('chain-check'),
@@ -65,7 +64,8 @@ function counts(stdout) {
 
 // Language servers (rust-analyzer, tsgo) spend several CPU-seconds on a cold
 // first request; with the run queue far above the core count that wall time
-// outgrows the 30 s request budget and the LSP-backed checks time out.
+// grows past the suites' own time bounds (U17 allows a cold call 90 s; a
+// progressing server is waited for up to the 300 s tool-call deadline).
 const OVERSUBSCRIBED = 2 * os.cpus().length;
 const loadAtStart = os.loadavg()[0];
 

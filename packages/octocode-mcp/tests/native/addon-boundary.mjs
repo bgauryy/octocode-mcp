@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { NATIVE_ABI_VERSION } from '@octocodeai/octocode-native/runtime';
 
-const [addon] = process.argv.slice(2);
-assert.ok(addon, 'usage: node addon-boundary.mjs <addon>');
+// A candidate addon to check; without one, the packaged runtime the server loads.
+const [addon = createRequire(import.meta.url).resolve('@octocodeai/octocode-native/runtime')] =
+  process.argv.slice(2);
 const { NativeRuntime } = createRequire(import.meta.url)(addon);
 const runtime = new NativeRuntime({
   surface: 'mcp',

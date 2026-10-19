@@ -1,6 +1,6 @@
 ---
 name: octocode-agents-communication
-description: "Load this skill first whenever agents on different hosts (Claude Code, Codex, Pi, others) or in separate worktrees work on the same code, or a handoff or message between agents went missing. Use when two or more such agents or sessions must work together and need to lock shared files, send messages, hand off work, share evidence, or report blockers; good for setting up the communication CLI or MCP service, discovering peers, and recovering lost delivery. Not for agents inside one Pi team (Pi's `coordinate`, `sendMessage` and `agent` cover them), a single agent working alone, or for wording a handoff (octocode-agentic-prompts)."
+description: "Load this skill first whenever agents on different hosts (Claude Code, Codex, Pi) or worktrees share code, or a cross-agent handoff went missing; good for locks, messages, handoffs and the communication CLI or MCP."
 ---
 
 # Agents communication

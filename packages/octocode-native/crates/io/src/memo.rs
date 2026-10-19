@@ -107,8 +107,9 @@ impl<K: Ord + Clone, V, M: Clone> Memo<K, V, M> {
         self.get_at(key, Instant::now())
     }
 
-    /// [`Self::get`] as of `now`.
-    pub fn get_at<Q: Ord + ?Sized>(&self, key: &Q, now: Instant) -> Option<Hit<V, M>>
+    /// [`Self::get`] as of `now`: the clock is a parameter so a test can age
+    /// an entry without sleeping, as [`Self::insert_full`] takes `stored_at`.
+    fn get_at<Q: Ord + ?Sized>(&self, key: &Q, now: Instant) -> Option<Hit<V, M>>
     where
         K: Borrow<Q>,
     {

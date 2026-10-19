@@ -2,8 +2,7 @@ use std::borrow::Cow;
 
 use tree_sitter::Language as TSLanguage;
 
-use crate::signatures::languages::{LanguageEntry, is_c_family_extension};
-use crate::text::file_extension::JS_TS_EXTENSIONS;
+use crate::signatures::languages::LanguageEntry;
 
 /// Name of the synthetic class (C#) or function (C family) a pattern is
 /// parsed inside when it needs member or statement context. Real code
@@ -17,10 +16,6 @@ pub(super) const WRAP_MARKER: &str = "__OctoWrap";
 pub(super) struct Expando(char);
 
 impl Expando {
-    fn for_ext(ext: &str) -> Self {
-        Self(primary_expando_for_ext(ext))
-    }
-
     pub(super) fn matches_leading(self, c: char) -> bool {
         c == self.0
     }
@@ -57,13 +52,13 @@ pub(super) struct AgLanguage {
 }
 
 impl AgLanguage {
-    pub(super) fn new(ext: &str, entry: &LanguageEntry) -> Self {
+    pub(super) fn new(_ext: &str, entry: &LanguageEntry) -> Self {
         Self {
             ts: entry.language.clone(),
-            expando: Expando::for_ext(ext),
-            class_wrap: ext == "cs",
-            c_family: is_c_family_extension(ext),
-            terminated_fragment_kind: terminated_fragment_kind_for_ext(ext),
+            expando: Expando(entry.pattern_syntax.expando),
+            class_wrap: entry.pattern_syntax.member_context,
+            c_family: entry.pattern_syntax.function_context,
+            terminated_fragment_kind: entry.pattern_syntax.terminated_fragment_kind,
         }
     }
 
@@ -94,15 +89,12 @@ impl AgLanguage {
         self.terminated_fragment_kind
     }
 
-    pub(super) fn preprocess_rewrite_pattern<'query>(
-        &self,
-        query: &'query str,
-    ) -> Cow<'query, str> {
+    pub(super) fn preprocess_metavariables<'query>(&self, query: &'query str) -> Cow<'query, str> {
         pre_process_pattern(self.expando, query)
     }
 
     pub(super) fn preprocess_pattern<'query>(&self, query: &'query str) -> Cow<'query, str> {
-        match self.preprocess_rewrite_pattern(query) {
+        match self.preprocess_metavariables(query) {
             Cow::Borrowed(text) => self.wrap_class(text),
             Cow::Owned(text) => Cow::Owned(self.wrap_class(&text).into_owned()),
         }
@@ -116,31 +108,6 @@ impl AgLanguage {
         } else {
             Cow::Borrowed(text)
         }
-    }
-}
-
-/// Node kind a bare call fragment (`foo($A)`) must parse to once a `;`
-/// terminator supplies statement context. Without it, C/C++ reject the
-/// fragment and Go parses it as a type conversion, so calls silently miss.
-fn terminated_fragment_kind_for_ext(ext: &str) -> Option<&'static str> {
-    match ext {
-        "java" => Some("method_invocation"),
-        "rs" | "go" => Some("call_expression"),
-        ext if is_c_family_extension(ext) => Some("call_expression"),
-        _ => None,
-    }
-}
-
-/// Primary stand-in identifier character for `$` metavariables, per language.
-/// Languages where `$` is a legal identifier character keep it; C-family
-/// grammars use an astral Unicode letter to avoid collisions; the ASCII-only
-/// Assembly grammar uses `Q`; other grammars use `µ`.
-pub(super) fn primary_expando_for_ext(ext: &str) -> char {
-    match ext {
-        ext if ext == "java" || JS_TS_EXTENSIONS.contains(&ext) => '$',
-        ext if is_c_family_extension(ext) => '\u{10000}',
-        "asm" | "assembly" | "s" => 'Q',
-        _ => '\u{00b5}',
     }
 }
 

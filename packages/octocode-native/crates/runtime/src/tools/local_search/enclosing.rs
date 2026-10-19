@@ -96,27 +96,6 @@ impl Outline {
     }
 }
 
-/// Keywords that may precede a searched declaration name (`fn foo`,
-/// `def foo`, `class Foo`).
-const DECLARATION_KEYWORDS: &[&str] = &[
-    "fn",
-    "def",
-    "func",
-    "function",
-    "class",
-    "struct",
-    "enum",
-    "trait",
-    "interface",
-    "type",
-    "const",
-    "let",
-    "var",
-    "impl",
-    "module",
-    "namespace",
-];
-
 /// Whether the search names a declaration (`fn foo`, `class Foo`) rather
 /// than a bare identifier.
 pub(super) fn declaration_search(search_text: &str) -> bool {
@@ -128,7 +107,9 @@ pub(super) fn declaration_search(search_text: &str) -> bool {
 pub(super) fn searched_symbol(search_text: &str) -> Option<&str> {
     let text = search_text.trim();
     let name = match text.split_once(char::is_whitespace) {
-        Some((keyword, rest)) if DECLARATION_KEYWORDS.contains(&keyword) => rest.trim(),
+        Some((keyword, rest)) if octocode_engine::search::is_declaration_keyword(keyword) => {
+            rest.trim()
+        }
         Some(_) => return None,
         None => text,
     };
@@ -285,6 +266,10 @@ fn free() {\n\
         );
         assert_eq!(searched_symbol("$scope"), Some("$scope"));
         assert!(declaration_search("def handler"));
+        // Every keyword the relevance ranking reads as a declaration counts.
+        for text in ["mod walk", "object Cache", "val limit", "macro_rules! row"] {
+            assert!(declaration_search(text), "{text}");
+        }
         assert!(!declaration_search("toValidURL"));
         assert!(!declaration_search("foo bar"));
         for text in [

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Validate and total one instrumented benchmark log.
 
-    python3 bin/sumlog.py run.jsonl --strict --diagnostics run-diagnostics.log
+    python3 scripts/sumlog.py run.jsonl --strict --diagnostics run-diagnostics.log
 
 Prints raw chars, compressed chars (the number that enters context), and the
-overall reduction. Use the compressed total as arm A's "chars in" in SCORING.md.
+overall reduction. The compressed total is an arm's "chars in" (docs/method.md, "What is counted").
 """
 import argparse
 import hashlib

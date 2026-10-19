@@ -23,7 +23,7 @@ const env = {
   CLAUDE_CONFIG_DIR: claudeHome,
   OCTOCODE_HOME: join(home, '.octocode'),
   GH_CONFIG_DIR: join(home, '.config/gh'),
-  OCTOCODE_STORAGE_MODE: 'ephemeral',
+  OCTOCODE_STORAGE_MODE: 'memory',
   OCTOCODE_ENABLE_LOCAL: 'true',
   npm_config_userconfig: join(home, '.npmrc'),
 };
@@ -148,8 +148,13 @@ try {
       env,
       stderr: 'pipe',
     });
+    let stderr = '';
     try {
-      await client.connect(transport);
+      const connecting = client.connect(transport);
+      transport.stderr?.on('data', chunk => {
+        stderr += chunk.toString();
+      });
+      await connecting;
       const listed = await client.listTools();
       assert.ok(listed.tools.some(tool => tool.name === 'localFetch'));
       const goal = 'Verify the Claude plugin runtime uses the active project';
@@ -157,7 +162,12 @@ try {
         name: 'localFetch',
         arguments: {
           queries: [
-            { goal, reasoning: goal, path: 'README.md', fullContent: true },
+            {
+              mainGoal: goal,
+              reasoning: goal,
+              path: 'README.md',
+              fullContent: true,
+            },
           ],
         },
       });
@@ -170,7 +180,7 @@ try {
         arguments: {
           queries: [
             {
-              goal,
+              mainGoal: goal,
               reasoning: goal,
               path: join(cachedRoot, '.mcp.json'),
               fullContent: true,
@@ -178,7 +188,15 @@ try {
           ],
         },
       });
-      assert.ok(JSON.stringify(outside).includes('pathOutsideAllowedRoots'));
+      assert.ok(
+        JSON.stringify(outside).includes('outsideAllowedRoots'),
+        JSON.stringify(outside)
+      );
+      assert.doesNotMatch(
+        stderr,
+        /config warning/,
+        'The smoke environment must use only valid settings.'
+      );
     } finally {
       await client.close();
     }

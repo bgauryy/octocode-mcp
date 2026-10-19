@@ -7,7 +7,7 @@ import { REPOS, ROOT, astMatchRows, checks, cliClient, cliEntry, collect, declar
 
 const { check, summary } = checks('deps-flows');
 const client = await startServer({ env: { OCTOCODE_BETA: '1' } });
-const { call, raw } = client;
+const { call } = client;
 // astTopology is CLI-only: never on MCP, even with OCTOCODE_BETA=1.
 check('astTopology is not listed on MCP with OCTOCODE_BETA=1', !client.tools.some(t => t.name === 'astTopology'));
 

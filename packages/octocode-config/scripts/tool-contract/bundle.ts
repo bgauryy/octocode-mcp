@@ -139,8 +139,7 @@ function nameUntaggableVariants(schema: JsonObject, owner: string): JsonObject {
   const required = (branch: JsonObject): string[] =>
     Array.isArray(branch.required) ? branch.required.filter((key): key is string => typeof key === 'string') : [];
   // A required discriminator with unique values lets typify tag the enum
-  // itself. An optional one (astRewrite's inferred `ruleKind`, defaulted per
-  // branch) cannot be a serde tag, so its values name the variants instead.
+  // itself. Optional discriminators cannot be serde tags; their values name variants.
   if (
     discriminators.some(
       (key) =>
@@ -163,9 +162,8 @@ function nameUntaggableVariants(schema: JsonObject, owner: string): JsonObject {
 }
 
 /**
- * Branches told apart only by their fields (astRewrite: pattern+rewrite or
- * rule+fix) are named by the first required field only that branch has:
- * `<Owner><Field>` (`AstRewriteQueryPattern` / `…Rule`).
+ * Field-discriminated branches use their first unique required field:
+ * `<Owner><Field>`.
  */
 function nameByOwnField(
   objects: JsonObject[],

@@ -77,14 +77,14 @@ const CLASIFY = [
 const INJECTED = { tool: 'localSearch', label: 'inject-slow', args: { matchString: 'budget', path: `${T}/rust/tokio/src`, caseMode: 'insensitive' } };
 
 // ---------- pure stats (self-checked) ----------
-export function pct(values, p) {
+function pct(values, p) {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))];
 }
 
 /** Per server window: first RSS sample at least `warmupMs` after start vs the last sample. */
-export function rssVerdicts(windows, { warmupMs, limit = 0.25 }) {
+function rssVerdicts(windows, { warmupMs, limit = 0.25 }) {
   return windows.map(w => {
     const samples = w.rss.filter(s => Number.isFinite(s.rssKb));
     const base = samples.find(s => s.t - w.startedAt >= warmupMs);
@@ -96,7 +96,7 @@ export function rssVerdicts(windows, { warmupMs, limit = 0.25 }) {
 }
 
 /** Per tool: p95 of successful calls in the first vs the last `spanMs` of the run (disjoint spans only). */
-export function driftVerdicts(calls, { spanMs, runMs, floorMs, limit = 2, minCalls = 3 }) {
+function driftVerdicts(calls, { spanMs, runMs, floorMs, limit = 2, minCalls = 3 }) {
   const tools = [...new Set(calls.map(c => c.tool))];
   return tools.map(tool => {
     const mine = calls.filter(c => c.tool === tool && !c.isError && !c.breach && !c.injected);
@@ -110,7 +110,7 @@ export function driftVerdicts(calls, { spanMs, runMs, floorMs, limit = 2, minCal
   });
 }
 
-export function toolStats(calls) {
+function toolStats(calls) {
   const tools = [...new Set(calls.map(c => c.tool))].sort();
   return tools.map(tool => {
     const mine = calls.filter(c => c.tool === tool);

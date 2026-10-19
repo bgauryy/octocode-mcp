@@ -31,27 +31,27 @@ import { spawnSync } from 'node:child_process';
 
 // Key families.
 export const PAGE_KEYS = /^(nextPage|nextMatchPage|nextFilePage|nextCommitPage|nextCommentPage|nextReviewPage|nextImporterPage|nextDiagnosticPage|continue[A-Za-z]*|expandScan|readHits|readDeclaration|wholeLines|readBoundedLines|responsePagination\.next)$/;
-export const FLAG_KEYS = { includeHidden: 'includeHidden', includeArchived: 'includeArchived' };
+const FLAG_KEYS = { includeHidden: 'includeHidden', includeArchived: 'includeArchived' };
 // The skip causes an includeSkipped lead may lift: the query flag that lifts each, and the words a source's hint or warning names it by.
-export const SKIP_CAUSES = [
+const SKIP_CAUSES = [
   { cause: 'ignored', lifted: q => q.includeIgnored === true, named: /gitignore|\.ignore|ignored/i },
   { cause: 'hidden', lifted: q => q.includeHidden === true, named: /hidden|dot entr|['"(/\s]\.[\w-]+/i },
   { cause: 'default-excluded', lifted: q => q.defaultExcludes === false, named: /default|exclud|prune/i },
 ];
 // Leads that promise evidence the source row is known to hold. find* leads may legitimately answer empty (the source found nothing either).
-export const NOT_EMPTY_KEYS = /^(read(Block|Files|Commit|Issue|PullRequest|AtCommit|AtMerge|MergeCommit|Parent|Patches|SelectedPatches|FullPatches)?|include(Skipped|Hidden|Archived)|narrowScope|view(Tree|Repo|Refs|ReleaseSource)|repair|ignoreCase)$/;
-export const SAME_TOOL_PAGE_KEYS = /^(next[A-Za-z]*Page|continue[A-Za-z]*|expandScan|restart)$/;
+const NOT_EMPTY_KEYS = /^(read(Block|Files|Commit|Issue|PullRequest|AtCommit|AtMerge|MergeCommit|Parent|Patches|SelectedPatches|FullPatches)?|include(Skipped|Hidden|Archived)|narrowScope|view(Tree|Repo|Refs|ReleaseSource)|repair|ignoreCase)$/;
+const SAME_TOOL_PAGE_KEYS = /^(next[A-Za-z]*Page|continue[A-Za-z]*|expandScan|restart)$/;
 // Fields a same-tool lead may change (besides CONTINUATION_FIELDS), per key family.
-export const MUTABLE = [
+const MUTABLE = [
   [/^include(Skipped|Hidden|Archived|BuildScripts)$/, new Set(['includeIgnored', 'includeHidden', 'includeArchived', 'defaultExcludes', 'rustContext'])],
   [/^expandScan$/, new Set(['maxEntries', 'maxFiles', 'maxDepth'])],
   [/^continue[A-Za-z]*$/, new Set(['fullContent'])],
 ];
 // Enrichment and clipped-read leads add the option that widens the same read.
-export const ADDS_OPTIONS = /^(expand[A-Za-z]*|wholeLines|readBoundedLines|readHits|readDeclaration)$/;
-export const SAME_TOOL_KEYS = /^(includeSkipped|includeHidden|includeArchived|includeBuildScripts|narrowScope|restart|retry|repair|broadenSearch|ignoreCase)$/;
-export const CONTINUATION_FIELDS = new Set(['page', 'snapshot', 'scanOffset', 'matchPage', 'offset', 'importerPage', 'candidatePage', 'headSha', 'diagnosticPage', 'supersedes', 'materializeOffset', 'extras', 'mainGoal', 'reasoning', 'ranges', 'length', 'unit']);
-export const KEY_TOOLS = [
+const ADDS_OPTIONS = /^(expand[A-Za-z]*|wholeLines|readBoundedLines|readHits|readDeclaration)$/;
+const SAME_TOOL_KEYS = /^(includeSkipped|includeHidden|includeArchived|includeBuildScripts|narrowScope|restart|retry|repair|broadenSearch|ignoreCase)$/;
+const CONTINUATION_FIELDS = new Set(['page', 'snapshot', 'scanOffset', 'matchPage', 'offset', 'importerPage', 'candidatePage', 'headSha', 'diagnosticPage', 'supersedes', 'materializeOffset', 'extras', 'mainGoal', 'reasoning', 'ranges', 'length', 'unit']);
+const KEY_TOOLS = [
   [/^findText$/, { tools: ['localSearch', 'ghSearchCode', 'ghGetFileContent', 'localFetch'] }],
   [/^(findCallers|callers)$/, { tools: ['lspSearch'], operation: 'callers' }],
   [/^(findReferences|references)$/, { tools: ['lspSearch'], operation: 'references' }],
@@ -69,8 +69,8 @@ export const KEY_TOOLS = [
   [/^readDiagnostics$/, { tools: ['lspSearch', 'astTopology'] }],
   [/^read(Block|Hits|Declaration|Files)?$/, { tools: ['localFetch', 'ghGetFileContent', 'ghGetHistoryItem'] }],
 ];
-export const BUILD_OUTPUT = /(^|\/)(dist|build|out|target|lib|coverage|\.next|node_modules)(\/|$)|\.min\.(js|css)$|\.map$/;
-export const SCOPE_FIELDS = new Set(['path', 'include', 'exclude', 'extensions', 'maxDepth', 'minDepth', 'maxEntries', 'maxFiles', 'fileHas', 'fileLacks', 'kinds', 'language', 'filename', 'entryType', 'nameRegex', 'pageSize', 'resultView', 'owner', 'repo']);
+const BUILD_OUTPUT = /(^|\/)(dist|build|out|target|lib|coverage|\.next|node_modules)(\/|$)|\.min\.(js|css)$|\.map$/;
+const SCOPE_FIELDS = new Set(['path', 'include', 'exclude', 'extensions', 'maxDepth', 'minDepth', 'maxEntries', 'maxFiles', 'fileHas', 'fileLacks', 'kinds', 'language', 'filename', 'entryType', 'nameRegex', 'pageSize', 'resultView', 'owner', 'repo']);
 const PATH_FIELDS = new Set(['path', 'baseline', 'workspaceRoot']);
 
 // Helpers.
@@ -91,7 +91,7 @@ export const rowOf = (query, i = 0) => query?.queries?.[i] ?? {};
 const sortKeys = v => (Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sortKeys(v[k])])) : v);
 /** Canonical JSON: object keys sorted at every level. */
 export const canon = value => JSON.stringify(sortKeys(value));
-export const sameJson = (a, b) => canon(a) === canon(b);
+const sameJson = (a, b) => canon(a) === canon(b);
 /** Every property name a JSON schema declares, at any depth. */
 export const properties = schema => { const out = new Set(); const walk = n => { if (!n || typeof n !== 'object') return; for (const [k, v] of Object.entries(n)) { if (k === 'properties' && v && typeof v === 'object') Object.keys(v).forEach(p => out.add(p)); walk(v); } }; walk(schema); return out; };
 
@@ -143,7 +143,7 @@ export function atoms(sc) {
 export const terminal = entry => /terminalLimit"?:\s*true|terminal limit/i.test(JSON.stringify(entry.sc ?? '') + entry.text);
 
 /** Anchor lines (per path) and symbol names in a source result. */
-export function anchorsOf(sc, rowIndex) {
+function anchorsOf(sc, rowIndex) {
   const lines = new Map();
   const texts = new Set();
   const add = (p, l) => { if (!lines.has(p)) lines.set(p, new Set()); lines.get(p).add(l); };
@@ -164,7 +164,7 @@ export function anchorsOf(sc, rowIndex) {
 }
 
 /** Line numbers a result shows: numbered gutters ("12\ttext") and {line}/{start,end} objects. */
-export function shownLines(entry) {
+function shownLines(entry) {
   const found = new Set();
   const text = JSON.stringify(entry.sc?.results ?? '');
   for (const m of text.matchAll(/(?:\\n|"|^)(\d{1,7})(?:\\t|: |\|)/g)) found.add(Number(m[1]));
@@ -180,14 +180,14 @@ export function shownLines(entry) {
 }
 
 /** Matchers for a query's matchString under its regex mode (smart-case literal by default). */
-export function matchersOf(q) {
+function matchersOf(q) {
   const list = Array.isArray(q.matchString) ? q.matchString : [q.matchString];
   return list.filter(x => typeof x === 'string').map(x => {
     if (q.regex === 'rust' || q.regex === 'pcre2') { try { return new RegExp(x, /[A-Z]/.test(x) ? '' : 'i'); } catch { return null; } }
     return { test: line => (x === x.toLowerCase() ? line.toLowerCase().includes(x) : line.includes(x)) };
   }).filter(Boolean);
 }
-export const hitValues = sc => {
+const hitValues = sc => {
   const out = [];
   const walk = n => {
     if (!n || typeof n !== 'object') return;
@@ -209,7 +209,7 @@ export function outcomeOf(entry) {
   return { rows, codes, error, empty: rows.length > 0 && statuses.every(s => s === 'empty'), text: `${error ? 'error' : statuses.every(s => s === 'empty') ? 'empty' : 'ok'} ${codes.join(',')} ${entry.isError && !rows.length ? short(entry.text, 200) : ''}`.trim() };
 }
 
-export const stripContinuation = q => Object.fromEntries(Object.entries(q).filter(([k]) => !CONTINUATION_FIELDS.has(k)));
+const stripContinuation = q => Object.fromEntries(Object.entries(q).filter(([k]) => !CONTINUATION_FIELDS.has(k)));
 const norm = (k, v, root) => (PATH_FIELDS.has(k) && typeof v === 'string' ? path.resolve(root, v) : v ?? null);
 const pinnedRef = (k, src, v) => k === 'ref' && src === undefined && /^[0-9a-f]{40}$/.test(v); // pinning an unset ref to its SHA keeps the revision
 /** Source fields a lead changed (paths resolved against `root`), ignoring `mutable` ones and, with `additions`, fields the source lacked. */
@@ -240,7 +240,7 @@ export function sourceScopeForPage(source, lead, sq, lq) {
     : sq;
 }
 /** Whether the file or tree at `rel` (under `root`) holds `text` (smart case); null when unreadable. */
-export function fileHolds(rel, text, root) {
+function fileHolds(rel, text, root) {
   const abs = path.isAbsolute(rel) ? rel : path.join(root, rel);
   try {
     const smart = text === text.toLowerCase(); // smart-case: an uppercase letter makes the match case-sensitive

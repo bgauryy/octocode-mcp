@@ -752,30 +752,6 @@ fn workspace_cannot_redirect_credentials_widen_the_sandbox_or_pick_executables()
     );
 }
 
-/// The astRewrite state directory holds the journals a later apply replays,
-/// so a checkout's `.env` must not choose it; the home layers and the process
-/// environment may.
-#[test]
-fn only_trusted_layers_choose_the_ast_rewrite_state_dir() {
-    const KEY: &str = "OCTOCODE_AST_REWRITE_STATE_DIR";
-    let workspace = resolve(Layers {
-        project_env: Some("OCTOCODE_AST_REWRITE_STATE_DIR=/repo/state"),
-        ..NONE
-    });
-    assert!(workspace.dotenv.skipped_protected.iter().any(|k| k == KEY));
-    assert_eq!(workspace.env_value(KEY), None);
-    let home = resolve(Layers {
-        global_env: Some("OCTOCODE_AST_REWRITE_STATE_DIR=/home/state"),
-        ..NONE
-    });
-    assert_eq!(home.env_value(KEY), Some("/home/state"));
-    let process = resolve(Layers {
-        env: &[(KEY, "/process/state")],
-        ..NONE
-    });
-    assert_eq!(process.env_value(KEY), Some("/process/state"));
-}
-
 #[test]
 fn remove_path_strips_nested_and_top_level_fields_only_when_present() {
     let mut value = serde_json::json!({"a":{"b":{"c":1,"d":2}},"top":3});

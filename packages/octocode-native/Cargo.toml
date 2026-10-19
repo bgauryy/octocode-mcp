@@ -83,7 +83,7 @@ undocumented_unsafe_blocks = "deny"
 [profile.release]
 # Thin LTO recovers nearly all of fat LTO's cross-crate optimization at a
 # fraction of the link time — the dominant cost when this profile is built
-# once per release target across six platforms. Benchmark before/after with the
+# once per release target across seven platforms. Benchmark before/after with the
 # engine's criterion suites (structural/search/minify) and confirm binary size
 # holds; revert to `true` if a hot path regresses beyond ~2%.
 lto = "thin"
@@ -193,6 +193,4 @@ opt-level = 3
 [profile.dev.package."oxc_parser"]
 opt-level = 2
 [profile.dev.package."oxc_semantic"]
-opt-level = 2
-[profile.dev.package."ast-grep-core"]
 opt-level = 2

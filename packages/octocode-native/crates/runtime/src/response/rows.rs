@@ -137,7 +137,7 @@ pub(crate) fn error_code_hint(tool: ToolId, code: &str) -> Option<&'static str> 
         "rateLimited" | "classificationRateLimited" => {
             "Wait for Retry-After or the rate-limit reset before retrying."
         }
-        "timeout" | "transport" | "server" | "lockTimeout" => {
+        "timeout" | "transport" | "server" => {
             "Retry once; if it persists, narrow scope and verify provider availability."
         }
         "cancelled" => CANCELLED_HINT,
@@ -681,8 +681,7 @@ fn variants_of(
 
 /// Whether the row `data` carries scan totals that default rows trim to the
 /// ones the page needs and `extras:["stats"]` keeps whole: the contract's
-/// `scanTotals` for the tool says which rows. A count that sizes an edit
-/// (astRewrite's `matchCount`) is no scan total.
+/// `scanTotals` for the tool says which rows.
 fn reports_scan_totals(tool: ToolId, data: &Map<String, Value>) -> bool {
     use crate::tools::id::ScanTotals;
     match tool.scan_totals() {

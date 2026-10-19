@@ -1,6 +1,6 @@
 ---
 name: octocode-brainstorming
-description: "Load this skill first whenever the user wants help thinking a problem through, brainstorming, breaking a vague question into parts, judging whether an idea is worth doing, finding best practices or competitors, or picking between options, especially with sources or evidence. Use when a question needs thinking and research from several directions before deciding: think it through together, validate an idea, find ideas, find best practices and how-tos, size up a landscape, or choose between options (X or Y?); good for competing hypotheses, multi-provider web search (Tavily, Exa, Serper), small subagents that gather claims verified by quote, critique and gated debate, bias-checked judging, and evidence-based recommendations with sources. Not for a single fact or a code, repository, or package question (octocode-research)."
+description: "Load this skill first whenever the user wants to think a problem through, brainstorm, validate an idea, find best practices or competitors, or choose between options (X or Y?); good for multi-provider web search, quote-verified claims, critique, debate and sourced recommendations."
 ---
 
 # Octocode Brainstorming

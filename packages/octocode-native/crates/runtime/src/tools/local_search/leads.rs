@@ -10,7 +10,6 @@ use crate::contracts::tool_types::{
 };
 use crate::policy::path::PathPolicy;
 use crate::policy::prune::DefaultsFlag;
-use crate::policy::prune::PruneMode;
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::empty_walk::{Cause, Globs, Hits, Tagged, Verdict, Walk, diagnose, lift};
@@ -756,7 +755,7 @@ pub(super) fn disclose_unsearched(
         paths,
         cancel,
     );
-    let verdict = diagnose(&root, PruneMode::SyntaxVisible, walk, |relaxed| {
+    let verdict = diagnose(&root, walk, |relaxed| {
         Ok::<_, std::convert::Infallible>(tagged.as_ref().map_or_else(
             |()| Hits {
                 cut: true,
@@ -873,9 +872,7 @@ fn skipped_path_error(error: impl std::fmt::Display) -> ToolError {
 fn unsearched_ignored(root: &std::path::Path, walk: Walk) -> Vec<crate::tools::empty_walk::Skip> {
     let started = std::time::Instant::now();
     let allowance = crate::tools::empty_walk::PROBE_BUDGET;
-    crate::tools::empty_walk::ignored_directories(root, PruneMode::SyntaxVisible, walk, &|| {
-        started.elapsed() > allowance
-    })
+    crate::tools::empty_walk::ignored_directories(root, walk, &|| started.elapsed() > allowance)
 }
 
 /// Counts of the paths the original walk observed but default exclusions skipped.
@@ -1850,7 +1847,6 @@ fn probe_lifted(
         .is_some_and(|reason| !reason.is_empty());
     Tagged::found(
         &root,
-        PruneMode::SyntaxVisible,
         globs,
         searched.files.iter().map(|file| root.join(&file.path)),
         cut,

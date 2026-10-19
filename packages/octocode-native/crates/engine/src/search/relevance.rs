@@ -172,6 +172,13 @@ const DECLARATION_KEYWORDS: &[&[u8]] = &[
     b"#define",
 ];
 
+/// Whether `word` introduces a declared name (`fn`, `class`, `#define`): the
+/// one keyword set both the relevance ranking of a line and a caller that
+/// reads a search such as `fn merge` as a declaration share.
+pub fn is_declaration_keyword(word: &str) -> bool {
+    DECLARATION_KEYWORDS.contains(&word.as_bytes())
+}
+
 /// Words that may precede a declaration keyword, or its name (`let mut x`).
 const DECLARATION_MODIFIERS: &[&[u8]] = &[
     b"pub",

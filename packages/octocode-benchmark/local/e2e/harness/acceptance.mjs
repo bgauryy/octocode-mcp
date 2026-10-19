@@ -130,7 +130,7 @@ export function checkChainFit(sc, tool, { inputNames, published, toolNames = [] 
  * Lint: a `name:value` token in a prose hint must be a published field of
  * the emitting tool, or appear as a field of a lead query on the same row.
  */
-export function hintTextLint(sc, tool, published, toolNames = []) {
+function hintTextLint(sc, tool, published, toolNames = []) {
   const reasons = [];
   const pub = published(tool) ?? new Set();
   for (const r of rowsOf(sc)) {
@@ -181,14 +181,10 @@ const ZERO_BASED = /\b(0-based|zero-based|0-indexed|zero-indexed)\b/i;
  * - `responseOffset`: a character offset into the rendered response (or,
  *   with responseScope rows, a page index) — an offset, not a line/column.
  * - lspSearch `orderHint`: an index into the symbol list, not a source position.
- * - astRewrite `transform.substring.startChar/endChar`: ast-grep's own
- *   `substring` slice semantics (Python-style, 0-based, end exclusive);
- *   renumbering would silently shift every pasted ast-grep rule.
  */
-export const ZERO_BASED_ALLOWED = [
+const ZERO_BASED_ALLOWED = [
   /(^|\.)responseOffset\.description$/,
   /^lspSearch\.inputSchema\..*\.orderHint\.description$/,
-  /^astRewrite\.inputSchema\..*\.substring\.properties\.(startChar|endChar)\.description$/,
 ];
 /** Published texts (descriptions at any depth) naming a 0-based coordinate. */
 export function zeroBasedTexts(published) {

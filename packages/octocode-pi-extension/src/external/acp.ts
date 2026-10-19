@@ -9,7 +9,7 @@ import { adoptTree, KILL_GRACE_MS, prepareTree, stopTree } from '../shared/proce
 import { errorMessage, untilAborted } from '../shared/util.js';
 import type { ExternalBackend, ExternalReply } from './protocol.js';
 
-export interface AcpConnectInput {
+interface AcpConnectInput {
   command: string;
   args?: string[];
   vendor: string;

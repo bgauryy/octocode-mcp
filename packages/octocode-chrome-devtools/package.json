@@ -47,7 +47,7 @@
     "test:cli": "node tests/protocol-suite.mjs --transport typed-cli",
     "test:webmcp": "node tests/webmcp-tools.check.mjs",
     "test:cdp-all": "node tests/cdp-all-suite.mjs",
-    "verify": "yarn build && yarn lint && yarn typecheck && yarn test && yarn test:protocol && yarn test:mcp && yarn test:cli && yarn test:cdp-all && yarn test:package",
+    "verify": "yarn build && yarn lint && yarn typecheck && yarn test && yarn test:protocol && yarn test:mcp && yarn test:cli && yarn test:cdp-all && yarn test:webmcp && yarn test:package",
     "prepack": "yarn build",
     "test:package": "node tools/release-smoke.mjs",
     "format": "prettier --write \"src/**/*.{ts,mts}\" \"tools/**/*.mjs\" \"tests/**/*.mjs\""

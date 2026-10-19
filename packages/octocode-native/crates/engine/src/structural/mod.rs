@@ -9,32 +9,24 @@
 mod files;
 mod kinds;
 mod language;
-mod layout;
 mod macro_bodies;
 mod metavars;
 mod octo;
 mod query;
-mod rewrite;
+mod syntax_errors;
 mod syntax_tree;
 mod types;
 
-pub use files::rewrite_files;
 #[cfg(test)]
 use files::search_files_detailed;
 pub use files::{Rebuilt, file_matches, search_files};
-pub use octo::{EXAMPLE_RULE, PatternDeclaration, RULE_INVALID};
-#[cfg(test)]
-use rewrite::rewrite;
-pub use rewrite::{
-    CompiledRewrite, MAX_REWRITE_CONTENT_BYTES, UnmatchedMention, compile_rewrite,
-    count_syntax_errors,
-};
+pub use octo::{EXAMPLE_RULE, PatternDeclaration, RULE_INVALID, validate_rule_shape};
+pub use syntax_errors::count_syntax_errors;
 pub use syntax_tree::{
     SyntaxTreeInspectOptions, SyntaxTreeInspectResult, SyntaxTreeNode, inspect_with_extension,
 };
 #[cfg(test)]
 use types::StructuralMatch;
-pub use types::StructuralRewriteFilesOptions;
 pub use types::{
     FileMatches, StructuralDemand, StructuralDetailedMatch, StructuralDiagnostic,
     StructuralSearchDetailedResult, StructuralSearchFilesDetailedResult,
@@ -118,7 +110,7 @@ fn no_matches(
     }
 }
 
-pub fn search_detailed(
+pub(crate) fn search_detailed(
     content: &str,
     file_path: &str,
     ext: &str,
@@ -232,7 +224,3 @@ pub fn search_detailed(
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "parity_tests.rs"]
-mod parity_tests;

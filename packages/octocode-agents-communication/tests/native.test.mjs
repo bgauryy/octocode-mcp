@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { python } from '../src/artifact-checks.mjs';
 import { getOctocodeHome } from '../../../packages/octocode-config/src/home.ts';
-import { root, nativeBinary as binary, tempWorkspace, reasoningCommands, withReasoning, fastHeartbeatEnv } from './helpers.mjs';
+import { root, binary, tempWorkspace, reasoningCommands, withReasoning, fastHeartbeatEnv } from './helpers.mjs';
 
 function testArgs(args){
  if(!reasoningCommands.includes(args[0])||!args[1]?.startsWith('{'))return args;

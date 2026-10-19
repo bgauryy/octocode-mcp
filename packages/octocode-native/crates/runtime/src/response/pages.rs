@@ -526,11 +526,6 @@ impl PageFacts {
         (self.page > pages.max(1)).then_some((self.page, pages))
     }
 
-    /// Whether a later page holds more.
-    pub(crate) fn has_more(self) -> bool {
-        self.has_more
-    }
-
     /// The `pagination` block.
     pub(crate) fn to_value(self) -> Value {
         let mut block = Map::new();

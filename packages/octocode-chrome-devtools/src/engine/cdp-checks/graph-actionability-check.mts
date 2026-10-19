@@ -5,12 +5,10 @@ import {
   ACTIONABILITY_HELPERS_JS,
   waitForPageReady,
 } from '../dom-actionability.mjs';
+import { flagArgs } from '../cli-flags.mjs';
 
 const argv = process.argv.slice(2);
-const getArg = (flag, def = '') => {
-  const i = argv.indexOf(flag);
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : def;
-};
+const { getArg } = flagArgs(argv);
 const GRAPH = getArg('--graph', '');
 const NAVIGATE_URL = getArg('--new-tab', '') || getArg('--url', '');
 const SELECTORS = getArg(

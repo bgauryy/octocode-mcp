@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn } from './helpers.mjs';
 import { promisify } from 'node:util';
-import { rmSync, mkdirSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
+import { rmSync, mkdirSync, readFileSync, readdirSync, writeFileSync, symlinkSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { registerBoundTools } from '../scripts/pi-extension.mjs';
@@ -185,19 +186,72 @@ test('missing document names suggest bounded exact names without silently readin
   assert.equal(f.call('read_document', { name: 'handoff.0.md' }, f.b.id).content, 'Evidence 0');
 });
 
-test('document bounds, identity and path checks reject invalid or foreign access', t => {
+/** The CLI's stderr for a command it refused (exit 1); a timeout or crash fails with its cause. */
+function refusal(error) {
+  assert.ok(error, 'expected the command to be refused');
+  assert.equal(error.status ?? error.code, 1, `expected exit 1, got ${error.code ?? error.signal ?? error.message}`);
+  return error.stderr.trim();
+}
+const refused = run => { try { run(); } catch (error) { return refusal(error); } return refusal(undefined); };
+const refusedAsync = async run => { try { await run(); } catch (error) { return refusal(error); } return refusal(undefined); };
+const published = f => { try { return readdirSync(join(f.workspace, '.octocode/communication')).sort(); } catch (error) { if (error.code === 'ENOENT') return []; throw error; } };
+function documentRecords(t, f) {
+  const db = new DatabaseSync(f.database); t.after(() => db.close());
+  return db.prepare("SELECT key FROM records WHERE type='document' ORDER BY key").all().map(row => row.key);
+}
+const unknownSession = /^Unknown or expired session in this workspace\. Refresh peers and copy the exact current ID/;
+
+test('share_document refuses unsafe or noncanonical names before writing anything', t => {
   const f = fixture(t);
-  for (const name of ['../secret', '/secret', 'a/b', 'a\\b', '.hidden', 'a..b', 'UPPER.md', 'space file.md']) {
-    assert.throws(() => f.call('share_document', { name, content: 'no' }, f.a.id));
+  const pattern = 'Invalid input: /name does not match pattern';
+  for (const name of ['../secret', '/secret', 'a/b', 'a\\b', '.hidden', '-dash.md', 'UPPER.md', 'space file.md']) {
+    assert.equal(refused(() => f.call('share_document', { name, content: 'no' }, f.a.id)), pattern, name);
   }
-  assert.throws(() => f.call('share_document', { name: 'large.md', content: '🙂'.repeat(262145) }, f.a.id), /1 MiB/);
-  assert.throws(() => f.call('share_document', { name: 'unknown.md', content: 'no' }, 'unknown'));
-  f.call('share_document', { name: 'valid.md', content: 'yes' }, f.a.id);
-  assert.throws(() => f.call('read_document', { name: 'valid.md' }, 'unknown'));
-  assert.throws(() => f.call('read_document', { name: 'valid.md', limit: 16385 }, f.b.id));
+  assert.equal(refused(() => f.call('share_document', { name: 'a..b', content: 'no' }, f.a.id)),
+    "Use a lowercase document filename (letters, digits, dot, dash, underscore), without directories or '..'");
+  assert.equal(refused(() => f.call('share_document', { name: 'a'.repeat(129), content: 'no' }, f.a.id)),
+    'Invalid input: /name has invalid string length');
+  assert.deepEqual(published(f), []);
+  assert.deepEqual(documentRecords(t, f), []);
+  // The longest valid name is accepted, so the refusals above are the name rules, not a broken command.
+  assert.equal(f.call('share_document', { name: 'a'.repeat(128), content: 'yes' }, f.a.id).created, true);
+  assert.deepEqual(published(f), ['a'.repeat(128)]);
+});
+
+test('share_document accepts exactly 1 MiB of UTF-8 content and refuses one byte more', async t => {
+  const f = fixture(t);
+  const limit = 1024 * 1024;
+  // Large payloads stream over an asynchronous stdin pipe, as the Pi bound tools send them.
+  assert.equal(await refusedAsync(() => f.callAsync('share_document', { name: 'over.md', content: 'x'.repeat(limit + 1) }, f.a.id)),
+    `Invalid content: ${limit + 1} UTF-8 bytes exceeds 1 MiB`);
+  // The bound counts UTF-8 bytes, not characters: 262145 four-byte characters are 4 bytes over.
+  assert.equal(await refusedAsync(() => f.callAsync('share_document', { name: 'emoji.md', content: '🙂'.repeat(limit / 4 + 1) }, f.a.id)),
+    `Invalid content: ${limit + 4} UTF-8 bytes exceeds 1 MiB`);
+  assert.deepEqual(published(f), []);
+  assert.deepEqual(documentRecords(t, f), []);
+  const content = '🙂'.repeat(limit / 4);
+  const { created, document } = await f.callAsync('share_document', { name: 'exact.md', content }, f.a.id);
+  assert.equal(created, true);
+  assert.equal(document.bytes, limit);
+  assert.equal(document.sha256, createHash('sha256').update(content).digest('hex'));
+  assert.equal(readFileSync(join(f.workspace, '.octocode/communication/exact.md'), 'utf8'), content);
+  assert.deepEqual(documentRecords(t, f), ['exact.md']);
+});
+
+test('document commands refuse unknown and foreign sessions and out-of-bounds read windows', t => {
+  const f = fixture(t);
+  assert.match(refused(() => f.call('share_document', { name: 'unknown.md', content: 'no' }, 'unknown')), unknownSession);
+  assert.deepEqual(published(f), []);
+  assert.equal(f.call('share_document', { name: 'valid.md', content: 'yes' }, f.a.id).created, true);
+  assert.match(refused(() => f.call('read_document', { name: 'valid.md' }, 'unknown')), unknownSession);
+  assert.equal(refused(() => f.call('read_document', { name: 'valid.md', limit: 16385 }, f.b.id)),
+    'Invalid input: /limit is outside numeric bounds');
+  assert.equal(f.call('read_document', { name: 'valid.md', limit: 16384 }, f.b.id).content, 'yes');
+  // A session of another workspace on the same database cannot read this workspace's documents.
   const other = join(f.workspace, 'other'); mkdirSync(other);
   const foreign = JSON.parse(execFileSync(binary, ['join', JSON.stringify({ name: 'foreign', vendor: 'generic' }), '--workspace', other, '--database', f.database], { encoding: 'utf8' }));
-  assert.throws(() => f.call('read_document', { name: 'valid.md' }, foreign.id));
+  assert.match(refused(() => f.call('read_document', { name: 'valid.md' }, foreign.id)), unknownSession);
+  assert.deepEqual(documentRecords(t, f), ['valid.md']);
 });
 
 test('document directories and files reject symlinks; unregistered files are preserved', { skip: process.platform === 'win32' }, t => {

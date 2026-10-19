@@ -11,6 +11,8 @@ const host = vi.hoisted(() => ({
   error: vi.fn(),
   spawn: vi.fn(),
   home: '',
+  homeError: undefined as Error | undefined,
+  log: [] as string[],
   appName: 'Cursor',
   autoInstall: false,
   sessionChanged: undefined as
@@ -19,7 +21,10 @@ const host = vi.hoisted(() => ({
 
 vi.mock('os', async importOriginal => ({
   ...(await importOriginal<typeof import('os')>()),
-  homedir: () => host.home,
+  homedir: () => {
+    if (host.homeError) throw host.homeError;
+    return host.home;
+  },
 }));
 vi.mock('child_process', () => ({ spawn: host.spawn }));
 vi.mock('vscode', () => ({
@@ -49,7 +54,10 @@ vi.mock('vscode', () => ({
     },
   },
   window: {
-    createOutputChannel: () => ({ appendLine() {}, dispose() {} }),
+    createOutputChannel: () => ({
+      appendLine: (line: string) => host.log.push(line),
+      dispose() {},
+    }),
     createStatusBarItem: () => ({ show() {}, dispose() {} }),
     showInformationMessage: host.info,
     showErrorMessage: host.error,
@@ -82,6 +90,8 @@ beforeEach(async () => {
   vi.resetModules();
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'octocode-extension-'));
   host.home = directory;
+  host.homeError = undefined;
+  host.log.length = 0;
   vi.stubEnv('APPDATA', path.join(directory, 'AppData'));
   host.appName = 'Cursor';
   host.autoInstall = false;
@@ -134,6 +144,39 @@ describe('extension command integration', () => {
       expect.stringContaining('GitHub token sync failed')
     );
     expect(await fs.readFile(config, 'utf8')).toBe('{ broken');
+  });
+
+  it('logs why the session check failed and falls back to the manual token', async () => {
+    host.token.mockRejectedValue(new Error('keychain locked'));
+    await activate();
+    expect(host.log.join('\n')).toContain('keychain locked');
+    expect(host.log.join('\n')).not.toContain('GitHub authenticated');
+  });
+
+  it('reports each client whose config path cannot be resolved during token sync', async () => {
+    await activate();
+    host.homeError = new Error('no home directory');
+    host.token.mockResolvedValue({
+      accessToken: 'token',
+      account: { label: 'octo' },
+    });
+    await host.sessionChanged!({ provider: { id: 'github' } });
+    const log = host.log.join('\n');
+    for (const client of ['Cline', 'Roo Code', 'Trae']) {
+      expect(log).toContain(`Cannot resolve the ${client} config path`);
+    }
+    expect(log).toContain('no home directory');
+    expect(host.error).toHaveBeenCalledWith(
+      expect.stringContaining('Could not update MCP configs for: Cline, Roo Code, Trae')
+    );
+  });
+
+  it('logs the reason a client is reported failed by installForAll', async () => {
+    await activate();
+    host.homeError = new Error('no home directory');
+    await command('installForAll');
+    expect(host.log.join('\n')).toContain('Cannot resolve the Cline config path');
+    expect(host.info.mock.calls.at(-1)?.[0]).toContain('❌ Cline (failed)');
   });
 
   it('leaves invalid configuration untouched and reports failure', async () => {

@@ -6,7 +6,6 @@ import {
   mkdtemp,
   readFile,
   rm,
-  utimes,
   writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
@@ -376,8 +375,14 @@ try {
           ],
         });
         assert.equal(response.isError, true);
+        // `resources` belongs to the `sections` form, so the first repair
+        // offers either fix; the other issues stay listed in `details`.
         assert.deepEqual(response.structuredContent, {
-          error: 'queries.0: Send exactly one of: state, source.',
+          error: `'resources' in queries[0] applies only with operation:"sections": set it, or remove 'resources'.`,
+          details: [
+            'queries.0.questions: Expected object',
+            'queries.0: Send exactly one of: state, source.',
+          ],
           errorCode: 'invalidInput',
         });
       }
@@ -695,60 +700,57 @@ try {
       assert.equal(data.pagination?.totalItems ?? data.symbols.length, 1);
     }
   );
-  await check(
-    'astRewrite is parked: MCP does not list or run it, and the CLI refuses it without writing',
-    async () => {
-      assert.ok(
-        !expectedTools.includes('astRewrite'),
-        'MCP must not list astRewrite'
-      );
-      const directory = await mkdtemp(path.join(fixture, 'cli-rewrite-'));
-      const file = path.join(directory, 'source.ts');
-      const rule = {
-        reasoning: 'Verify a parked rewrite never runs.',
-        path: directory,
-        language: 'typescript',
-        pattern: 'oldCall($A)',
-        rewrite: 'newCall($A)',
-      };
-      try {
-        await writeFile(file, 'oldCall(1);\n');
-        // An unlisted tool is a protocol error (-32602) or an error result, never a rewrite.
-        const rejected = await client
-          .callTool({ name: 'astRewrite', arguments: { queries: [rule] } })
-          .then(
-            result => result.isError === true,
-            error => /not found|not available/i.test(String(error?.message))
-          );
-        assert.ok(rejected, 'MCP must reject astRewrite');
-        assert.deepEqual(executeCliTool('astRewrite', [rule], 5), {
-          error:
-            'Tool astRewrite is not available in this native runtime: it is disabled in this build.',
-          errorCode: 'toolUnavailable',
-        });
-        assert.equal(await readFile(file, 'utf8'), 'oldCall(1);\n');
-      } finally {
-        await rm(directory, { recursive: true, force: true });
-      }
-    }
-  );
   if (!values.quick) {
     await check(
-      'outer text pagination isolates structured rows and reconstructs every character',
+      'localFetch rows page by the response window and continueWindow reaches every line once',
       async () => {
         const args = {
           queries: [
             {
               reasoning:
-                'Exercise localFetch response pagination through built stdio acceptance.',
+                'Exercise localFetch row windows through built stdio acceptance.',
               path: path.join(fixture, 'math.ts'),
             },
           ],
         };
         const full = await invoke('localFetch', args);
+        const fullRow = full.structuredContent.results[0].data;
+        assert.equal(fullRow.next, undefined);
         let current = await invoke('localFetch', {
           ...args,
           responseLength: 150,
+        });
+        let content = '';
+        let count = 0;
+        while (true) {
+          assert.ok(count++ < 30);
+          // The row is complete on every page: its own window carries the
+          // continuation; no text window empties `results`.
+          assert.equal(current.structuredContent.results.length, 1);
+          assert.equal(current.structuredContent.responseWindow, undefined);
+          const row = current.structuredContent.results[0].data;
+          assert.equal(row.totalLines, fullRow.totalLines);
+          content += row.content;
+          const next = row.next?.continueWindow;
+          assert.equal(row.pagination.hasMore, next !== undefined);
+          if (!next) break;
+          assert.equal(next.tool, 'localFetch');
+          assert.equal(next.query.queries[0].offset, row.pagination.nextOffset);
+          current = await invoke(next.tool, next.query);
+        }
+        assert.ok(count > 1, 'responseLength:150 did not window the read');
+        assert.equal(content, fullRow.content);
+      }
+    );
+    await check(
+      'outer text pagination isolates structured rows and reconstructs every character',
+      async () => {
+        const args = { operation: 'files', path: fixture, extensions: ['ts'] };
+        const full = await invoke('structureSearch', { queries: [args] });
+        let current = await invoke('structureSearch', {
+          queries: [args],
+          responseLength: 150,
+          responseScope: 'text',
         });
         let text = '';
         let count = 0;
@@ -798,76 +800,108 @@ try {
         );
       }
     );
-    await check(
-      'whole-response pages replay an unchanged source; an edit restarts like a fresh runtime',
-      async () => {
-        const parent = fixture;
-        await mkdir(parent, { recursive: true });
-        const directory = await mkdtemp(path.join(parent, 'mcp-snapshot-'));
-        const file = path.join(directory, 'source.ts');
-        try {
-          await writeFile(file, 'export const value = 1;\n');
-          // Settled sources: a page over them may replay.
-          const then = new Date(Date.now() - 10_000);
-          for (const entry of [file, directory])
-            await utimes(entry, then, then);
-          const page1 = () =>
-            invoke('localFetch', {
-              queries: [
-                {
+    for (const scope of ['rows', 'text']) {
+      await check(
+        `whole-response ${scope} pages replay one captured response; a new query sees an edit`,
+        async () => {
+          const parent = fixture;
+          await mkdir(parent, { recursive: true });
+          const directory = await mkdtemp(path.join(parent, 'mcp-snapshot-'));
+          // Three small reads: no row is split, so the response pages between them.
+          const files = [1, 2, 3].map(index =>
+            path.join(directory, `source-${index}.ts`)
+          );
+          try {
+            for (const [index, file] of files.entries())
+              await writeFile(file, `export const value = ${index + 1};\n`);
+            const page1 = () =>
+              invoke('localFetch', {
+                queries: files.map(file => ({
                   reasoning:
                     'Exercise localFetch response pagination through built stdio acceptance.',
                   path: file,
-                },
-              ],
-              responseLength: 100,
-            });
-          const first = await page1();
-          const before = first.structuredContent.responsePagination;
-          assert.ok(before.next);
-          let current = first;
-          let rendered = '';
-          let pages = 0;
-          for (;;) {
-            assert.ok(++pages < 100);
-            // The last page has nothing left to page: it carries no responsePagination.
-            const pagination = current.structuredContent.responsePagination;
-            if (pagination) {
-              assert.equal(pagination.snapshot, before.snapshot);
-              assert.notEqual(pagination.restart, true);
-            } else
-              assert.ok(
-                pages > 1,
-                'the first page lost its responsePagination'
+                })),
+                responseLength: 300,
+                responseScope: scope,
+              });
+            // Read every page of one saved response; each carries its snapshot.
+            const drain = async (first, snapshot) => {
+              let current = first;
+              let rendered = '';
+              let pages = 0;
+              for (;;) {
+                assert.ok(++pages < 100);
+                // The last page has nothing left to page: it carries no responsePagination.
+                const pagination = current.structuredContent.responsePagination;
+                if (pagination) {
+                  assert.equal(pagination.snapshot, snapshot);
+                  assert.notEqual(pagination.restart, true);
+                } else
+                  assert.ok(
+                    pages > 1,
+                    'the first page lost its responsePagination'
+                  );
+                rendered += current.content
+                  .filter(block => block.type === 'text')
+                  .map(block =>
+                    block.text.replace(/^# Response page[^\n]*\n/, '')
+                  )
+                  .join('');
+                if (!pagination?.next) break;
+                current = await invoke(
+                  pagination.next.tool,
+                  pagination.next.query
+                );
+              }
+              assert.ok(pages > 1);
+              return rendered;
+            };
+            const once = (rendered, index, value = index) =>
+              assert.equal(
+                rendered.split(`export const value = ${value};`).length - 1,
+                1,
+                `value ${value} of source ${index} must arrive once across the pages`
               );
-            rendered += current.content
-              .filter(block => block.type === 'text')
-              .map(block => block.text.replace(/^# Response page[^\n]*\n/, ''))
-              .join('');
-            if (!pagination?.next) break;
-            current = await invoke(pagination.next.tool, pagination.next.query);
-          }
-          assert.ok(pages > 1);
-          assert.match(rendered, /export const value = 1;/);
+            const first = await page1();
+            const before = first.structuredContent.responsePagination;
+            assert.ok(before.next);
+            const original = await drain(first, before.snapshot);
+            for (const index of [1, 2, 3]) once(original, index);
 
-          // After an edit the stored pages are stale: the next page restarts on
-          // the current source, never serving the old evidence.
-          const restartFrom = (await page1()).structuredContent
-            .responsePagination.next;
-          await writeFile(file, 'export const value = 200;\n');
-          const restarted = await invoke(restartFrom.tool, restartFrom.query);
-          const pagination = restarted.structuredContent.responsePagination;
-          assert.equal(pagination.restart, true);
-          assert.notEqual(pagination.snapshot, before.snapshot);
-          const fresh = await call('localFetch', {
-            path: file,
-          });
-          assert.equal(fresh.content, '1\texport const value = 200;\n');
-        } finally {
-          await rm(directory, { recursive: true, force: true });
+            // A response token names one captured response: after an edit its
+            // pages replay the captured evidence, never re-reading the files.
+            const captured = await page1();
+            assert.equal(
+              captured.structuredContent.responsePagination.snapshot,
+              before.snapshot
+            );
+            await writeFile(files[0], 'export const value = 100;\n');
+            await writeFile(files[2], 'export const value = 300;\n');
+            const replayed = await drain(captured, before.snapshot);
+            for (const index of [1, 2, 3]) once(replayed, index);
+            assert.doesNotMatch(replayed, /value = (100|300);/);
+
+            // A new query without response fields reads the current source and
+            // captures a new response.
+            const fresh = await call('localFetch', { path: files[2] });
+            assert.equal(fresh.content, '1\texport const value = 300;\n');
+            const recaptured = await page1();
+            const recapturedPagination =
+              recaptured.structuredContent.responsePagination;
+            assert.notEqual(recapturedPagination.snapshot, before.snapshot);
+            const current = await drain(
+              recaptured,
+              recapturedPagination.snapshot
+            );
+            once(current, 1, 100);
+            once(current, 2);
+            once(current, 3, 300);
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
         }
-      }
-    );
+      );
+    }
     await check('structural captures positive', async () => {
       const data = await call('astSearch', {
         operation: 'match',

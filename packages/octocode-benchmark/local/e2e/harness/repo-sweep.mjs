@@ -6,7 +6,7 @@ import { REPOS, astMatchRows, checks, collect, declarations, findHint, rowData, 
 
 const { check, summary } = checks('repo-sweep');
 const client = await startServer();
-const { call, raw } = client;
+const { call } = client;
 const ONLY = process.argv[2]?.split(',');
 
 const REPOS_BY_LANG = [

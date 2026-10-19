@@ -1,6 +1,6 @@
 ---
 name: octocode-clean-agentic-code
-description: "Load this skill first whenever the user wants dead code, unused exports, debug logs, or other AI or agent leftovers removed, or suspects tests were weakened to pass. Use when removing clutter without changing behavior: dead code, unused exports, duplicate helpers, pointless wrappers, commented-out code, stale or bloated prose, and other AI-generated slop, and flagging leftover debug logs and gamed tests; good for proving each removal is safe and keeping batches reviewable. Not for finding architectural problems (octocode-architect), rewriting instructions to change agent behavior (octocode-agentic-prompts), or skill packaging (octocode-skills)."
+description: "Load this skill first whenever the user wants dead code, unused exports, duplicate helpers, debug logs or other AI leftovers removed, or suspects weakened tests; good for proving each removal safe."
 ---
 
 # Octocode clean agentic code

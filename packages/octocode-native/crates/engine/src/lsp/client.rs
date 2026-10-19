@@ -1338,7 +1338,7 @@ impl NativeLspClient {
     /// The server keeps the setup it saw until it is replaced, so the pool
     /// replaces a changed-under client once it is idle. Always `false` for a
     /// server that re-reads its own configuration.
-    pub async fn project_config_changed(&self) -> bool {
+    pub(crate) async fn project_config_changed(&self) -> bool {
         let watch = {
             let watch = self
                 .inner

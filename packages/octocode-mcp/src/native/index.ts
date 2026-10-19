@@ -91,6 +91,12 @@ export function loadNativeBinding(
   return binding as NativeRuntimeBinding;
 }
 
+// @modelcontextprotocol/server 2.x carries the per-request abort signal and
+// JSON-RPC id under `ctx.mcpReq`.
+type ToolCallContext = {
+  mcpReq?: { signal?: AbortSignal; id?: string | number };
+};
+
 /**
  * The MCP SDK's `registerTool` is generic over a single, statically-known
  * schema. Registration here iterates a heterogeneous definition list resolved at
@@ -98,12 +104,6 @@ export function loadNativeBinding(
  * Contract agreement between the advertised schema and the runtime that executes
  * it is guaranteed separately by the fingerprint check below — not by this type.
  */
-// @modelcontextprotocol/server 2.x carries the per-request abort signal and
-// JSON-RPC id under `ctx.mcpReq`.
-type ToolCallContext = {
-  mcpReq?: { signal?: AbortSignal; id?: string | number };
-};
-
 type RegisterTool = (
   name: string,
   config: {

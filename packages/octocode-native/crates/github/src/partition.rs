@@ -61,10 +61,6 @@ impl Partition {
         &self.origin
     }
 
-    pub fn is_anonymous(&self) -> bool {
-        self.credential.is_none()
-    }
-
     /// A short, stable label for the credential (`anon` when anonymous): the
     /// per-credential part of persisted limiter file names.
     pub fn credential_tag(&self) -> &str {
@@ -112,7 +108,6 @@ mod tests {
     #[test]
     fn empty_secret_is_anonymous() {
         let anonymous = partition("registry.npmjs.org", None);
-        assert!(anonymous.is_anonymous());
         assert_eq!(anonymous.credential_tag(), "anon");
         assert_eq!(anonymous, partition("registry.npmjs.org", Some("")));
     }

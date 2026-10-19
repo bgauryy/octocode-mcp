@@ -1,10 +1,7 @@
-use super::Walking;
-use crate::contracts::tool_types::DefaultExcludes;
+use super::{Listing, Walking};
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::empty_walk::Walk;
-use crate::tools::id::ToolId;
 use crate::tools::num::{u32_of, usize_of};
-use crate::tools::paging::clamp_page_size;
 use crate::tools::result::ToolError;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
@@ -13,6 +10,8 @@ use octocode_engine::types::{FileSystemEntry, FileSystemQueryOptions};
 use serde_json::{Value, json};
 
 use crate::contracts::tool_types::{StructureSearchQueryFiles, StructureSearchQueryFilesTime};
+
+super::impl_listing!(StructureSearchQueryFiles);
 
 /// Engine-unit views over the generated `files` query.
 impl StructureSearchQueryFiles {
@@ -68,11 +67,6 @@ impl StructureSearchQueryFiles {
     }
     pub(crate) fn page(&self) -> u32 {
         u32_of(self.page.get())
-    }
-    /// The caller's page size; `None` pages by the response budget.
-    pub(crate) fn page_size(&self) -> Option<usize> {
-        self.page_size
-            .map(|size| clamp_page_size(ToolId::StructureSearch, None, usize_of(size.get())))
     }
     pub(crate) fn snapshot(&self) -> Option<&str> {
         self.snapshot.as_deref().map(String::as_str)
@@ -242,26 +236,14 @@ pub fn execute_files(
         paths,
         cancel,
     )?;
-    let shown = Walk {
-        ignored: q.include_ignored == Some(true),
-        hidden: q.include_hidden == Some(true),
-        default_excludes: q.default_excludes.defaults(),
-    };
-    super::probe_empty(
+    super::probe_listing(
         &mut out,
         q,
         (&validated.canonical, paths),
         &walk.meta.uncovered,
-        shown,
         |relaxed, walking| {
-            let mut relaxed_query = q.clone();
-            relaxed_query.include_ignored = Some(relaxed.ignored);
-            relaxed_query.include_hidden = Some(relaxed.hidden);
-            relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
-            relaxed_query.scan_offset = None;
-            relaxed_query.walk_offset = None;
             walk_files(
-                &relaxed_query,
+                relaxed,
                 &validated.canonical,
                 paths,
                 security,
@@ -575,17 +557,7 @@ fn files_page(
     cut.finish(&mut out, q, &mut warnings);
     if page == 1 {
         out["summary"] = walk.meta.summary();
-        super::lead_to_skipped(
-            &mut out,
-            q,
-            &walk.meta.uncovered,
-            Walk {
-                ignored: q.include_ignored == Some(true),
-                hidden: q.include_hidden == Some(true),
-                default_excludes: q.default_excludes.defaults(),
-            },
-            q.filtered(),
-        );
+        super::lead_to_skipped(&mut out, q, &walk.meta.uncovered, q.walk(), q.filtered());
     }
     if page == 1
         && let Some(read) = outline_read(&walk.rows[shown], root)
@@ -1057,11 +1029,8 @@ mod tests {
             &seen,
             walk,
             |relaxed| {
-                let mut relaxed_query = q.clone();
-                relaxed_query.include_ignored = Some(relaxed.ignored);
-                relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
                 let found = walk_files(
-                    &relaxed_query,
+                    &q.relaxed(relaxed),
                     root.path(),
                     &paths,
                     &ContentSecurity::new(),

@@ -11,7 +11,7 @@ import { isStaleSessionError } from '../shared/util.js';
 /** The session entry type of a compaction note; `data` is `{ kind, reason }`. */
 export const COMPACTION_NOTE_TYPE = 'octocode-compaction-note';
 
-export type CompactionNoteKind =
+type CompactionNoteKind =
   /** Octocode's summary failed or could not start, so Pi wrote its default summary. */
   | 'default-summary'
   /** The thrash breaker refused an automatic compaction. */

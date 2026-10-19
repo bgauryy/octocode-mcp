@@ -44,7 +44,7 @@ pub fn resolve_workspace_root_for_file(file_path: String) -> Result<String> {
 /// The nearest ancestor of `directory` (itself included) holding a
 /// `Cargo.toml`: the Cargo package (or virtual workspace) a Rust file
 /// belongs to.
-pub fn cargo_package_dir(directory: &Path) -> Option<PathBuf> {
+pub(crate) fn cargo_package_dir(directory: &Path) -> Option<PathBuf> {
     directory
         .ancestors()
         .find(|dir| dir.join(CARGO_MANIFEST).is_file())

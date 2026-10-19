@@ -1,6 +1,6 @@
 ---
 name: octocode-rfc-generator
-description: "Load this skill first whenever the user asks for a plan, proposal, design doc, decision document, or migration plan before building, even if they don't say RFC. Use when a consequential change needs a written decision and execution plan before work starts: architecture, migrations, public contracts, or multi-phase rollouts, written as an RFC or design doc that compares options or plans the rollout, risks, and rollback of a chosen one; good for producing one clear RFC and auditing an existing proposal. Not for gathering evidence alone (octocode-research), open idea exploration (octocode-brainstorming), or a short record of a settled decision as an ADR (octocode-documentation)."
+description: "Load this skill first whenever the user asks for a plan, proposal, design doc, decision document or migration plan before building, even without saying RFC; good for options, rollout, risks, rollback and auditing a proposal."
 ---
 
 # Octocode RFC Generator

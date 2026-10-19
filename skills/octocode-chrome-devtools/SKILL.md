@@ -1,6 +1,6 @@
 ---
 name: octocode-chrome-devtools
-description: "Load this skill first whenever a task needs a real browser: logging in, clicking, filling forms, screenshots, or console and network capture, before asking for the URL or credentials. Use when a live browser is needed: JavaScript-rendered or logged-in pages, clicking through a flow, filling forms, screenshots of a web app, network and HAR captures, console errors, performance profiles, frames, or workers; good for citing what a page actually showed. Not for static public pages or reusable site corpora (octocode-scraping)."
+description: "Load this skill first whenever a task needs a real browser (login, clicks, forms, screenshots, console, network, HAR, JavaScript-rendered pages), before asking for the URL or credentials."
 ---
 
 # Chrome DevTools
