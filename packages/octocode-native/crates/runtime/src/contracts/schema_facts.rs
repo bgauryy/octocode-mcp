@@ -49,6 +49,18 @@ pub(crate) fn property_schemas<'a>(
     members(schema, defs, |schema| schema["properties"].get(name))
 }
 
+/// Object field names through local references and composition branches.
+pub(crate) fn property_names<'a>(
+    schema: &'a Value,
+    defs: &'a Value,
+) -> std::collections::BTreeSet<&'a str> {
+    members(schema, defs, |schema| schema.get("properties"))
+        .into_iter()
+        .filter_map(Value::as_object)
+        .flat_map(|properties| properties.keys().map(String::as_str))
+        .collect()
+}
+
 /// Item schemas through references and composition branches.
 pub(crate) fn item_schemas<'a>(schema: &'a Value, defs: &'a Value) -> Vec<&'a Value> {
     members(schema, defs, |schema| schema.get("items"))

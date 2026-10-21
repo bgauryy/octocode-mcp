@@ -9,7 +9,7 @@ use crate::tools::root_read::read_rank;
 /// fetched by the resolved commit SHA, never by the ref name.
 pub(super) async fn resolve_listing_ref<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     context: &RequestContext,
 ) -> Result<(String, String), ProviderError> {
     let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
@@ -38,7 +38,7 @@ pub(super) struct ListingPage<'a> {
 }
 
 impl<'a> ListingPage<'a> {
-    pub(super) fn of(query: &GhStructureQuery, all: &'a [TreeEntry]) -> Self {
+    pub(super) fn of(query: &GhStructureQueryTree, all: &'a [TreeEntry]) -> Self {
         let current = query.page.map_or(1, crate::tools::num::usize_of);
         let per_page = crate::tools::num::usize_of(
             query
@@ -147,7 +147,7 @@ pub(super) fn disclose_limits(
 
 /// A directory past GitHub's Contents listing limit is complete only in a
 /// checkout: the clone of the listed path at the listed commit.
-pub(super) fn clone_lead(query: &GhStructureQuery, scope: &Scope, commit_sha: &str) -> Value {
+pub(super) fn clone_lead(query: &GhStructureQueryTree, scope: &Scope, commit_sha: &str) -> Value {
     let mut clone = json!({
         "owner": query.owner.as_str(),
         "repo": query.repo.as_str(),
@@ -168,7 +168,7 @@ pub(super) fn clone_lead(query: &GhStructureQuery, scope: &Scope, commit_sha: &s
 /// source. A small listing falls back to its first file. Source and docs are outlined
 /// (`minify:"symbols"`).
 pub(super) fn entry_read(
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     entries: &[TreeEntry],
     commit_sha: &str,
 ) -> Option<Value> {
@@ -343,7 +343,7 @@ pub(super) fn relative(path: &str, root: &str) -> String {
 
 pub(super) fn attach_continuations(
     value: &mut Value,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     page: &ListingPage<'_>,
     retry_tree: bool,
     materialize: bool,
@@ -407,7 +407,7 @@ mod read_lead_tests {
     use super::*;
 
     fn lead(paths: &[&str], include: &[&str]) -> Option<String> {
-        let query: GhStructureQuery = serde_json::from_value(json!({
+        let query: GhStructureQueryTree = serde_json::from_value(json!({
             "owner": "o", "repo": "r", "include": include
         }))
         .expect("query");

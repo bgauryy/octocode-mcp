@@ -366,7 +366,9 @@ pub(super) fn shape_pr_files(
     let summary_chars = summary
         .as_ref()
         .filter(|summary| !summary.is_empty())
-        .map_or(0, crate::tools::stream_page::json_chars);
+        .map_or(0, |value| {
+            octocode_engine::json_size::utf16_units(value).unwrap_or(0)
+        });
     let patches = if summary_chars == 0 {
         shape_patch_page(slice, query)
     } else {

@@ -1,7 +1,7 @@
 ---
 title: Error Formatting Functions
 impact: HIGH
-description: Use z.treeifyError() for nested, z.flattenError() for forms. Not deprecated z.formatError().
+description: Use z.treeifyError() for nested, z.flattenError() for forms. Choose the output shape consumers expect.
 tags: errors, formatting, treeify, flatten
 ---
 
@@ -9,15 +9,15 @@ tags: errors, formatting, treeify, flatten
 
 ## Problem
 
-Zod v4 replaces `z.formatError()` with `z.treeifyError()` and `z.flattenError()`. Using the deprecated function gives different output shapes.
+`z.formatError()` remains exported and returns a tree using `_errors`. It is not interchangeable with `z.treeifyError()` or `z.flattenError()`. Choose the formatter to match the consumer; the deprecated instance method `error.format()` is a separate API.
 
 ## Incorrect
 
 ```typescript
-// BUG: deprecated in v4
+// Wrong if the consumer expects treeifyError properties/errors
 const result = schema.safeParse(data)
 if (!result.success) {
-  const formatted = z.formatError(result.error) // deprecated
+  const formatted = z.formatError(result.error) // uses _errors keys
 }
 ```
 

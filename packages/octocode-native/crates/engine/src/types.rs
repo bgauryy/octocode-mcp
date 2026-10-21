@@ -126,6 +126,27 @@ pub struct TextSearchResult {
     pub stats: TextSearchStats,
 }
 
+/// Resolved context around a search hit. Tool defaults and overrides are
+/// resolved by the caller; the engine and page layout share these bounds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SearchContext {
+    pub before: u32,
+    pub after: u32,
+}
+
+impl SearchContext {
+    pub const fn symmetric(lines: u32) -> Self {
+        Self {
+            before: lines,
+            after: lines,
+        }
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.before == 0 && self.after == 0
+    }
+}
+
 /// Options for Octocode's in-process text search. Each field is one search
 /// behaviour; the CLI-style flags in field docs (`-C`, `-g`, `-t`) name the
 /// familiar equivalent.
@@ -165,8 +186,8 @@ pub struct TextSearchOptions {
     pub count_matches_per_file: Option<bool>,
 
     // ── filters ──────────────────────────────────────────────────────────────
-    /// Context lines around each match (`-C`).
-    pub context_lines: Option<u32>,
+    /// Context lines before and after each match (`-B`, `-A`).
+    pub context: SearchContext,
     /// Restrict to a file type, e.g. `ts`, `py` (`-t`).
     pub lang_type: Option<String>,
     /// File-level AND: keep a matched file only when it also contains every
@@ -341,6 +362,10 @@ pub struct FileSystemQueryResult {
     pub entries: Vec<FileSystemEntry>,
     pub total_discovered: u32,
     pub was_capped: bool,
+    /// The first match the `limit` left unlisted (absolute path), in walk
+    /// order: every entry the walk did not inspect sorts after it, and it is
+    /// the first match the listing lacks. `None` when `limit` cut nothing.
+    pub first_unlisted: Option<String>,
     pub skipped: u32,
     pub permission_denied: u32,
     /// Entries the ignore rules left out (the topmost of each ignored

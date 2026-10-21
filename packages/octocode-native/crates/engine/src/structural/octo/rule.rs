@@ -14,6 +14,7 @@ use super::matching::{
     named_children, node_text, raw_range,
 };
 use super::pattern::CompiledPattern;
+use super::position::{ExactRange, Ordinal, RawOrdinal};
 
 /// A wrapped rule document. Besides `rule`, it tolerates the metadata keys
 /// of an ast-grep rule file (`id`, `language`, `severity`, …) so a pasted
@@ -40,10 +41,13 @@ struct RawRuleDocument {
     _metadata: Option<IgnoredAny>,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(in crate::structural) struct RawRule {
     kind: Option<String>,
+    #[serde(rename = "nthChild")]
+    nth_child: Option<RawOrdinal>,
+    range: Option<ExactRange>,
     pub(in crate::structural) pattern: Option<RawPattern>,
     regex: Option<String>,
     pub(in crate::structural) has: Option<Box<Self>>,
@@ -146,6 +150,7 @@ impl RawRule {
             .chain(self.any.iter().flatten())
             .chain(self.relations().map(|(_, rule)| rule))
             .chain(self.not.iter().map(Box::as_ref))
+            .chain(self.nth_child.as_ref().and_then(RawOrdinal::filter))
             .chain(match self.stop_by.as_ref() {
                 Some(RawStopBy::Rule(rule)) => Some(rule.as_ref()),
                 _ => None,
@@ -155,6 +160,8 @@ impl RawRule {
 
 pub(super) struct CompiledRule {
     kind: Option<String>,
+    nth_child: Option<Ordinal>,
+    range: Option<ExactRange>,
     pattern: Option<CompiledPattern>,
     regex: Option<Regex>,
     relations: Vec<Relation>,
@@ -178,7 +185,10 @@ pub(in crate::structural) fn parse_rule(rule: &str) -> Result<RawRule, CompileEr
         ));
     }
     let value = crate::text::yaml_utils::yaml_to_json(rule).map_err(|err| yaml_error(&err))?;
-    parse_rule_value(value)
+    let mut raw = parse_rule_value(value)?;
+    normalize_selectors(&mut raw, 0)?;
+    validate_rule_depth(&raw, 0)?;
+    Ok(raw)
 }
 
 pub fn validate_rule_shape(value: &serde_json::Value) -> Result<(), String> {
@@ -200,6 +210,75 @@ fn parse_rule_value(value: serde_json::Value) -> Result<RawRule, CompileError> {
     };
     validate_rule_depth(&raw, 0)?;
     Ok(raw)
+}
+
+fn normalize_selectors(raw: &mut RawRule, depth: usize) -> Result<(), CompileError> {
+    if depth >= 64 {
+        return Err(CompileError::rule(
+            "structural rule exceeds 64 nesting levels",
+        ));
+    }
+    if let Some(kind) = &raw.kind
+        && (kind.contains(['>', '+', '~', ',', ':']) || kind.split_whitespace().count() > 1)
+    {
+        let selector = super::selector::parse(kind)?;
+        if selector.get("kind").and_then(serde_json::Value::as_str) != Some(kind) {
+            let selected: RawRule =
+                serde_json::from_value(selector).map_err(|err| yaml_error(&err))?;
+            let field = raw.field.take();
+            let stop_by = raw.stop_by.take();
+            raw.kind = None;
+            let remainder = std::mem::take(raw);
+            *raw = if remainder.has_matcher() {
+                RawRule {
+                    all: Some(vec![remainder, selected]),
+                    ..RawRule::default()
+                }
+            } else {
+                selected
+            };
+            raw.field = field;
+            raw.stop_by = stop_by;
+        }
+    }
+    for child in [
+        &mut raw.has,
+        &mut raw.inside,
+        &mut raw.precedes,
+        &mut raw.follows,
+        &mut raw.not,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        normalize_selectors(child, depth + 1)?;
+    }
+    for list in [&mut raw.all, &mut raw.any].into_iter().flatten() {
+        for child in list {
+            normalize_selectors(child, depth + 1)?;
+        }
+    }
+    if let Some(RawStopBy::Rule(child)) = &mut raw.stop_by {
+        normalize_selectors(child, depth + 1)?;
+    }
+    if let Some(child) = raw.nth_child.as_mut().and_then(RawOrdinal::filter_mut) {
+        normalize_selectors(child, depth + 1)?;
+    }
+    Ok(())
+}
+
+impl RawRule {
+    fn has_matcher(&self) -> bool {
+        self.kind.is_some()
+            || self.pattern.is_some()
+            || self.regex.is_some()
+            || self.nth_child.is_some()
+            || self.range.is_some()
+            || self.relations().next().is_some()
+            || self.all.is_some()
+            || self.any.is_some()
+            || self.not.is_some()
+    }
 }
 
 /// One valid rule object: how a relational key (`has`, `inside`) combines with
@@ -241,15 +320,17 @@ fn validate_rule_position(
             "structural rule exceeds 64 nesting levels",
         ));
     }
-    if rule.kind.is_none()
-        && rule.pattern.is_none()
-        && rule.regex.is_none()
-        && rule.relations().next().is_none()
-        && rule.all.is_none()
-        && rule.any.is_none()
-        && rule.not.is_none()
-    {
+    if !rule.has_matcher() {
         return Err(CompileError::rule("rule must contain at least one matcher"));
+    }
+    if let Some(ordinal) = &rule.nth_child {
+        ordinal.position().compile()?;
+        if let Some(filter) = ordinal.filter() {
+            validate_rule_position(filter, depth + 1, false)?;
+        }
+    }
+    if let Some(range) = &rule.range {
+        range.validate()?;
     }
     if !relation && (rule.field.is_some() || rule.stop_by.is_some()) {
         return Err(CompileError::rule(
@@ -314,7 +395,7 @@ impl CompiledRule {
         Self::compile_checked(lang, raw)
     }
 
-    fn compile_checked(lang: &AgLanguage, raw: &RawRule) -> Result<Self, CompileError> {
+    pub(super) fn compile_checked(lang: &AgLanguage, raw: &RawRule) -> Result<Self, CompileError> {
         let pattern = raw
             .pattern
             .as_ref()
@@ -352,6 +433,12 @@ impl CompiledRule {
 
         let mut compiled = Self {
             kind: raw.kind.clone(),
+            nth_child: raw
+                .nth_child
+                .as_ref()
+                .map(|raw| Ordinal::compile(lang, raw))
+                .transpose()?,
+            range: raw.range.clone(),
             pattern,
             regex,
             relations,
@@ -380,7 +467,9 @@ impl CompiledRule {
 
     /// No matcher besides `kind` is set.
     fn only_kind(&self) -> bool {
-        self.pattern.is_none()
+        self.nth_child.is_none()
+            && self.range.is_none()
+            && self.pattern.is_none()
             && self.regex.is_none()
             && self.relations.is_empty()
             && self.all.is_empty()
@@ -434,6 +523,13 @@ impl CompiledRule {
         // bound since this checkpoint is rolled back, so a `false` result
         // always leaves the caller's environment unchanged.
         let checkpoint = captures.checkpoint();
+        if self
+            .range
+            .as_ref()
+            .is_some_and(|range| !range.matches(candidate, document))
+        {
+            return Ok(false);
+        }
         if let Some(pattern) = &self.pattern
             && !pattern.matches(candidate, document.content, captures, document.deadline)?
         {
@@ -442,6 +538,12 @@ impl CompiledRule {
         }
         if let Some(regex) = &self.regex
             && !regex.is_match(node_text(candidate, document.content))
+        {
+            captures.rollback(checkpoint);
+            return Ok(false);
+        }
+        if let Some(ordinal) = &self.nth_child
+            && !ordinal.matches(candidate, ancestors, document, captures)?
         {
             captures.rollback(checkpoint);
             return Ok(false);
@@ -490,6 +592,7 @@ pub(super) struct Document<'a, 't> {
     pub(super) content: &'a str,
     pub(super) deadline: Instant,
     pub(super) root: Node<'t>,
+    pub(super) line_index: &'a crate::text::utf8_offsets::LineIndex,
 }
 
 impl Relation {
@@ -653,9 +756,6 @@ impl Relation {
                         break;
                     }
                     let node = cursor.node();
-                    if !node.is_named() {
-                        continue;
-                    }
                     if self.accepts(node, Some(chain), document, captures)? {
                         return Ok(true);
                     }

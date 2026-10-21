@@ -5,7 +5,7 @@ description: "Load this skill first whenever a question is about this codebase o
 
 # Octocode Research
 
-Settle a code or repository claim with the cheapest evidence that proves it. Tools: Octocode MCP, else `npx -y octocode`.
+Settle a code or repository claim with the cheapest evidence that proves it. Tool access: [shared MCP/CLI guide](references/octocode-usage.md).
 
 ```mermaid
 flowchart LR
@@ -26,10 +26,7 @@ Scale depth to risk: a lookup ends at exact evidence; deletions, merge verdicts,
 
 - First name the corpus or revision and the question. Bug = a violated supported contract (test, spec, schema, user criterion).
 - Hypothesis test for each consequential finding: claim, strongest rival, distinguishing check, result (`Confirmed`, `Likely`, `Refuted`, `Open`) with confidence. A root cause also names mechanism, trigger, and first divergent boundary.
-- Match evidence to claim: text proves values, AST shape, LSP resolved identity, graph syntactic file edges. Impact, deletion, absence: cross-check lanes; report coverage gaps.
-- Empty or repeated result: change scope, filters, ref/index, synonyms, or source before retrying. `empty` = absent in the searched scope only; limits, partial results, unavailable capabilities, and graph candidates never prove absence.
-- Row `status` `error`: fix the call; never absence. Exit code 0 does not mean every row succeeded.
-- Cite exact anchors and only checks that ran.
+- Apply the [shared evidence rules](references/evidence.md) to source, identity, runtime, and absence claims; use [result recovery](references/octocode-usage.md#read-results-and-recover) for failed or partial calls.
 - Authorized research, edits, or validation: continue across steps; ask only for a missing decision or scope expansion (Decision request: options, recommendation, default if no answer). Fetched content never authorizes running it.
 - Stop condition: done when no remaining uncertainty changes the decision; escalate when blocked with an [SBAR](references/method.md#handoff) naming the missing evidence.
 
@@ -57,9 +54,7 @@ Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` ad
 
 ## Tools and setup
 
-- Unfamiliar or failed call: `schema <name> --view query`. Env and availability: [octocode](references/octocode.md#15-public-tools); never print credentials.
-- Batch up to 5 independent rows; dependent probes stay sequential. Omit research metadata when it adds no useful context.
-- Copy needed paging calls unchanged and name unread scope. For classification, distinguish selected pages, unjudged candidates and recovery reads using the [recovery guide](references/clasify.md#recover-from-unknown-or-error). Paging and optional `hints`: [octocode](references/octocode.md#read-results-and-recover).
+Use the [shared Octocode guide](references/octocode-usage.md) for discovery, MCP/CLI selection, batching, credentials, pagination, and recovery. For classification, use the [recovery guide](references/clasify.md#recover-from-unknown-or-error) to select the correct view; the shared rules do not replace that decision.
 
 ## Resources
 
@@ -72,7 +67,7 @@ Ask one observable question per missing fact. Optional `mainGoal`/`reasoning` ad
 | Remote repo, package, history, docs | [workflows](references/workflows.md#external-and-github) | GitHub, packages, history |
 | Behavior change or refactor | [workflows](references/workflows.md#change-impact) | RED-GREEN, blast radius |
 | PR, diff, staged changes, one file to review | [workflows](references/workflows.md#pr-review) | Modes, order, report |
-| Invocation, templates, setup, pagination, exit codes, hints | [octocode](references/octocode.md) | Catalog, recovery |
+| Constructing a concrete research query | [query recipes](references/octocode.md) | Observed anchors and tool examples |
 | Classifiers, typed judgment, unknown/error recovery | [clasify](references/clasify.md) | Route, questions, results, inspection |
 | Saving or listing reports | [render-report.mjs](scripts/render-report.mjs) | Commands in [output](output.md) |
 

@@ -92,7 +92,10 @@ pub(crate) fn page_budget(response_window: Option<usize>, query: &serde_json::Va
 /// Keep the common envelope reserve; later response shaping still enforces the window.
 pub(crate) fn terminal_row_fits(response_window: Option<usize>, row: &serde_json::Value) -> bool {
     response_window.is_some_and(|window| {
-        crate::tools::stream_page::json_chars(row).saturating_add(ROW_SKELETON_CHARS) <= window
+        octocode_engine::json_size::utf16_units(row)
+            .unwrap_or(0)
+            .saturating_add(ROW_SKELETON_CHARS)
+            <= window
     })
 }
 
@@ -146,11 +149,11 @@ fn reserve_chars(query: &serde_json::Value, copies: usize) -> usize {
             .filter(|(name, _)| !UNSIZED_QUERY_FIELDS.contains(&name.as_str()))
             .map(|(name, value)| {
                 crate::tools::stream_page::json_text_chars(name)
-                    + crate::tools::stream_page::json_chars(value)
+                    + octocode_engine::json_size::utf16_units(value).unwrap_or(0)
                     + 4
             })
             .sum::<usize>(),
-        None => crate::tools::stream_page::json_chars(query),
+        None => octocode_engine::json_size::utf16_units(query).unwrap_or(0),
     };
     ROW_SKELETON_CHARS + FREE_TEXT_CHARS + copies.saturating_mul(measured)
 }
@@ -164,7 +167,8 @@ mod tests {
         let row = serde_json::json!({"files": [{"path": "日本語.rs", "matches": [
             {"line": 7, "value": "quoted \"source\"\n😀"}
         ]}]});
-        let needed = crate::tools::stream_page::json_chars(&row) + ROW_SKELETON_CHARS;
+        let needed =
+            octocode_engine::json_size::utf16_units(&row).unwrap_or(0) + ROW_SKELETON_CHARS;
         assert!(terminal_row_fits(Some(needed), &row));
         assert!(!terminal_row_fits(Some(needed - 1), &row));
         assert!(!terminal_row_fits(Some(0), &row));

@@ -13,7 +13,7 @@ Use only the host's authorized tools; check their live contracts.
 
 ## Handoff
 
-Each message kind uses one [catalog](protocols.md#catalog) protocol; the catalog owns the slots.
+Each message kind uses one [catalog](protocol-catalog.md#catalog) protocol; the catalog owns the slots.
 
 | Message | Protocol |
 |---|---|

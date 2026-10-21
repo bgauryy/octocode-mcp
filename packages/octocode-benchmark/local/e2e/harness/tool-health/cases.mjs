@@ -105,6 +105,8 @@ export const CASES = {
     invalid: { query: { path: 'src' } },
     explore: [
       { label: 'files', query: { matchString: 'healthMarker', path: '.', resultView: 'files' } },
+      { label: 'contextBefore', query: { matchString: 'healthMarker', path: 'src', contextBefore: 3, contextAfter: 0, pageSize: 1 } },
+      { label: 'contextAfterClipped', query: { matchString: 'healthMarker', path: 'src', contextLines: 2, contextBefore: 0, contextAfter: 4, matchContentLength: 20 } },
       { label: 'ignoreCase', query: { matchString: 'HEALTHMARKER', path: 'src' }, class: 'empty' },
       { label: 'regex', query: { matchString: 'greet(Loudly)?\\(', regex: 'rust', path: 'src' }, deep: true },
       { label: 'countMatches', query: { matchString: 'greet', path: 'src', resultView: 'countMatches' }, deep: true },
@@ -252,8 +254,7 @@ export const CASES = {
     budgetMs: REMOTE,
     happy: { query: { owner: 'octo', repo: 'demo', path: 'src/greeter.ts', fullContent: true }, fields: ['path', 'content', 'commitSha', 'totalLines'], rows: data => numbered(data.content), min: 18 },
     // The mock's 1500-line octo/demo-docs guide.txt exceeds the full-content size limit.
-    // Plain text on purpose: markdown minify is O(n^2) per paragraph today (backlog
-    // item "Markdown minify is O(n²)"); a .md here costs ~25 s per page.
+    // Plain text keeps this case focused on exact continuation lines.
     page: { query: { owner: 'octo', repo: 'demo-docs', path: 'guide.txt', fullContent: true }, lead: 'continueWindow', expect: ctx => lines(ctx.mock.model.repos.find(r => r.name === 'demo-docs').files['guide.txt']) },
     empty: { query: { owner: 'octo', repo: 'demo', path: 'src/greeter.ts', matchString: 'zzzNoSuchText' } },
     invalid: { query: { owner: 'octo', repo: 'demo' } },

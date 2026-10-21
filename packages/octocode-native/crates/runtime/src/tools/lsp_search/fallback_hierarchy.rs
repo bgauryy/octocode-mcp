@@ -10,13 +10,13 @@ use super::source::SourceCache;
 use super::walk::{Expansion, HierarchySource, HierarchyWalk, MAX_HIERARCHY_NODES, NodeKeys, Walk};
 use crate::tools::cancel::CancellationCheck;
 use octocode_engine::lsp::client::{LocationRequest, NativeLspClient, SnippetReadPolicy};
-use octocode_engine::lsp::types::JsCodeSnippet;
+use octocode_engine::lsp::types::LspCodeSnippet;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
 /// One window of implementation candidates, bound to the whole ordered set.
 pub(super) struct CandidateWindow {
-    pub(super) items: Vec<JsCodeSnippet>,
+    pub(super) items: Vec<LspCodeSnippet>,
     pub(super) digest: String,
     pub(super) has_more: bool,
 }
@@ -24,9 +24,9 @@ pub(super) struct CandidateWindow {
 impl CandidateWindow {
     pub(super) fn cut(
         query: &super::LspSearchQuery,
-        mut candidates: Vec<JsCodeSnippet>,
+        mut candidates: Vec<LspCodeSnippet>,
     ) -> Option<Self> {
-        let position = |item: &JsCodeSnippet| {
+        let position = |item: &LspCodeSnippet| {
             (
                 item.range.start.line,
                 item.range.start.character,
@@ -90,7 +90,7 @@ pub(super) struct Fallback<'a, 'p> {
             std::sync::Arc<octocode_engine::graph::GraphFactsDocument>,
         >,
     >,
-    initial: Mutex<Option<(Value, Vec<JsCodeSnippet>)>>,
+    initial: Mutex<Option<(Value, Vec<LspCodeSnippet>)>>,
     /// A node other than the anchor had more candidates than one window.
     candidate_limit: std::sync::atomic::AtomicBool,
 }
@@ -400,7 +400,7 @@ impl<'a, 'p> Fallback<'a, 'p> {
         anchor: Position<'_>,
         expansion: Expansion,
         depth: u32,
-        initial: Option<Vec<JsCodeSnippet>>,
+        initial: Option<Vec<LspCodeSnippet>>,
     ) -> Result<HierarchyWalk, LspFailure> {
         let roots = self
             .resolved_nodes(anchor.path, anchor.line, anchor.character)
@@ -461,7 +461,7 @@ mod tests {
     use super::super::{LspSearchQuery, locations};
     use super::*;
 
-    fn candidates() -> Vec<JsCodeSnippet> {
+    fn candidates() -> Vec<LspCodeSnippet> {
         (0..MAX_HIERARCHY_NODES + 3)
             .map(|line| {
                 serde_json::from_value(json!({

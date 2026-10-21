@@ -171,7 +171,7 @@ mod tests {
     fn malformed_repository_ranges_name_the_accepted_forms() {
         for (field, value, form) in [
             ("pushed", "yesterday", "\"30d\""),
-            ("created", "2024/01/01", "\">2025-01-01\""),
+            ("created", "2024/01/01", "\"30d\""),
             ("stars", "lots", "\"10..50\""),
         ] {
             let error = validate(
@@ -182,6 +182,11 @@ mod tests {
             let message = &error.issues[0].message;
             assert!(message.contains(form), "{field}={value}: {message}");
             assert!(message.contains(value), "{field}={value}: {message}");
+            validate(
+                "ghSearchRepo",
+                json!({"queries":[{"keywords":["x"], field: form.trim_matches('"')}]}),
+            )
+            .expect("the suggested example must be accepted");
         }
     }
 

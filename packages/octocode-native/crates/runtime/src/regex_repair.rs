@@ -36,7 +36,7 @@ pub fn close_unclosed_group(text: &str, pcre2: bool) -> Option<String> {
         return None;
     }
     let closed = format!("{text})");
-    octocode_engine::portable::validate_text_pattern(&closed, false, pcre2)
+    octocode_engine::search::text_pattern::validate_text_pattern(&closed, false, pcre2)
         .valid
         .then_some(closed)
 }
@@ -64,7 +64,7 @@ pub fn repair_alternation(text: &str, pcre2: bool) -> Option<String> {
         return None;
     }
     let valid = |pattern: &str| {
-        octocode_engine::portable::validate_text_pattern(pattern, false, pcre2).valid
+        octocode_engine::search::text_pattern::validate_text_pattern(pattern, false, pcre2).valid
     };
     let repaired = parts
         .iter()
@@ -87,7 +87,7 @@ pub fn repair_alternation(text: &str, pcre2: bool) -> Option<String> {
 pub fn only_pcre2_compiles<'a>(patterns: impl IntoIterator<Item = &'a str>, pcre2: bool) -> bool {
     !pcre2
         && patterns.into_iter().all(|pattern| {
-            octocode_engine::portable::validate_text_pattern(pattern, false, true).valid
+            octocode_engine::search::text_pattern::validate_text_pattern(pattern, false, true).valid
         })
 }
 

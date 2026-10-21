@@ -66,10 +66,17 @@ async fn run_command(
     budget: &RequestBudget,
 ) -> Result<Option<SecretString>, ProviderError> {
     budget.check().map_err(resolution_stopped)?;
-    #[cfg(unix)]
-    command.process_group(0);
+    octocode_engine::process::contain(command.as_std_mut());
     let Ok(mut child) = command.spawn() else {
         return Ok(None);
+    };
+    let mut job = match octocode_engine::process::Job::attach_async(&child, None) {
+        Ok(job) => job,
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Ok(None);
+        }
     };
     let result = bounded(budget, async {
         let operation = async {
@@ -83,6 +90,11 @@ async fn run_command(
             if bytes.len() > MAX_TOKEN_BYTES as usize {
                 return None;
             }
+            #[cfg(unix)]
+            while !octocode_engine::process::exited_without_reaping(child.id()?).ok()? {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            #[cfg(not(unix))]
             if !child.wait().await.ok()?.success() {
                 return None;
             }
@@ -96,20 +108,19 @@ async fn run_command(
             .flatten())
     })
     .await;
-    // Cancellation, oversized output, timeout and read errors all reap the child.
-    #[cfg(unix)]
-    if let Some(pid) = child.id().and_then(|pid| i32::try_from(pid).ok()) {
-        // SAFETY: this unreaped child leads the process group created above.
-        // Its PID cannot be recycled until wait(), so only our group is targeted.
-        unsafe {
-            libc::kill(-pid, libc::SIGKILL);
-        }
+    // Sweep before reaping so a pid-addressed kill cannot reach another child.
+    if let Some(pid) = child.id() {
+        octocode_engine::process::kill_tree_blocking(pid).await;
     }
+    job.terminate();
     if child.id().is_some() {
         let _ = child.kill().await;
     }
-    let _ = child.wait().await;
-    result
+    let status = child.wait().await;
+    match result {
+        Ok(token) => Ok(token.filter(|_| status.is_ok_and(|status| status.success()))),
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -208,6 +219,52 @@ mod tests {
                 .is_none()
         );
     }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[tokio::test]
+    async fn token_lookup_kills_a_setsid_descendant() {
+        let dir = tempfile::tempdir().expect("dir");
+        let pidfile = dir.path().join("escaped.pid");
+        let mut command = tokio::process::Command::new("python3");
+        command.args(["-c", "import os,sys,time\nif os.fork()==0:\n os.setsid()\n os.close(1); os.close(2)\n open(sys.argv[1],'w').write(str(os.getpid()))\n time.sleep(60)\nelse:\n time.sleep(60)\n"]);
+        command
+            .arg(&pidfile)
+            .stdout(Stdio::piped())
+            .kill_on_drop(true);
+        let budget = RequestBudget::with_timeout(Duration::from_secs(5), 1);
+        let cancel = budget.cancellation.clone();
+        let (result, ()) = tokio::join!(run_command(command, &budget), async {
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            while !pidfile.exists() && std::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            cancel.cancel();
+        });
+        let pid: u32 = std::fs::read_to_string(pidfile)
+            .expect("escaped pid")
+            .trim()
+            .parse()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while crate::process_status::is_alive(pid) && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let survived = crate::process_status::is_alive(pid);
+        if survived {
+            // SAFETY: this fixture recorded the pid of its own live child.
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+        }
+        assert_eq!(
+            result.unwrap_err().kind,
+            octocode_github::ProviderErrorKind::Cancelled
+        );
+        assert!(
+            !survived,
+            "setsid descendant {pid} survived token cancellation"
+        );
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn request_deadline_and_cancellation_stop_discovery() {
@@ -229,5 +286,40 @@ mod tests {
             result.unwrap_err().kind,
             octocode_github::ProviderErrorKind::Cancelled
         );
+    }
+}
+
+/// Cancelling a lookup takes down the whole process tree it started: the
+/// group kill on Unix, the job on Windows (the fixture is described in
+/// `process_fixture`).
+#[cfg(test)]
+mod containment_tests {
+    use super::*;
+    use crate::process_fixture::{Holder, Leader, Tree, gone_within, kill};
+
+    #[tokio::test]
+    async fn cancelling_a_token_lookup_leaves_no_descendant() {
+        let (command, tree) = Tree::new(Leader::Sleep, Holder::Silent, false);
+        let mut command = tokio::process::Command::from(command);
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let budget = RequestBudget::with_timeout(Duration::from_secs(30), 1);
+        let cancel = budget.cancellation.clone();
+        let (result, pid) = tokio::join!(run_command(command, &budget), async {
+            let pid = tokio::task::spawn_blocking(move || tree.holder_pid())
+                .await
+                .expect("pid");
+            cancel.cancel();
+            pid
+        });
+        let gone = gone_within(pid, Duration::from_secs(5));
+        kill(pid);
+        assert_eq!(
+            result.unwrap_err().kind,
+            octocode_github::ProviderErrorKind::Cancelled
+        );
+        assert!(gone, "descendant {pid} survived token cancellation");
     }
 }

@@ -38,7 +38,7 @@ pub(crate) fn cpu_time_of<T>(work: impl FnOnce() -> T) -> (T, Duration) {
     (value, thread_cpu_time().saturating_sub(started))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

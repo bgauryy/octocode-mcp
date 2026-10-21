@@ -180,7 +180,7 @@ impl Source<'_> {
     ) -> Result<octocode_engine::structural::SyntaxTreeInspectResult, ToolError> {
         #[cfg(test)]
         INSPECTIONS.with(|count| count.set(count.get() + 1));
-        octocode_engine::portable::inspect_syntax_tree_with_extension(
+        Ok(octocode_engine::structural::inspect_with_extension(
             self.content,
             &self.path.to_string_lossy(),
             self.extension.as_deref(),
@@ -190,8 +190,7 @@ impl Source<'_> {
                 node_limit: Some(limit),
                 line: q.line(),
             }),
-        )
-        .map_err(super::native_error)
+        ))
     }
 }
 

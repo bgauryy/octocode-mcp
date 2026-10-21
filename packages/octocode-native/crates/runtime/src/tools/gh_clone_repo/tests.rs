@@ -36,12 +36,8 @@ impl RewriteRunner {
     }
 }
 
-impl GitRunner for RewriteRunner {
-    fn run(
-        &self,
-        request: &GitRunRequest<'_>,
-        control: &GitRunControl<'_>,
-    ) -> Result<GitOutput, CloneError> {
+impl RewriteRunner {
+    fn rewrite<'a>(&self, request: &GitRunRequest<'a>) -> GitRunRequest<'a> {
         self.seen
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -68,7 +64,27 @@ impl GitRunner for RewriteRunner {
                 "git would reach the network: {argument}"
             );
         }
-        self.system.run(&request, control)
+        request
+    }
+}
+
+impl GitRunner for RewriteRunner {
+    fn run(
+        &self,
+        request: &GitRunRequest<'_>,
+        control: &GitRunControl<'_>,
+    ) -> Result<GitOutput, CloneError> {
+        self.system.run(&self.rewrite(request), control)
+    }
+
+    fn run_nul_records(
+        &self,
+        request: &GitRunRequest<'_>,
+        control: &GitRunControl<'_>,
+        record: &mut (dyn FnMut(&[u8]) -> Result<(), CloneError> + Send),
+    ) -> Result<GitOutput, CloneError> {
+        self.system
+            .run_nul_records(&self.rewrite(request), control, record)
     }
 }
 
@@ -81,6 +97,15 @@ impl GitRunner for UnreachableGit {
         &self,
         request: &GitRunRequest<'_>,
         _control: &GitRunControl<'_>,
+    ) -> Result<GitOutput, CloneError> {
+        panic!("git must not run here: {request:?}")
+    }
+
+    fn run_nul_records(
+        &self,
+        request: &GitRunRequest<'_>,
+        _control: &GitRunControl<'_>,
+        _record: &mut (dyn FnMut(&[u8]) -> Result<(), CloneError> + Send),
     ) -> Result<GitOutput, CloneError> {
         panic!("git must not run here: {request:?}")
     }
@@ -196,6 +221,12 @@ fn git_output(directory: &Path, args: &[&str]) -> String {
 }
 
 fn fixture_git(directory: &Path, args: &[&str]) -> std::process::Output {
+    fixture_git_command(directory, args)
+        .output()
+        .expect("run fixture git")
+}
+
+fn fixture_git_command(directory: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     command
         .current_dir(directory)
@@ -221,7 +252,7 @@ fn fixture_git(directory: &Path, args: &[&str]) -> std::process::Output {
     if let Some(path) = std::env::var_os("PATH") {
         command.env("PATH", path);
     }
-    command.output().expect("run fixture git")
+    command
 }
 
 fn setup<'a>(
@@ -791,6 +822,14 @@ fn refresh_rechecks_user_changes_written_while_fetching() {
             }
             Ok(output)
         }
+        fn run_nul_records(
+            &self,
+            request: &GitRunRequest<'_>,
+            control: &GitRunControl<'_>,
+            record: &mut (dyn FnMut(&[u8]) -> Result<(), CloneError> + Send),
+        ) -> Result<GitOutput, CloneError> {
+            self.inner.run_nul_records(request, control, record)
+        }
     }
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
@@ -964,6 +1003,14 @@ fn repository_metadata_filename_conflict_never_replaces_an_existing_checkout() {
             }
             Ok(output)
         }
+        fn run_nul_records(
+            &self,
+            request: &GitRunRequest<'_>,
+            control: &GitRunControl<'_>,
+            record: &mut (dyn FnMut(&[u8]) -> Result<(), CloneError> + Send),
+        ) -> Result<GitOutput, CloneError> {
+            self.inner.run_nul_records(request, control, record)
+        }
     }
     let fixture = Fixture::new();
     let (root, cache_home) = home_root();
@@ -1038,6 +1085,14 @@ impl GitRunner for FailingLsTree {
             return Err(CloneError::new("gitFailed", "ls-tree failed"));
         }
         self.0.run(request, control)
+    }
+    fn run_nul_records(
+        &self,
+        request: &GitRunRequest<'_>,
+        control: &GitRunControl<'_>,
+        record: &mut (dyn FnMut(&[u8]) -> Result<(), CloneError> + Send),
+    ) -> Result<GitOutput, CloneError> {
+        self.0.run_nul_records(request, control, record)
     }
 }
 
@@ -2499,5 +2554,105 @@ fn entries_record_their_size_orphans_are_swept_and_distinct_rows_run_at_once() {
         let row = row.expect("concurrent distinct clone");
         assert!(!row.location.cached);
         assert!(Path::new(&row.location.local_path).is_dir());
+    }
+}
+
+#[test]
+fn large_indexes_clone_whole_repositories_and_sparse_trees_without_exposing_symlinks() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let fixture = Fixture::new();
+    let blob = git_output(&fixture.work, &["rev-parse", "HEAD:README.md"]);
+    let target = "../../secret.json";
+    let target_file = fixture.work.join("link-target.txt");
+    fs::write(&target_file, target).expect("link target bytes");
+    let link_blob = git_output(&fixture.work, &["hash-object", "-w", "link-target.txt"]);
+    fs::remove_file(target_file).expect("remove unstaged helper");
+    let mut entries = Vec::new();
+    let mut files = 0;
+    while entries.len() <= process::MAX_OUTPUT_BYTES {
+        write!(
+            &mut entries,
+            "100644 {}\tbulk/file-{files:06}-with spaces.txt\0",
+            blob.trim()
+        )
+        .expect("index record");
+        files += 1;
+    }
+    write!(&mut entries, "120000 {}\tescape\0", link_blob.trim()).expect("symlink index record");
+    let mut child = fixture_git_command(&fixture.work, &["update-index", "-z", "--index-info"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("index writer");
+    child
+        .stdin
+        .take()
+        .expect("index stdin")
+        .write_all(&entries)
+        .expect("write index records");
+    let indexed = child.wait_with_output().expect("index writer exit");
+    assert!(
+        indexed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&indexed.stderr)
+    );
+    git(&fixture.work, &["commit", "-m", "large generated index"]);
+    git(&fixture.work, &["push", "origin", "main"]);
+    let index_bytes = fixture_git(&fixture.work, &["ls-files", "--stage", "-z"])
+        .stdout
+        .len();
+    assert!(
+        index_bytes > process::MAX_OUTPUT_BYTES,
+        "fixture must exceed collected output cap"
+    );
+
+    let (root, cache_home) = home_root();
+    let policy = test_support::workspace_policy(&root.0);
+    let endpoint = api_github_endpoint();
+    let runner = fixture_runner(&fixture);
+    let mut config = CloneConfig::persistent(&cache_home);
+    config.cache_ttl = Duration::from_secs(120);
+    let mut context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
+    context.deadline = Instant::now() + Duration::from_secs(120);
+    for scope in [None, Some("README.md"), Some("src")] {
+        let query = GhCloneRepoQuery {
+            path: scope.map(one),
+            ..query()
+        };
+        let cloned = clone_pinned(&fixture, &query, &context).expect("large-index clone");
+        let checkout = Path::new(&cloned.location.local_path);
+        if scope.is_none() {
+            assert_eq!(
+                fs::read_dir(checkout.join("bulk"))
+                    .expect("bulk checkout")
+                    .count(),
+                files
+            );
+        } else {
+            assert!(
+                !checkout.join("bulk").exists(),
+                "sparse checkout must not widen"
+            );
+        }
+        let link = checkout.join("escape");
+        if scope == Some("README.md") {
+            assert!(!link.exists());
+            assert_eq!(cloned.location.symlinks, None);
+        } else {
+            assert!(
+                !fs::symlink_metadata(&link)
+                    .expect("target-text file")
+                    .file_type()
+                    .is_symlink()
+            );
+            assert_eq!(fs::read_to_string(&link).expect("target text"), target);
+            assert_eq!(cloned.location.symlinks, Some(vec!["escape".into()]));
+        }
+        let cached = clone_pinned(&fixture, &query, &context).expect("large-index cache hit");
+        assert!(cached.location.cached);
+        assert_eq!(cached.location.symlinks, cloned.location.symlinks);
     }
 }

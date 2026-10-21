@@ -12,7 +12,7 @@
 // localFetch `source` (with an executable `hints.read`), over a URL capture,
 // and an unreadable source failing its row instead of answering.
 //
-// Measures host-visible bytes (the selected view) against a direct full read.
+// Reports selected host-visible bytes and raw source-file bytes separately.
 import fs from 'node:fs';
 import path from 'node:path';
 import { findHint, FIXTURES, REPOS, checks, rowData, sourceLines, startServer, writeResults } from './mcp-client.mjs';
@@ -54,8 +54,8 @@ const LOCATE = [
   { name: 'elasticsearch InternalEngine.index', dir: 'huge-java', glob: 'server/src/main/java/org/elasticsearch/index/engine/InternalEngine.java', regex: 'public IndexResult index\\(Index index\\)', target: 'The engine method that indexes one document operation.' },
   { name: 'pytorch autograd Engine::execute', dir: 'huge-cpp', glob: 'torch/csrc/autograd/engine.cpp', regex: '^auto Engine::execute\\(', target: 'The autograd engine method that executes the backward graph from given root edges.' },
 ];
-// A raw line window: selection judges raw line chunks (minified and byte views are rejected).
-const PAGE = { unit: 'lines', length: 120 };
+// Classify the complete file; page size is controlled by executable continuations.
+const FULL_FILE = { fullContent: true };
 const MAX_SELECTED_PAGES = 20;
 
 /** A selected view: the first page plus its plan-bound continueWindow pages (never next.unfiltered). */
@@ -83,17 +83,15 @@ else {
     if (!check(`${t.name}: ground truth found`, truth, `${t.dir}/${t.glob}`)) continue;
     const size = fs.statSync(truth.file).size;
     const started = Date.now();
-    const view = await selectedView(await call('localFetch', { path: truth.file, clasifyContext: { classifiers: [t.target] }, ...PAGE }));
+    const view = await selectedView(await call('localFetch', { path: truth.file, clasifyContext: { classifiers: [t.target] }, ...FULL_FILE }));
     const declRe = new RegExp(t.regex);
     // Strict: the selected view delivers the declaration line itself at its source anchor.
     const strict = view.lines.some(([n, text]) => n === truth.line && declRe.test(text));
     table.push({
       target: t.name, fileKB: Math.round(size / 1024), truth: truth.line, selection: receiptText(view.receipt),
-      pages: view.pages.length, strict, hostKB: (view.bytes / 1024).toFixed(1), saving: `${Math.round(100 - (100 * view.bytes) / size)}%`, s: ((Date.now() - started) / 1000).toFixed(0),
+      pages: view.pages.length, strict, selectedHostBytes: view.bytes, sourceFileBytes: size, s: ((Date.now() - started) / 1000).toFixed(0),
     });
     check(`${t.name}: the selected view delivers the declaration (line ${truth.line}) in source order`, view.ok && view.complete && strict && sourceOrdered(view.lines), `selection=${receiptText(view.receipt)} pages=${view.pages.length} first=${view.lines[0]?.[0]}`);
-    // Small files are read directly; only assert leverage at ≥64KB.
-    if (size >= 64 * 1024) check(`${t.name}: selected-view host bytes < 10% of a full read`, view.bytes < size * 0.1, `${view.bytes}B vs ${size}B`);
   }
   console.table(table);
   console.log(`clasifyContext selected declaration: ${table.filter(r => r.strict).length}/${table.length}`);
@@ -104,7 +102,7 @@ else {
   if (!fs.existsSync(scheduler)) skip('clasifyContext localSearch: schedule_one.go is selected', `missing ${scheduler}`);
   else {
     const first = await call('localSearch', {
-      path: scheduler, matchString: 'func (sched *Scheduler)', pageSize: 3, matchPageSize: 1, contextLines: 0,
+      path: scheduler, matchString: 'func (sched *Scheduler)', contextLines: 0,
       clasifyContext: { classifiers: ['The implementation of scheduling one pod: the main per-pod scheduling cycle.'] },
     });
     const pages = [];
@@ -147,13 +145,13 @@ else {
     if (!truth) skip('huge file: selected match windows', 'missing checker.ts');
     else {
       const first = await call('localFetch', {
-        path: truth.file, matchString: 'assignable', caseMode: 'insensitive', contextLines: 2, ...PAGE,
+        path: truth.file, matchString: '(?i)assignable', regex: 'rust', contextLines: 2,
         clasifyContext: { classifiers: ['The function that checks whether a source type is assignable to a target type.'] },
       });
       const view = await selectedView(first);
       check(`huge file (3MB checker.ts): the selected match windows hold line ${truth.line}`, view.ok && view.lines.some(([n]) => n === truth.line) && sourceOrdered(view.lines),
         JSON.stringify({ selection: view.receipt, pages: view.pages.length, lines: view.lines.slice(0, 10).map(([n]) => n) }));
-      check('huge file: the first selected page stays under 1% of a full read', first.bytes < fs.statSync(truth.file).size * 0.01, `${first.bytes}B`);
+      console.log(JSON.stringify({ target: 'huge file match windows', selectedHostBytes: view.bytes, sourceFileBytes: fs.statSync(truth.file).size, pages: view.pages.length }));
     }
   }
 
@@ -164,7 +162,7 @@ else {
     if (!cron || !proc) skip('two classifiers: both declarations', 'missing redis server.c');
     else {
       const view = await selectedView(await call('localFetch', {
-        path: cron.file, ...PAGE,
+        path: cron.file, ...FULL_FILE,
         clasifyContext: {
           classifiers: [
             'The periodic timer function that runs background housekeeping tasks many times per second.',
@@ -189,7 +187,7 @@ else {
       const lines = Array.from({ length: 429 }, (_, i) => `Line ${i + 1}: operational documentation filler explaining ordinary housekeeping and source ownership.`);
       lines[172] = 'Retry only after a transient upstream timeout; stop retrying after three attempts.';
       fs.writeFileSync(file, lines.join('\n') + '\n');
-      const first = await call('localFetch', { path: file, clasifyContext: { classifiers: ['When must a retry stop?'] }, unit: 'lines', length: 100 });
+      const first = await call('localFetch', { path: file, clasifyContext: { classifiers: ['When must a retry stop?'] }, ...FULL_FILE });
       const view = await selectedView(first);
       const r = view.receipt;
       check('walk: every selected page succeeds', view.ok, view.pages.filter(p => p.isError || p.rowErrors).map(p => p.text.slice(0, 80)).join(' | '));

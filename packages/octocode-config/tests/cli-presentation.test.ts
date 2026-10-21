@@ -7,6 +7,7 @@ import {
   getPublicToolCatalog,
   operationSchemas,
   publishedInputSchema,
+  publishedJson,
 } from '@octocodeai/octocode-core/schema';
 import {
   buildCliPresentation,
@@ -41,6 +42,11 @@ describe('CLI presentation embedded by the native binary', () => {
       expect(instructions[name]!.includes('clasify scouts unread'), name).toBe(
         clasify
       );
+      for (const reader of ['localSearch', 'localFetch', 'ghGetFileContent']) {
+        expect(instructions[name]!.includes(reader), `${name}: ${reader}`).toBe(
+          true
+        );
+      }
     }
   });
 
@@ -311,23 +317,69 @@ describe('CLI presentation embedded by the native binary', () => {
     ).toBeDefined();
   });
 
+  it('emits operation views directly from the core Zod projection', () => {
+    const availableTools = DIRECT_TOOL_DEFINITIONS.map(entry => entry.name);
+    for (const selection of [false, true]) {
+      for (const definition of getDirectToolDefinitionsWithAddons({
+        availableTools,
+        selection,
+      })) {
+        const entry = tool(definition.name);
+        const rendered = (
+          selection && entry.selection ? entry.selection : entry
+        ) as Json;
+        const views = rendered.selections as Record<string, Json>;
+        for (const [operation, schema] of Object.entries(
+          operationSchemas(definition.inputSchema)
+        )) {
+          expect(
+            views[`operation=${operation}`]!.querySchema,
+            `${definition.name}.${operation}, selection=${selection}`
+          ).toEqual(publishedJson(schema));
+        }
+      }
+    }
+  });
+
   it('precomputes the catalog field list from the published row of each form', () => {
     for (const entry of presentation.tools)
       expect(String(entry.fields), String(entry.name)).toMatch(/^\S.*\]$/);
-    // One form: the published fields, required first, truncated.
     expect(tool('ghStructure').fields).toBe(
-      '[owner*, repo*, include?, materialize?, maxDepth?, operation?, path?, ref?]'
+      '[operation?:"tree", owner*, repo*, include?, materialize?, maxDepth?, path?, …] | [operation:"refs", owner*, repo*, ref?] | [operation:"languages", owner*, repo*]'
     );
+    // One form: the published fields, required first, truncated.
     expect(tool('localSearch').fields).toMatch(
       /^\[matchString\*, path\*, .*…\]$/
     );
-    // Several forms: each labelled by its variant name, the discriminator left to the label.
-    expect(tool('astSearch').fields).toContain('match:rule[path*, rule*, ');
-    expect(tool('astTopology').fields).toMatch(/^deadCode\[/);
-    expect(tool('lspSearch').fields).toMatch(
-      /^anchored\[line\*, path\*, symbolName\*, orderHint\?, workspaceRoot\?\] \| document\[/
+    // Several forms: each a flat row, the selector a field with its values
+    // in that form, never a variant label wrapping the row.
+    expect(tool('astSearch').fields).toContain(
+      '[operation:"match", path*, rule*, '
     );
-    expect(tool('ghGetHistoryItem').fields).not.toContain('operation');
+    expect(tool('astTopology').fields).toMatch(/^\[operation:"deadCode", /);
+    expect(tool('structureSearch').fields).toBe(
+      '[operation?:"tree", path*, extensions?, include?, maxDepth?] | [operation:"files", path*, extensions?, include?, maxDepth?]'
+    );
+    expect(String(tool('lspSearch').fields).split(' | ')).toEqual([
+      '[operation?:"definition"|"typeDefinition"|"implementation", line*, path*, symbolName*, orderHint?, workspaceRoot?]',
+      '[operation:"references", line*, path*, symbolName*, orderHint?, workspaceRoot?]',
+      '[operation:"callers", line*, path*, symbolName*, orderHint?, workspaceRoot?]',
+      '[operation:"callees"|"supertypes", line*, path*, symbolName*, orderHint?, workspaceRoot?]',
+      '[operation:"subtypes", line*, path*, symbolName*, orderHint?, workspaceRoot?]',
+      '[operation:"hover", line*, path*, symbolName*, orderHint?, workspaceRoot?]',
+      '[operation:"documentSymbols"|"diagnostic", path*, workspaceRoot?]',
+      '[operation:"workspaceSymbol", path*, symbolName*, workspaceRoot?]',
+      '[operation:"workspaceSymbol", symbolName*, workspaceRoot*, path?]',
+    ]);
+    // No operation field: the field whose values differ is the selector.
+    expect(tool('artifactSearch').fields).toMatch(
+      /^\[ecosystem:"npm", packageName\*, version\?\] \| \[ecosystem:"npm", keywords\*\]/
+    );
+    for (const entry of presentation.tools)
+      for (const label of (entry.variantNames as string[] | undefined) ?? [])
+        expect(String(entry.fields), String(entry.name)).not.toContain(
+          `${label}[`
+        );
   });
 
   it('serves the canonical row from the enforcement contract, not a second emission', () => {
@@ -345,7 +397,7 @@ describe('CLI presentation embedded by the native binary', () => {
       const help = String(entry.help);
       expect(help, String(entry.name)).toMatch(/\nRequired/);
       expect(
-        help.endsWith(`All fields: octocode schema ${String(entry.name)}`),
+        help.endsWith(`Fields: octocode schema ${String(entry.name)} (complete: --view full)`),
         String(entry.name)
       ).toBe(true);
     }

@@ -995,7 +995,7 @@ impl WalkLeft {
         &self,
         path: &std::path::Path,
         file_type: Option<std::fs::FileType>,
-        visit: octocode_engine::portable::Visit,
+        visit: octocode_engine::search::fs_query::Visit,
     ) -> bool {
         let pruned = self.excludes(path, file_type);
         if let Some(position) = visit.fresh_at().filter(|_| pruned) {
@@ -1023,7 +1023,7 @@ impl WalkLeft {
         policy: &WalkPolicy<'_>,
         path: &std::path::Path,
         file_type: Option<std::fs::FileType>,
-        visit: octocode_engine::portable::Visit,
+        visit: octocode_engine::search::fs_query::Visit,
     ) -> bool {
         if path != self.root
             && policy

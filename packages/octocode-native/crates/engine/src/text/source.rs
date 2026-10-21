@@ -46,6 +46,20 @@ pub const SNIFF_BYTES: usize = 8192;
 /// sequences aside). UTF-8 validity is an encoding question, not a binary
 /// one: Latin-1 and other 8-bit text is text ([`decode`]).
 pub fn sniff(bytes: &[u8]) -> BinaryVerdict {
+    if has_utf16_bom(bytes) {
+        if bytes.len() < SNIFF_BYTES && !bytes.len().is_multiple_of(2) {
+            return BinaryVerdict::Binary;
+        }
+        let mut end = bytes.len().min(SNIFF_BYTES) & !1;
+        if end >= SNIFF_BYTES {
+            let last = utf16_unit(bytes, end - 2);
+            if (0xd800..=0xdbff).contains(&last) {
+                end -= 2;
+            }
+        }
+        return decode_unicode(&bytes[..end])
+            .map_or(BinaryVerdict::Binary, |text| sniff(text.as_bytes()));
+    }
     let sample = &bytes[..bytes.len().min(SNIFF_BYTES)];
     if sample.contains(&0) {
         return BinaryVerdict::Binary;
@@ -75,6 +89,59 @@ pub fn sniff(bytes: &[u8]) -> BinaryVerdict {
     }
 }
 
+/// Only a declared UTF-16 byte order is recognized; unmarked bytes are not guessed.
+pub fn has_utf16_bom(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff])
+}
+
+fn utf16_unit(bytes: &[u8], offset: usize) -> u16 {
+    let pair = [bytes[offset], bytes[offset + 1]];
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        u16::from_le_bytes(pair)
+    } else {
+        u16::from_be_bytes(pair)
+    }
+}
+
+/// Strict Unicode decoding for consumers that must not infer a legacy encoding.
+/// Coordinates refer to decoded text; callers retain the original bytes for digests.
+pub fn decode_unicode(bytes: &[u8]) -> Option<Cow<'_, str>> {
+    if has_utf16_bom(bytes) {
+        if !bytes.len().is_multiple_of(2) {
+            return None;
+        }
+        let units = (2..bytes.len())
+            .step_by(2)
+            .map(|offset| utf16_unit(bytes, offset));
+        char::decode_utf16(units)
+            .collect::<Result<String, _>>()
+            .ok()
+            .map(Cow::Owned)
+    } else {
+        std::str::from_utf8(&bytes[super::bom_len(bytes)..])
+            .ok()
+            .map(Cow::Borrowed)
+    }
+}
+
+/// Whole-source binary validation, including late NULs and malformed declared UTF-16.
+pub fn sniff_complete(bytes: &[u8]) -> BinaryVerdict {
+    if has_utf16_bom(bytes) {
+        return decode_unicode(bytes).map_or(BinaryVerdict::Binary, |text| {
+            if text.contains('\0') {
+                BinaryVerdict::Binary
+            } else {
+                sniff(text.as_bytes())
+            }
+        });
+    }
+    if bytes.contains(&0) {
+        BinaryVerdict::Binary
+    } else {
+        sniff(bytes)
+    }
+}
+
 /// Text decoded from file bytes, and the warning when it was not UTF-8.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Decoded<'a> {
@@ -89,6 +156,16 @@ pub struct Decoded<'a> {
 /// `bytes` start a file: a leading UTF-8 BOM is not text of line 1 (as
 /// editors and localSearch show it), so no decoding keeps it.
 pub fn decode(bytes: &[u8]) -> Decoded<'_> {
+    if has_utf16_bom(bytes)
+        && let Some(text) = decode_unicode(bytes)
+    {
+        return Decoded {
+            text,
+            warning: Some(
+                "Decoded BOM-marked UTF-16; byte offsets count the decoded UTF-8 text, while snapshots identify the original file bytes.",
+            ),
+        };
+    }
     Decoded::interior(&bytes[super::bom_len(bytes)..])
 }
 
@@ -130,7 +207,7 @@ pub struct Source {
 
 impl Source {
     pub fn verdict(&self) -> BinaryVerdict {
-        sniff(&self.bytes)
+        sniff_complete(&self.bytes)
     }
 
     pub fn decoded(&self) -> Decoded<'_> {
@@ -198,6 +275,55 @@ pub fn read_source(path: &Path, limit: u64) -> Result<Source, ReadError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bom_utf16_decodes_both_orders_without_guessing_or_losing_coordinates() {
+        let text = "α😀\r\nnext\n\u{feff}inside";
+        for little in [true, false] {
+            let mut bytes = if little {
+                vec![0xff, 0xfe]
+            } else {
+                vec![0xfe, 0xff]
+            };
+            for unit in text.encode_utf16() {
+                bytes.extend(if little {
+                    unit.to_le_bytes()
+                } else {
+                    unit.to_be_bytes()
+                });
+            }
+            assert_eq!(sniff_complete(&bytes), BinaryVerdict::Text);
+            assert_eq!(decode_unicode(&bytes).as_deref(), Some(text));
+            assert_eq!(decode(&bytes).text, text);
+            assert!(decode(&bytes).warning.is_some());
+        }
+        assert_eq!(sniff_complete(b"a\0b\0"), BinaryVerdict::Binary);
+        for bytes in [
+            vec![0xff, 0xfe, 0x61],
+            vec![0xff, 0xfe, 0, 0xd8],
+            vec![0xfe, 0xff, 0xdc, 0],
+            vec![0xff, 0xfe, 0, 0],
+        ] {
+            assert_eq!(sniff_complete(&bytes), BinaryVerdict::Binary);
+        }
+    }
+
+    #[test]
+    fn utf16_sniff_boundary_does_not_split_a_surrogate_pair() {
+        let mut bytes = vec![0xff, 0xfe];
+        for unit in "a"
+            .repeat((SNIFF_BYTES - 4) / 2)
+            .encode_utf16()
+            .chain("😀".encode_utf16())
+        {
+            bytes.extend(unit.to_le_bytes());
+        }
+        assert_eq!(sniff(&bytes[..SNIFF_BYTES]), BinaryVerdict::Text);
+        assert_eq!(sniff(&bytes), BinaryVerdict::Text);
+        assert_eq!(sniff_complete(&bytes), BinaryVerdict::Text);
+        bytes.extend([0, 0]);
+        assert_eq!(sniff_complete(&bytes), BinaryVerdict::Binary);
+    }
 
     #[test]
     fn a_file_past_the_limit_or_not_regular_is_refused() {

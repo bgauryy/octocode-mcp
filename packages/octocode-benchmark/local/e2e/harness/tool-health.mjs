@@ -125,7 +125,7 @@ function cliArgs(cliArgv, { tool = 'schema', cwd = FIXTURE, extraEnv = {} } = {}
       clearTimeout(timer);
       let raw; try { raw = JSON.parse(stdout); } catch {}
       const json = expandShared(raw);
-      resolve({ surface: 'cli', status, raw, json, sc: json, text: stdout + stderr, stdout, stderr, isError: !raw || (status !== 0 && !(status === 1 && ['empty', 'outOfRange'].includes(statusClass(raw)))), ms: Math.round(performance.now() - t0) });
+      resolve({ surface: 'cli', status, raw, json, sc: json, text: stdout + stderr, stdout, stderr, responseBytes: Buffer.byteLength(stdout, 'utf8'), isError: !raw || (status !== 0 && !(status === 1 && ['empty', 'outOfRange'].includes(statusClass(raw)))), ms: Math.round(performance.now() - t0) });
     });
   });
 }
@@ -140,7 +140,7 @@ async function mcpCall(server, tool, input) {
   let raw = entry.raw;
   if (!raw) { try { raw = JSON.parse(entry.text); } catch {} }
   const json = expandShared(raw);
-  return { surface: 'mcp', isError: entry.isError, raw, json, sc: json, text: entry.text, ms: entry.ms };
+  return { surface: 'mcp', isError: entry.isError, raw, json, sc: json, text: entry.text, ms: entry.ms, responseBytes: entry.responseBytes };
 }
 
 const firstError = json => { const row = rowsOf(json).find(r => r.status === 'error' || r.error); const e = dataOf(row); return e ? `${e.errorCode}: ${String(e.error ?? '').slice(0, 140)}` : ''; };
@@ -214,7 +214,7 @@ async function runParked(name, spec) {
   const resolve = query => (typeof query === 'function' ? query(ctx) : query);
   for (const [label, query] of [['happy', spec.happy.query], ['invalid', spec.invalid.query]]) {
     const res = await cliCall(name, { queries: [resolve(query)] });
-    timings.push({ phase: label, surface: 'cli', ms: res.ms });
+    timings.push({ phase: label, surface: 'cli', ms: res.ms, responseBytes: res.responseBytes });
     const ok = res.status === EXIT.tool && JSON.stringify(res.raw) === JSON.stringify(disabled);
     checks.push({ check: `parked.${label}`, ok, detail: `exit ${res.status} ${res.stdout.slice(0, 200)}` });
   }
@@ -243,7 +243,7 @@ async function runTool(name, spec) {
 
   const cwd = spec.workspace ? spec.workspace({ ...ctx, name }) : FIXTURE;
   const server = cliOnly ? null : await mcpServer(name, cwd);
-  const timed = res => { timings.push({ phase, surface: res.surface, ms: res.ms }); return res; };
+  const timed = res => { timings.push({ phase, surface: res.surface, ms: res.ms, responseBytes: res.responseBytes }); return res; };
   /** Any tool on one surface, in this tool's workspace and with its credential. */
   const callOn = surface => async (tool, input) => timed(surface === 'mcp' ? await mcpCall(server, tool, input) : await cliCall(tool, input, { cwd }));
   const call = (input, surface) => callOn(surface)(name, input);
@@ -391,6 +391,7 @@ async function runTool(name, spec) {
   const load = Math.min(MAX_LOAD_FACTOR, Math.max(1, overhead / CALM_CLI_MS));
   const budget = Math.round(spec.budgetMs * load);
   record('latency', slowest <= budget, `slowest call ${slowest}ms (budget ${budget}ms = ${spec.budgetMs}ms x load ${load.toFixed(2)}; CLI startup ${overhead}ms)`);
+  record('measurement.responseBytes', timings.every(call => Number.isSafeInteger(call.responseBytes) && call.responseBytes > 0), `${timings.length} calls include non-empty response payload byte counts`);
   const mine = new Set(['cli', 'mcp'].map(s => tokenFor(name, s)));
   const newUnhandled = mock.unhandledFrom.filter(u => mine.has(u.token)).map(u => u.request);
   const failed = checks.filter(c => c.ok === false);
@@ -411,7 +412,7 @@ async function runTool(name, spec) {
 }
 
 // ---- run
-const report = { at: new Date().toISOString(), deep: DEEP, tools: [], coverage: {} };
+const report = { at: new Date().toISOString(), deep: DEEP, environment: { platform: process.platform, arch: process.arch, node: process.version, kernel: os.release(), parallelism: os.availableParallelism(), services: 'hermetic loopback mocks' }, tools: [], coverage: {} };
 let exitCode = 0;
 let surfaceServer;
 try {
@@ -484,6 +485,17 @@ if (count('FAIL')) {
   for (const t of report.tools.filter(x => x.status === 'FAIL')) for (const c of t.checks.filter(x => x.ok === false)) console.log(`  ${t.tool} ${c.check}: ${c.detail}`);
 }
 report.seconds = Number(((performance.now() - started) / 1000).toFixed(1));
+const distribution = values => {
+  const sorted = values.toSorted((a, b) => a - b);
+  const at = fraction => sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)] ?? null;
+  return { min: sorted[0] ?? null, median: at(0.5), p95: at(0.95), max: sorted.at(-1) ?? null };
+};
+report.measurements = Object.fromEntries(['cli', 'mcp'].map(surface => {
+  const calls = report.tools.flatMap(tool => tool.timings).filter(call => call.surface === surface);
+  const bytes = calls.map(call => call.responseBytes).filter(Number.isFinite);
+  return [surface, { calls: calls.length, latencyMs: distribution(calls.map(call => call.ms)), responseBytes: { measuredCalls: bytes.length, total: bytes.reduce((sum, value) => sum + value, 0), ...distribution(bytes) } }];
+}));
+report.measurementScope = 'Per-call elapsed time includes startup for CLI and uses a persistent MCP process per tool. responseBytes measures CLI stdout or the serialized MCP result/error body; it excludes JSON-RPC framing and stderr. Samples mix query shapes and concurrency; they are not transport speed comparisons.';
 report.summary = { pass: count('PASS'), fail: count('FAIL'), skip: count('SKIP'), exitCode };
 const file = writeResults('tool-health', report);
 console.log(`\ntool-health${DEEP ? ' --deep' : ''}: ${count('PASS')} passed, ${count('FAIL')} failed, ${count('SKIP')} skipped of ${report.tools.length} tools, ${report.tools.reduce((n, t) => n + (t.calls ?? 0), 0)} calls in ${report.seconds}s — ${path.relative(ROOT, file)}`);

@@ -10,7 +10,7 @@ import type { PermissionRequest } from './request.js';
 import { AuditLog, childAuditMessage, RELAY_VIA, WARN_ACTIONS, type AuditEntry } from './audit.js';
 import { permissionHeader } from './header.js';
 import { auditLine, auditLines, cardLines, foldLines, computeCard, NO_REASON, transcriptPurpose } from './effect.js';
-import { ACTION_CLASSES, actionNoun, asksIn, chipText, CHIPS, decide, kindOf, modeAllowing, modeAllowingReasons, parseGrants, PERMISSION_ID, reasonAsks, startMode, UNGRANTABLE, type ActionClass, type ActionCount, type AskReason, type PermissionMode } from './mode.js';
+import { ACTION_CLASSES, actionNoun, asksIn, chipText, CHIPS, decide, kindOf, modeAllowing, modeAllowingReasons, parseGrants, PERMISSION_CYCLE, PERMISSION_ID, reasonAsks, startMode, UNGRANTABLE, type ActionClass, type ActionCount, type AskReason, type PermissionMode } from './mode.js';
 import { notify } from '../shared/commands.js';
 
 /**
@@ -199,6 +199,11 @@ export class Permission {
     if (interactive(ctx, this.#isSubagent)) notify(ctx.ui, `Permission mode: ${mode}. ${modeSummary(mode)}`, mode === 'full' ? 'warning' : 'info');
     // Hidden and turn-neutral: during a run Pi appends it after the current turn's results, so the model reads it next.
     this.#pi.sendMessage({ customType: PERMISSION_ID, content: `[${PERMISSION_ID}] mode is now ${mode}: ${modeSummary(mode)}`, display: false, details: { mode } }, { triggerTurn: false });
+  }
+
+  /** The editor shortcut: the next mode in `PERMISSION_CYCLE`, wrapping to the first. */
+  cycle(ctx: ExtensionContext): void {
+    this.setMode(PERMISSION_CYCLE[(PERMISSION_CYCLE.indexOf(this.#mode) + 1) % PERMISSION_CYCLE.length]!, ctx);
   }
 
   /** Session grants, as `action: label`. */

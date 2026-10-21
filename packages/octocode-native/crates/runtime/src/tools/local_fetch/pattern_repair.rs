@@ -4,7 +4,7 @@ use super::types::{FetchCall, LocalFetchQuery, MatchString, ReadRegex};
 
 /// Whether `pattern` compiles under the read's own regex engine.
 fn compiles(pattern: &str, pcre2: bool) -> bool {
-    octocode_engine::portable::validate_text_pattern(pattern, false, pcre2).valid
+    octocode_engine::search::text_pattern::validate_text_pattern(pattern, false, pcre2).valid
 }
 
 /// One invalid item, repaired: its one unclosed group of bare alternatives

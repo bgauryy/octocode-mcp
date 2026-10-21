@@ -12,6 +12,8 @@
 //! multi-line quoted scalars are skipped, and trailing commas or broken
 //! nesting degrade to the nearest container still visible, never to an error.
 
+use crate::tools::line_spans::merge_spans;
+
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -496,19 +498,6 @@ fn toml_entries(content: &str) -> (Vec<Entry>, Vec<(usize, usize)>) {
     (Vec::new(), merge_spans(unparsed))
 }
 
-/// Ascending line spans with overlapping or touching ones joined.
-fn merge_spans(mut spans: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
-    spans.sort_unstable();
-    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(spans.len());
-    for (start, end) in spans {
-        match merged.last_mut() {
-            Some(last) if start <= last.1 + 1 => last.1 = last.1.max(end),
-            _ => merged.push((start, end)),
-        }
-    }
-    merged
-}
-
 /// Line numbers of byte offsets in a parsed TOML source.
 struct Lines<'a> {
     content: &'a str,
@@ -603,6 +592,17 @@ impl Lines<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_outline_merges_touching_and_overlapping_unparsed_spans() {
+        let outline = key_outline(
+            "title = 'ok'\n[broken\n[also_broken\n[valid]\na = 1\n",
+            "bad.toml",
+        )
+        .expect("outline");
+        assert_eq!(outline.unparsed.as_deref(), Some("2-3"));
+        assert!(outline.text.contains("[valid]"), "{}", outline.text);
+    }
 
     #[test]
     fn json_outlines_member_keys_with_container_spans() {

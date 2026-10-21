@@ -1,10 +1,15 @@
 import { compile } from 'json-schema-to-typescript';
-import type { JsonObject } from './bundle.ts';
+import { pascal, type JsonObject } from './bundle.ts';
 
-const TOOL_TYPE = /(?:Query|Input|Output)$/;
-
-export async function renderTypeScript(fingerprint: string, bundle: JsonObject): Promise<string> {
-  const toolTypes = Object.keys(bundle.$defs as JsonObject).filter((name) => TOOL_TYPE.test(name));
+export async function renderTypeScript(
+  fingerprint: string,
+  bundle: JsonObject,
+  toolNames: readonly string[]
+): Promise<string> {
+  const tools = [...toolNames].sort();
+  const toolTypes = tools.flatMap((tool) =>
+    ['Query', 'Input', 'Output'].map((suffix) => `${pascal(tool)}${suffix}`)
+  );
   // A root that references every tool type makes the compiler declare each
   // one (and everything it references) under its own name.
   const root = {
@@ -25,9 +30,8 @@ export async function renderTypeScript(fingerprint: string, bundle: JsonObject):
     strictIndexSignatures: true,
     unreachableDefinitions: true,
   });
-  const tools = [...new Set(toolTypes.map((name) => name.replace(TOOL_TYPE, '')))];
   const map = (suffix: string): string =>
-    tools.map((tool) => `  ${tool.charAt(0).toLowerCase()}${tool.slice(1)}: ${tool}${suffix};`).join('\n');
+    tools.map((tool) => `  ${tool}: ${pascal(tool)}${suffix};`).join('\n');
   const declarations = body
     .replace(/^export interface OctocodeToolTypes \{[\s\S]*?\n\}\n/m, '')
     .trim()

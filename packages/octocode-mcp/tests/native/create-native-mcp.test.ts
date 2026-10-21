@@ -434,7 +434,9 @@ describe('createNativeMcp registration + execution', () => {
     const list = await client.listTools();
     expect(list.tools.map(t => t.name)).toEqual(['localFetch']);
     expect(list.tools.every(t => !Object.hasOwn(t, 'outputSchema'))).toBe(true);
-    expect(client.getInstructions()).toBe(buildMcpInstructions());
+    expect(client.getInstructions()).toBe(
+      buildMcpInstructions({ availableTools: ['localFetch'] })
+    );
 
     // Calling the tool drives the registered async callback → runtime.executeMcp.
     // The adapter does not advertise an output schema, so assert on the recorded
@@ -754,7 +756,9 @@ describe('createNativeMcp registration + execution', () => {
       client.connect(clientTransport),
     ]);
     expect(client.getInstructions()).not.toContain('Runtime grammar inventory');
-    expect(client.getInstructions()).toBe(buildMcpInstructions());
+    expect(client.getInstructions()).toBe(
+      buildMcpInstructions({ availableTools: ['astSearch'] })
+    );
     expect(client.getInstructions()!.length).toBeLessThanOrEqual(2_000);
     await client.close();
     await instance.close();

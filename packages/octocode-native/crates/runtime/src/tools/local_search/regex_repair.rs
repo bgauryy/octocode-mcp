@@ -12,7 +12,7 @@ use serde_json::json;
 pub(super) fn check_pattern(query: &LocalSearchQuery) -> Result<(), ToolError> {
     let mode = query.regex_mode();
     if query.multiline == LocalSearchQueryMultiline::Off
-        && octocode_engine::portable::matches_line_break(
+        && octocode_engine::search::text_pattern::matches_line_break(
             query.pattern(),
             mode == LocalSearchQueryRegex::Literal,
         )
@@ -22,7 +22,7 @@ pub(super) fn check_pattern(query: &LocalSearchQuery) -> Result<(), ToolError> {
     if mode == LocalSearchQueryRegex::Literal {
         return Ok(());
     }
-    let checked = octocode_engine::portable::validate_text_pattern(
+    let checked = octocode_engine::search::text_pattern::validate_text_pattern(
         query.pattern(),
         false,
         query.regex_mode() == LocalSearchQueryRegex::Pcre2,
@@ -330,7 +330,9 @@ mod repair_tests {
             "{repair}"
         );
         let text = repair["matchString"].as_str().expect("text");
-        assert!(octocode_engine::portable::validate_text_pattern(text, false, false).valid);
+        assert!(
+            octocode_engine::search::text_pattern::validate_text_pattern(text, false, false).valid
+        );
         crate::contracts::validate_query("localSearch", repair.clone())
             .expect("repair query is contract-valid");
         // A single anchor keeps the literal repair.

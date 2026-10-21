@@ -93,6 +93,20 @@ pub fn execute_local_fetch(
     if octocode_engine::text::sniff(&sample) == octocode_engine::text::BinaryVerdict::Binary {
         return refuse_binary(q, display_path);
     }
+    if !in_memory && octocode_engine::text::has_utf16_bom(&sample) {
+        let mut result = LocalFetchResult::error(
+            q.path.to_string(),
+            "fileTooLarge",
+            format!(
+                "BOM-marked UTF-16 sources require a bounded whole-file decode (limit: {MAX_SOURCE_BYTES} bytes); this source is {} bytes.",
+                meta.len()
+            ),
+        );
+        result.source_bytes = Some(meta.len() as usize);
+        result.terminal_limit(PartialReason::FullContentSource);
+        result.hints = vec!["Convert a copy to UTF-8 or split the source into smaller text files; line ranges do not lift this decoding limit.".into()];
+        return result;
+    }
     if !in_memory {
         return fetch_streamed(q, &validated, &file, &meta, security, cancel, regex);
     }
@@ -107,11 +121,7 @@ pub fn execute_local_fetch(
             return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", e.to_string());
         }
     };
-    // The sniff saw the head; a NUL byte anywhere is binary (the one binary
-    // definition), so the rest is checked too: one memchr pass.
-    if bytes
-        .get(BINARY_SAMPLE_BYTES..)
-        .is_some_and(|rest| rest.contains(&0))
+    if octocode_engine::text::sniff_complete(&bytes) == octocode_engine::text::BinaryVerdict::Binary
     {
         return refuse_binary(q, display_path);
     }
@@ -1385,7 +1395,8 @@ fn select_view(
     // view numbers each kept line with its source line, the outline uses the
     // same separator in every language.
     let standard_view = |selected: &str| {
-        let view = octocode_engine::portable::apply_content_view_minification(selected, &q.path);
+        let view =
+            octocode_engine::minify::apply::apply_content_view_minification(selected, &q.path);
         let lines = ext.source_lines.as_deref();
         // A compaction that joins lines would cite them wrong: keep lines whole.
         crate::tools::numbered::number_view(selected, lines, &view)
@@ -2102,6 +2113,76 @@ mod source_size_tests {
             None,
             None,
         )
+    }
+
+    #[test]
+    fn utf16_fetch_reads_lines_and_keeps_raw_digest() {
+        let root = tempfile::tempdir().expect("root");
+        let file = root.path().join("source.txt");
+        let paths = Paths(root.path().into());
+        let source = format!("{}😀\r\nsecond\n", "a".repeat(5000));
+        for little in [true, false] {
+            let mut bytes = if little {
+                vec![0xff, 0xfe]
+            } else {
+                vec![0xfe, 0xff]
+            };
+            for unit in source.encode_utf16() {
+                bytes.extend(if little {
+                    unit.to_le_bytes()
+                } else {
+                    unit.to_be_bytes()
+                });
+            }
+            fs::write(&file, &bytes).expect("write");
+            let mut query = q(&file);
+            query.ranges = vec!["2-2".parse().expect("range")];
+            let result = fetch(&query, &paths);
+            assert_ne!(result.status, "error", "{result:?}");
+            assert!(
+                result
+                    .content
+                    .as_deref()
+                    .is_some_and(|text| text.contains("second"))
+            );
+            assert_eq!(
+                result.source_sha256.as_deref(),
+                Some(crate::digest::sha256(&bytes).as_str())
+            );
+            bytes.extend([0, 0]);
+            fs::write(&file, &bytes).expect("binary");
+            assert_eq!(
+                fetch(&query, &paths).error_code.as_deref(),
+                Some("binaryFileUnsupported")
+            );
+        }
+    }
+
+    #[test]
+    fn utf16_past_whole_file_limit_reports_decoding_limit_not_binary() {
+        let root = tempfile::tempdir().expect("root");
+        let path = root.path().join("large.txt");
+        let mut head = vec![0xff, 0xfe];
+        for unit in "a".repeat(BINARY_SAMPLE_BYTES).encode_utf16() {
+            head.extend(unit.to_le_bytes());
+        }
+        fs::write(&path, head).expect("head");
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("open")
+            .set_len(MAX_SOURCE_BYTES + 2)
+            .expect("length");
+        let result = fetch(&q(&path), &Paths(root.path().into()));
+        assert_eq!(result.error_code.as_deref(), Some("fileTooLarge"));
+        assert_eq!(result.terminal_limit, Some(true));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("UTF-16"))
+        );
+        assert!(result.next.is_none());
     }
 
     /// A cancelled row stops waiting for another row's preparation of the

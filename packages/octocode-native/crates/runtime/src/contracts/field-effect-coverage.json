@@ -412,7 +412,9 @@
         "tests/runtime_gh_structure.rs"
       ],
       "variants": [
-        "tree/refs/languages"
+        "tree",
+        "refs",
+        "languages"
       ],
       "discriminators": {
         "operation": [
@@ -1017,6 +1019,14 @@
         "clasifyContext.longContext": [
           "forwarded",
           "continuation"
+        ],
+        "contextBefore": [
+          "consumed",
+          "output-control"
+        ],
+        "contextAfter": [
+          "consumed",
+          "output-control"
         ]
       }
     },
@@ -1159,7 +1169,9 @@
         "src/tools/ast_search/file_language_tests.rs",
         "tests/runtime_local.rs",
         "src/tools/ast_search/rule_tests.rs",
-        "../engine/src/structural/octo/mod_tests.rs"
+        "../engine/src/structural/octo/mod_tests.rs",
+        "src/tools/ast_search/region_tests.rs",
+        "../engine/src/structural/octo/rule_features_tests.rs"
       ],
       "variants": [
         "match:pattern",
@@ -1284,6 +1296,11 @@
         ],
         "symbolName": [
           "consumed"
+        ],
+        "scope": [
+          "validated",
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -1512,7 +1529,12 @@
         "tests/runtime_local.rs"
       ],
       "variants": [
-        "anchored",
+        "anchored:locations",
+        "anchored:references",
+        "anchored:callers",
+        "anchored:hierarchy",
+        "anchored:subtypes",
+        "anchored:hover",
         "document",
         "workspace:path",
         "workspace:root"

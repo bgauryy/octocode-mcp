@@ -4,9 +4,6 @@ import { existsSync, statSync, mkdtempSync, readFileSync, readdirSync, rmSync, w
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 
-// Lines every skill's Saved report section shares with octocode-skills/output.md, word for word.
-const SHARED_OUTPUT_LINES = ['Start the file with this header', 'Before starting work that may repeat', 'Evidence and visuals:', 'Markdown that renders well:'];
-
 function filesUnder(root) {
   const files = [];
   function visit(dir) {
@@ -125,21 +122,19 @@ function review(dir) {
   }
   if (fm?.description !== null && !fm?.description) add('ERROR', 'description-missing', 'Description is required.');
   if (fm?.description?.length > 1024) add('ERROR', 'description-length', 'Description exceeds the Agent Skills limit of 1024 characters.');
-  if (!files.includes('README.md')) add('ERROR', 'readme-missing', 'README.md is missing.');
-  if (!files.includes('output.md')) add('ERROR', 'output-missing', 'output.md is missing.');
-  if (![...localPaths(skill)].some((path) => resolve(dir, path) === join(dir, 'output.md'))) add('WARN', 'output-route-missing', 'Link the output format from SKILL.md using any descriptive label.');
+  // A single-file skill (SKILL.md only, the Agent Skills minimum) owns its output inline.
+  const singleFile = files.length === 1;
+  if (!singleFile && !files.includes('README.md')) add('ERROR', 'readme-missing', 'README.md is missing.');
+  if (!singleFile && !files.includes('output.md')) add('ERROR', 'output-missing', 'output.md is missing.');
+  if (!singleFile && ![...localPaths(skill)].some((path) => resolve(dir, path) === join(dir, 'output.md'))) add('WARN', 'output-route-missing', 'Link the output format from SKILL.md using any descriptive label.');
   const viewer = join(dir, 'scripts', 'render-report.mjs');
-  const canonicalViewer = resolve(dir, '..', 'octocode-skills', 'scripts', 'render-report.mjs');
-  if (existsSync(viewer) && existsSync(canonicalViewer) && resolve(viewer) !== canonicalViewer && !readFileSync(viewer).equals(readFileSync(canonicalViewer))) add('ERROR', 'shared-file-drift', 'scripts/render-report.mjs differs from octocode-skills/scripts/render-report.mjs; run report-viewer-sync.mjs.');
-  if (!existsSync(viewer) && [...texts.values()].some((text) => text.includes('scripts/render-report.mjs'))) add('ERROR', 'missing-script', 'Docs reference scripts/render-report.mjs but the skill does not ship it; run report-viewer-sync.mjs.');
-  const canonicalOutput = resolve(dir, '..', 'octocode-skills', 'output.md');
-  if (texts.has('output.md') && files.includes('scripts/render-report.mjs') && existsSync(canonicalOutput) && resolve(dir, 'output.md') !== canonicalOutput) {
-    const own = texts.get('output.md').split(/\r?\n/);
-    for (const line of readFileSync(canonicalOutput, 'utf8').split(/\r?\n/).filter((l) => SHARED_OUTPUT_LINES.some((prefix) => l.startsWith(prefix)))) {
-      if (!own.includes(line)) add('WARN', 'shared-text-drift', `output.md should repeat this shared line from octocode-skills/output.md exactly: "${line.slice(0, 60)}…"`);
-    }
+  const common = resolve(dir, '..', 'common');
+  for (const resource of ['scripts/render-report.mjs', 'references/report-output.md']) {
+    const source = join(common, resource), installed = join(dir, resource);
+    if (existsSync(installed) && existsSync(source) && !readFileSync(installed).equals(readFileSync(source))) add('ERROR', 'shared-file-drift', `${resource} differs from skills/common; run node skills/common/build.mjs.`);
   }
-  if (texts.has('output.md') && files.includes('scripts/render-report.mjs') && !/^## Saved report\b[\s\S]*--manifest/m.test(texts.get('output.md'))) add('WARN', 'saved-report-missing', 'output.md should have a "## Saved report" section: when to save, the shared header, rendering with scripts/render-report.mjs, and --manifest for earlier reports.');
+  if (!existsSync(viewer) && [...texts.values()].some(text => text.includes('scripts/render-report.mjs'))) add('ERROR', 'missing-script', 'Docs reference scripts/render-report.mjs but the skill does not ship it; run node skills/common/build.mjs.');
+  if (texts.has('output.md') && files.includes('scripts/render-report.mjs') && !/^## Saved report\b[\s\S]*(?:--manifest|references\/report-output\.md)/m.test(texts.get('output.md'))) add('WARN', 'saved-report-missing', 'output.md needs a Saved report section linking shared report guidance.');
   if (texts.has('output.md') && !texts.get('output.md').includes('.octocode/')) add('WARN', 'output-location-missing', `output.md should name where saved results go: <workspace>/.octocode/${name}/ (scratch under <workspace>/.octocode/${name}/tmp/).`);
 
   // The lobby routes resources through one table whose columns say when to load each file and why.
@@ -254,9 +249,18 @@ function selfTest() {
     if (skillDirs(collection).length !== 1 || review(skillDirs(collection)[0]).findings.length) throw new Error('symlinked skill failed');
     mkdirSync(join(collection, 'missing-skill'));
     if (skillDirs(collection).length !== 2) throw new Error('incomplete skill folder was silently skipped');
+    mkdirSync(join(collection, 'private-assets'));
+    writeFileSync(join(collection, 'private-assets', 'package.json'), JSON.stringify({ private: true }));
+    if (skillDirs(collection).length !== 2) throw new Error('private asset package was mistaken for a skill');
     const empty = join(dir, 'empty');
     mkdirSync(empty);
     if (!review(skillDirs(empty)[0]).findings.some((item) => item.code === 'skill-missing')) throw new Error('empty collection passed');
+    const single = join(dir, 'single-skill');
+    mkdirSync(single);
+    writeFileSync(join(single, 'SKILL.md'), '---\nname: single-skill\ndescription: "Use when one file is enough."\n---\n\n# Single\n\nAnswer inline.\n');
+    if (review(single).findings.length) throw new Error('a single-file skill was rejected: ' + JSON.stringify(review(single).findings));
+    writeFileSync(join(single, 'notes.md'), '# Notes\n');
+    if (!['readme-missing', 'output-missing'].every((code) => review(single).findings.some((item) => item.code === code))) throw new Error('a multi-file skill without README.md and output.md passed');
     console.log('PASS skill-review-self-test');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
@@ -277,7 +281,9 @@ function skillDirs(target) {
   if (!existsSync(target) || !statSync(target).isDirectory()) return [target];
   const children = readdirSync(target, { withFileTypes: true })
     .filter((entry) => !entry.name.startsWith('.') && entry.name !== 'node_modules' && (entry.isDirectory() || entry.isSymbolicLink()))
-    .map((entry) => join(target, entry.name));
+    .map((entry) => join(target, entry.name))
+    .filter(dir => existsSync(join(dir, 'SKILL.md')) || !existsSync(join(dir, 'package.json')) ||
+      JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).private !== true);
   return children.length ? children : [target];
 }
 const dirs = [...new Set(targets.flatMap(skillDirs))];

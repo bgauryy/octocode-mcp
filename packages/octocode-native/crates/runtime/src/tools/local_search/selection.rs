@@ -5,8 +5,8 @@
 //! and the receipt counts groups. Unknown groups stay reachable through a
 //! lead to exactly the files holding them.
 use super::cursor::{normalized_query, stale_snapshot};
-use super::executor::DEFAULT_CONTEXT_LINES;
 use super::layout::streamed_layout;
+use super::types::SearchContext;
 use super::types::*;
 use super::verify::{PageScope, Redacted, verify_candidate};
 use crate::contracts::tool_types::SelectionUnit;
@@ -44,9 +44,9 @@ pub(super) struct Selected {
 }
 
 /// The snippet groups of one file: indices into its `matches`, each group
-/// in line order. Windows `[line - context, line + context]` that overlap or
+/// in line order. Windows `[line - before, line + after]` that overlap or
 /// touch form one group.
-fn groups(file: &TextSearchFile, context: u32) -> Vec<Vec<usize>> {
+fn groups(file: &TextSearchFile, context: SearchContext) -> Vec<Vec<usize>> {
     let mut order = (0..file.matches.len()).collect::<Vec<_>>();
     order.sort_by_key(|&i| (file.matches[i].line, file.matches[i].column));
     let mut groups: Vec<Vec<usize>> = Vec::new();
@@ -54,12 +54,12 @@ fn groups(file: &TextSearchFile, context: u32) -> Vec<Vec<usize>> {
     for index in order {
         let line = file.matches[index].line;
         match groups.last_mut() {
-            Some(group) if line.saturating_sub(context) <= end.saturating_add(1) => {
+            Some(group) if line.saturating_sub(context.before) <= end.saturating_add(1) => {
                 group.push(index);
             }
             _ => groups.push(vec![index]),
         }
-        end = end.max(line.saturating_add(context));
+        end = end.max(line.saturating_add(context.after));
     }
     groups
 }
@@ -83,7 +83,11 @@ pub(super) fn select_hits(
         return Err(stale_snapshot(query));
     }
     let prior = query.selection.as_ref().map(|token| token.as_str());
-    let context = query.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES);
+    let context = if super::executor::uses_context(query.result_view) {
+        query.context()
+    } else {
+        SearchContext::default()
+    };
     let file_groups = parsed
         .files
         .iter()
@@ -366,6 +370,9 @@ impl Selected {
     /// hits is the tool description's, not repeated here.
     pub(super) fn disclosure(&self) -> Vec<String> {
         let mut notes = Vec::new();
+        if let Some(notice) = self.outcome.disclosure() {
+            notes.push(notice.to_owned());
+        }
         if let Some(error) = &self.provider {
             notes.push(crate::tools::selection::unclassified_warning(
                 error,
@@ -553,6 +560,37 @@ mod tests {
     }
 
     #[test]
+    fn span_selection_ignores_context_controls() {
+        let root = fixture();
+        let base =
+            json!({"matchString":"needle (keep|drop)","regex":"rust","resultView":"matchOnly"});
+        let plain = search(root.path(), base.clone(), None).expect("search");
+        assert!(
+            plain
+                .files
+                .iter()
+                .flat_map(|f| f.matches.iter().flatten())
+                .all(|m| !m.value.contains("drop"))
+        );
+        for extra in [
+            json!({"contextBefore":100}),
+            json!({"contextAfter":100}),
+            json!({"contextLines":100}),
+        ] {
+            let mut fields = base.clone();
+            fields
+                .as_object_mut()
+                .expect("fields")
+                .extend(extra.as_object().expect("extra").clone());
+            let contextual = search(root.path(), fields, None).expect("search");
+            assert_eq!(
+                serde_json::to_value(&contextual.files).expect("files"),
+                serde_json::to_value(&plain.files).expect("files")
+            );
+        }
+    }
+
+    #[test]
     fn oversized_unknown_group_does_not_claim_its_hits_were_judged() {
         let root = tempfile::tempdir().expect("fixture");
         std::fs::write(
@@ -612,6 +650,14 @@ mod tests {
             result.warnings
         );
         let next = result.next.as_ref().expect("leads");
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("not proof of absence")),
+            "{:?}",
+            result.warnings
+        );
         let unknown = &next["unfilteredUnknown"]["query"]["queries"][0];
         assert_eq!(unknown["include"], json!(["/b.rs"]), "{next}");
         assert!(unknown.get("clasifyContext").is_none());
@@ -860,8 +906,14 @@ mod tests {
             matches: vec![hit(20), hit(1), hit(2), hit(9)],
             source: None,
         };
-        assert_eq!(groups(&file, 0), [vec![1, 2], vec![3], vec![0]]);
-        assert_eq!(groups(&file, 3), [vec![1, 2, 3], vec![0]]);
+        assert_eq!(
+            groups(&file, SearchContext::symmetric(0)),
+            [vec![1, 2], vec![3], vec![0]]
+        );
+        assert_eq!(
+            groups(&file, SearchContext::symmetric(3)),
+            [vec![1, 2, 3], vec![0]]
+        );
     }
 
     #[test]

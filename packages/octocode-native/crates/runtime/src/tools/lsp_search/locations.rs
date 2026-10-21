@@ -265,13 +265,13 @@ fn location_sizes(
     compact: bool,
     context_lines: Option<u32>,
 ) -> Vec<usize> {
-    use crate::tools::stream_page::{json_chars, json_text_chars};
+    use crate::tools::stream_page::json_text_chars;
     let mut previous_uri: Option<&str> = None;
     entries
         .iter()
         .map(|entry| {
             if grouped {
-                return json_chars(entry) + 1;
+                return octocode_engine::json_size::utf16_units(entry).unwrap_or(0) + 1;
             }
             if !compact {
                 let line = entry
@@ -279,19 +279,28 @@ fn location_sizes(
                     .and_then(Value::as_str)
                     .map_or(0, json_text_chars);
                 let context = context_lines.map_or(0, |lines| 2 * lines as usize * line);
-                return json_chars(&public_location(entry.clone())) + context + 1;
+                return octocode_engine::json_size::utf16_units(&public_location(entry.clone()))
+                    .unwrap_or(0)
+                    + context
+                    + 1;
             }
             let uri = entry.get("uri").and_then(Value::as_str);
             let row = compact_rows_by_file(std::slice::from_ref(entry));
             let matched = row.first().and_then(|file| file["matches"].get(0));
-            let own = matched.map_or(0, |matched| json_chars(matched) + 1);
+            let own = matched.map_or(0, |matched| {
+                octocode_engine::json_size::utf16_units(matched).unwrap_or(0) + 1
+            });
             let path = if uri == previous_uri {
                 0
             } else {
                 row.first()
                     .and_then(|file| file["path"].as_str())
                     .map_or(0, |path| {
-                        json_chars(&json!({"path": path, "matches": []})) + 1
+                        octocode_engine::json_size::utf16_units(
+                            &json!({"path": path, "matches": []}),
+                        )
+                        .unwrap_or(0)
+                            + 1
                     })
             };
             previous_uri = uri;
@@ -809,10 +818,12 @@ fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget:
     let sizes = spans
         .iter()
         .map(|span| {
-            crate::tools::stream_page::json_chars(&document_symbol_rows(
+            octocode_engine::json_size::utf16_units(&document_symbol_rows(
                 &symbols[span.clone()],
                 &[],
-            )) + 1
+            ))
+            .unwrap_or(0)
+                + 1
         })
         .collect::<Vec<_>>();
     let (window, pagination, next_page) = page_window(

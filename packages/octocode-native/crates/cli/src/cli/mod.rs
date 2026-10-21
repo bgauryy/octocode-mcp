@@ -27,7 +27,8 @@ use std::io::{self, Write};
     name = "octocode",
     version,
     about = "Native Octocode research tools",
-    long_about = ROOT_HELP
+    long_about = ROOT_HELP,
+    after_help = "Run: octocode <tool> '<json>' | Fields: octocode schema <tool>\nUse --help for output rules and exit codes; <tool> --help for examples."
 )]
 pub struct Args {
     #[command(subcommand)]
@@ -40,33 +41,18 @@ pub struct Args {
 
 const ROOT_HELP: &str = r#"Native Octocode research tools.
 
-Tools take one JSON query and print text on a terminal, JSON on a pipe:
-  octocode <tool> '<json>'          run a tool; --input FILE|- reads the query, --json forces JSON
-  octocode schema                   list tools with agent instructions
-  octocode schema <tool>            print a tool's input contract
+Queries: one JSON object or {"queries":[…]}; --input FILE|- reads a query.
+Discovery: schema lists tools; schema <tool> lists query fields.
+Reference: schema [<tool>] --view full. Examples: <tool> --help.
+Graph: graph ingest <path>, then graph query <op> [ref]; see graph --help.
 
-Code graph (persisted; see `octocode graph --help`):
-  octocode graph ingest <path>      parse once into <workspace>/.octocode/graph
-  octocode graph query <op> [ref]   callers, impact, cycles, issues, ... in milliseconds
-
-JSON is indented on a terminal and one compact line on a pipe.
-
-Errors follow the output: JSON on stdout in JSON mode, text on stderr otherwise.
-When a pipe (not --json) chose JSON and stderr is a terminal, the error is also
-written there as text.
-
-Exit codes:
-  0    success
-  1    empty result / no matches
-  2    invalid input, including any rejected batch row
-  3    not found
-  4    auth required
-  5    execution error
-  7    rate limited
-  130  interrupted (Ctrl-C)
-
-A result with more to read (a next page, a partial read) is still 0: follow the
-next.* continuation or pagination.hasMore in the output."#;
+Output: text on a terminal; JSON on a pipe or with --json (indented on a terminal).
+Errors: stdout in JSON mode, stderr otherwise; pipe-selected JSON also reports
+text to stderr when stderr is a terminal.
+Exits: 0 success, 1 empty, 2 invalid input (including batch rows), 3 not found,
+4 auth required, 5 execution error, 7 rate limited, 130 interrupted.
+A batch exits with its worst row; stdout still carries every row's result.
+More pages still exit 0: follow next.*; check pagination.hasMore."#;
 
 /// How a command answers: JSON or text, and whether a pipe chose JSON.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -422,7 +408,7 @@ async fn dispatch(command: Command, runtime: &ToolRuntime, mode: OutputMode) -> 
             let value = machine_catalog(runtime)
                 .map_err(|message| schema::SchemaError { message, exit: 5 })
                 .and_then(|machine| match tool.as_deref() {
-                    None => schema::catalog(&machine),
+                    None => schema::catalog(&machine, view.as_deref()),
                     Some(name) => {
                         schema::tool_view(&machine, name, view.as_deref(), select.as_deref())
                     }
@@ -481,7 +467,6 @@ async fn dispatch(command: Command, runtime: &ToolRuntime, mode: OutputMode) -> 
             json: json_out,
             ..args
         }),
-        Command::Cache { action } => system::cache(runtime, action),
         Command::LspServer {
             action,
             names,

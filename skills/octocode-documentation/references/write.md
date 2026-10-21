@@ -1,28 +1,6 @@
 # Write and verify docs
 
-Load when gathering repo facts, choosing a mode or page type, writing an ADR or `AGENTS.md`, drafting, or verifying.
-
-## Mode
-
-| Request | Mode |
-|---|---|
-| `AGENTS.md`, `CLAUDE.md`, rules the agent keeps missing | agent-docs (link human pages, never inline) |
-| README, tutorial, how-to, API docs, runbook, onboarding | human-docs |
-| Decision, trade-off, "why this over that" | adr |
-| Whole codebase, one page per package | codebase-pack |
-| Copyedit, tone, wording | style-pass |
-
-## Page type
-
-| Signal | Type | Pattern |
-|---|---|---|
-| New to X; first success | Tutorial | Goal, prerequisites, steps with visible results, outcome |
-| How do I...; known task | How-to | Goal, assumptions, steps, expected result |
-| Params, endpoints, flags, schema | Reference | Entries: meaning, defaults, links |
-| Why; how it works | Explanation | Context, idea, alternatives; no procedures |
-
-- No API tables in tutorials, no essays in reference.
-- Codebase-pack order: index, reference, how-to; verify each file before the next.
+Load when evidence spans files, writing an ADR or agent instruction file, or checking API behavior.
 
 ## Gather evidence
 
@@ -30,7 +8,7 @@ Load when gathering repo facts, choosing a mode or page type, writing an ADR or 
 - Find entrypoints, config keys, and contracts by path search; read focused slices.
 - Durable docs name manifest scripts ("Run `yarn test`"), not shell programs.
 - Spot-check symbols by lexical or structural search; LSP use: `octocode-research`.
-- Build a claim map (Claim–evidence: each claim beside its source and status) before assertive prose; only answered (or carefully worded partial) claims become firm.
+- For a complex review, track disputed claims beside their source and verification status; simple edits need no separate claim table. Only verified claims become firm.
 
 | Claim | Evidence (path, module, doc) | Status |
 |---|---|---|
@@ -64,7 +42,7 @@ Load when gathering repo facts, choosing a mode or page type, writing an ADR or 
 
 ## Agent instruction files
 
-- Follow the [agents.md](https://agents.md/) spec for `AGENTS.md` and `CLAUDE.md`; the closest nested `AGENTS.md` wins, so nested files are short deltas.
+- Check how the target host loads `AGENTS.md` or `CLAUDE.md`; preserve its scope and precedence. Keep nested instructions focused on local differences.
 - Draft as an index; verify every linked path and command.
 - Sections only for non-obvious value: package manager (one line); Commands table (task, command, file-scoped test or lint); External references table (need, path); Key conventions that prevent likely mistakes.
 - Symlink between hosts only when both read the same rules and the repo supports it.

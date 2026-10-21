@@ -17,7 +17,7 @@ use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 use crate::tools::num::u32_of_usize;
 use crate::tools::result::{CURSOR_FIELDS, Continuation, ToolError, query_row};
-use octocode_engine::{portable::search_text_cancellable, types::TextSearchOptions};
+use octocode_engine::{search::text_search::search_cancellable, types::TextSearchOptions};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
@@ -463,7 +463,7 @@ impl Found<'_> {
             self.paths,
             self.output_root,
             self.files,
-            self.layout.context_lines,
+            self.layout.context,
             query.multiline != LocalSearchQueryMultiline::Off,
             // A caller-sized (grid) page keeps its rows whatever the value
             // width; a streamed page is cut by serialized size.
@@ -498,7 +498,7 @@ impl Found<'_> {
         let mut options = search_options.clone();
         options.fixed_string = Some(false);
         options.perl_regex = Some(engine == "pcre2");
-        if octocode_engine::portable::matches_line_break(query.pattern(), false) {
+        if octocode_engine::search::text_pattern::matches_line_break(query.pattern(), false) {
             options.multiline = Some(true);
         }
         options.files_only = Some(false);
@@ -508,7 +508,7 @@ impl Found<'_> {
         options.only_matching = Some(false);
         options.unique = Some(false);
         options.count_unique = Some(false);
-        options.context_lines = Some(0);
+        options.context = SearchContext::default();
         options.digest_max_bytes = None;
         let walk = Arc::new(crate::policy::discovery::SearchWalk::new(
             self.paths.clone(),
@@ -519,13 +519,15 @@ impl Found<'_> {
         let started = std::time::Instant::now();
         let deadline = crate::tools::empty_walk::probe_budget();
         let cut = std::sync::atomic::AtomicBool::new(false);
-        let found = search_text_cancellable(options, walk, &|| {
-            let late = started.elapsed() > deadline;
-            if late {
-                cut.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-            cancel.check().is_err() || late
-        })
+        let found = crate::tools::leads::best_effort(|| {
+            search_cancellable(options, walk, &|| {
+                let late = started.elapsed() > deadline;
+                if late {
+                    cut.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                cancel.check().is_err() || late
+            })
+        })?
         .ok()?;
         let lines = found.stats.matched_lines.filter(|lines| *lines > literal)?;
         let floor = if cut.load(std::sync::atomic::Ordering::Relaxed) {
@@ -561,7 +563,7 @@ impl Found<'_> {
         let readable = self.first_page()
             && !self.layout.list
             && query.result_view != LocalSearchQueryResultView::MatchOnly
-            && self.layout.context_lines == 0
+            && self.layout.context.is_empty()
             && query.regex_mode() != LocalSearchQueryRegex::Pcre2
             && query.invert_match != Some(true);
         if !readable {
@@ -1068,7 +1070,7 @@ fn probe_spellings(
     options.count_unique = Some(false);
     options.invert_match = Some(false);
     options.multiline = Some(false);
-    options.context_lines = Some(0);
+    options.context = SearchContext::default();
     options.max_snippet_chars = variants
         .iter()
         .chain(near)
@@ -1087,13 +1089,16 @@ fn probe_spellings(
     let started = std::time::Instant::now();
     let deadline = crate::tools::empty_walk::probe_budget();
     let cut = std::sync::atomic::AtomicBool::new(false);
-    let found = search_text_cancellable(options, walk, &|| {
-        let late = started.elapsed() > deadline;
-        if late {
-            cut.store(true, std::sync::atomic::Ordering::Relaxed);
-        }
-        cancel.check().is_err() || late
+    let found = crate::tools::leads::best_effort(|| {
+        search_cancellable(options, walk, &|| {
+            let late = started.elapsed() > deadline;
+            if late {
+                cut.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            cancel.check().is_err() || late
+        })
     })
+    .and_then(Result::ok)
     .map(|found| found.files)
     .unwrap_or_default();
     let mut spellings = Spellings {
@@ -1192,7 +1197,7 @@ fn reads_as_alternation(text: &str) -> bool {
 
 /// The engine `text` compiles in as a regex: `rust`, else `pcre2`.
 fn regex_engine(text: &str) -> Option<&'static str> {
-    use octocode_engine::portable::validate_text_pattern;
+    use octocode_engine::search::text_pattern::validate_text_pattern;
     if validate_text_pattern(text, false, false).valid {
         Some("rust")
     } else {
@@ -1208,7 +1213,7 @@ fn regex_lead(query: &LocalSearchQuery, engine: &str) -> Value {
     restart_lead(query, |fields| {
         fields.insert("regex".into(), json!(engine));
         if query.multiline == LocalSearchQueryMultiline::Off
-            && octocode_engine::portable::matches_line_break(query.pattern(), false)
+            && octocode_engine::search::text_pattern::matches_line_break(query.pattern(), false)
         {
             fields.insert("multiline".into(), json!("on"));
         }
@@ -1319,6 +1324,8 @@ pub(super) fn count_lead(query: &LocalSearchQuery) -> Value {
         // have no meaning in a count view.
         for field in [
             "contextLines",
+            "contextBefore",
+            "contextAfter",
             "matchContentLength",
             "pageSize",
             "matchPageSize",
@@ -1452,7 +1459,7 @@ pub(super) fn annotate_match_keys(
     expected: &dyn Fn(&std::path::Path) -> Option<Option<super::manifest::Digest>>,
     security: &ContentSecurity,
 ) -> Option<String> {
-    let mut used = json_bytes(&*files);
+    let mut used = octocode_engine::json_size::bytes(&*files).unwrap_or(usize::MAX);
     let mut over_budget = 0usize;
     for file in files.iter_mut() {
         let source = output_root.join(&file.path);
@@ -1481,7 +1488,8 @@ pub(super) fn annotate_match_keys(
         if keys.is_empty() {
             continue;
         }
-        let added = json_bytes(&crate::tools::match_keys::MatchKeys(&keys))
+        let added = octocode_engine::json_size::bytes(&crate::tools::match_keys::MatchKeys(&keys))
+            .unwrap_or(usize::MAX)
             .saturating_add(MATCH_KEYS_FIELD_CHARS);
         if over_budget == 0 && used.saturating_add(added) <= page_budget {
             used += added;
@@ -1629,23 +1637,6 @@ pub(super) fn outlined_language(source: &std::path::Path) -> bool {
         })
 }
 
-/// Bytes `value` serializes to as JSON, counted without building the text;
-/// `usize::MAX` when it does not serialize.
-pub(super) fn json_bytes<T: serde::Serialize + ?Sized>(value: &T) -> usize {
-    struct Count(usize);
-    impl std::io::Write for Count {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0 += buf.len();
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let mut count = Count(0);
-    serde_json::to_writer(&mut count, value).map_or(usize::MAX, |()| count.0)
-}
-
 /// Each row's enclosing declaration, on every row inside one: so no row
 /// reads as having none. With `declaring` (a declaration search), only rows that declare
 /// that symbol are named.
@@ -1681,11 +1672,14 @@ pub(super) const READ_HANDOFF_CONTEXT: u32 = 6;
 
 /// `(start, end)` windows of `context` lines around each line, merged where
 /// they overlap or touch, in line order.
-pub(super) fn hit_windows(lines: impl IntoIterator<Item = u32>, context: u32) -> Vec<(u32, u32)> {
+pub(super) fn hit_windows(
+    lines: impl IntoIterator<Item = u32>,
+    context: SearchContext,
+) -> Vec<(u32, u32)> {
     crate::tools::line_spans::merge_spans(lines.into_iter().map(|line| {
         (
-            line.saturating_sub(context).max(1),
-            line.saturating_add(context),
+            line.saturating_sub(context.before).max(1),
+            line.saturating_add(context.after),
         )
     }))
 }
@@ -1713,7 +1707,10 @@ pub(super) fn read_handoff(
     {
         return Some(long_line_read(&path, hit));
     }
-    let windows = hit_windows(plain.into_iter().flat_map(row_lines), READ_HANDOFF_CONTEXT);
+    let windows = hit_windows(
+        plain.into_iter().flat_map(row_lines),
+        SearchContext::symmetric(READ_HANDOFF_CONTEXT),
+    );
     if windows.len() <= RANGES_MAX_ITEMS {
         let ranges = windows
             .iter()
@@ -1819,7 +1816,7 @@ fn probe_lifted(
     options.only_matching = Some(false);
     options.unique = Some(false);
     options.count_unique = Some(false);
-    options.context_lines = Some(0);
+    options.context = SearchContext::default();
     options.sort = Some("path".into());
     options.digest_max_bytes = None;
     let root = std::path::PathBuf::from(&options.path);
@@ -1829,17 +1826,20 @@ fn probe_lifted(
     };
     let started = std::time::Instant::now();
     let probe = crate::tools::empty_walk::probe_budget();
-    let searched = search_text_cancellable(
-        options.clone(),
-        Arc::new(crate::policy::discovery::SearchWalk::new(
-            paths.clone(),
-            root.clone(),
-            walk.default_excludes,
-            globs.include,
-        )),
-        &|| cancel.check().is_err() || started.elapsed() > probe,
-    )
-    .map_err(|_| ())?;
+    let searched = crate::tools::leads::best_effort(|| {
+        search_cancellable(
+            options.clone(),
+            Arc::new(crate::policy::discovery::SearchWalk::new(
+                paths.clone(),
+                root.clone(),
+                walk.default_excludes,
+                globs.include,
+            )),
+            &|| cancel.check().is_err() || started.elapsed() > probe,
+        )
+    })
+    .and_then(Result::ok)
+    .ok_or(())?;
     let cut = searched
         .stats
         .cap_reason
@@ -2163,4 +2163,16 @@ fn numbered_calls(name: &str, reads: &[Value]) -> Vec<(String, Value)> {
         }
     }
     calls
+}
+
+#[cfg(test)]
+mod json_size_policy_tests {
+    #[test]
+    fn invalid_lead_json_exceeds_every_budget() {
+        let invalid = std::collections::BTreeMap::from([((1, 2), "value")]);
+        assert_eq!(
+            octocode_engine::json_size::bytes(&invalid).unwrap_or(usize::MAX),
+            usize::MAX
+        );
+    }
 }

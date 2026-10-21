@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use crate::lsp::grammar::grammar_for_file;
-use crate::lsp::types::{JsExactPosition, JsFuzzyPosition, JsResolvedSymbol};
+use crate::lsp::types::{LspExactPosition, LspFuzzyPosition, LspResolvedSymbol};
 use crate::signatures::extractor::AST_EXECUTION_TIMEOUT;
 use crate::text::utf8_offsets::{byte_to_utf16_offset, hide_bom_in_line};
 use std::time::Instant;
@@ -68,8 +68,8 @@ impl QuoteState {
 #[cfg(test)]
 pub(crate) fn resolve_position_from_content(
     content: String,
-    fuzzy: JsFuzzyPosition,
-) -> Result<JsResolvedSymbol> {
+    fuzzy: LspFuzzyPosition,
+) -> Result<LspResolvedSymbol> {
     check_source_size(content.len())?;
     let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
     let lines = normalized_lines(&content);
@@ -82,8 +82,8 @@ pub(crate) fn resolve_position_from_content(
 pub fn resolve_position_in_file_content(
     file_path: &str,
     content: &str,
-    fuzzy: &JsFuzzyPosition,
-) -> Result<JsResolvedSymbol> {
+    fuzzy: &LspFuzzyPosition,
+) -> Result<LspResolvedSymbol> {
     check_source_size(content.len())?;
     resolve_position_before(
         file_path,
@@ -137,9 +137,9 @@ pub fn code_occurrence_lines(
 fn resolve_position_before(
     file_path: &str,
     content: &str,
-    fuzzy: &JsFuzzyPosition,
+    fuzzy: &LspFuzzyPosition,
     deadline: Instant,
-) -> Result<JsResolvedSymbol> {
+) -> Result<LspResolvedSymbol> {
     check_source_size(content.len())?;
     check_budget(deadline)?;
     let lines = normalized_lines(content);
@@ -151,9 +151,9 @@ fn resolve_position_before(
 
 fn resolve_position_from_lines(
     lines: &[&str],
-    fuzzy: &JsFuzzyPosition,
+    fuzzy: &LspFuzzyPosition,
     deadline: Instant,
-) -> Result<JsResolvedSymbol> {
+) -> Result<LspResolvedSymbol> {
     check_budget(deadline)?;
     let order_hint = fuzzy.order_hint.unwrap_or(0) as usize;
 
@@ -183,9 +183,9 @@ fn resolve_position_with_grammar(
     file_path: &str,
     content: &str,
     lines: &[&str],
-    fuzzy: &JsFuzzyPosition,
+    fuzzy: &LspFuzzyPosition,
     deadline: Instant,
-) -> Result<Option<JsResolvedSymbol>> {
+) -> Result<Option<LspResolvedSymbol>> {
     let Some(spec) = grammar_for_file(file_path) else {
         return Ok(None);
     };
@@ -300,9 +300,9 @@ fn candidate_from_node(
 
 fn pick_candidate(
     mut candidates: Vec<SymbolCandidate>,
-    fuzzy: &JsFuzzyPosition,
+    fuzzy: &LspFuzzyPosition,
     lines: &[&str],
-) -> Result<Option<JsResolvedSymbol>> {
+) -> Result<Option<LspResolvedSymbol>> {
     // Nested nodes (e.g. `string` and its `string_fragment` child) can report
     // the same position; keep one candidate per position, preferring the most
     // symbol-like reading so an orderHint counts each occurrence once.
@@ -514,7 +514,7 @@ fn scan_near_line(
     symbol_name: &str,
     line_hint: u32,
     order_hint: usize,
-) -> Result<JsResolvedSymbol> {
+) -> Result<LspResolvedSymbol> {
     let target = line_hint as i32 - 1;
     if target < 0 || target as usize >= lines.len() {
         // The empty text after a final line break is no line of the file.
@@ -566,7 +566,7 @@ fn scan_whole_file(
     symbol_name: &str,
     order_hint: usize,
     deadline: Instant,
-) -> Result<Option<JsResolvedSymbol>> {
+) -> Result<Option<LspResolvedSymbol>> {
     let mut first_match = None;
     for (index, line) in lines.iter().enumerate() {
         check_budget(deadline)?;
@@ -586,12 +586,12 @@ fn scan_whole_file(
     Ok(first_match)
 }
 
-fn hit_for(line: &str, line_index: usize, character: usize, line_offset: i32) -> JsResolvedSymbol {
+fn hit_for(line: &str, line_index: usize, character: usize, line_offset: i32) -> LspResolvedSymbol {
     // A leading BOM is invisible to editors and LSP servers: row-0 columns and
     // line text exclude it, exactly as the AST surfaces report them.
     let (line, character) = hide_bom_in_line(line_index, line, character);
-    JsResolvedSymbol {
-        position: JsExactPosition {
+    LspResolvedSymbol {
+        position: LspExactPosition {
             line: line_index as u32,
             // `character` arrives as a BYTE offset within `line` (tree-sitter
             // columns and `str::find`/`match_indices` are byte-based). LSP
@@ -729,10 +729,10 @@ fn strip_line_comment(line: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{LineIndex, resolve_position_in_file_content};
-    use crate::lsp::types::JsFuzzyPosition;
+    use crate::lsp::types::LspFuzzyPosition;
 
-    fn fuzzy(name: &str, line_hint: Option<u32>) -> JsFuzzyPosition {
-        JsFuzzyPosition {
+    fn fuzzy(name: &str, line_hint: Option<u32>) -> LspFuzzyPosition {
+        LspFuzzyPosition {
             symbol_name: name.to_owned(),
             line_hint,
             order_hint: None,
@@ -849,7 +849,7 @@ mod tests {
             let result = resolve_position_in_file_content(
                 file,
                 "const other = 1;\nconst a = target + target;\n",
-                &JsFuzzyPosition {
+                &LspFuzzyPosition {
                     symbol_name: "target".to_owned(),
                     line_hint: Some(2),
                     order_hint: Some(3),
@@ -876,7 +876,7 @@ mod tests {
         let result = resolve_position_in_file_content(
             "demo.ts",
             &source,
-            &JsFuzzyPosition {
+            &LspFuzzyPosition {
                 symbol_name: "target".to_owned(),
                 line_hint: Some(1),
                 order_hint: None,
@@ -899,7 +899,7 @@ mod tests {
             let result = super::resolve_position_before(
                 file,
                 "const target = 1;",
-                &JsFuzzyPosition {
+                &LspFuzzyPosition {
                     symbol_name: "target".to_owned(),
                     line_hint: Some(1),
                     order_hint: None,
@@ -952,7 +952,7 @@ mod tests {
         let result = super::resolve_position_in_file_content(
             "demo.ts",
             &source,
-            &JsFuzzyPosition {
+            &LspFuzzyPosition {
                 symbol_name: "target".to_owned(),
                 line_hint: Some(1),
                 order_hint: None,
@@ -972,7 +972,7 @@ mod tests {
         resolve_position_in_file_content(
             file_name,
             source,
-            &JsFuzzyPosition {
+            &LspFuzzyPosition {
                 symbol_name: symbol_name.to_owned(),
                 line_hint: Some(line_hint),
                 order_hint: None,
@@ -1010,7 +1010,7 @@ mod tests {
                     resolve_position_in_file_content(
                         file_name,
                         &source,
-                        &JsFuzzyPosition {
+                        &LspFuzzyPosition {
                             symbol_name: "target".to_owned(),
                             line_hint: Some(1),
                             order_hint: None,
@@ -1051,7 +1051,7 @@ mod tests {
         let result = resolve_position_in_file_content(
             file_name,
             source,
-            &JsFuzzyPosition {
+            &LspFuzzyPosition {
                 symbol_name: symbol_name.to_owned(),
                 line_hint: Some(line_hint),
                 order_hint: None,
@@ -1067,7 +1067,7 @@ mod tests {
         resolve_position_in_file_content(
             "demo.ts",
             source,
-            &JsFuzzyPosition {
+            &LspFuzzyPosition {
                 symbol_name: symbol_name.to_owned(),
                 line_hint: Some(line_hint),
                 order_hint: Some(order),

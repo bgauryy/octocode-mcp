@@ -4,10 +4,11 @@
  * Fetches each cited page once, normalizes typography, checks the quote (ellipsis-separated fragments in order),
  * and reports title and publish dates. Only `verified` claims may be used as evidence.
  */
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { fail } from './lib/fail.mjs';
+import { isMainModule } from './lib/entrypoint.mjs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, extname, isAbsolute, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { guardedFetch } from './lib/net-guard.mjs';
 
 const USAGE = `Usage: verify-claims.mjs --ledger <claims.jsonl|claims.json> [--out <verified.jsonl>] [--concurrency <1-8>]
@@ -21,10 +22,6 @@ may carry "verifiedBy":"manual" and a "method" naming how; it then reports verif
 override quote-not-found. --out writes every row with a "verification" object added.
 Exit 0 when every claim is verified or verified-manual, 1 otherwise, 2 for invalid input.`;
 
-function fail(code, message, exitCode = 1) {
-  console.log(JSON.stringify({ ok: false, error: { code, message } }));
-  process.exit(exitCode);
-}
 
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', ndash: '-', mdash: '-', hellip: '...', laquo: '"', raquo: '"', middot: '·' };
 
@@ -172,9 +169,7 @@ function readLedger(path) {
   } catch (error) { fail('invalidArguments', `ledger is not JSON or JSONL: ${error.message}`, 2); }
 }
 
-// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
-const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
-if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { console.log(USAGE); process.exit(0); }
   const opts = { ledger: null, out: null, concurrency: 4 };

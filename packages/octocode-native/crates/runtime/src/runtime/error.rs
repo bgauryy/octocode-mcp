@@ -225,10 +225,10 @@ mod tests {
     #[test]
     fn the_error_text_carries_the_lossy_repair_note() {
         let line = error_line(&json!({"error":"bad","errorCode":"invalidInput",
-            "hints":["The repair lead drops queries.0.glob.",
+            "hints":["The repair lead drops queries[0].glob.",
                 "repair: Approximate: localSearch {\"queries\":[{\"path\":\".\",\"matchString\":\"x\"}]}"]}))
         .expect("line");
-        let note = line.find("drops queries.0.glob").expect("note");
+        let note = line.find("drops queries[0].glob").expect("note");
         let repair = line.find("repair: ").expect("repair");
         assert!(note < repair, "{line}");
     }

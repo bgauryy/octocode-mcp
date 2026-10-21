@@ -400,6 +400,23 @@ fn validate_wire(request: &Value, response: &Value) -> Result<(), ProviderContra
             _ => return Err(invalid_request(format!("questions.{id}.type is invalid"))),
         }
     }
+    if !answers.is_empty() {
+        crate::contracts::validate_output(
+            "clasify",
+            &json!({"queries":[{
+                "id":"provider",
+                "model":response["model"],
+                "answers":response["answers"],
+                "usage":{
+                    "input_tokens":response["usage"]["input_tokens"],
+                    "output_tokens":response["usage"]["output_tokens"],
+                },
+            }]}),
+        )
+        .map_err(|_| {
+            invalid_response("Provider answers violate the canonical clasify output contract")
+        })?;
+    }
     Ok(())
 }
 
@@ -537,6 +554,29 @@ mod tests {
             .unwrap()
             .remove("confidence");
         assert!(validate_wire(&request, &missing).is_err());
+    }
+
+    #[test]
+    fn rejects_undeclared_fields_in_each_answer_shape() {
+        for pointer in [
+            "/answers/truth",
+            "/answers/pick",
+            "/answers/quality",
+            "/answers/region",
+            "/answers/region/box",
+        ] {
+            let mut invalid = response();
+            invalid
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("unexpected".into(), json!("extension"));
+            assert!(
+                validate_wire(&request(), &invalid).is_err(),
+                "accepted {pointer}"
+            );
+        }
     }
 
     #[test]

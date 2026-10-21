@@ -278,9 +278,14 @@ pub(super) fn query_key(
         }
         fields.remove("path");
         fields.insert("regex".into(), json!(q.regex_mode()));
+        let context = q.context();
         fields.insert(
             "contextLines".into(),
-            json!(q.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)),
+            json!(if context.before == context.after {
+                context.before
+            } else {
+                0
+            }),
         );
         fields.insert(
             "matchContentLength".into(),

@@ -109,7 +109,7 @@ pub(crate) fn search_files_with_budget(
     }
     check_root_exists(&root)?;
     let timed = max_files.is_none();
-    let max_files = max_files.map_or(crate::scan_budget::SCAN_WALK_FILES, |n| n as usize);
+    let max_files = max_files.map_or(crate::scan_budget::walk_ceiling(), |n| n as usize);
     let max_file_bytes = max_file_bytes
         .map(|n| n as u64)
         .unwrap_or(crate::signatures::MAX_PARSE_SIZE as u64);
@@ -135,6 +135,8 @@ pub(crate) fn search_files_with_budget(
         stop,
     )?;
     let scan_truncated = candidate_files.len() > max_files;
+    // The over-read candidate is the first the walk cap left out.
+    let scan_frontier = candidate_files.get(max_files).cloned();
     candidate_files.truncate(max_files);
     // Walk order is stable, so the leading candidates an earlier window
     // evaluated are exactly these.
@@ -154,21 +156,24 @@ pub(crate) fn search_files_with_budget(
         max_file_bytes,
         demand,
     };
-    let started = std::time::Instant::now();
+    let mut pacer = crate::scan_budget::ScanPacer::new(budget.filter(|_| timed));
     let mut outcomes = Vec::with_capacity(candidate_files.len());
     let mut scan_resume = None;
-    for chunk in candidate_files.chunks(crate::scan_budget::SCAN_CHUNK_FILES) {
-        let evaluated = outcomes.len();
-        if timed && evaluated > 0 && budget.is_some_and(|budget| started.elapsed() >= budget) {
-            scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
+    let mut rest = candidate_files.as_slice();
+    while !rest.is_empty() {
+        if pacer.spent() {
+            scan_resume = Some(u32::try_from(skip + outcomes.len()).unwrap_or(u32::MAX));
             break;
         }
+        let (chunk, tail) = rest.split_at(pacer.next_chunk().min(rest.len()));
+        rest = tail;
         outcomes.extend(
             chunk
                 .par_iter()
                 .map(|file_path| scan.file(file_path))
                 .collect::<EngineResult<Vec<_>>>()?,
         );
+        pacer.record(chunk.len());
     }
     let scan_truncated = scan_truncated || scan_resume.is_some();
     // The walk cap of an unset `max_files` resumes where the walk stopped.
@@ -192,6 +197,7 @@ pub(crate) fn search_files_with_budget(
     Ok(StructuralSearchFilesDetailedResult {
         scan_truncated,
         scan_resume,
+        scan_frontier,
         files,
         total_matches: counts.total_matches,
         parsed_files: counts.parsed_files,
@@ -225,6 +231,7 @@ fn invalid_query_result(
     StructuralSearchFilesDetailedResult {
         scan_truncated: false,
         scan_resume: None,
+        scan_frontier: None,
         files: Vec::new(),
         total_matches: 0,
         parsed_files: 0,
@@ -843,7 +850,7 @@ pub fn file_matches(
         if crate::digest::sha256(content.as_bytes()) != source_sha256 {
             return Rebuilt::Changed;
         }
-        Rebuilt::of(super::search_detailed(
+        Rebuilt::of(super::evaluate_source(
             &content,
             &path.to_string_lossy(),
             extension,

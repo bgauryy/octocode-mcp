@@ -143,23 +143,27 @@ pub(super) fn symlinks(
     context: &CloneContext<'_>,
     directory: &Path,
 ) -> Result<Vec<String>, CloneError> {
-    let output = run(
-        context,
-        scoped(directory, &["ls-files", "--stage", "-z"]),
-        head_timeout(context),
-        "list checkout symlinks",
-        None,
-    )?;
-    Ok(output
-        .stdout
-        .split('\0')
-        .filter_map(|line| {
-            let (meta, path) = line.split_once('\t')?;
-            (meta.split_whitespace().next() == Some("120000")).then_some(path)
-        })
-        .filter(|path| std::fs::symlink_metadata(directory.join(path)).is_ok())
-        .map(str::to_owned)
-        .collect())
+    let mut links = Vec::new();
+    let request = GitRunRequest {
+        args: hardened(scoped(directory, &["ls-files", "--stage", "-z"])),
+        timeout: head_timeout(context),
+        label: "list checkout symlinks".into(),
+        authorization: None,
+        authorization_url: None,
+    };
+    context
+        .git
+        .run_nul_records(&request, &control(context), &mut |line| {
+            let line = String::from_utf8_lossy(line);
+            if let Some((meta, path)) = line.split_once('\t')
+                && meta.split_whitespace().next() == Some("120000")
+                && std::fs::symlink_metadata(directory.join(path)).is_ok()
+            {
+                links.push(path.to_owned());
+            }
+            Ok(())
+        })?;
+    Ok(links)
 }
 
 /// `sparse-checkout set` arguments for `sparse_paths` at the fetched commit. Cone mode
@@ -318,6 +322,14 @@ fn scoped(target: &Path, args: &[&str]) -> Vec<OsString> {
 /// `~/.octocode` state that localFetch would then read through the clone.
 const HARDENING_ARGS: [&str; 2] = ["-c", "core.symlinks=false"];
 
+fn hardened(args: Vec<OsString>) -> Vec<OsString> {
+    HARDENING_ARGS
+        .iter()
+        .map(OsString::from)
+        .chain(args)
+        .collect()
+}
+
 /// Longest cooldown a clone waits out before failing fast.
 const GIT_COOLDOWN_CAP: Duration = Duration::from_secs(10);
 
@@ -370,11 +382,7 @@ fn run(
     label: &str,
     authorization_url: Option<&str>,
 ) -> Result<super::GitOutput, CloneError> {
-    let args = HARDENING_ARGS
-        .iter()
-        .map(OsString::from)
-        .chain(args)
-        .collect();
+    let args = hardened(args);
     let authorization = context
         .credential
         .map(|credential| credential.expose_secret());

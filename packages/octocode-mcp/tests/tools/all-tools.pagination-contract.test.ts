@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DIRECT_TOOL_DEFINITIONS,
   formatDirectToolSchemaText,
+  getPublicToolCatalogWithAddons,
 } from '@octocodeai/config/schema';
 
 const LOSS_LANGUAGE: RegExp[] = [
@@ -57,6 +58,46 @@ const SCAN_CAPS: Record<string, string> = {
   astTopology: 'maxFiles',
 };
 
+type JsonSchema = {
+  $ref?: string;
+  $defs?: Record<string, JsonSchema>;
+  properties?: Record<string, JsonSchema>;
+  oneOf?: JsonSchema[];
+  anyOf?: JsonSchema[];
+  allOf?: JsonSchema[];
+};
+
+/** Read root query or envelope fields across variants, without counting nested result fields. */
+const declaredProperties = (schema?: JsonSchema): Set<string> => {
+  const fields = new Set<string>();
+  if (!schema) return fields;
+  const visited = new Set<JsonSchema>();
+  const visit = (node: JsonSchema): void => {
+    if (visited.has(node)) return;
+    visited.add(node);
+    if (node.$ref?.startsWith('#/$defs/')) {
+      const referenced = schema.$defs?.[node.$ref.slice('#/$defs/'.length)];
+      if (referenced) visit(referenced);
+    }
+    for (const name of Object.keys(node.properties ?? {})) {
+      fields.add(name);
+    }
+    for (const child of [
+      ...(node.oneOf ?? []),
+      ...(node.anyOf ?? []),
+      ...(node.allOf ?? []),
+    ]) {
+      visit(child);
+    }
+  };
+  visit(schema);
+  return fields;
+};
+
+const catalog = new Map(
+  getPublicToolCatalogWithAddons().tools.map(tool => [tool.name, tool])
+);
+
 describe('all-tools pagination contract', () => {
   it('covers every tool in the live catalog', () => {
     expect(Object.keys(TOOL_PAGINATION_CONTRACT).sort()).toEqual(
@@ -68,23 +109,31 @@ describe('all-tools pagination contract', () => {
     '%s',
     (toolName, contract) => {
       const schemaText = formatDirectToolSchemaText(toolName);
+      const tool = catalog.get(toolName);
+      const declared = new Set([
+        ...declaredProperties(tool?.querySchema as JsonSchema | undefined),
+        ...declaredProperties(tool?.inputSchema as JsonSchema | undefined),
+      ]);
 
       it('declares real pagination controls or a bounded-operation exemption', () => {
+        expect(tool, `missing canonical schema for ${toolName}`).toBeDefined();
         expect(
           contract.controls.length > 0 || contract.exemption,
           'missing pagination controls or exemption reason'
         ).toBeTruthy();
         for (const knob of contract.controls) {
-          expect(schemaText, `missing knob "${knob}"`).toContain(`"${knob}"`);
+          expect(declared.has(knob), `missing schema property "${knob}"`).toBe(
+            true
+          );
         }
       });
 
       it('names scan caps explicitly and windows content with length', () => {
-        expect(schemaText).not.toContain('"limit"');
+        expect(declared.has('limit')).toBe(false);
         const cap = SCAN_CAPS[toolName];
-        if (cap) expect(schemaText).toContain(`"${cap}"`);
+        if (cap) expect(declared.has(cap)).toBe(true);
         if (['localFetch', 'ghGetFileContent'].includes(toolName)) {
-          expect(schemaText).toContain('"length"');
+          expect(declared.has('length')).toBe(true);
         }
       });
 

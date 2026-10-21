@@ -117,7 +117,7 @@ pub fn extract_declarations_document_with_extension(
 /// declarations-only facts ([`extract_declarations_document`]) from ONE
 /// tree-sitter parse wherever both read the same grammar; JS/TS
 /// declarations come from oxc, the outline from tree-sitter. Runs on the
-/// deep parser stack, like `portable::extract_signatures`.
+/// shared deep parser stack.
 pub fn extract_signatures_with_declarations(
     content: &str,
     file_path: &str,

@@ -45,6 +45,9 @@ impl<'a> MatchQuery<'a> {
     pub fn path(self) -> String {
         either_form!(self, path => path.to_string())
     }
+    pub fn scope(self) -> Option<&'a crate::contracts::tool_types::AstMatchScope> {
+        either_form!(self, scope => scope.as_ref())
+    }
     pub fn pattern(self) -> Option<String> {
         match self {
             Self::Pattern(query) => Some(query.pattern.to_string()),
@@ -213,6 +216,8 @@ struct Scan {
     /// Without `language`: the files the walk admitted, by parser extension
     /// (the census the scope's grammar is inferred from).
     census: std::collections::BTreeMap<String, usize>,
+    /// The scopes a scan cut at the walk ceiling never read.
+    unwalked: Option<super::unwalked::Unwalked>,
 }
 
 /// Example paths a file-count warning names.
@@ -332,7 +337,7 @@ fn content_length(q: MatchQuery<'_>) -> usize {
 
 /// The size a match's row adds to its match page.
 fn row_chars(row: &MatchRow) -> usize {
-    crate::tools::stream_page::json_chars(&row.value) + 1
+    octocode_engine::json_size::utf16_units(&row.value).unwrap_or(0) + 1
 }
 
 /// The row price of a match under `q`'s row shape.
@@ -422,9 +427,11 @@ struct Group {
 
 /// How the candidate scan ended early, and where a resume starts.
 #[derive(Clone, Copy)]
-struct ScanCut {
+struct ScanCut<'a> {
     truncated: bool,
     resume: Option<u32>,
+    /// What a cut at the walk ceiling left unread.
+    unwalked: Option<&'a super::unwalked::Unwalked>,
 }
 
 /// Rows per file plus per-file coverage: files that parsed, files whose
@@ -916,6 +923,12 @@ fn resolve_scope(
     let p = paths.validate(q.path()).map_err(super::policy_error)?;
     let meta =
         std::fs::metadata(&p.canonical).map_err(|error| super::io_error(&q.path(), error))?;
+    if q.scope().is_some() && !meta.is_file() {
+        return Err(ToolError::new(
+            "invalidInput",
+            "scope requires a single source file; use one query per file.",
+        ));
+    }
     if meta.is_file() && q.language_globs().is_some() {
         return Err(ToolError::new(
             "languageDirectoryRequired",
@@ -947,7 +960,7 @@ fn resolve_scope(
 
 /// Every extension a structural grammar parses.
 fn structural_extensions() -> std::collections::BTreeSet<String> {
-    octocode_engine::portable::grammar_capabilities()
+    octocode_engine::signatures::languages::grammar_capabilities()
         .iter()
         .filter(|grammar| grammar.structural_search)
         .flat_map(|grammar| grammar.extensions.iter().cloned())
@@ -982,14 +995,13 @@ fn scan_file(
         .decode_source_bytes(&bytes, super::MAX_PARSE_SOURCE_BYTES)
         .map_err(super::policy_error)?;
     let source_path = canonical.to_string_lossy();
-    let mut r = octocode_engine::portable::structural_search_detailed(
+    let mut r = octocode_engine::structural::search_detailed(
         &source,
         &source_path,
         super::parser_override(canonical, scope.language.as_deref()).as_deref(),
         q.pattern().as_deref(),
         q.rule().as_deref(),
-    )
-    .map_err(|error| tree_repair(super::native_error(error), q, scope))?;
+    );
     if let Some(diagnostic) = error_diagnostic(&r.diagnostics) {
         let error = diagnostic_error(diagnostic);
         // A rule that does not parse as a rule names its bad key; no syntax
@@ -1001,6 +1013,9 @@ fn scan_file(
                 tree_repair(error, q, scope)
             },
         );
+    }
+    if let Some(region) = q.scope() {
+        super::region::select(region, &source, &mut r.matches)?;
     }
     if let Some(note) = super::cpp_header_note(canonical, q.language().as_deref(), &source) {
         r.diagnostics.push(StructuralDiagnostic {
@@ -1215,8 +1230,36 @@ fn scan_directory(
             .iter()
             .map(|file| (file.path.as_str(), file.source_sha256.as_deref())),
     );
+    // A walk stopped at its cap names where it stopped: the unread scopes.
+    let stop = || cancel.check().is_err();
+    let admit = |path: &std::path::Path, file_type| discovery.permits_entry(path, file_type);
+    let unwalked = r
+        .scan_frontier
+        .as_deref()
+        .filter(|_| r.scan_truncated && super::unwalked::at_ceiling(q.max_files()))
+        .and_then(|frontier| {
+            super::unwalked::Unwalked::of(
+                &super::unwalked::Rules {
+                    root: &scope.canonical,
+                    frontier,
+                    ignore: octocode_engine::search::walk::IgnorePolicy::new(
+                        q.include_ignored(),
+                        q.include_hidden(),
+                    ),
+                    prune: prune::directories_before_policy(q.default_excludes()),
+                    include: q.include(),
+                    exclude: q.exclude(),
+                    candidate: &parses,
+                    max_depth: q.max_depth(),
+                    admit: &admit,
+                    stop: &stop,
+                },
+                &q.to_value(),
+            )
+        });
     // Preserve the scan-level coverage signals the group projection drops.
     Ok(Scan {
+        unwalked,
         sources,
         source_digest,
         ignore_rules: external_rules
@@ -1390,6 +1433,7 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> String {
         scope.canonical.to_string_lossy(),
         q.pattern(),
         q.rule(),
+        q.scope(),
         q.include(),
         q.exclude(),
         q.include_hidden(),
@@ -1511,7 +1555,7 @@ fn listed_file(q: MatchQuery<'_>, path: String, total: usize) -> Group {
         json!({"path":path})
     };
     Group {
-        chars: crate::tools::stream_page::json_chars(&row) + 1,
+        chars: octocode_engine::json_size::utf16_units(&row).unwrap_or(0) + 1,
         row,
         out_of_range: false,
         more_matches: false,
@@ -1855,6 +1899,7 @@ fn render_match_page(
         ScanCut {
             truncated,
             resume: scan.scan_resume,
+            unwalked: scan.unwalked.as_ref(),
         },
         more,
         snapshot,
@@ -2036,7 +2081,7 @@ fn attach_match_continuations(
     scope: &Scope,
     out: &mut Value,
     page_groups: &[Group],
-    cut: ScanCut,
+    cut: ScanCut<'_>,
     more: bool,
     snapshot: &str,
 ) {
@@ -2076,6 +2121,10 @@ fn attach_match_continuations(
             super::scan_window::cut_reason(q.max_files()),
             &[],
         );
+        if let Some(unwalked) = cut.unwalked {
+            let query = q.to_value();
+            unwalked.attach(out, |reach| super::unwalked::narrowed(&query, reach));
+        }
     }
     let cursor = |out: &mut Value, field: &str, next: usize| {
         crate::tools::paging::next_cursor(out, ToolId::AstSearch, Some("match"), field, next)
@@ -2487,7 +2536,7 @@ fn skipped_walk(
     };
     let budget = q
         .max_files()
-        .map_or(octocode_engine::scan_budget::SCAN_WALK_FILES, |files| {
+        .map_or_else(octocode_engine::scan_budget::walk_ceiling, |files| {
             files as usize
         });
     let (include, exclude) = (
@@ -2551,7 +2600,7 @@ fn directory_choice(
             default_excludes: !prune.is_empty(),
         },
         q.max_files()
-            .map_or(octocode_engine::scan_budget::SCAN_WALK_FILES, |files| {
+            .map_or_else(octocode_engine::scan_budget::walk_ceiling, |files| {
                 files as usize
             }),
         Globs {
@@ -2644,7 +2693,7 @@ mod language_glob_tests {
 
     #[test]
     fn directory_language_globs_derive_from_the_canonical_grammar_registry() {
-        let cuda_enabled = octocode_engine::portable::grammar_capabilities()
+        let cuda_enabled = octocode_engine::signatures::languages::grammar_capabilities()
             .iter()
             .any(|capability| {
                 capability.structural_search && capability.extensions.iter().any(|ext| ext == "cu")

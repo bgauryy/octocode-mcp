@@ -77,7 +77,8 @@ const UserID = z.templateLiteral([z.literal("user_"), z.string()])
 ```typescript
 z.number()                // any number
 z.int()                   // integer only
-z.float()                 // float (alias for number)
+z.float32()               // finite number within float32 bounds
+z.float64()               // finite number within float64 bounds
 
 // Constraints
 z.number().min(0)         // >= 0

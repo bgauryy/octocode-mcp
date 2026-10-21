@@ -1,4 +1,5 @@
 //! Assembles match and context lines into per-file snippets.
+use crate::types::SearchContext;
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 
@@ -129,12 +130,12 @@ pub(crate) fn truncate_unicode(s: &str, max_chars: usize) -> String {
 }
 
 /// Assembles a single file's matches into the final `TextSearchFile`, joining each
-/// match line with its surrounding `context_lines` and truncating the resulting
+/// match line with its surrounding `context` and truncating the resulting
 /// snippet to `max_snippet` chars.
 pub(crate) fn assemble_file(
     path: String,
     entry: FileEntry,
-    context_lines: u32,
+    context: SearchContext,
     max_snippet: usize,
 ) -> TextSearchFile {
     if !entry.prepared.is_empty() {
@@ -145,7 +146,7 @@ pub(crate) fn assemble_file(
             source: None,
         };
     }
-    if context_lines == 0 {
+    if context.is_empty() {
         // One row per hit line: a line that needs no clip becomes the value
         // itself instead of a copy.
         let matches = entry
@@ -165,7 +166,12 @@ pub(crate) fn assemble_file(
     let match_lines: HashMap<u32, &str> = entry
         .raw_matches
         .iter()
-        .map(|m| (m.line_number, m.line_text.as_str()))
+        .flat_map(|m| {
+            m.line_text
+                .split('\n')
+                .enumerate()
+                .map(move |(index, text)| (m.line_number.saturating_add(index as u32), text))
+        })
         .collect();
     let neighbour = |line: u32| {
         entry
@@ -182,12 +188,15 @@ pub(crate) fn assemble_file(
                 // Contiguous context only: stop at the first line that is absent.
                 // Join by line slot (not by buffer emptiness) so a blank
                 // leading line keeps its place and line numbers stay aligned.
-                let mut before: Vec<&str> = (1..=context_lines)
+                let mut before: Vec<&str> = (1..=context.before)
                     .map_while(|i| m.line_number.checked_sub(i).and_then(neighbour))
                     .collect();
                 before.reverse();
-                let after: Vec<&str> = (1..=context_lines)
-                    .map_while(|i| m.line_number.checked_add(i).and_then(neighbour))
+                let last_line = m.line_number.saturating_add(
+                    m.line_text.bytes().filter(|&byte| byte == b'\n').count() as u32,
+                );
+                let after: Vec<&str> = (1..=context.after)
+                    .map_while(|i| last_line.checked_add(i).and_then(neighbour))
                     .collect();
                 let join = |lead: &[&str]| {
                     let mut window = lead.to_vec();
@@ -324,7 +333,12 @@ mod tests {
                 }
             }
         }
-        assemble_file("f.ts".to_owned(), entry, context_lines, max_snippet)
+        assemble_file(
+            "f.ts".to_owned(),
+            entry,
+            SearchContext::symmetric(context_lines),
+            max_snippet,
+        )
     }
 
     /// A match's byte offset locates it in the line for a byte-window read,
@@ -346,7 +360,7 @@ mod tests {
                     });
                     entry
                 },
-                context_lines,
+                SearchContext::symmetric(context_lines),
                 40,
             );
             let offset = f.matches[0].byte_offset as usize;

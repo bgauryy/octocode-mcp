@@ -14,7 +14,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const NAMESPACE: &str = "judgment/v2";
+const NAMESPACE: &str = "judgment/v3";
 const MAX_ENTRIES: usize = 256;
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 const DISK_BYTES: u64 = 64 * 1024 * 1024;
@@ -65,7 +65,7 @@ impl Judgments {
     }
 
     pub(super) fn put(&self, key: CacheKey, judged: &Judged) {
-        let bytes = crate::cache::json_len(judged);
+        let bytes = octocode_engine::json_size::bytes(judged).unwrap_or(usize::MAX);
         self.store.put(
             key,
             judged.clone(),

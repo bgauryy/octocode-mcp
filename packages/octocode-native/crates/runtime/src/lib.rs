@@ -13,6 +13,8 @@ pub mod contracts;
 mod digest;
 pub(crate) mod policy;
 mod private_file;
+#[cfg(test)]
+mod process_fixture;
 mod process_status;
 pub mod providers;
 mod regex_repair;

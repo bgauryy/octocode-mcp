@@ -117,6 +117,7 @@ Most users need no configuration.
 | [docs/FEATURES.md](docs/FEATURES.md) | Behavior of every feature |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Environment variables, file locations, trust, hooks, subagent profiles, MCP, retention |
 | [docs/API.md](docs/API.md) | External JSON-RPC API and the `octocode-pi-api` command |
+| [docs/OPENCODE.md](docs/OPENCODE.md) | Running on OpenCode Console models: where the API key goes, choosing a model |
 | [docs/COMPACTION.md](docs/COMPACTION.md) | Compaction in the main session and in subagents, the archive of compacted history |
 | [docs/CONTEXT-AND-COST.md](docs/CONTEXT-AND-COST.md) | Repeated reads, spilled outputs, prompt cache, pricing and the usage display |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Source layout, layering, start-up and liveness, for contributors |

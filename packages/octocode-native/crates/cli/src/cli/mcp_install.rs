@@ -2,8 +2,11 @@
 //! `--method` (`npx -y octocode-mcp@latest` by default, or bunx/pnpm), never
 //! `octo mcp`. JSON clients use their native server map; codex writes
 //! `[mcp_servers.octocode]` TOML; goose writes `extensions.octocode` YAML.
+//! `--scope` picks the config file the way the config view does
+//! ([`mcp_manage::target`]); `--list` reports each client's entry and
+//! `--remove` deletes it.
 use super::mcp_clients::{self, CLIENTS, ClientSpec, EntryShape};
-use super::mcp_manage::{self, Method, ServerSpec};
+use super::mcp_manage::{self, Method, ServerSpec, Target};
 use serde_json::{Value, json};
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -44,13 +47,41 @@ fn install_entry(shape: EntryShape, spec: &ServerSpec) -> Result<Value, String> 
     Ok(server)
 }
 
+/// Which of a client's config files an entry goes in.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, clap::ValueEnum)]
+pub(super) enum Scope {
+    /// The client's user config: every project.
+    #[default]
+    Home,
+    /// The project config file under the current directory (e.g. `.cursor/mcp.json`).
+    Workspace,
+    /// Claude Code only: this directory's section of the user config.
+    Local,
+}
+
+impl Scope {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Home => "home",
+            Self::Workspace => "workspace",
+            Self::Local => "local",
+        }
+    }
+}
+
 /// `octocode install`: add the Octocode MCP server to an agent client's configuration.
 #[derive(clap::Args, Debug, Default)]
 pub struct InstallArgs {
     /// Client id from `--list`, e.g. `claude-code`, `cursor`, `claude-desktop`.
     #[arg(long, value_name = "ID")]
     pub ide: Option<String>,
-    /// Overwrite an existing MCP server entry.
+    /// Config file to edit; `--list` shows which clients support each scope.
+    #[arg(long, value_enum, default_value_t)]
+    pub scope: Scope,
+    /// Remove the Octocode entry; an entry install did not write needs --force.
+    #[arg(long, conflicts_with_all = ["check", "enable_local", "pass_env", "method"])]
+    pub remove: bool,
+    /// Overwrite (or, with --remove, delete) an entry that differs from the one install writes.
     #[arg(long)]
     pub force: bool,
     /// Preview the config that would be written without making any changes.
@@ -59,7 +90,7 @@ pub struct InstallArgs {
     /// Verify that the MCP config already contains a valid Octocode entry.
     #[arg(long)]
     pub check: bool,
-    /// List supported client ids.
+    /// List every client with its Octocode entry status and config path at --scope.
     #[arg(long)]
     pub list: bool,
     /// Print JSON: the global `--json`.
@@ -68,7 +99,8 @@ pub struct InstallArgs {
     /// Override whether local (filesystem) tools are enabled in the MCP server.
     #[arg(long)]
     pub enable_local: Option<bool>,
-    /// Pass through additional environment variables to the MCP server process.
+    /// Copy GITHUB_TOKEN and OCTOCODE_ENABLE_LOCAL from this shell into the entry's env;
+    /// the client config then stores the token in plain text.
     #[arg(long)]
     pub pass_env: bool,
     /// Installation runner.
@@ -125,18 +157,32 @@ pub fn run(mut args: InstallArgs) -> u8 {
             }
         };
     }
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(error) => {
+            super::emit_error(
+                "executionFailed",
+                &format!("Cannot read the current directory: {error}"),
+                args.json,
+            );
+            return 5;
+        }
+    };
+    let statuses = || {
+        CLIENTS
+            .iter()
+            .map(|client| client_status(client, args.scope, &cwd))
+            .collect::<Vec<_>>()
+    };
     if args.list {
-        let ids: Vec<_> = CLIENTS.iter().map(|client| client.id).collect();
-        if args.json {
-            return super::write_json(&json!({ "ides": ids }));
-        }
-        for id in ids {
-            println!("{id}");
-        }
-        return 0;
+        return list_clients(args.scope, &statuses(), args.json);
     }
     if args.ide.is_none() && !args.json && io::stdin().is_terminal() && io::stdout().is_terminal() {
-        match select_client(&mut io::stdin().lock(), &mut io::stderr().lock()) {
+        let labels = statuses()
+            .iter()
+            .map(|status| format!("{} ({})", status.id, status.status))
+            .collect::<Vec<_>>();
+        match select_client(&labels, &mut io::stdin().lock(), &mut io::stderr().lock()) {
             Ok(Some(id)) => args.ide = Some(id.to_owned()),
             Ok(None) => return 0,
             Err(error) => {
@@ -152,20 +198,12 @@ pub fn run(mut args: InstallArgs) -> u8 {
     let Some(requested_ide) = args.ide.as_deref().filter(|value| !value.is_empty()) else {
         super::emit_error(
             "invalidInput",
-            "Usage: octocode install --ide <id> [--force] [--dry-run] [--check] [--json]; ids: octocode install --list",
+            "Usage: octocode install --ide <id> [--scope home|workspace|local] [--check|--remove] [--force] [--dry-run] [--json]; clients: octocode install --list",
             args.json,
         );
         return 2;
     };
-    let client = mcp_clients::client(requested_ide);
-    if client.is_some_and(ClientSpec::config_dir_overridden) {
-        eprintln!(
-            "Claude custom config directory is set; user config path cannot be established safely."
-        );
-        return 1;
-    }
-    let Some((client, config_path)) = client.and_then(|client| Some((client, client.home_path()?)))
-    else {
+    let Some(client) = mcp_clients::client(requested_ide) else {
         super::emit_error(
             "invalidInput",
             &unknown_client_message(requested_ide),
@@ -173,7 +211,27 @@ pub fn run(mut args: InstallArgs) -> u8 {
         );
         return 2;
     };
-    match install(client, &config_path, &args) {
+    if !client.scopes().any(|scope| scope == args.scope.name()) {
+        super::emit_error(
+            "invalidInput",
+            &format!(
+                "{} has no {} scope; it supports --scope {}",
+                client.id,
+                args.scope.name(),
+                client.scopes().collect::<Vec<_>>().join(", ")
+            ),
+            args.json,
+        );
+        return 2;
+    }
+    let target = match mcp_manage::target(client.id, args.scope.name(), &cwd) {
+        Ok(target) => target,
+        Err(message) => {
+            eprintln!("{message}");
+            return 1;
+        }
+    };
+    match install(&target, &args) {
         Ok(code) => code,
         Err(message) => {
             eprintln!("{message}");
@@ -182,13 +240,15 @@ pub fn run(mut args: InstallArgs) -> u8 {
     }
 }
 
+/// Ask for a client by number; `labels` describe [`CLIENTS`] in order.
 fn select_client(
+    labels: &[String],
     reader: &mut impl BufRead,
     output: &mut impl Write,
 ) -> io::Result<Option<&'static str>> {
     writeln!(output, "Select an MCP client:")?;
-    for (index, client) in CLIENTS.iter().enumerate() {
-        writeln!(output, "  {}. {}", index + 1, client.id)?;
+    for (index, label) in labels.iter().enumerate() {
+        writeln!(output, "  {}. {label}", index + 1)?;
     }
     loop {
         write!(output, "Client number (Enter to cancel): ")?;
@@ -217,6 +277,94 @@ fn select_client(
         }
         writeln!(output, "Enter a number from 1 to {}.", CLIENTS.len())?;
     }
+}
+
+/// One client's Octocode entry at a scope, as `--list` and the picker show it.
+struct ClientStatus {
+    id: &'static str,
+    /// `installed` (a valid entry), `disabled`, `custom` (an `octocode`
+    /// entry install did not write), `absent`, `invalid` (unreadable or
+    /// unparsable config) or `unsupported` (no such scope).
+    status: &'static str,
+    /// The scopes the client reads.
+    scopes: Vec<&'static str>,
+    path: Option<PathBuf>,
+    error: Option<String>,
+}
+
+fn client_status(client: &'static ClientSpec, scope: Scope, cwd: &Path) -> ClientStatus {
+    let scopes = || client.scopes().collect::<Vec<_>>();
+    let unsupported = |error: Option<String>| ClientStatus {
+        id: client.id,
+        status: if error.is_some() {
+            "invalid"
+        } else {
+            "unsupported"
+        },
+        scopes: scopes(),
+        path: None,
+        error,
+    };
+    if !client.scopes().any(|name| name == scope.name()) {
+        return unsupported(None);
+    }
+    let target = match mcp_manage::target(client.id, scope.name(), cwd) {
+        Ok(target) => target,
+        Err(error) => return unsupported(Some(error)),
+    };
+    let inspected = mcp_manage::inspect(&target);
+    let status = match inspected["status"].as_str() {
+        Some("configured") => {
+            let valid = octocode_native::config::read_private_config(&target.path)
+                .ok()
+                .flatten()
+                .and_then(|text| mcp_manage::parse_document(client.format, &text).ok())
+                .is_some_and(|root| valid_server(client, &root, &target.keys));
+            if valid { "installed" } else { "custom" }
+        }
+        Some("disabled") => "disabled",
+        Some("absent") => "absent",
+        _ => "invalid",
+    };
+    ClientStatus {
+        id: client.id,
+        status,
+        scopes: scopes(),
+        path: Some(target.path),
+        error: inspected["error"].as_str().map(str::to_owned),
+    }
+}
+
+fn list_clients(scope: Scope, statuses: &[ClientStatus], json_out: bool) -> u8 {
+    if json_out {
+        let ides = statuses
+            .iter()
+            .map(|row| {
+                let mut value = json!({"id": row.id, "status": row.status, "scopes": row.scopes, "configPath": row.path});
+                if let Some(error) = &row.error {
+                    value["error"] = json!(error);
+                }
+                value
+            })
+            .collect::<Vec<_>>();
+        return super::write_json(&json!({"scope": scope.name(), "ides": ides}));
+    }
+    let width = statuses.iter().map(|row| row.id.len()).max().unwrap_or(0);
+    println!("MCP clients (--scope {}):", scope.name());
+    for row in statuses {
+        let detail = row
+            .path
+            .as_deref()
+            .map(|path| path.display().to_string())
+            .or_else(|| row.error.clone())
+            .unwrap_or_else(|| format!("scopes: {}", row.scopes.join(", ")));
+        println!("  {:width$}  {:11}  {detail}", row.id, row.status);
+    }
+    println!(
+        "Install: octocode install --ide <id> [--scope {}]",
+        scope.name()
+    );
+    0
 }
 
 /// An unknown client id, with the ids that contain it (`claude` names both
@@ -265,28 +413,31 @@ fn rollback_destination(backup: &Path) -> PathBuf {
     backup.with_file_name(original)
 }
 
-fn install(client: &ClientSpec, config_path: &Path, args: &InstallArgs) -> Result<u8, String> {
+fn install(target: &Target, args: &InstallArgs) -> Result<u8, String> {
     use octocode_native::config::{config_revision, read_private_config, replace_private_config};
+    let (client, config_path, keys) = (target.client, target.path.as_path(), &target.keys);
     let original = read_private_config(config_path)
         .map_err(|error| format!("Cannot safely read agent configuration: {error}"))?;
     let root = mcp_manage::parse_document(client.format, original.as_deref().unwrap_or(""))?;
     if args.check {
-        return report_check(client, config_path, &root, args);
+        return report_check(target, &root, args);
+    }
+    if args.remove {
+        return remove(target, original.as_deref(), &root, args);
     }
     let server = install_entry(client.shape, &server_spec(args))?;
-    let keys = client.server_keys();
-    let existing = Existing::of(mcp_manage::entry_at(client, &root, &keys), &server);
+    let existing = Existing::of(mcp_manage::entry_at(client, &root, keys), &server);
     if existing != Existing::Absent && !args.force && !args.dry_run {
         return already_installed(config_path, args, existing);
     }
     let rendered = mcp_manage::render_document(
         client,
         original.as_deref().unwrap_or(""),
-        &keys,
+        keys,
         Some(&server),
     )?;
     if args.dry_run {
-        let preview = json!({"success":true,"dryRun":true,"ide":client.id,"configPath":config_path,"entry":mcp_manage::projection(client,Some(&server))});
+        let preview = json!({"success":true,"dryRun":true,"ide":client.id,"scope":target.scope,"configPath":config_path,"entry":mcp_manage::projection(client,Some(&server))});
         if args.json {
             return Ok(super::write_json(&preview));
         }
@@ -303,7 +454,7 @@ fn install(client: &ClientSpec, config_path: &Path, args: &InstallArgs) -> Resul
     .map_err(|error| error.to_string())?;
     if args.json {
         return Ok(super::write_json(
-            &json!({"success":true,"configPath":config_path,"backupPath":backed_up}),
+            &json!({"success":true,"ide":client.id,"scope":target.scope,"configPath":config_path,"backupPath":backed_up}),
         ));
     }
     println!(
@@ -318,8 +469,80 @@ fn install(client: &ClientSpec, config_path: &Path, args: &InstallArgs) -> Resul
     Ok(0)
 }
 
-pub(super) fn valid_server(client: &ClientSpec, root: &Value) -> bool {
-    let Some(server) = mcp_manage::entry_at(client, root, &client.server_keys()) else {
+/// `install --remove`: delete the Octocode entry, keeping the previous file
+/// in the rolling backup. No entry is a successful no-op; an entry install
+/// did not write needs `--force`, as overwriting one does.
+fn remove(
+    target: &Target,
+    original: Option<&str>,
+    root: &Value,
+    args: &InstallArgs,
+) -> Result<u8, String> {
+    use octocode_native::config::{config_revision, replace_private_config};
+    let (client, config_path) = (target.client, target.path.as_path());
+    let report = |value: Value| super::write_json(&value);
+    let Some(entry) = mcp_manage::entry_at(client, root, &target.keys) else {
+        if args.json {
+            return Ok(report(
+                json!({"success":true,"removed":false,"ide":client.id,"scope":target.scope,"configPath":config_path}),
+            ));
+        }
+        eprintln!(
+            "No octocode entry for {} at {}; nothing to remove",
+            client.id,
+            config_path.display()
+        );
+        return Ok(0);
+    };
+    if !args.force && !valid_server(client, root, &target.keys) {
+        if args.json {
+            let written = report(
+                json!({"success":false,"removed":false,"custom":true,"ide":client.id,"scope":target.scope,"configPath":config_path}),
+            );
+            return Ok(if written == 0 { 1 } else { written });
+        }
+        eprintln!(
+            "The octocode entry in {} was not written by install; pass --force to remove it",
+            config_path.display()
+        );
+        return Ok(1);
+    }
+    if args.dry_run {
+        if args.json {
+            return Ok(report(
+                json!({"success":true,"dryRun":true,"remove":true,"ide":client.id,"scope":target.scope,"configPath":config_path,"entry":mcp_manage::projection(client,Some(entry))}),
+            ));
+        }
+        println!(
+            "Dry run for {}: nothing written.\n  config   {}\n  action   remove the octocode entry\nRun without --dry-run to remove it.",
+            client.id,
+            config_path.display()
+        );
+        return Ok(0);
+    }
+    let rendered = mcp_manage::render_document(client, original.unwrap_or(""), &target.keys, None)?;
+    let (_, backed_up) =
+        replace_private_config(config_path, &config_revision(original), &rendered, true)
+            .map_err(|error| error.to_string())?;
+    if args.json {
+        return Ok(report(
+            json!({"success":true,"removed":true,"ide":client.id,"scope":target.scope,"configPath":config_path,"backupPath":backed_up}),
+        ));
+    }
+    println!(
+        "Removed octocode MCP for {} from {}",
+        client.id,
+        config_path.display()
+    );
+    if let Some(backup) = backed_up {
+        println!("Undo: octocode install --rollback {}", backup.display());
+    }
+    println!("Next: restart {} so it unloads the server.", client.id);
+    Ok(0)
+}
+
+pub(super) fn valid_server(client: &ClientSpec, root: &Value, keys: &[String]) -> bool {
+    let Some(server) = mcp_manage::entry_at(client, root, keys) else {
         return false;
     };
     if mcp_manage::entry_enabled(client, root, server) == Some(false) {
@@ -346,18 +569,13 @@ pub(super) fn valid_server(client: &ClientSpec, root: &Value) -> bool {
         && (method != Method::Pnpm || args.first().and_then(Value::as_str) == Some("dlx"))
 }
 
-fn report_check(
-    client: &ClientSpec,
-    path: &Path,
-    root: &Value,
-    args: &InstallArgs,
-) -> Result<u8, String> {
-    let ide = client.id;
-    let valid = valid_server(client, root);
+fn report_check(target: &Target, root: &Value, args: &InstallArgs) -> Result<u8, String> {
+    let (ide, path) = (target.client.id, target.path.as_path());
+    let valid = valid_server(target.client, root, &target.keys);
     let exit = if valid { 0 } else { 1 };
     if args.json {
         let written = super::write_json(
-            &json!({"success": valid, "check": true, "ide": ide, "configPath": path, "installed": valid}),
+            &json!({"success": valid, "check": true, "ide": ide, "scope": target.scope, "configPath": path, "installed": valid}),
         );
         return Ok(if written == 0 { exit } else { written });
     }
@@ -528,6 +746,24 @@ mod tests {
         mcp_clients::client(id).expect("supported client")
     }
 
+    /// The picker's labels: every client id, in registry order.
+    fn labels() -> Vec<String> {
+        mcp_clients::CLIENTS
+            .iter()
+            .map(|client| client.id.to_owned())
+            .collect()
+    }
+
+    /// `client`'s home-scope entry, kept in `path`.
+    fn home(client: &'static ClientSpec, path: &std::path::Path) -> super::Target {
+        super::Target {
+            client,
+            scope: "home".into(),
+            path: path.to_path_buf(),
+            keys: client.server_keys(),
+        }
+    }
+
     fn default_args() -> super::InstallArgs {
         super::InstallArgs {
             ide: Some("cursor".into()),
@@ -539,7 +775,9 @@ mod tests {
     fn client_picker_retries_invalid_input_and_uses_the_shared_registry() {
         let mut input = std::io::Cursor::new(b"0\nnot-a-number\n1\n");
         let mut output = Vec::new();
-        let selected = super::select_client(&mut input, &mut output).expect("select client");
+        let labels = labels();
+        let selected =
+            super::select_client(&labels, &mut input, &mut output).expect("select client");
         assert_eq!(selected, Some(mcp_clients::CLIENTS[0].id));
         let text = String::from_utf8(output).expect("UTF-8 output");
         for client in &mcp_clients::CLIENTS {
@@ -552,7 +790,7 @@ mod tests {
     fn client_picker_cancels_on_eof_or_empty_input() {
         for input in [b"".as_slice(), b"\n", b" \r\n"] {
             assert_eq!(
-                super::select_client(&mut std::io::Cursor::new(input), &mut Vec::new())
+                super::select_client(&labels(), &mut std::io::Cursor::new(input), &mut Vec::new())
                     .expect("cancel selection"),
                 None
             );
@@ -562,7 +800,10 @@ mod tests {
     #[test]
     fn client_picker_bounds_input() {
         let input = vec![b'1'; 1025];
-        assert!(super::select_client(&mut std::io::Cursor::new(input), &mut Vec::new()).is_err());
+        assert!(
+            super::select_client(&labels(), &mut std::io::Cursor::new(input), &mut Vec::new())
+                .is_err()
+        );
     }
 
     #[test]
@@ -711,7 +952,8 @@ mod tests {
         let (rendered, already) =
             render_fixture(spec("goose"), None, &default_args()).expect("render");
         assert_eq!(already, Existing::Absent);
-        let parsed = octocode_engine::portable::yaml_to_json(&rendered).expect("valid yaml");
+        let parsed =
+            octocode_engine::text::yaml_utils::yaml_to_json(&rendered).expect("valid yaml");
         let entry = &parsed["extensions"]["octocode"];
         assert_eq!(entry["type"].as_str(), Some("stdio"));
         assert_eq!(entry["cmd"].as_str(), Some("npx"));
@@ -720,7 +962,7 @@ mod tests {
         let existing = "extensions:\n  other:\n    type: stdio\n    cmd: foo\n";
         let (merged, _) =
             render_fixture(spec("goose"), Some(existing), &default_args()).expect("merge");
-        let parsed = octocode_engine::portable::yaml_to_json(&merged).expect("valid yaml");
+        let parsed = octocode_engine::text::yaml_utils::yaml_to_json(&merged).expect("valid yaml");
         assert!(
             parsed["extensions"].get("other").is_some(),
             "preserves other"
@@ -743,12 +985,12 @@ mod tests {
             .expect("canonical tempdir")
             .join("mcp.json");
         assert_eq!(
-            super::install(spec("cursor"), &path, &default_args()).expect("first"),
+            super::install(&home(spec("cursor"), &path), &default_args()).expect("first"),
             0
         );
         let written = std::fs::read_to_string(&path).expect("read");
         assert_eq!(
-            super::install(spec("cursor"), &path, &default_args()).expect("again"),
+            super::install(&home(spec("cursor"), &path), &default_args()).expect("again"),
             0
         );
         assert_eq!(
@@ -758,7 +1000,7 @@ mod tests {
         );
         std::fs::write(&path, written.replace("npx", "node")).expect("edit");
         assert_eq!(
-            super::install(spec("cursor"), &path, &default_args()).expect("edited"),
+            super::install(&home(spec("cursor"), &path), &default_args()).expect("edited"),
             1
         );
     }
@@ -778,7 +1020,7 @@ mod tests {
             std::fs::write(&path, r#"{"theme":"dark","unrelated":{"keep":true}}"#)
                 .expect("fixture");
             assert_eq!(
-                super::install(spec(ide), &path, &default_args()).expect("install"),
+                super::install(&home(spec(ide), &path), &default_args()).expect("install"),
                 0
             );
             let root: serde_json::Value =
@@ -786,7 +1028,11 @@ mod tests {
             assert_eq!(root["theme"], "dark");
             assert_eq!(root["unrelated"]["keep"], true);
             assert!(root[key].get("octocode").is_some());
-            assert!(super::valid_server(spec(ide), &root));
+            assert!(super::valid_server(
+                spec(ide),
+                &root,
+                &spec(ide).server_keys()
+            ));
             if ide == "opencode" {
                 assert_eq!(
                     root[key]["octocode"]["command"],
@@ -795,7 +1041,7 @@ mod tests {
             }
             let written = std::fs::read_to_string(&path).expect("read");
             assert_eq!(
-                super::install(spec(ide), &path, &default_args()).expect("existing"),
+                super::install(&home(spec(ide), &path), &default_args()).expect("existing"),
                 0,
                 "identical reinstall is a no-op"
             );
@@ -823,7 +1069,7 @@ mod tests {
                 .canonicalize()
                 .expect("canonical tempdir")
                 .join(file);
-            let inspect = |args: &super::InstallArgs| super::install(spec(ide), &path, args);
+            let inspect = |args: &super::InstallArgs| super::install(&home(spec(ide), &path), args);
             assert_eq!(inspect(&check).expect("missing"), 1, "{ide}");
             assert!(!path.exists());
             assert_eq!(inspect(&default_args()).expect("install"), 0);
@@ -831,13 +1077,113 @@ mod tests {
             assert_eq!(inspect(&check).expect("valid"), 0);
             assert_eq!(std::fs::read(&path).expect("after"), before);
         }
+        let keys = spec("cursor").server_keys();
         assert!(!super::valid_server(
             spec("cursor"),
-            &json!({"mcpServers":{"octocode":{"command":"npx","args":["other-package"]}}})
+            &json!({"mcpServers":{"octocode":{"command":"npx","args":["other-package"]}}}),
+            &keys
         ));
         assert!(!super::valid_server(
             spec("vscode-cline"),
-            &json!({"mcpServers":{"octocode":{"command":"npx","args":["octocode-mcp@latest"],"disabled":true}}})
+            &json!({"mcpServers":{"octocode":{"command":"npx","args":["octocode-mcp@latest"],"disabled":true}}}),
+            &keys
+        ));
+    }
+
+    /// `--remove` deletes only the entry install wrote, keeps the rest of
+    /// the file and a backup, and is a no-op when nothing is installed.
+    #[test]
+    fn remove_deletes_the_installed_entry_and_refuses_a_custom_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir
+            .path()
+            .canonicalize()
+            .expect("canonical tempdir")
+            .join("mcp.json");
+        let target = home(spec("cursor"), &path);
+        let remove = super::InstallArgs {
+            remove: true,
+            ..default_args()
+        };
+        assert_eq!(super::install(&target, &remove).expect("nothing"), 0);
+        assert!(!path.exists(), "a no-op removal writes nothing");
+
+        std::fs::write(
+            &path,
+            r#"{"mcpServers":{"other":{"command":"x"},"octocode":{"command":"node","args":["dev.js"]}}}"#,
+        )
+        .expect("fixture");
+        assert_eq!(super::install(&target, &remove).expect("custom"), 1);
+        assert!(
+            std::fs::read_to_string(&path)
+                .expect("read")
+                .contains("dev.js")
+        );
+
+        std::fs::remove_file(&path).expect("reset");
+        std::fs::write(&path, r#"{"mcpServers":{"other":{"command":"x"}}}"#).expect("fixture");
+        assert_eq!(
+            super::install(&target, &default_args()).expect("install"),
+            0
+        );
+        let dry = super::InstallArgs {
+            dry_run: true,
+            ..remove
+        };
+        let installed = std::fs::read_to_string(&path).expect("installed");
+        assert_eq!(super::install(&target, &dry).expect("dry"), 0);
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), installed);
+        let remove = super::InstallArgs {
+            remove: true,
+            ..default_args()
+        };
+        assert_eq!(super::install(&target, &remove).expect("remove"), 0);
+        let root: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
+        assert_eq!(root, json!({"mcpServers":{"other":{"command":"x"}}}));
+        assert!(
+            path.with_file_name(".mcp.json.bak").exists(),
+            "removal keeps a backup"
+        );
+    }
+
+    /// The local scope writes Claude Code's per-project section of its user
+    /// config, beside other projects' entries.
+    #[test]
+    fn local_scope_writes_this_directory_project_entry() {
+        let home_dir = tempfile::tempdir().expect("home");
+        let cwd = tempfile::tempdir().expect("cwd");
+        let path = home_dir.path().join(".claude.json");
+        std::fs::write(&path, r#"{"projects":{"/elsewhere":{"mcpServers":{}}}}"#).expect("fixture");
+        let target = super::Target {
+            client: spec("claude-code"),
+            scope: "local".into(),
+            path: path.clone(),
+            keys: vec![
+                "projects".into(),
+                cwd.path().to_string_lossy().into_owned(),
+                "mcpServers".into(),
+                "octocode".into(),
+            ],
+        };
+        assert_eq!(
+            super::install(&target, &default_args()).expect("install"),
+            0
+        );
+        let root: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
+        let project = &root["projects"][cwd.path().to_string_lossy().as_ref()];
+        assert_eq!(project["mcpServers"]["octocode"]["command"], "npx");
+        assert!(root["projects"]["/elsewhere"].is_object());
+        assert!(super::valid_server(
+            spec("claude-code"),
+            &root,
+            &target.keys
+        ));
+        assert!(!super::valid_server(
+            spec("claude-code"),
+            &root,
+            &spec("claude-code").server_keys()
         ));
     }
 

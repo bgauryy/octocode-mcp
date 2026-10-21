@@ -73,8 +73,13 @@ fn assert_valid(tool: ToolId, input: &Value) {
 pub fn rows_per_call(tool: ToolId) -> usize {
     crate::contracts::tool_contract(tool)
         .ok()
-        .and_then(|contract| contract.pointer("/inputSchema/properties/queries/maxItems"))
-        .and_then(Value::as_u64)
+        .and_then(|contract| {
+            let input = &contract["inputSchema"];
+            crate::contracts::property_schemas(input, &input["$defs"], "queries")
+                .into_iter()
+                .filter_map(|schema| schema["maxItems"].as_u64())
+                .min()
+        })
         .and_then(|rows| usize::try_from(rows).ok())
         .unwrap_or(1)
         .max(1)

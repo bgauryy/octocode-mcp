@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct JsLanguageServerConfig {
+pub struct LspLanguageServerConfig {
     pub command: String,
     pub args: Option<Vec<String>>,
     pub workspace_root: String,
@@ -59,29 +59,29 @@ impl ServerSource {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct JsExactPosition {
+pub struct LspExactPosition {
     pub line: u32,
     pub character: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct JsRange {
-    pub start: JsExactPosition,
-    pub end: JsExactPosition,
+pub struct LspRange {
+    pub start: LspExactPosition,
+    pub end: LspExactPosition,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct JsCodeSnippet {
+pub struct LspCodeSnippet {
     pub uri: String,
-    pub range: JsRange,
+    pub range: LspRange,
     pub content: String,
     pub symbol_kind: Option<String>,
     pub display_range: Option<Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct JsResolvedSymbol {
-    pub position: JsExactPosition,
+pub struct LspResolvedSymbol {
+    pub position: LspExactPosition,
     pub found_at_line: u32,
     pub line_offset: i32,
     pub line_content: String,
@@ -93,7 +93,7 @@ pub struct JsResolvedSymbol {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct JsFuzzyPosition {
+pub struct LspFuzzyPosition {
     pub symbol_name: String,
     pub line_hint: Option<u32>,
     pub order_hint: Option<u32>,

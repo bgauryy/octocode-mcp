@@ -226,14 +226,14 @@ impl DomainDispatcher {
     ) -> Result<dispatch::DomainResult, ExecutionError> {
         let _enter = self.handle.enter();
         context.check()?;
-        match tool.family() {
+        execute_row(|| match tool.family() {
             ToolFamily::GitHub => self.execute_github(tool, query, context),
             ToolFamily::Local if tool == ToolId::LspSearch => self.execute_lsp(query, context),
             ToolFamily::Local => self.execute_local(tool, query, context),
             // Clasify runs its own batch, never a domain row.
             ToolFamily::Remote if tool.is_clasify() => Err(ExecutionError::UnroutedTool),
             ToolFamily::Remote => self.execute_artifact(query, context),
-        }
+        })
     }
 
     fn execute_github(
@@ -560,5 +560,44 @@ mod page_chars_tests {
                 20_000
             );
         }
+    }
+}
+
+/// A failed engine operation becomes one row; sibling rows keep executing.
+/// Worker-thread and FFI boundaries retain their own unwind containment.
+fn execute_row(
+    work: impl FnOnce() -> Result<dispatch::DomainResult, ExecutionError>,
+) -> Result<dispatch::DomainResult, ExecutionError> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).unwrap_or_else(|_| {
+        Ok(dispatch::DomainResult::failure(
+            "executionFailed",
+            "The tool row failed on pathological input.",
+            Vec::new(),
+            None,
+        ))
+    })
+}
+
+#[cfg(test)]
+mod row_tests {
+    use super::*;
+
+    #[test]
+    fn panic_in_one_row_does_not_abort_following_rows() {
+        let rows = [true, false].map(|panics| {
+            execute_row(|| {
+                assert!(!panics, "injected row failure with private input");
+                Ok(dispatch::DomainResult::payload(
+                    serde_json::json!({"value": 7}),
+                    None,
+                ))
+            })
+            .expect("each row returns its own result")
+        });
+        assert_eq!(rows[0].status, Some("error"));
+        assert_eq!(rows[0].data["errorCode"], "executionFailed");
+        assert!(!rows[0].data.to_string().contains("private input"));
+        assert_eq!(rows[1].data["value"], 7);
+        assert_eq!(rows[1].status, None);
     }
 }

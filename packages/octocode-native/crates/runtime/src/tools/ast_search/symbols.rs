@@ -233,7 +233,7 @@ fn note_skipped(
     let filter = q.name_filter();
     let budget = q
         .max_files()
-        .map_or(octocode_engine::scan_budget::SCAN_WALK_FILES, |files| {
+        .map_or_else(octocode_engine::scan_budget::walk_ceiling, |files| {
             files as usize
         });
     let exclude = q.exclude().unwrap_or_default();
@@ -469,6 +469,8 @@ pub(super) struct Outline {
     withheld: crate::policy::discovery::Withheld,
     /// Root-relative directories the default excludes pruned unseen.
     pruned: Vec<String>,
+    /// The scopes a walk cut at the ceiling never reached.
+    unwalked: Option<super::unwalked::Unwalked>,
 }
 
 /// One file's declarations; `Err` is a terminal row (size limit, no
@@ -528,6 +530,7 @@ fn outline_file(
         diagnostics,
         withheld: Default::default(),
         pruned: Vec::new(),
+        unwalked: None,
     }))
 }
 
@@ -574,6 +577,8 @@ pub(super) fn outline_directory(
 struct DirectoryWalk {
     files: octocode_engine::types::FileSystemQueryResult,
     withheld: crate::policy::discovery::Withheld,
+    /// What a walk cut at its file cap never reached.
+    unwalked: Option<super::unwalked::Unwalked>,
 }
 
 /// Walk a directory outline's candidates once: the memo fingerprint reads
@@ -616,12 +621,61 @@ fn walk_directory(
         &|| cancel.check().is_err(),
     )
     .map_err(|error| ToolError::graph_scan(&error, cancel))?;
+    let unwalked = unwalked_scopes(q, canonical, &files, paths, cancel);
     Ok(DirectoryWalk {
+        unwalked,
         files,
         withheld: withheld
             .into_inner()
             .unwrap_or_else(|error| error.into_inner()),
     })
+}
+
+/// The scopes a directory walk stopped at its file cap never reached, when
+/// that cap is the walk ceiling (a narrower `path` is the only way to them).
+fn unwalked_scopes(
+    q: &AstSearchQuerySymbols,
+    canonical: &std::path::Path,
+    files: &octocode_engine::types::FileSystemQueryResult,
+    paths: &PathPolicy,
+    cancel: &dyn CancellationCheck,
+) -> Option<super::unwalked::Unwalked> {
+    let frontier = files
+        .first_unlisted
+        .as_deref()
+        .filter(|_| files.was_capped && super::unwalked::at_ceiling(q.max_files()))?;
+    let discovery = paths.discovery_walk();
+    let admit = |path: &std::path::Path, file_type| discovery.permits_entry(path, file_type);
+    let stop = || cancel.check().is_err();
+    // The walk's own candidates: a file of an outlined grammar, or one a
+    // `languageGlobs` rule names.
+    let parsers =
+        crate::tools::ast_rule::GlobParsers::compile(canonical, q.language_globs()).ok()?;
+    let outlined: std::collections::BTreeSet<String> =
+        octocode_engine::signatures::graph_facts::graph_fact_extensions()
+            .into_iter()
+            .collect();
+    let candidate = |path: &std::path::Path| {
+        crate::tools::ast_rule::has_extension_in(path, &outlined) || parsers.names(path)
+    };
+    super::unwalked::Unwalked::of(
+        &super::unwalked::Rules {
+            root: canonical,
+            frontier: std::path::Path::new(frontier),
+            ignore: octocode_engine::search::walk::IgnorePolicy::new(
+                q.include_ignored,
+                q.include_hidden,
+            ),
+            prune: prune::directories_before_policy(q.default_excludes.defaults()),
+            include: None,
+            exclude: q.exclude(),
+            candidate: &candidate,
+            max_depth: None,
+            admit: &admit,
+            stop: &stop,
+        },
+        &crate::tools::result::query_row(q, &[]),
+    )
 }
 
 /// The declarations of a walked directory's files. A name filter is a byte
@@ -681,6 +735,7 @@ fn outline_walked(
         diagnostics,
         withheld: walk.withheld,
         pruned: scan.pruned_dirs,
+        unwalked: walk.unwalked,
     })
 }
 
@@ -810,6 +865,7 @@ fn select(
         mut diagnostics,
         withheld,
         pruned,
+        unwalked,
     } = outline;
     files.sort_by(|a, b| a.0.cmp(&b.0));
     // A directory query writes each row's file; a single file hoists `path`.
@@ -895,6 +951,7 @@ fn select(
         withheld: withheld.notice(),
         pruned,
         directory: per_row_path,
+        unwalked,
     })
 }
 
@@ -1073,6 +1130,9 @@ pub(super) struct SymbolSet {
     /// directory (the query's own path) is not restated.
     #[serde(default)]
     directory: bool,
+    /// The scopes a walk cut at the ceiling never reached.
+    #[serde(default)]
+    unwalked: Option<super::unwalked::Unwalked>,
 }
 
 pub(super) fn render_page(
@@ -1151,6 +1211,10 @@ pub(super) fn render_page(
             super::scan_window::cut_reason(q.max_files()),
             &[],
         );
+        if let Some(unwalked) = &set.unwalked {
+            let query = crate::tools::result::query_row(q, &[]);
+            unwalked.attach(&mut out, |reach| super::unwalked::narrowed(&query, reach));
+        }
     }
     attach_symbol_leads(q, set, &mut out, cut.more, expand_scan);
     if set.declarations.is_empty() && !incomplete {
@@ -1329,7 +1393,7 @@ fn row_sizes(
             // Each row is one array element: its text and a separator.
             let mut chars = rendered
                 .iter()
-                .map(|row| crate::tools::stream_page::json_chars(row) + 1)
+                .map(|row| octocode_engine::json_size::utf16_units(row).unwrap_or(0) + 1)
                 .sum::<usize>();
             if directory {
                 let path = declarations[span.start]["path"].as_str();

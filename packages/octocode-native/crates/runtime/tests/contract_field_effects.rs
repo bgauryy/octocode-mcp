@@ -300,11 +300,11 @@ fn every_tool_envelope_has_shared_engine_effect_coverage() {
         assert!(source.contains("#[test]") || source.contains("#[tokio::test]"));
     }
     for tool in contract["tools"].as_array().expect("tools") {
-        let actual = tool["inputSchema"]["properties"]
-            .as_object()
-            .expect("envelope properties")
-            .keys()
-            .cloned()
+        let mut all_fields = BTreeSet::new();
+        collect_fields(&tool["inputSchema"], "", &mut all_fields);
+        let actual = all_fields
+            .into_iter()
+            .filter(|field| !field.contains(['.', '[', '{']))
             .collect::<BTreeSet<_>>();
         assert_eq!(
             actual, declared,

@@ -1551,7 +1551,7 @@ mod tests {
             .expect("read");
             let file = &read.file;
             let row = serde_json::to_value(&read).expect("row");
-            let chars = crate::tools::stream_page::json_chars(&row);
+            let chars = octocode_engine::json_size::utf16_units(&row).unwrap_or(0);
             assert!(chars <= window, "window {window}: row of {chars} chars");
             let next = file.next.as_ref().expect("next");
             let page = &next["continueWindow"]["query"]["queries"][0];

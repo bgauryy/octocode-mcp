@@ -6,7 +6,7 @@
 //! the rules outside the walk and the repository markers are watched too.
 use crate::policy::discovery::SearchWalk;
 use crate::policy::path::PathPolicy;
-use octocode_engine::portable::TextSearchPathFilter;
+use octocode_engine::search::text_search::TextSearchPathFilter;
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},

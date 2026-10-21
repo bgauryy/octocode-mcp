@@ -1,10 +1,9 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { PERMISSION_ENV } from '../shared/env.js';
 import { redactSecrets, sanitizeTerminalText } from '../shared/sanitize.js';
 import { modeSummary, type Permission } from './ask.js';
 import type { AuditEntry } from './audit.js';
-import { registerPermissionEditor } from './editor.js';
 import { ACTION_CLASSES, ASK_REASONS, decide, PERMISSION_CYCLE, PERMISSION_ID, PERMISSION_MODES, PERMISSION_SHORTCUT_LABEL, reasonAsks, type PermissionMode } from './mode.js';
 
 /** Audit entries `/octocode permission log` shows, newest last. */
@@ -51,18 +50,14 @@ function logLines(ctx: ExtensionContext, permission: Permission): string {
 }
 
 /**
- * `/octocode permission [manual|workspace|full|grants [clear]|log]` and an editor-scoped shortcut.
- * The command works everywhere, RPC included. Native selectors retain their own input handling.
+ * `/octocode permission [manual|workspace|full|grants [clear]|log]`. The command works everywhere, RPC included; the
+ * editor shortcut lives in `ui/editor`.
  */
-export function registerPermissionCommand(pi: ExtensionAPI, commands: Subcommands, permission: Permission, provenanceSize: () => number): void {
+export function registerPermissionCommand(commands: Subcommands, permission: Permission, provenanceSize: () => number): void {
   const select = async (mode: PermissionMode, ctx: ExtensionContext): Promise<void> => {
     permission.setMode(mode, ctx);
     if (!ctx.hasUI) say(ctx, `Permission mode: ${mode}. ${modeSummary(mode)}`);
   };
-
-  registerPermissionEditor(pi, (ctx) => {
-    permission.setMode(PERMISSION_CYCLE[(PERMISSION_CYCLE.indexOf(permission.mode) + 1) % PERMISSION_CYCLE.length]!, ctx);
-  });
 
   commands.add('permission', {
     description: `permission [manual|workspace|full|grants [clear]|log] — what Octocode asks before it acts (${PERMISSION_SHORTCUT_LABEL} cycles in the editor)`,

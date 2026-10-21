@@ -143,9 +143,9 @@ describe('with Octocode MCP (default)', () => {
     // The separate prompt-size test guards only extension-owned prose/schemas, not this complete fixture prefix.
     const fixedChars = turn.systemPrompt.length + JSON.stringify(turn.toolContracts).length;
     console.log(`default Pi + Octocode prefix: ${fixedChars} chars (prompt ${turn.systemPrompt.length}, ${turn.tools.length} tools)`);
-    // 45_500 (measured 44,632): was 43,500. +950 for the user-requested `archive` tool (schema, snippet, guideline), and
-    // the Octocode core's longer MCP input-schema descriptions (staged tool contract) left no headroom (43,682).
-    expect(fixedChars, 'default runtime prompt and declarations grew beyond their headroom').toBeLessThan(45_500);
+    // Measured 45,699 after canonical schema projection retained operation-specific constraints and guidance.
+    // Keep a tight complete-prefix bound alongside the unchanged first-request and cross-turn stability checks.
+    expect(fixedChars, 'default runtime prompt and declarations grew beyond their headroom').toBeLessThan(46_000);
     expect(turn.tools).toContain('file');
     expect(turn.tools).toContain('read');
     expect(turn.tools).toContain('mcp__octocode__localFetch');

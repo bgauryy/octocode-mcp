@@ -255,7 +255,7 @@ fn walk_tree(
         root,
     };
     let (resume, window_rows) = resumes.options(walking, q.walk_offset(), requested);
-    let mut native = octocode_engine::portable::query_file_system(
+    let mut native = octocode_engine::search::fs_query::query_file_system(
         FileSystemQueryOptions {
             resume,
             window_rows,
@@ -354,13 +354,15 @@ fn tree_costs(rows: &[TreeRow], prefix: &str, detail: bool) -> Vec<super::RowCos
     rows.iter()
         .enumerate()
         .map(|(index, row)| super::RowCost {
-            entry: crate::tools::stream_page::json_chars(&row.entry)
+            entry: octocode_engine::json_size::utf16_units(&row.entry).unwrap_or(0)
                 + 1
                 + usize::from(detail && row.kind != "directory")
                     * super::files::DETAIL_FIELDS_RESERVE,
-            header: crate::tools::stream_page::json_chars(
+            header: octocode_engine::json_size::utf16_units(
                 &json!({"dir":super::group_dir(prefix, &row.dir),"files":[]}),
-            ) + 1,
+            )
+            .unwrap_or(0)
+                + 1,
             continues: index > 0 && rows[index - 1].dir == row.dir,
         })
         .collect()

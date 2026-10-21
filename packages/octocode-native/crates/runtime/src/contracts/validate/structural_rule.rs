@@ -3,6 +3,24 @@ use super::{ContractValidationError, issue, query_values};
 pub(super) fn validate(input: &serde_json::Value) -> Result<(), ContractValidationError> {
     let mut issues = Vec::new();
     for (index, query) in query_values(input) {
+        if let Some(scope) = query.get("scope") {
+            let point = |name: &str| {
+                (
+                    scope[name]["line"].as_u64().unwrap_or(0),
+                    scope[name]["column"].as_u64().unwrap_or(0),
+                )
+            };
+            if point("start") >= point("end") {
+                issues.extend(
+                    issue(
+                        "ast-search.rule-shape",
+                        vec!["queries".into(), index.to_string(), "scope".into()],
+                        "scope start must precede its end",
+                    )
+                    .issues,
+                );
+            }
+        }
         let Some(rule) = query.get("rule").filter(|rule| rule.is_object()) else {
             continue;
         };

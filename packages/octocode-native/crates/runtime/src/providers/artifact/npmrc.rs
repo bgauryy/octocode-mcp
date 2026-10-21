@@ -43,18 +43,6 @@ pub(crate) fn npm_authorization(
     authorization_for(registry, &contents, |name| env.get(name).cloned())
 }
 
-fn is_loopback(url: &Url) -> bool {
-    match url.host() {
-        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-        Some(url::Host::Domain(name)) => {
-            let name = name.trim_end_matches('.').to_ascii_lowercase();
-            name == "localhost" || name.ends_with(".localhost")
-        }
-        None => false,
-    }
-}
-
 /// `//host[:port]/path/` for a registry URL, as npm keys credentials.
 pub(crate) fn nerf_dart(registry: &Url) -> Option<String> {
     let host = registry.host_str()?.to_ascii_lowercase();
@@ -104,7 +92,7 @@ pub(crate) fn authorization_for(
 ) -> Option<NpmAuthorization> {
     // A nerf-dart key carries no scheme: never send it in clear text, except
     // to a loopback registry (a local Verdaccio) that never leaves the host.
-    if registry.scheme() != "https" && !is_loopback(registry) {
+    if registry.scheme() != "https" && !octocode_github::is_loopback(registry) {
         return None;
     }
     let target = nerf_dart(registry)?;
@@ -163,6 +151,22 @@ mod tests {
         let env = |name: &str| (name == "NPM_TOKEN").then(|| "from-env".to_owned());
         authorization_for(&Url::parse(registry).unwrap(), npmrc, env)
             .map(|secret| secret.header.expose_secret().to_owned())
+    }
+
+    #[test]
+    fn npmrc_withholds_auth_over_http_to_a_localhost_subdomain() {
+        for host in ["verdaccio.localhost", "localhost."] {
+            let npmrc = format!("//{host}:4873/:_authToken=local\n");
+            assert_eq!(
+                auth(&format!("http://{host}:4873/"), &npmrc),
+                None,
+                "{host}"
+            );
+            assert_eq!(
+                auth(&format!("https://{host}:4873/"), &npmrc).as_deref(),
+                Some("Bearer local")
+            );
+        }
     }
 
     #[test]

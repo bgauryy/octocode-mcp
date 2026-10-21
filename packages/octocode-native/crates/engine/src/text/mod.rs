@@ -1,16 +1,17 @@
 pub mod case_fold;
-pub(crate) mod diff_parser;
+pub mod diff_parser;
 pub(crate) mod file_extension;
 pub(crate) mod source;
 pub mod test_paths;
 pub(crate) mod utf8_offsets;
-pub(crate) mod yaml_utils;
+pub mod yaml_utils;
 
 /// The one extension helper, JS/TS extension set, line index, leading-BOM
 /// rule, bounded source read, regular-file open, and binary sniff.
 pub use file_extension::{JS_EXTENSIONS, JS_TS_EXTENSIONS, extension_of};
 pub use source::{
-    BinaryVerdict, Decoded, ReadError, Source, decode, open_regular, read_source, sniff,
+    BinaryVerdict, Decoded, ReadError, Source, decode, decode_unicode, has_utf16_bom, open_regular,
+    read_source, sniff, sniff_complete,
 };
 pub use utf8_offsets::{LineIndex, bom_len, line_at, line_starts};
 

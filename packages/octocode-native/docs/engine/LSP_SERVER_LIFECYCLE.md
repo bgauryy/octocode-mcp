@@ -124,7 +124,7 @@ Availability probes (for example `rust-analyzer --version`, which a rustup proxy
 
 ### Verifying Linux-only paths
 
-The `/proc` parsing and tree walk in `lsp/process_tree.rs` are platform-independent and unit-tested on every host against a synthetic `/proc` directory (hostile `comm` fields, vanished and zombie pids, cycles, deep and oversized trees); only the `/proc` path and `sysconf` call are Linux-gated. The Linux `cfg` code itself (the `/proc` readers, the watchdog, their tests) can be compile- and lint-checked from macOS with [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) and zig, no extra C flags needed:
+The `/proc` parsing and tree walk in `crates/engine/src/process.rs` are platform-independent and unit-tested on every host against a synthetic `/proc` directory (hostile `comm` fields, vanished and zombie pids, cycles, deep and oversized trees); only the `/proc` path and `sysconf` call are Linux-gated. The Linux `cfg` code itself (the `/proc` readers, the watchdog, their tests) can be compile- and lint-checked from macOS with [`cargo-zigbuild`](https://github.com/rust-cross/cargo-zigbuild) and zig, no extra C flags needed:
 
 ```sh
 rustup target add aarch64-unknown-linux-gnu

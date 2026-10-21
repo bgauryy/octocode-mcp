@@ -1,7 +1,9 @@
 //! Bounded classification of sanitized evidence before it reaches the host.
 //! The plan records disjoint selected/excluded partitions; unjudged evidence is
 //! unknown. Replays need source identity and cardinality, not provider calls.
-use crate::contracts::tool_types::{Selection, SelectionScope, SelectionStatus, SelectionUnit};
+use crate::contracts::tool_types::{
+    Selection, SelectionFailure, SelectionScope, SelectionStatus, SelectionUnit,
+};
 use crate::runtime::{ExecutionContext, SelectionLimits};
 use crate::tools::id::ToolId;
 use crate::tools::num::u32_of_usize;
@@ -9,12 +11,13 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashSet;
+use std::io::Read;
 use std::time::{Duration, Instant};
 
 mod admission;
 
-/// Version 7 keeps permanently oversized states out of candidate-page pools.
-const VERSION: u8 = 7;
+/// Version 8 preserves operational failures across selection replay.
+const VERSION: u8 = 8;
 
 #[derive(Clone)]
 pub(crate) struct Runtime {
@@ -70,6 +73,7 @@ impl From<&str> for JudgeFailure {
 }
 
 pub(crate) struct JudgeCall<'a> {
+    pub failures: &'a mut Vec<SelectionFailure>,
     pub usage: &'a mut crate::tools::judgment::stats::ClassificationUsage,
     pub candidates: &'a [Candidate],
     pub admitted: &'a [usize],
@@ -133,6 +137,8 @@ struct Plan {
     total: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    failures: Vec<SelectionFailure>,
     /// Eligible ordinals the candidate budget left unjudged, as half-open
     /// `[start, end)` runs in source order, independent of admission order.
     #[serde(default, skip_serializing_if = "Vec::is_empty", with = "runs")]
@@ -246,6 +252,11 @@ impl Outcome {
         self.receipt.selected_items < self.receipt.total_items && !self.provider_unavailable()
     }
 
+    pub(crate) fn disclosure(&self) -> Option<&'static str> {
+        self.leaves_out()
+            .then(|| crate::contracts::classification_notice("filtered"))
+    }
+
     /// Whether this candidate page judged `ordinal` (or left it unjudged);
     /// an ordinal outside its pool was judged by an earlier candidate page.
     pub(crate) fn considers(&self, ordinal: usize) -> bool {
@@ -275,7 +286,18 @@ fn in_runs(runs: &[[u32; 2]], ordinal: u32) -> bool {
 }
 
 fn decode(token: &str) -> Option<Plan> {
-    let bytes = URL_SAFE_NO_PAD.decode(token).ok()?;
+    let compressed = URL_SAFE_NO_PAD.decode(token).ok()?;
+    let mut bytes = Vec::new();
+    // Failure details repeat across candidates; compression keeps their exact
+    // evidence in replay tokens. Bound expansion of caller-supplied tokens.
+    const MAX_PLAN_BYTES: u64 = 4 * 1024 * 1024;
+    flate2::read::ZlibDecoder::new(compressed.as_slice())
+        .take(MAX_PLAN_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_PLAN_BYTES {
+        return None;
+    }
     serde_json::from_slice(&bytes).ok()
 }
 
@@ -530,6 +552,9 @@ pub(crate) fn apply_sanitized_rows(
                 crate::tools::result::Continuation::new(tool, next_query).build();
         }
         tool.output().finish_selection(data, query);
+        if let Some(notice) = outcome.disclosure() {
+            crate::tools::paging::push_warnings(data, [notice.to_owned()]);
+        }
         if let Some(error) = &provider {
             crate::tools::paging::push_warnings(
                 data,
@@ -559,6 +584,7 @@ fn unavailable_receipt(total: usize, reason: &str) -> Value {
         excluded_items: 0,
         unknown_items: total,
         reason: Some(reason.into()),
+        failures: Vec::new(),
         usage: None,
     })
     .unwrap_or(Value::Null)
@@ -669,6 +695,7 @@ impl Plan {
             excluded: Vec::new(),
             total: u32_of_usize(total),
             reason: reason.map(str::to_owned),
+            failures: Vec::new(),
             unjudged: Vec::new(),
             pool: Vec::new(),
             opens: false,
@@ -697,6 +724,7 @@ impl Plan {
             "scope":self.scope, "unit":self.unit, "selected":self.selected,
             "excluded":self.excluded, "total":self.total, "reason":self.reason,
             "unjudged":self.unjudged, "pool":self.pool, "opens":self.opens,
+            "failures":self.failures,
         }))
     }
 
@@ -772,6 +800,14 @@ impl Plan {
         {
             return false;
         }
+        for failure in &self.failures {
+            let Ok(ordinal) = u32::try_from(failure.candidate) else {
+                return false;
+            };
+            if ordinal >= self.total || !self.in_pool(ordinal as usize) || !seen.insert(ordinal) {
+                return false;
+            }
+        }
         let judged = self.selected.len() + self.excluded.len();
         if self.opens {
             return !self.pool.is_empty()
@@ -803,10 +839,19 @@ impl Plan {
             unknown_items: size - self.selected.len() as i64 - self.excluded.len() as i64,
             total_items: size,
             reason: self.reason.clone(),
+            failures: self.failures.clone(),
             usage: None,
         };
-        let encode =
-            |plan: &Plan| URL_SAFE_NO_PAD.encode(serde_json::to_vec(plan).unwrap_or_default());
+        #[expect(
+            clippy::expect_used,
+            reason = "Plan has only serializable fields and compression writes to an in-memory Vec"
+        )]
+        let encode = |plan: &Plan| {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+            serde_json::to_writer(&mut encoder, plan).expect("selection plan is serializable");
+            URL_SAFE_NO_PAD.encode(encoder.finish().expect("in-memory compression"))
+        };
         let next_candidates = (!self.unjudged.is_empty()).then(|| {
             let mut opening = Plan::new(
                 self.binding.clone(),
@@ -1007,7 +1052,9 @@ pub(crate) fn select_scoped(
         .map(|classifier| classifier.as_str().map(str::to_owned))
         .collect::<Option<Vec<_>>>()
         .ok_or(Failure::Stale)?;
+    let mut failures = Vec::new();
     let outcomes = runtime.judge.select(JudgeCall {
+        failures: &mut failures,
         usage: &mut usage,
         candidates,
         admitted: &admitted,
@@ -1044,18 +1091,58 @@ pub(crate) fn select_scoped(
                     Decision::Unknown => {}
                 }
             }
+            plan.failures = failures
+                .into_iter()
+                .filter(|failure| {
+                    usize::try_from(failure.candidate).is_ok_and(|ordinal| {
+                        admitted_set.contains(&ordinal) && decisions[ordinal] == Decision::Unknown
+                    })
+                })
+                .map(|mut failure| {
+                    // The replay token is opaque to output sanitization, so
+                    // sanitize operational messages before encoding it.
+                    let security = crate::security::ContentSecurity;
+                    #[expect(
+                        clippy::expect_used,
+                        reason = "sanitization preserves nonempty text or substitutes a nonempty redaction marker"
+                    )]
+                    let error = security
+                        .sanitize_text(&failure.error, None)
+                        .content
+                        .try_into()
+                        .expect("sanitized nonempty error");
+                    failure.error = error;
+                    if let Some(hints) = &mut failure.hints {
+                        for hint in &mut hints.0 {
+                            #[expect(
+                                clippy::expect_used,
+                                reason = "sanitization preserves nonempty text or substitutes a nonempty redaction marker"
+                            )]
+                            let sanitized = security
+                                .sanitize_text(hint, None)
+                                .content
+                                .try_into()
+                                .expect("sanitized nonempty hint");
+                            *hint = sanitized;
+                        }
+                    }
+                    failure
+                })
+                .collect();
+            plan.failures.sort_by_key(|failure| failure.candidate);
+            plan.failures.dedup_by_key(|failure| failure.candidate);
             let known = plan.selected.len() + plan.excluded.len();
             if known == pool_size {
                 plan.status = SelectionStatus::Complete;
             } else {
-                plan.reason = Some(
-                    if admitted.len() < pool_size {
-                        omitted_reason
-                    } else {
-                        "classificationUnknown"
-                    }
-                    .into(),
-                );
+                plan.reason = Some(if admitted.len() < pool_size {
+                    omitted_reason.into()
+                } else {
+                    plan.failures.first().map_or_else(
+                        || "classificationUnknown".to_owned(),
+                        |failure| failure.error_code.to_string(),
+                    )
+                });
             }
         }
         Err(JudgeFailure::Unavailable(reason)) => {
@@ -1377,6 +1464,106 @@ mod tests {
     }
 
     #[test]
+    fn partial_provider_failures_survive_replay_without_losing_successful_evidence() {
+        struct PartialJudge;
+        impl SelectionJudge for PartialJudge {
+            fn identity(&self) -> Value {
+                json!({"test":"partial-failures"})
+            }
+            fn select(&self, call: JudgeCall<'_>) -> Judgments {
+                for &ordinal in call.admitted.iter().skip(1) {
+                    call.failures.push(SelectionFailure {
+                        candidate: ordinal as i64,
+                        error_code:
+                            crate::contracts::tool_types::ErrorCode::ClassificationProviderError,
+                        error: format!(
+                            "Candidate {ordinal}: provider returned 403; access denied for ghp_abcdefghijklmnopqrstuvwxyz0123456789."
+                        )
+                        .try_into()
+                        .unwrap(),
+                        hints: Some(
+                            vec!["Check provider credentials and access.".parse().unwrap()].into(),
+                        ),
+                    });
+                }
+                Ok(vec![(0, Decision::Selected)])
+            }
+        }
+        let executor = tokio::runtime::Runtime::new().unwrap();
+        let mut runtime =
+            test_runtime(std::sync::Arc::new(PartialJudge), executor.handle().clone());
+        runtime.limits.max_candidates = 64;
+        runtime.limits.max_chars = 100_000;
+        let query = json!({"clasifyContext":{"classifiers":["States the fact?"]}});
+        let candidates: Vec<_> = (0..64)
+            .map(|i| Candidate::new(Some(json!(format!("candidate {i}")))))
+            .collect();
+        let run = |token: Option<&str>| {
+            select(
+                Some(&runtime),
+                &query,
+                "source",
+                token,
+                &candidates,
+                None,
+                SelectionUnit::Chunks,
+            )
+            .ok()
+            .unwrap()
+        };
+        let fresh = run(None);
+        assert_eq!(fresh.selected, [0]);
+        assert_eq!(fresh.receipt.unknown_items, 63);
+        assert_eq!(
+            fresh.receipt.reason.as_deref(),
+            Some("classificationProviderError")
+        );
+        assert_eq!(fresh.receipt.failures.len(), 63);
+        let stored = serde_json::to_string(&decode(&fresh.token).unwrap()).unwrap();
+        assert!(
+            !stored.contains("ghp_abcdefghijklmnopqrstuvwxyz0123456789"),
+            "opaque replay tokens must not retain provider secrets"
+        );
+        let max = crate::contracts::query_schema_number(
+            ToolId::LocalFetch,
+            None,
+            "selection",
+            "maxLength",
+        )
+        .unwrap() as usize;
+        assert!(fresh.token.len() <= max);
+        let replay = run(Some(&fresh.token));
+        assert_eq!(
+            serde_json::to_value(&replay.receipt.failures).unwrap(),
+            serde_json::to_value(&fresh.receipt.failures).unwrap()
+        );
+        assert_eq!(replay.selected, fresh.selected);
+        let mut plan = decode(&fresh.token).unwrap();
+        plan.failures[0].candidate = 0;
+        plan.seal();
+        assert!(
+            !plan.valid(
+                &plan.binding,
+                candidates.len(),
+                SelectionScope::SelectedView,
+                SelectionUnit::Chunks
+            ),
+            "failure cannot overlap a successful decision"
+        );
+    }
+
+    #[test]
+    fn selection_tokens_reject_malformed_and_excessively_expanded_data() {
+        use std::io::Write;
+
+        assert!(decode("not base64").is_none());
+        assert!(decode(&URL_SAFE_NO_PAD.encode(b"not compressed")).is_none());
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(&vec![b' '; 4 * 1024 * 1024 + 1]).unwrap();
+        assert!(decode(&URL_SAFE_NO_PAD.encode(encoder.finish().unwrap())).is_none());
+    }
+
+    #[test]
     fn inline_usage_is_opt_in_and_plan_replay_reports_no_new_spend() {
         struct UsageJudge;
         impl SelectionJudge for UsageJudge {
@@ -1483,6 +1670,13 @@ mod tests {
         assert_eq!(data["files"], json!([]));
         assert_eq!(data["selection"]["excludedItems"], 1);
         assert_eq!(data["selection"]["unknownItems"], 0);
+        assert!(
+            data["warnings"]
+                .as_array()
+                .is_some_and(|warnings| warnings.iter().any(|warning| warning
+                    .as_str()
+                    .is_some_and(|text| text.contains("not proof of absence"))))
+        );
         let provider_next = &data["next"]["nextPage"]["query"]["queries"][0];
         assert_eq!(provider_next["page"], 4);
         assert!(provider_next.get("selection").is_none());
@@ -2351,8 +2545,7 @@ mod tests {
         let outcome = plan.clone().finish();
         assert_eq!(outcome.selected, vec![0, 2]);
         assert_eq!(outcome.receipt.selected_items, 2);
-        let decoded: Plan =
-            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(outcome.token).unwrap()).unwrap();
+        let decoded: Plan = decode(&outcome.token).unwrap();
         assert!(decoded.valid(
             &bound,
             4,
@@ -2632,8 +2825,7 @@ mod tests {
             )
         };
         assert!(valid(&plan));
-        let decoded = decode(&URL_SAFE_NO_PAD.encode(serde_json::to_vec(&plan).unwrap()))
-            .expect("round trip");
+        let decoded = decode(&plan.clone().finish().token).expect("round trip");
         assert_eq!(decoded.pool, [[1, 3]]);
         plan.selected = vec![1];
         plan.seal();

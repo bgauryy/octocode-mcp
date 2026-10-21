@@ -9,7 +9,6 @@ use std::ops::Range;
 use super::pager::{ResponsePageOptions, ResponsePagination, restart_pagination};
 use super::pages::Remaining;
 use crate::tools::id::continuation_channels::{HINTS_KEY, PAGES_KEY};
-use crate::tools::stream_page::json_chars;
 
 /// Page-plan size reserved for a row's per-call facts. It depends only on
 /// their shape, so executions that differ in the values plan identical pages.
@@ -29,7 +28,7 @@ fn volatile_reserve(fields: &Map<String, Value>) -> usize {
         .iter()
         .map(|(key, child)| (key.clone(), shape(child)))
         .collect();
-    json_chars(&shaped) - 1
+    octocode_engine::json_size::utf16_units(&shaped).unwrap_or(0) - 1
 }
 
 #[cfg(test)]
@@ -71,7 +70,10 @@ fn largest_array(value: &Value, pointer: &str) -> Option<(String, usize)> {
             }
         }
         Value::Array(items) if items.len() >= 2 => {
-            consider(Some((pointer.to_owned(), json_chars(value))));
+            consider(Some((
+                pointer.to_owned(),
+                octocode_engine::json_size::utf16_units(value).unwrap_or(0),
+            )));
         }
         Value::Array(items) => {
             if let Some(item) = items.first() {
@@ -128,7 +130,9 @@ fn enclosing_element(value: &Value, pointer: &str) -> Option<(String, usize)> {
 
 /// Serialized length a `rowPart.continues` marker adds.
 fn continues_chars(array: &str, index: usize) -> usize {
-    json_chars(&json!({"continues": {"array": array, "index": index}})) - 1
+    octocode_engine::json_size::utf16_units(&json!({"continues": {"array": array, "index": index}}))
+        .unwrap_or(0)
+        - 1
 }
 
 /// Move the largest array out of `row`'s data, as (JSON pointer, items).
@@ -255,7 +259,7 @@ impl FragmentArena {
     /// its largest array moved, never cloned. The row's first fragment is
     /// bounded by `head`, every later one by `budget`.
     fn plan(&mut self, mut row: Value, head: usize, budget: usize, out: &mut Vec<Planned>) {
-        let row_chars = json_chars(&row);
+        let row_chars = octocode_engine::json_size::utf16_units(&row).unwrap_or(0);
         let declared = (row_chars > head)
             .then(|| {
                 self.collection_paths
@@ -294,7 +298,7 @@ impl FragmentArena {
         if let Some(rest) = rest {
             self.plan(rest, head, budget, out);
         }
-        let base = json_chars(&row);
+        let base = octocode_engine::json_size::utf16_units(&row).unwrap_or(0);
         // Every fragment repeats the skeleton (stats, pagination, ...). When
         // the skeleton nearly fills the budget, one item per fragment would
         // multiply the payload; let each fragment carry at least as much
@@ -302,7 +306,10 @@ impl FragmentArena {
         // near-duplicate pages.
         let budget = budget.max(base.saturating_mul(2));
         let head = head.max(base.saturating_mul(2)).min(budget);
-        let item_chars: Vec<usize> = items.iter().map(json_chars).collect();
+        let item_chars: Vec<usize> = items
+            .iter()
+            .map(|value| octocode_engine::json_size::utf16_units(value).unwrap_or(0))
+            .collect();
         let open = match out.len() {
             // Items join the rest's last part while they fit.
             planned if planned > first => Open::Tail {
@@ -345,7 +352,7 @@ impl FragmentArena {
         budget: usize,
         out: &mut Vec<Planned>,
     ) {
-        let base = json_chars(&row);
+        let base = octocode_engine::json_size::utf16_units(&row).unwrap_or(0);
         let budget = budget.max(base.saturating_mul(2));
         let head = head.max(base.saturating_mul(2)).min(budget);
         let enclosing = enclosing_element(&row, &pointer);
@@ -357,7 +364,11 @@ impl FragmentArena {
         let records: Vec<_> = records.into_iter().collect();
         let sizes = records
             .iter()
-            .map(|(key, value)| json_chars(key) + 1 + json_chars(value))
+            .map(|(key, value)| {
+                octocode_engine::json_size::utf16_units(key).unwrap_or(0)
+                    + 1
+                    + octocode_engine::json_size::utf16_units(value).unwrap_or(0)
+            })
             .collect::<Vec<_>>();
         self.records.push(RecordSplit {
             skeleton: row,
@@ -859,7 +870,9 @@ fn drop_emptied_lists(
 
 /// Serialized length `rowPart` adds to a non-empty row object.
 fn row_part_chars(part: usize, of: usize) -> usize {
-    json_chars(&json!({"rowPart": {"part": part, "of": of}})) - 1
+    octocode_engine::json_size::utf16_units(&json!({"rowPart": {"part": part, "of": of}}))
+        .unwrap_or(0)
+        - 1
 }
 
 /// The part of a split row a `next.*` call rides. Page continuations
@@ -927,7 +940,8 @@ fn row_next_chars(row: &Value, share: PartShare) -> usize {
             if kept.is_empty() {
                 0
             } else {
-                json_chars(&json!({ container: kept })) - 1
+                octocode_engine::json_size::utf16_units(&json!({ container: kept })).unwrap_or(0)
+                    - 1
             }
         })
         .sum()
@@ -1038,7 +1052,8 @@ pub(super) fn paginate_rows_reserving(
         _ => Vec::new(),
     };
     volatile.resize(rows.len(), None);
-    let overhead = json_chars(&structured) + rows_key.len() + 6;
+    let overhead =
+        octocode_engine::json_size::utf16_units(&structured).unwrap_or(0) + rows_key.len() + 6;
     let total = full.encode_utf16().count();
     let snapshot = format!(
         "response-rows-v6:{budget}:{}",
@@ -1117,7 +1132,7 @@ pub(super) fn paginate_rows_reserving(
         lead_with_incomplete_banner(&mut structured, later, plan.rows);
     }
     let has_more = requested + 1 < plan.total_pages;
-    let char_length = json_chars(&structured);
+    let char_length = octocode_engine::json_size::utf16_units(&structured).unwrap_or(0);
     let mut pagination = ResponsePagination {
         scope: "rows".into(),
         current_page: requested + 1,
@@ -1193,14 +1208,16 @@ impl RowPlan {
                     + if first.is_empty() {
                         0
                     } else {
-                        json_chars(first) - 1
+                        octocode_engine::json_size::utf16_units(first).unwrap_or(0) - 1
                     }
             })
             .collect();
         let sizes: Vec<usize> = rows
             .iter()
             .zip(&reserves)
-            .map(|(row, reserve)| json_chars(row) + 1 + reserve)
+            .map(|(row, reserve)| {
+                octocode_engine::json_size::utf16_units(row).unwrap_or(0) + 1 + reserve
+            })
             .collect();
         let shares = fair_shares(&sizes, row_budget);
         let mut arena = FragmentArena {
@@ -1597,7 +1614,10 @@ mod tests {
             "non-split fields are kept"
         );
         assert_eq!(row["data"]["files"].as_array().unwrap().len(), 1);
-        assert!(json_chars(&Value::Object(first.clone())) <= 2000 + 200);
+        assert!(
+            octocode_engine::json_size::utf16_units(&Value::Object(first.clone())).unwrap_or(0)
+                <= 2000 + 200
+        );
         let mut seen = 0;
         for page in 0..pagination.total_pages {
             let options = ResponsePageOptions {
@@ -1788,7 +1808,8 @@ mod tests {
                 &[],
                 None,
             );
-            chars += json_chars(&Value::Object(envelope.clone()));
+            chars += octocode_engine::json_size::utf16_units(&Value::Object(envelope.clone()))
+                .unwrap_or(0);
             for row in envelope["results"].as_array().unwrap() {
                 commits_seen += row["data"]["commits"].as_array().map_or(0, Vec::len);
                 files_seen += row["data"]["files"].as_array().map_or(0, Vec::len);

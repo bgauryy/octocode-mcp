@@ -10,6 +10,7 @@
 //! file the scan did not read.
 
 use super::graph::{climb, dirname, join, join_within_root, normalize};
+use super::js_paths::{BUILD_DIRS, is_declaration, probe_js, source_equivalent};
 use crate::{policy::path::PathPolicy, security::ContentSecurity};
 use octocode_engine::text::lexical;
 use serde_json::Value;
@@ -40,41 +41,6 @@ const CONDITIONS: &[&str] = &[
     "types",
     "typings",
 ];
-/// Package-relative build-output roots mapped back to sources.
-const BUILD_DIRS: &[&str] = &[
-    "dist",
-    "build",
-    "out",
-    "lib",
-    "esm",
-    "cjs",
-    "es",
-    "types",
-    "declarations",
-];
-/// Output flavor directories nested under a build root (`dist/esm/…`).
-const FLAVOR_DIRS: &[&str] = &[
-    "esm",
-    "cjs",
-    "es",
-    "mjs",
-    "lib",
-    "types",
-    "prod",
-    "dev",
-    "production",
-    "development",
-    "node",
-    "browser",
-    "module",
-    "commonjs",
-    "src",
-];
-/// Source suffixes (leading dot) in the order TypeScript probes an
-/// extensionless module path. Not the engine's `JS_EXTENSIONS`, which holds
-/// the dotless JavaScript-only set.
-const MODULE_SUFFIXES: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
-const DECLARATION_EXTENSIONS: &[&str] = &[".d.ts", ".d.mts", ".d.cts"];
 
 /// Pattern keys (`./sub/*`, `#internal/*`, `@app/*`) with ordered targets.
 type PatternTargets = Vec<(String, Vec<String>)>;
@@ -779,10 +745,6 @@ fn resolve_package(manifest: &Manifest, subpath: &str, known: &BTreeSet<String>)
         })
 }
 
-fn is_declaration(path: &str) -> bool {
-    DECLARATION_EXTENSIONS.iter().any(|ext| path.ends_with(ext))
-}
-
 /// Link the first target that names a parsed file: direct source hits
 /// first, then build-output targets mapped back to sources, then
 /// declaration files as a last resort.
@@ -806,76 +768,6 @@ fn resolve_targets(dir: &str, targets: &[String], known: &BTreeSet<String>) -> O
                 .find(|(_, path)| is_declaration(path) && known.contains(path))
                 .map(|(_, path)| path.clone())
         })
-}
-
-/// Strip a JavaScript/TypeScript or declaration extension.
-fn strip_code_extension(path: &str) -> &str {
-    DECLARATION_EXTENSIONS
-        .iter()
-        .chain(MODULE_SUFFIXES)
-        .find_map(|ext| path.strip_suffix(ext))
-        .unwrap_or(path)
-}
-
-/// Map a package-relative build-output target (`dist/esm/x.js`,
-/// `lib/x.d.ts`) back to its source (`src/x.ts`, `x.ts`).
-fn source_equivalent(dir: &str, target: &str, known: &BTreeSet<String>) -> Option<String> {
-    let target = normalize(target);
-    let segments = target.split('/').collect::<Vec<_>>();
-    if !segments
-        .first()
-        .is_some_and(|first| BUILD_DIRS.contains(first))
-    {
-        return None;
-    }
-    let mut rests = vec![segments[1..].join("/")];
-    let mut index = 1;
-    while index + 1 < segments.len() && FLAVOR_DIRS.contains(&segments[index]) {
-        index += 1;
-        rests.push(segments[index..].join("/"));
-    }
-    rests.iter().find_map(|rest| {
-        let stem = strip_code_extension(rest);
-        ["src", "."].iter().find_map(|base| {
-            let candidate = join_within_root(&join(dir, base), stem)?;
-            probe_js(&candidate, known)
-        })
-    })
-}
-
-/// Probe a module path the way relative imports are linked: exact file,
-/// `.js`→`.ts` style swaps, extension probing, and `index` files.
-pub(crate) fn probe_js(stem: &str, known: &BTreeSet<String>) -> Option<String> {
-    if stem.is_empty() || stem == "." {
-        return MODULE_SUFFIXES
-            .iter()
-            .map(|ext| format!("index{ext}"))
-            .find(|candidate| known.contains(candidate));
-    }
-    if MODULE_SUFFIXES.iter().any(|ext| stem.ends_with(ext)) {
-        if known.contains(stem) {
-            return Some(stem.to_owned());
-        }
-        // TypeScript resolves `./x.js` to the source or declaration that
-        // `x.js` is built from, in this order.
-        let (base, extension) = stem.rsplit_once('.')?;
-        return octocode_engine::signatures::languages::js_source_swaps(extension)
-            .iter()
-            .map(|swap| format!("{base}.{swap}"))
-            .find(|candidate| known.contains(candidate));
-    }
-    // `./x` is `x.ts` … or `x.d.ts`, then the directory's `index`.
-    let probed = |name: String| {
-        MODULE_SUFFIXES
-            .iter()
-            .chain(&DECLARATION_EXTENSIONS[..1])
-            .map(|ext| format!("{name}{ext}"))
-            .collect::<Vec<_>>()
-    };
-    std::iter::once(stem.to_owned())
-        .chain(probed(stem.to_owned()))
-        .chain(probed(join(stem, "index")))
-        .find(|candidate| known.contains(candidate))
 }
 
 fn probe_js_or_source(candidate: &str, known: &BTreeSet<String>) -> Option<String> {

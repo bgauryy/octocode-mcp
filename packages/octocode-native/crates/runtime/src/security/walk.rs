@@ -16,26 +16,11 @@
 //! while another leaf of the same response repeats the bare value (an
 //! astSearch capture, a hover fragment). Every value the sanitizer redacted
 //! is therefore redacted again wherever it recurs in the response.
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde_json::{Map, Value};
 
 /// Shortest redacted value propagated to other leaves; shorter values are too
 /// generic to identify as the same secret.
 const MIN_PROPAGATED_SECRET_CHARS: usize = 8;
-
-/// Placeholders the detector and the private-key guards emit
-/// (`[REDACTED-GITHUBTOKENS]`).
-#[expect(clippy::expect_used, reason = "static pattern, valid by construction")]
-static PLACEHOLDER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[(?:CONTENT-)?REDACTED-[A-Z0-9_-]+\]").expect("placeholder regex")
-});
-
-/// The one redaction-placeholder pattern.
-pub(crate) fn redaction_placeholder() -> &'static Regex {
-    &PLACEHOLDER
-}
 
 /// `sanitize` gets each string leaf and the file path of its enclosing result, if any.
 pub fn sanitize_json<E>(
@@ -87,7 +72,9 @@ fn redacted_values(original: &str, clean: &str, out: &mut Vec<(String, String)>)
             }
             continue;
         }
-        let placeholders: Vec<_> = PLACEHOLDER.find_iter(after).collect();
+        let placeholders: Vec<_> = octocode_engine::security::placeholder_regex()
+            .find_iter(after)
+            .collect();
         let Some(last) = placeholders.last() else {
             continue;
         };
@@ -123,7 +110,7 @@ fn redacted_values(original: &str, clean: &str, out: &mut Vec<(String, String)>)
 fn push_value(value: &str, placeholder: &str, out: &mut Vec<(String, String)>) {
     if value.chars().count() >= MIN_PROPAGATED_SECRET_CHARS
         && value.chars().any(char::is_alphanumeric)
-        && !PLACEHOLDER.is_match(value)
+        && !octocode_engine::security::placeholder_regex().is_match(value)
     {
         out.push((value.to_owned(), placeholder.to_owned()));
     }
@@ -395,5 +382,23 @@ mod tests {
         assert_eq!(path_of("m").as_deref(), Some("src/a.ts"));
         assert_eq!(path_of("e").as_deref(), Some("b.yaml"));
         assert_eq!(path_of("content"), None, "keys carry no path");
+    }
+}
+
+#[cfg(test)]
+mod placeholder_coverage_tests {
+    #[test]
+    fn placeholder_regex_matches_every_emitted_placeholder() {
+        let pattern = octocode_engine::security::placeholder_regex();
+        for placeholder in [
+            octocode_engine::security::redaction_placeholder("githubTokens"),
+            "[CONTENT-REDACTED-SIZE-LIMIT]".to_owned(),
+            "[CONTENT-REDACTED-SANITIZER-FAILURE]".to_owned(),
+        ] {
+            assert_eq!(
+                pattern.find(&placeholder).map(|found| found.as_str()),
+                Some(placeholder.as_str())
+            );
+        }
     }
 }

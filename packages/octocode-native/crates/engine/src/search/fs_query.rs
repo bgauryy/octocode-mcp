@@ -104,6 +104,8 @@ struct QueryState {
     /// Entries listed (stored, the root excepted) so far.
     listed: u32,
     total_discovered: u32,
+    /// The first match the entry limit left unlisted.
+    first_unlisted: Option<PathBuf>,
     tally: WalkTally,
     time_cut: Option<String>,
     /// The directories the walk is inside, outermost first.
@@ -145,7 +147,7 @@ impl QueryState {
 /// (a denied directory is not entered); ignore rules and caller exclusions
 /// decide it before that.
 /// `stop` cancels the walk ([`ErrorKind::Cancelled`]).
-pub(crate) fn query_file_system(
+pub fn query_file_system(
     options: FileSystemQueryOptions,
     admit: &EntryFilter<'_>,
     stop: &Stop<'_>,
@@ -213,6 +215,9 @@ pub(crate) fn query_file_system(
         entries: state.entries,
         total_discovered: state.total_discovered,
         was_capped,
+        first_unlisted: state
+            .first_unlisted
+            .map(|path| path.to_string_lossy().into_owned()),
         skipped: totals.skipped,
         permission_denied: totals.permission_denied,
         ignored: totals.ignored,
@@ -736,6 +741,9 @@ fn visit_path(
 
     state.total_discovered += 1;
     if state.entries.len() >= query.limit {
+        if state.first_unlisted.is_none() {
+            state.first_unlisted = Some(path.to_path_buf());
+        }
         return Ok(());
     }
 

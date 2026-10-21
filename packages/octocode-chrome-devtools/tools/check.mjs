@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -20,18 +20,27 @@ for (const directory of ['tools', 'bin', 'tests'])
     if (result.status !== 0) throw Error(result.stderr);
   }
 const skill = join(root, '../../skills/octocode-chrome-devtools');
-const entries = readdirSync(skill, { recursive: true });
-// Guidance only: the skill, its README, its output format (output.md), and the
-// report renderer every public skill shares.
-const allowed = [
-  'SKILL.md',
-  'README.md',
-  'output.md',
-  'scripts',
-  join('scripts', 'render-report.mjs'),
-];
-if (entries.some(entry => !allowed.includes(entry)))
-  throw Error('Chrome skill must contain guidance only');
+const common = join(root, '../../skills/common');
+const guidance = new Set(['SKILL.md', 'README.md', 'output.md']);
+const reportScripts = new Set([
+  'scripts/render-report.mjs',
+  'scripts/lib/entrypoint.mjs',
+]);
+for (const file of walk(skill)) {
+  const entry = relative(skill, file).replaceAll('\\', '/');
+  if (guidance.has(entry)) continue;
+  const source = join(common, entry);
+  const shared =
+    reportScripts.has(entry) || /^references\/[^/]+\.md$/.test(entry);
+  if (
+    !shared ||
+    !existsSync(source) ||
+    !readFileSync(file).equals(readFileSync(source))
+  )
+    throw Error(
+      `Chrome skill must contain guidance and canonical shared report assets only: ${entry}`
+    );
+}
 if (
   /packages\/octocode-chrome-devtools|\b(?:src|dist)\//.test(
     readFileSync(join(skill, 'SKILL.md'), 'utf8')

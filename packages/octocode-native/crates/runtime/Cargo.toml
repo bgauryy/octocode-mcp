@@ -81,6 +81,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+octocode-engine = { path = "../engine", features = ["test-hooks"] }
 tempfile = { workspace = true }
 wiremock = { workspace = true }
 

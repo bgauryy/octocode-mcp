@@ -296,7 +296,8 @@ fn pcre2_ranges(
     case_sensitive: bool,
     content: &str,
 ) -> Result<RegexSpans, ExtractionError> {
-    use octocode_engine::portable::{Pcre2RangesError, pcre2_find_ranges};
+    use octocode_engine::search::pcre2_ranges::Pcre2RangesError;
+    use octocode_engine::search::pcre2_ranges::pcre2_find_ranges;
     // One probe past the limit tells a capped prefix from the whole set.
     let probe = MAX_REGEX_MATCHES + 1;
     let mut spans = pcre2_find_ranges(pattern, !case_sensitive, content, probe).map_err(

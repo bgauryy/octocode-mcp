@@ -85,48 +85,78 @@ fn streamed_oversized_line_pages_its_bytes_and_later_selected_lines() {
     assert!(!collected.contains("outside"));
 }
 
-/// A streamed multi-range read refused because one span needs several
-/// window pages leads to that span (`readBoundedLines`) and to one read of
-/// every other requested range (`readOtherRanges`, L2-F15): together they
-/// reach every requested line.
+/// A streamed multi-range page stops inside the first span that needs
+/// several window pages: it serves every span before it and that span's
+/// first page, then continues that span alone (`continueWindow`) and reads
+/// the ranges after it once (`readOtherRanges`, L2-F15). Following them
+/// reaches every requested line exactly once.
 #[test]
-fn a_refused_streamed_multi_range_read_leads_to_the_other_ranges() {
+fn a_streamed_multi_range_read_serves_what_fits_and_continues_the_rest() {
     let fixture = Fixture::new();
     let source = (1..=1_500_000)
         .map(|n| format!("line {n}\n"))
         .collect::<String>();
     let path = fixture.write("large.log", &source);
     let paths = Paths(fixture.0.clone());
-    let refused = checked_streamed_page(
+    let first = checked_streamed_page(
         &qj(
             &path,
             serde_json::json!({"ranges":["100-150","150000-157500","300000-300010"]}),
         ),
         &paths,
     );
-    assert_eq!(
-        refused.error_code.as_deref(),
-        Some("largeSourceWindowOnly"),
-        "{refused:?}"
-    );
-    let next = refused.next.expect("leads");
-    let span = next.read_bounded_lines.expect("the refused span").query;
-    assert_eq!(
-        serde_json::json!(span.ranges),
-        serde_json::json!(["150000-157500"])
-    );
-    let others = next.read_other_ranges.expect("the other ranges").query;
+    assert_eq!(first.status, "success", "{first:?}");
+    assert_eq!(first.is_partial, Some(true), "{first:?}");
+    let mut seen = std::collections::BTreeMap::<usize, usize>::new();
+    let mut count = |content: &str| {
+        for line in content.lines() {
+            if let Some(n) = line.strip_prefix("line ").and_then(|n| n.parse().ok()) {
+                *seen.entry(n).or_default() += 1;
+            }
+        }
+    };
+    let content = first.content.as_deref().expect("content");
+    assert!(content.contains("line 100\nline 101\n") && content.contains("line 150000\n"));
+    count(content);
+    let next = first.next.expect("continuations");
+    assert!(next.read_bounded_lines.is_none(), "{next:?}");
+    let others = next
+        .read_other_ranges
+        .expect("the ranges after the cut")
+        .query;
     assert_eq!(
         serde_json::json!(others.ranges),
-        serde_json::json!(["100-150", "300000-300010"])
+        serde_json::json!(["300000-300010"])
     );
+    let mut page = next.continue_window;
+    let mut pages = 1;
+    while let Some(call) = page {
+        let wire = serde_json::to_value(call).expect("executable continuation");
+        let query: LocalFetchQuery =
+            serde_json::from_value(wire["query"]["queries"][0].clone()).expect("copied query");
+        assert_eq!(
+            serde_json::json!(query.ranges),
+            serde_json::json!(["150000-157500"])
+        );
+        let result = checked_streamed_page(&query, &paths);
+        assert_eq!(result.status, "success", "{result:?}");
+        count(result.content.as_deref().expect("page content"));
+        page = result.next.and_then(|next| next.continue_window);
+        pages += 1;
+        assert!(pages < 100, "paging must terminate");
+    }
+    assert!(pages > 1);
     let rest = checked_streamed_page(&others, &paths);
     assert_eq!(rest.status, "success", "{rest:?}");
-    let content = rest.content.as_deref().expect("content");
-    for line in ["line 100\n", "line 150\n", "line 300000\n", "line 300010\n"] {
-        assert!(content.contains(line), "{line}");
+    assert!(rest.next.is_none(), "{rest:?}");
+    count(rest.content.as_deref().expect("content"));
+    let requested = (100..=150)
+        .chain(150_000..=157_500)
+        .chain(300_000..=300_010);
+    for n in requested {
+        assert_eq!(seen.remove(&n), Some(1), "line {n}");
     }
-    assert!(!content.contains("line 150000\n"));
+    assert!(seen.is_empty(), "unrequested lines: {seen:?}");
 }
 
 #[test]

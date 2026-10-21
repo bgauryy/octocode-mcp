@@ -38,6 +38,7 @@ flowchart LR
 
 | When | Read | Why |
 |---|---|---|
+| Repository evidence needs Octocode | [MCP/CLI guide](references/octocode-usage.md) | Discovery, invocation, complete reads, recovery |
 | Dead, duplicate, or speculative code; kludges, suppressions, redundant types or dependencies, god files, spaghetti | [code-smells](references/code-smells.md) | Signals, delete bars |
 | Agent-written code: audit order, error masking, stubs, supply chain, credentials | [agent-defects](references/agent-defects.md) | Residue vs defects |
 | Test debt, weak oracles, gamed tests or CI, replacement tests | [tests](references/tests.md) | Signals, test rules |

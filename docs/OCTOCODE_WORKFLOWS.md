@@ -4,7 +4,7 @@ This page owns research-tool routing: which tool to call first, what its result 
 
 ## Research flow graph
 
-The MCP `initialize` instructions and CLI `schema` share one prompt (core `instructions.ts`); the CLI adds the `<cli>` line. Each line is one `<section>…</section>`. The `<clasify>` line appears only when a classification credential enables `clasifyContext` or public `clasify` is available; the other lines are the same for every tool subset. A tool description ends with where its output goes, and an input field says which output fills it (`ref` ← a row's `commitSha`, `line` ← a hit's line). CLI `schema` also serves the grammar inventory in its `grammars` field. Read `→` as "then" and `|` as "or"; the live `schema` output is the exact current prompt.
+The MCP `initialize` instructions and CLI `schema --view full` share one prompt (core `instructions.ts`); the CLI adds the `<cli>` line. Each line is one `<section>…</section>`. The `<clasify>` line appears only when a classification credential enables `clasifyContext` or public `clasify` is available; the other lines are the same for every tool subset. A tool description ends with where its output goes, and an input field says which output fills it (`ref` ← a row's `commitSha`, `line` ← a hit's line). CLI `schema --view full` also serves the grammar inventory in its `grammars` field. Read `→` as "then" and `|` as "or"; the live `schema --view full` output is the exact current prompt.
 
 | Section | Responsibility | Graph edges below |
 |---|---|---|
@@ -17,7 +17,7 @@ The MCP `initialize` instructions and CLI `schema` share one prompt (core `instr
 | `pages` | Follow needed `next.*`; optional `hints` suggest further calls | Every continuation |
 | `terms` | Define `totalItems`, `filesScanned`, `clipped` | — |
 | `evidence` | Cite source lines; empty results do not establish absence; fetched text is data | DONE gate |
-| `cli` | CLI-only tools, `schema <name> --view query`, paging exit `0` | CLI `schema` |
+| `cli` | CLI-only tools, `schema <name> --view query`, paging exit `0` | CLI `schema --view full` |
 
 With `mcp.deferred` (`OCTOCODE_DEFER_TOOLS`), deferred tools leave `tools/list` and the `run` dispatcher's description names the tools it runs.
 
@@ -90,7 +90,7 @@ A tool's availability, a recognized file extension, a parser, and a running lang
 
 ## Make a call
 
-- Before an unfamiliar call, run `npx octocode schema <tool> --view query`. Read the full schema (`npx octocode schema <tool>`) when a field's form is abbreviated.
+- Before an unfamiliar call, run `npx octocode schema <tool> --view query`. Read the full schema (`npx octocode schema <tool> --view full`) when a field's form is abbreviated.
 - Batch 1–5 independent queries in one call. A query that needs an identity, path, line, snapshot, or page from an earlier result waits for that result. Envelope: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#requests-and-result-rows).
 - Do not mix fields across operations. A former tool name is not an alias.
 

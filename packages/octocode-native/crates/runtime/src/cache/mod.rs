@@ -82,24 +82,6 @@ pub struct Cached<V> {
     pub fresh: bool,
 }
 
-/// The serialized length of `value`, counted without building the text: the
-/// weight of a JSON entry.
-pub(crate) fn json_len(value: &impl Serialize) -> usize {
-    struct Count(usize);
-    impl std::io::Write for Count {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0 += bytes.len();
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let mut count = Count(0);
-    let _ = serde_json::to_writer(&mut count, value);
-    count.0
-}
-
 /// [`Memo`] (memory) plus [`Disk`] (optional, across processes).
 pub struct Store<V> {
     config: CacheConfig,
@@ -196,13 +178,6 @@ impl<V: Serialize + DeserializeOwned> Store<V> {
 
     pub fn clear_memory(&self) {
         self.memory.clear();
-    }
-
-    pub fn clear(&self) {
-        self.clear_memory();
-        if let Some(disk) = &self.disk {
-            disk.clear();
-        }
     }
 }
 
@@ -466,11 +441,6 @@ impl Disk {
             }
         }
     }
-
-    fn clear(&self) {
-        let _ = fs::remove_dir_all(&self.dir);
-        let _ = octocode_io::atomic::create_private_dir_all(&self.dir);
-    }
 }
 
 #[cfg(test)]
@@ -530,5 +500,25 @@ mod current_tests {
                 .as_str(),
             "retained"
         );
+    }
+}
+
+#[cfg(test)]
+mod json_size_policy_tests {
+    #[test]
+    fn invalid_cache_json_exceeds_every_budget() {
+        let invalid = std::collections::BTreeMap::from([((1, 2), "value".to_owned())]);
+        let weight = octocode_engine::json_size::bytes(&invalid).unwrap_or(usize::MAX);
+        assert_eq!(weight, usize::MAX);
+        let store = super::Store::new(super::CacheConfig::default(), None);
+        let key = super::CacheKey {
+            namespace: "test".into(),
+            scope: "test".into(),
+            resource: "invalid".into(),
+        };
+        let (_, retained) =
+            store.put_confirmed(key.clone(), invalid, weight, super::CacheClass::Immutable);
+        assert!(!retained);
+        assert!(store.get(&key).is_none());
     }
 }

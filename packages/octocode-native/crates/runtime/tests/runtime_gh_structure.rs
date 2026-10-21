@@ -420,14 +420,25 @@ async fn refs_and_languages_reject_tree_fields() {
         for (key, value) in field.as_object().expect("field") {
             query[key] = value.clone();
         }
-        let outcome = call(&runtime, "ghStructure", query).await;
-        let text = match outcome {
-            Ok(outcome) => outcome.structured_content.to_string(),
-            Err(error) => format!("{error:?}"),
-        };
+        let error = call(&runtime, "ghStructure", query)
+            .await
+            .expect_err("unsupported operation field");
+        assert_eq!(error.code, "invalidInput");
+        let payload = error
+            .payload
+            .as_deref()
+            .expect("actionable validation payload");
+        let message = payload["error"].as_str().expect("repair guidance");
+        let key = field
+            .as_object()
+            .expect("field")
+            .keys()
+            .next()
+            .expect("field name");
+        assert!(message.contains(&format!("Remove '{key}'")), "{message}");
         assert!(
-            text.contains(&format!("; remove it from {operation}")),
-            "{operation} {field}: {text}"
+            message.contains("operation") && message.contains("tree"),
+            "{message}"
         );
     }
     runtime.close().await;

@@ -145,8 +145,9 @@ const MARK = '/*__ARCH_DATA__*/null';
 if (!tpl.includes(MARK)) die(`template marker ${MARK} missing in ${TEMPLATE}`);
 const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, tpl.replace(MARK, () => json).replace('<title>Architecture</title>', () => `<title>${String(meta.name || 'Architecture').replace(/[<&]/g, '')} · Architecture</title>`));
-console.log(JSON.stringify({ ok: true, out: OUT, bytes: Buffer.byteLength(json), counts, warnings }, null, 1));
+const html = tpl.replace(MARK, () => json).replace('<title>Architecture</title>', () => `<title>${String(meta.name || 'Architecture').replace(/[<&]/g, '')} · Architecture</title>`);
+writeFileSync(OUT, html);
+console.log(JSON.stringify({ ok: true, out: OUT, bytes: Buffer.byteLength(html), counts, warnings }, null, 1));
 if (args.includes('--open')) {
   const [cmd, a] = process.platform === 'darwin' ? ['open', [OUT]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', OUT]] : ['xdg-open', [OUT]];
   execFile(cmd, a, (err) => err && console.error(`render: could not open browser (${err.message}); open ${OUT} manually`));

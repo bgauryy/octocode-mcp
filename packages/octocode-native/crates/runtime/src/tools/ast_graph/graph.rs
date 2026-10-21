@@ -1,5 +1,6 @@
-use super::aliases::{ResolveContext, probe_js};
+use super::aliases::ResolveContext;
 use super::cargo::{CargoCrates, load_cargo_crates};
+use super::js_paths::probe_js;
 use super::linking::Linker;
 use super::packages::{PackageIndex, PackageLink};
 use super::types::*;
@@ -1581,6 +1582,8 @@ pub(crate) const SCOPE_ADMISSION_FILES: u32 = {
     files as u32
 };
 const SCOPE_COUNT_FILES: u32 = 100_000;
+/// Admissible roots a `scopeTooBroad` refusal names and leads to.
+const ADMISSIBLE_ROOTS_LISTED: usize = 5;
 
 /// Cheap discovery-only preflight (no parsing) for an implicit-default scan:
 /// the scan's candidate walk, counted well past the admission bound so the
@@ -1649,7 +1652,7 @@ pub(super) fn scope_too_broad(
         None => ranked
             .iter()
             .filter(|(_, count)| *count <= SCOPE_ADMISSION_FILES)
-            .take(5)
+            .take(ADMISSIBLE_ROOTS_LISTED)
             .collect(),
     };
     let root_path = paths
@@ -1702,7 +1705,9 @@ pub(super) fn scope_too_broad(
             .build(),
         );
     }
-    if let Some((dir, _)) = narrower.first() {
+    // One executable re-rooting per admissible directory the message names,
+    // in its order; repeats of a kind are numbered (`narrowScope2`).
+    for (index, (dir, _)) in narrower.iter().enumerate() {
         let path = if root_path == "." {
             dir.clone()
         } else {
@@ -1712,8 +1717,12 @@ pub(super) fn scope_too_broad(
         if anchored.is_some() {
             rebase_anchors(&mut query, dir);
         }
+        let name = match index {
+            0 => "narrowScope".to_owned(),
+            n => format!("narrowScope{}", n + 1),
+        };
         next.insert(
-            "narrowScope".into(),
+            name,
             Continuation::new(ToolId::AstTopology, query)
                 .confidence("medium")
                 .build(),

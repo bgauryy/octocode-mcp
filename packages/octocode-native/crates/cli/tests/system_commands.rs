@@ -1,5 +1,5 @@
-//! `octocode auth` and `octocode cache`: the text and JSON answers, the exit
-//! class of each failure, and what login and the cache commands report. Logout
+//! `octocode auth`: the text and JSON answers, the exit class of each
+//! failure, and what login reports. Logout
 //! deletes from the OS credential store, so its tests live beside the code with
 //! an injected store.
 use crate::support::Workspace;
@@ -260,65 +260,5 @@ fn login_keeps_a_live_stored_credential_unless_forced() {
     assert!(
         text.contains("login requires an interactive terminal"),
         "{text}"
-    );
-}
-
-#[test]
-fn cache_status_tails_the_last_five_evictions() {
-    let workspace = Workspace::new();
-    let log = workspace.home.join("logs");
-    std::fs::create_dir_all(&log).expect("log dir");
-    let lines = (1..=7)
-        .map(|n| format!("{{\"reason\":\"ttl\",\"path\":\"/cache/{n}\"}}"))
-        .collect::<Vec<_>>();
-    // Blank lines carry no record and do not count toward the five.
-    let text = format!("{}\n\n", lines.join("\n"));
-    std::fs::write(log.join("evictions.jsonl"), &text).expect("log");
-
-    let output = cli(&workspace)
-        .args(["cache", "status"])
-        .output()
-        .expect("cache status");
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    let expected = format!(
-        "cache home: {}\nrecent evictions (last 5, log {} bytes):\n{}\n",
-        workspace.home.join("tmp").display(),
-        text.len(),
-        lines[2..]
-            .iter()
-            .map(|line| format!("  {line}"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-    assert_eq!(stdout(&output), expected);
-}
-
-#[test]
-fn cache_status_without_a_log_says_none_were_recorded() {
-    let workspace = Workspace::new();
-    let output = cli(&workspace)
-        .args(["cache", "status"])
-        .output()
-        .expect("cache status");
-    assert_eq!(
-        stdout(&output),
-        format!(
-            "cache home: {}\nrecent evictions: none recorded\n",
-            workspace.home.join("tmp").display()
-        )
-    );
-}
-
-#[test]
-fn cache_clear_reports_what_it_cleared() {
-    let workspace = Workspace::new();
-    let output = cli(&workspace)
-        .args(["cache", "clear"])
-        .output()
-        .expect("cache clear");
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    assert_eq!(
-        stdout(&output).trim(),
-        "cleared the GitHub content and package registry caches"
     );
 }

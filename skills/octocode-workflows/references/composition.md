@@ -27,7 +27,7 @@ Keep the acceptance oracle stable. A builder cannot weaken an assertion or redef
 
 The [shared tool-access rule](../SKILL.md#use-octocode-across-workflows) applies to all catalog cards and metaphors. Assign the evidence question and relevant checkout/ref or entry point; let the actor choose and refine its calls. The orchestrator can use the same tools to scope work, resolve disagreements, and verify returned anchors without taking over actor duties.
 
-Use an available Octocode MCP server or CLI (native `octocode` or the Node launcher). Inspect the live catalog and schema; availability depends on the environment. [Research's tool guide](../../octocode-research/references/octocode.md) owns invocation, availability, paging, and recovery.
+Use the [shared MCP/CLI guide](octocode-usage.md) for invocation, live availability, pagination, and recovery. The capability map below connects tools to workflow roles.
 
 | Evidence needed, in any workflow | Useful Octocode capability and application |
 |---|---|
@@ -40,7 +40,7 @@ Use an available Octocode MCP server or CLI (native `octocode` or the Node launc
 | Check an instruction or evaluation pipeline | Search/read the effective prompt loader, schema, fixture, grader, and result consumer. Inspect only evidence permitted by the evaluation phase; retain held-out boundaries. |
 | Resume or independently verify work | Reopen exact source anchors and recheck affected consumers against current identity. Communication tools carry assignments and evidence; Octocode research tools check repository claims in them. |
 
-Tool evidence keeps its original scope: syntax does not prove resolved identity, source does not prove runtime behavior, and a search result does not prove absence. For a capability gap, use the domain's supported alternative or return the missing evidence to the orchestrator; do not count an unavailable call as a completed check.
+Apply the [shared evidence rules](evidence.md). Return capability gaps to the orchestrator, or use the domain's supported alternative; an unavailable call is not a completed check.
 
 ## Compose and resume
 

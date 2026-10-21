@@ -199,7 +199,7 @@ const result = await Schema.safeParseAsync(data)
 | `"invalid_type"` | Wrong input type |
 | `"too_small"` | Below minimum (length, value, size) |
 | `"too_big"` | Above maximum |
-| `"invalid_string"` | String format validation |
-| `"invalid_enum_value"` | Value not in enum |
+| `"invalid_format"` | String format validation |
+| `"invalid_value"` | Value not in enum |
 | `"unrecognized_keys"` | Unknown keys in strict object |
 | `"invalid_union"` | No union branch matched |

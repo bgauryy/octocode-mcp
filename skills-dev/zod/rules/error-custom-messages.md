@@ -9,7 +9,7 @@ tags: errors, messages, v4, migration
 
 ## Problem
 
-Zod v3's `required_error`, `invalid_type_error`, and `message` parameters are removed in v4. Using them silently does nothing — your custom messages won't appear.
+Zod v4 removes `required_error` and `invalid_type_error`. The `message` parameter still works but is deprecated. Use `error` for new code and migrations.
 
 ## Incorrect
 

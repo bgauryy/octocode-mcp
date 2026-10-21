@@ -26,7 +26,7 @@ use artifact::validate_artifact_registry_url;
 use github_search::{GithubSearchKind, validate_github_search_queries};
 use history::{validate_history_keyword_scope, validate_history_repository_scope};
 use local_search::validate_local_search_queries;
-use lsp::{validate_lsp_queries, validate_operation_controls};
+use lsp::validate_lsp_queries;
 use schema::{validate_input_schema, validate_schema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -88,92 +88,14 @@ pub struct ContractValidationError {
 /// `inputSchema`; only the CLI has the `schema` command.
 #[must_use]
 pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> Value {
-    let unknown = error
-        .issues
-        .iter()
-        .filter(|issue| issue.rule_id == "schema.unknown-field")
-        .collect::<Vec<_>>();
-    if !unknown.is_empty() && unknown.len() == error.issues.len() {
-        let mut fields = unknown
-            .iter()
-            .filter_map(|issue| issue.path.last())
-            .cloned()
-            .collect::<Vec<_>>();
-        fields.sort();
-        fields.dedup();
-        let mut details = Vec::new();
-        for issue in &unknown {
-            let query = query_label(&issue.path);
-            let field = issue.path.last().map(String::as_str).unwrap_or("unknown");
-            // Extract known fields from the embedded schema so we can suggest the
-            // closest match (edit distance <= 3) as a "did you mean ...?" hint.
-            let known: Vec<&str> = issue
-                .schema
-                .as_ref()
-                .and_then(|s| s["knownFields"].as_array())
-                .into_iter()
-                .flatten()
-                .filter_map(|v| v.as_str())
-                .collect();
-            let msg = match (
-                sibling_requirement(issue),
-                field_guess(issue, field, &known),
-            ) {
-                (Some(requires), _) => sibling_message(issue, field, &query, &requires),
-                _ if is_root_brief(tool_name, &issue.path) => root_brief_message(field),
-                (None, Some(s)) => {
-                    format!("Remove unknown field '{field}' from {query} (did you mean '{s}'?)")
-                }
-                (None, None) => format!("Remove unknown field(s) from {query}: {field}"),
-            };
-            let msg = if issue.path.iter().any(|segment| segment == "rule") {
-                format!(
-                    "{}. Example rule: {}",
-                    msg.trim_end_matches('.'),
-                    octocode_engine::structural::EXAMPLE_RULE
-                )
-            } else {
-                msg
-            };
-            details.push(msg);
-        }
-        details.extend(routing_details(tool_name, &error.issues));
-        return issues_error(details);
-    }
     let details = error
         .issues
         .iter()
         .map(|issue| {
             let path = issue.path.join(".");
-            // For unknown-field issues in the mixed-error path, append a suggestion too.
+            // One wording for an unknown field, alone or beside other issues.
             if issue.rule_id == "schema.unknown-field" {
-                let field = issue.path.last().map(String::as_str).unwrap_or("unknown");
-                let known: Vec<&str> = issue
-                    .schema
-                    .as_ref()
-                    .and_then(|s| s["knownFields"].as_array())
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|v| v.as_str())
-                    .collect();
-                match sibling_requirement(issue) {
-                    Some(requires) => {
-                        return sibling_message(issue, field, &query_label(&issue.path), &requires);
-                    }
-                    None if is_root_brief(tool_name, &issue.path) => {
-                        return root_brief_message(field);
-                    }
-                    None => {}
-                }
-                let base = if path.is_empty() {
-                    issue.message.clone()
-                } else {
-                    format!("{path}: {}", issue.message)
-                };
-                return match field_guess(issue, field, &known) {
-                    Some(s) => format!("{base} (did you mean '{s}'?)"),
-                    None => base,
-                };
+                return unknown_field_message(tool_name, issue);
             }
             let message = match required_guidance(issue) {
                 Some(guidance) => format!("{} ({guidance})", issue.message),
@@ -188,6 +110,43 @@ pub fn format_input_error(tool_name: &str, error: &ContractValidationError) -> V
         .chain(routing_details(tool_name, &error.issues))
         .collect::<Vec<_>>();
     issues_error(details)
+}
+
+/// The repair for one unknown field: the branch that declares it, a
+/// top-level row field to move, or removal with the closest known field.
+fn unknown_field_message(tool_name: &str, issue: &ValidationIssue) -> String {
+    let query = query_label(&issue.path);
+    let field = issue.path.last().map(String::as_str).unwrap_or("unknown");
+    // Known fields from the embedded schema suggest the closest match (edit
+    // distance <= 3) as a "did you mean ...?" hint.
+    let known: Vec<&str> = issue
+        .schema
+        .as_ref()
+        .and_then(|s| s["knownFields"].as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str())
+        .collect();
+    let msg = match (
+        sibling_requirement(issue),
+        field_guess(issue, field, &known),
+    ) {
+        (Some(requires), _) => sibling_message(issue, field, &query, &requires),
+        _ if is_root_brief(tool_name, &issue.path) => root_brief_message(field),
+        (None, Some(s)) => {
+            format!("Remove unknown field '{field}' from {query} (did you mean '{s}'?)")
+        }
+        (None, None) => format!("Remove unknown field(s) from {query}: {field}"),
+    };
+    if issue.path.iter().any(|segment| segment == "rule") {
+        format!(
+            "{}. Example rule: {}",
+            msg.trim_end_matches('.'),
+            octocode_engine::structural::EXAMPLE_RULE
+        )
+    } else {
+        msg
+    }
 }
 
 /// The error envelope every surface returns for a call that never reached a
@@ -465,16 +424,15 @@ pub fn validate(tool_name: &str, mut input: Value) -> Result<Value, ContractVali
     let plan = RowPlan::of(tool_name, tool);
     apply_normalization_rules(&tool["rules"], &mut input)?;
     let mut issues = Vec::new();
-    let item_schema = tool["inputSchema"]
-        .pointer("/properties/queries/items")
-        .filter(|_| plan.item_differs)
-        .unwrap_or(&tool["querySchema"]);
+    let item_schema = plan.item_schema.as_ref();
     if let Some(queries) = input.get_mut("queries").and_then(Value::as_array_mut) {
         for (index, query) in queries.iter_mut().enumerate() {
             let mut path = vec!["queries".to_owned(), index.to_string()];
             let mut parsed =
                 validate_input_schema(&tool["querySchema"], &tool["querySchema"], query, &mut path);
-            if parsed.is_ok() && plan.item_differs {
+            if parsed.is_ok()
+                && let Some(item_schema) = item_schema
+            {
                 parsed = validate_input_schema(&tool["inputSchema"], item_schema, query, &mut path);
             }
             if let Err(error) = parsed {
@@ -525,7 +483,7 @@ struct RowPlan {
     /// The envelope's row schema says more than the query schema: rows
     /// validate against both. Equal schemas (under the same `$defs`) are one
     /// pass.
-    item_differs: bool,
+    item_schema: Option<Value>,
     /// The input schema without its row schema: rows are validated already.
     envelope: Value,
 }
@@ -556,22 +514,44 @@ impl RowPlan {
             schema
         };
         let (input, query) = (&tool["inputSchema"], &tool["querySchema"]);
-        let item_differs = input
-            .pointer("/properties/queries/items")
-            .is_some_and(|item| {
-                without_marker(item) != without_marker(query)
-                    || (item.to_string().contains("\"$ref\"") && input["$defs"] != query["$defs"])
-            });
-        let mut envelope = input.clone();
-        if let Some(queries) = envelope
-            .pointer_mut("/properties/queries")
-            .and_then(Value::as_object_mut)
-        {
-            queries.remove("items");
+        let mut items = Vec::new();
+        for queries in super::schema_facts::property_schemas(input, &input["$defs"], "queries") {
+            for item in super::schema_facts::item_schemas(queries, &input["$defs"]) {
+                if !items.contains(&item) {
+                    items.push(item);
+                }
+            }
         }
+        let mut envelope = input.clone();
+        let item_schema = if let [item] = items.as_slice() {
+            strip_query_items(&mut envelope);
+            (without_marker(item) != without_marker(query)
+                || (item.to_string().contains("\"$ref\"") && input["$defs"] != query["$defs"]))
+                .then(|| (*item).clone())
+        } else {
+            // Different envelope branches may impose different row schemas;
+            // keep their complete validation instead of intersecting alternatives.
+            None
+        };
         Self {
-            item_differs,
+            item_schema,
             envelope,
+        }
+    }
+}
+
+fn strip_query_items(schema: &mut Value) {
+    if let Some(queries) = schema
+        .pointer_mut("/properties/queries")
+        .and_then(Value::as_object_mut)
+    {
+        queries.remove("items");
+    }
+    for keyword in ["anyOf", "oneOf", "allOf"] {
+        if let Some(branches) = schema.get_mut(keyword).and_then(Value::as_array_mut) {
+            for branch in branches {
+                strip_query_items(branch);
+            }
         }
     }
 }
@@ -600,13 +580,9 @@ fn one_row_envelope(input_schema: &Value, input: Value) -> Value {
         return Value::Object(row);
     }
     let mut envelope = serde_json::Map::new();
-    for key in input_schema["properties"]
-        .as_object()
-        .into_iter()
-        .flat_map(|p| p.keys())
-    {
+    for key in super::schema_facts::property_names(input_schema, &input_schema["$defs"]) {
         if let Some(value) = row.remove(key) {
-            envelope.insert(key.clone(), value);
+            envelope.insert(key.to_owned(), value);
         }
     }
     if row.is_empty() {
@@ -855,11 +831,6 @@ fn apply_validation_rules(rules: &Value, input: &Value) -> Result<(), ContractVa
                 &rule["args"],
             ),
             Some("lsp_rust_context") => validate_lsp_queries(input),
-            Some("operation_controls") => validate_operation_controls(
-                input,
-                rule["id"].as_str().unwrap_or("operation_controls"),
-                &rule["args"],
-            ),
             Some("depth_range") => depth_range::validate(input),
             Some("structural_rule") => structural_rule::validate(input),
             Some(opcode) => {
@@ -1042,6 +1013,57 @@ pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn union_envelope_normalization_preserves_response_controls() {
+        let schema = serde_json::json!({"anyOf":[
+            {"type":"object","properties":{"queries":{"type":"array"},"responseLength":{"type":"integer"},"responseSnapshot":{"not":{}}}},
+            {"type":"object","properties":{"queries":{"not":{}},"responseSnapshot":{"type":"string"},"responseOffset":{"type":"integer"}}}
+        ]});
+        assert_eq!(
+            super::one_row_envelope(
+                &schema,
+                serde_json::json!({"path":"src/a.rs","responseLength":900})
+            ),
+            serde_json::json!({"queries":[{"path":"src/a.rs"}],"responseLength":900})
+        );
+        let saved = serde_json::json!({"responseSnapshot":"saved","responseOffset":2});
+        assert_eq!(super::one_row_envelope(&schema, saved.clone()), saved);
+    }
+
+    #[test]
+    fn row_plan_retains_union_envelope_checks_and_separates_rows() {
+        let query = serde_json::json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false});
+        let input = serde_json::json!({"anyOf":[
+            {"type":"object","properties":{"queries":{"type":"array","minItems":1,"items":query},"responseSnapshot":{"not":{}}},"required":["queries"],"additionalProperties":false},
+            {"type":"object","properties":{"queries":{"not":{}},"responseSnapshot":{"type":"string","minLength":1}},"required":["responseSnapshot"],"additionalProperties":false}
+        ]});
+        let plan =
+            super::RowPlan::derive(&serde_json::json!({"querySchema":query,"inputSchema":input}));
+        assert!(plan.item_schema.is_none());
+        assert!(
+            plan.envelope
+                .pointer("/anyOf/0/properties/queries/items")
+                .is_none()
+        );
+        for (mut value, valid) in [
+            (serde_json::json!({"queries":[{"path":"a"}]}), true),
+            (serde_json::json!({"responseSnapshot":"saved"}), true),
+            (
+                serde_json::json!({"queries":[{"path":"a"}],"responseSnapshot":"saved"}),
+                false,
+            ),
+            (serde_json::json!({"queries":[]}), false),
+            (serde_json::json!({}), false),
+        ] {
+            assert_eq!(
+                super::validate_input_schema(&input, &plan.envelope, &mut value, &mut Vec::new())
+                    .is_ok(),
+                valid,
+                "{value}"
+            );
+        }
+    }
+
     #[test]
     fn guessed_fields_point_at_a_field_the_schema_accepts() {
         let known = ["operation", "keywords", "contextLines", "reasoning"];
@@ -1482,8 +1504,8 @@ mod tests {
             json!({
                 "error":"'resources' in queries[0] applies only with operation:\"sections\": set it, or remove 'resources'.",
                 "details":[
-                    "queries.0.questions: Expected object",
-                    "queries.0: Send exactly one of: state, source."
+                    "queries.0.state: Missing required field: state",
+                    "queries.0.questions: Expected object"
                 ]
             })
         );

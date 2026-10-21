@@ -10,8 +10,7 @@ process environment + home .env + workspace .octocode/.env
                  ▼
       parse → protected-key policy → environment   (TypeScript: `.env` only)
                  │
-                 ├── CLI launcher / MCP server → native runtime (also reads both .octocoderc files)
-                 └── standalone Python skills  (python/octocode_config.py: home path only)
+                 └── CLI launcher / MCP server → native runtime (also reads both .octocoderc files)
 ```
 
 ## Declarative contract

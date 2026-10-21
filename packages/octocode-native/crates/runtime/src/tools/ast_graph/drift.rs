@@ -61,10 +61,10 @@ pub(crate) fn drift(
         mark_stale(&mut base_map, q);
         return Ok(Value::Object(base_map));
     }
-    let answer_empty = super::analysis::answer_is_empty(&items);
+    let cuts = ScanCuts::of(&head).union(ScanCuts::of(&base));
+    let answer_empty = super::analysis::answer_is_empty(&items, cuts);
     let (page, pagination) = paginate(items, q, budget);
     let has_more = pagination["hasMore"] == json!(true);
-    let cuts = ScanCuts::of(&head).union(ScanCuts::of(&base));
     let mut warnings = cuts.warnings(q);
     insert_supersedes(&mut base_map, q, &mut warnings);
     if !diff.comparable {

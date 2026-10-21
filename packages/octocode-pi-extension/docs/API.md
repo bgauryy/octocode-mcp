@@ -177,7 +177,7 @@ With `OCTOCODE_HOOKS=1`, `PreMessageSend` runs before team enqueue or resume, in
 
 ## Durable coordination
 
-External connections control execution. Durable requests, outcomes, shared evidence and path leases belong to `@octocodeai/octocode-agents-communication` (a local database; its [operations guide](../../octocode-agents-communication/scripts/docs/OPERATIONS.md)); ACP provides no remote database or cloud transport. For subagents use `agent`, `coordinate` and `sendMessage`: a child report and a correlated reply are separate deliveries, and a child that exits before handling mail leaves recoverable evidence.
+External connections control execution. Durable requests, outcomes, shared evidence and path leases belong to `@octocodeai/octocode-agents-communication` (a local database; its [operations guide](../../octocode-agents-communication/docs/OPERATIONS.md)); ACP provides no remote database or cloud transport. For subagents use `agent`, `coordinate` and `sendMessage`: a child report and a correlated reply are separate deliveries, and a child that exits before handling mail leaves recoverable evidence.
 
 ## Verify messaging from a checkout
 
@@ -190,4 +190,4 @@ node packages/octocode-pi-extension/scripts/live-acp-reliability.mjs --fixture -
 node packages/octocode-pi-extension/scripts/live-acp-reliability.mjs --live --max-prompts 20 --out /absolute/live-results
 ```
 
-Cases: conversation state, two overlapping connections per vendor, same-connection refusal, a pending-RPC adapter kill, saved-session loading. For the persistent native-worker check see the [operations guide](../../octocode-agents-communication/scripts/docs/OPERATIONS.md#verify-concurrent-native-workers).
+Cases: conversation state, two overlapping connections per vendor, same-connection refusal, a pending-RPC adapter kill, saved-session loading. For the persistent native-worker check see the [operations guide](../../octocode-agents-communication/docs/OPERATIONS.md#verify-concurrent-native-workers).

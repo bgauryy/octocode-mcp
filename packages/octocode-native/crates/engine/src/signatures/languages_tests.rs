@@ -14,7 +14,7 @@ fn excluded_grammars_report_unsupported_across_native_capabilities() {
         assert!(!supported_extensions().contains(&ext));
         let file = format!("fixture.{ext}");
         assert!(crate::lsp::grammar::grammar_for_file(&file).is_none());
-        let result = crate::structural::search_detailed(
+        let result = crate::structural::evaluate_source(
             "target(value);",
             &file,
             ext,

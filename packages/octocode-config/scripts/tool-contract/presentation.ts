@@ -8,7 +8,6 @@
 // the `--select` or `--view full` call that shows their schemas.
 import { buildCliInstructions } from '@octocodeai/octocode-core/mcp';
 import {
-  buildEnforcementContractIr,
   CLASIFY_SOURCE_TOOL_NAMES,
   DIRECT_TOOL_DEFINITIONS,
   getPublicToolCatalog,
@@ -84,7 +83,7 @@ export function toolHelpSection(
       'Example:',
       `  octocode ${name} ${shellQuote(exampleJson(example))}`
     );
-  lines.push('', `All fields: octocode schema ${name}`);
+  lines.push('', `Fields: octocode schema ${name} (complete: --view full)`);
   return lines.join('\n');
 }
 
@@ -113,32 +112,42 @@ function sourceSubsets(): string[][] {
 /**
  * The `catalog` row's compact field list: the published fields of each row
  * form, required first (`*`) then optional (`?`), truncated with `…`. A tool
- * with several forms labels each by its variant name and leaves the
- * `operation` discriminator to the label: `match:rule[path*, rule*, …] | …`.
+ * with several forms lists each as one flat row, alternatives joined by
+ * ` | `, the fields that tell the forms apart first with the values they
+ * take there: `[operation:"match", path*, rule*, …] | …`. The selector is a
+ * field of the row, never a wrapper around it.
  */
 export function compactFields(definition: Definition): string {
   const forms = publishedFormFields(definition.inputSchema);
   const list = (
-    fields: readonly { name: string; required: boolean }[],
+    fields: readonly {
+      name: string;
+      required: boolean;
+      values?: readonly string[];
+    }[],
     max: number
   ): string => {
-    const shown = fields
+    const selectors = fields
+      .filter(field => field.values)
+      .map(
+        field =>
+          `${field.name}${field.required ? '' : '?'}:${field
+            .values!.map(value => JSON.stringify(value))
+            .join('|')}`
+      );
+    const rest = fields.filter(field => !field.values);
+    const shown = rest
       .slice(0, max)
       .map(field => `${field.name}${field.required ? '*' : '?'}`);
-    if (fields.length > max) shown.push('…');
-    return `[${shown.join(', ')}]`;
+    if (rest.length > max) shown.push('…');
+    return `[${[...selectors, ...shown].join(', ')}]`;
   };
-  if (forms.length === 1) return list(forms[0]!, CATALOG_FIELDS_SINGLE);
-  const names = getToolSchemaVariants(definition.name).map(
-    variant => variant.name
-  );
   return forms
-    .map(
-      (fields, index) =>
-        `${names[index]}${list(
-          fields.filter(field => field.name !== 'operation'),
-          CATALOG_FIELDS_PER_FORM
-        )}`
+    .map(fields =>
+      list(
+        fields,
+        forms.length === 1 ? CATALOG_FIELDS_SINGLE : CATALOG_FIELDS_PER_FORM
+      )
     )
     .join(' | ');
 }
@@ -157,51 +166,6 @@ const view = (
 
 const fieldNames = (schema: Json): string[] =>
   Object.keys((schema.properties as Json | undefined) ?? {});
-
-/**
- * Each tool's `operation_controls` rule from the enforcement contract:
- * field → the operations that take it. The runtime rejects the field on any
- * other operation, so no per-operation view lists it there.
- */
-const OPERATION_CONTROLS: Record<
-  string,
-  Record<string, string[]>
-> = Object.fromEntries(
-  buildEnforcementContractIr().tools.flatMap(tool =>
-    (tool.rules as readonly { opcode: string; args?: unknown }[])
-      .filter(rule => rule.opcode === 'operation_controls')
-      .map(rule => [
-        tool.name,
-        (rule.args as { fields: Record<string, string[]> }).fields,
-      ])
-  )
-);
-
-/**
- * One operation's published row: a variant shared by several operations is
- * narrowed to `operation`, without the fields the runtime rejects on it.
- */
-function operationRow(tool: string, operation: string, schema: Json): Json {
-  const controls = OPERATION_CONTROLS[tool] ?? {};
-  const takes = (field: string): boolean =>
-    controls[field]?.includes(operation) ?? true;
-  const properties = Object.fromEntries(
-    Object.entries((schema.properties as Json | undefined) ?? {})
-      .filter(([field]) => takes(field))
-      .map(([field, value]) => {
-        if (field !== 'operation') return [field, value];
-        const { default: _default, ...discriminator } = value as Json;
-        return [field, { ...discriminator, enum: [operation] }];
-      })
-  );
-  return {
-    ...schema,
-    properties,
-    ...(Array.isArray(schema.required) && {
-      required: (schema.required as string[]).filter(takes),
-    }),
-  };
-}
 
 /**
  * The accepted fields the `query` view's row leaves out beyond its
@@ -230,10 +194,7 @@ function hiddenFields(
       operations
         .map(
           ([operation, schema]) =>
-            [
-              operation,
-              hidden(operationRow(name, operation, publishedJson(schema))),
-            ] as const
+            [operation, hidden(publishedJson(schema))] as const
         )
         .filter(([, fields]) => fields.length > 0)
     );
@@ -249,7 +210,6 @@ function hiddenFields(
     ? {}
     : {
         moreFields: more,
-        full: `octocode schema ${name} --view full shows every field`,
       };
 }
 
@@ -279,6 +239,7 @@ function rendered(
   return {
     views: {
       query: view(definition, row, {
+        full: `octocode schema ${name} --view full shows every field`,
         ...envelope,
         continuationFields: continuation,
         ...hiddenFields(definition, row, continuation, canonical),
@@ -293,10 +254,7 @@ function rendered(
       Object.entries(operationSchemas(inputSchema)).map(
         ([operation, schema]) => [
           `operation=${operation}`,
-          view(
-            definition,
-            operationRow(name, operation, publishedJson(schema))
-          ),
+          view(definition, publishedJson(schema)),
         ]
       )
     ),
@@ -321,9 +279,9 @@ export function buildCliPresentation(): Json {
     instructions: {
       ordinary: buildCliInstructions(),
       selection: buildCliInstructions({ selection: true }),
-      clasify: buildCliInstructions({ availableTools: ['clasify'] }),
+      clasify: buildCliInstructions({ availableTools }),
       both: buildCliInstructions({
-        availableTools: ['clasify'],
+        availableTools,
         selection: true,
       }),
     },

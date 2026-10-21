@@ -50,7 +50,7 @@ fn rule_parse_errors_have_their_own_code() {
         ("kind: not_a_real_kind", "structural.query.compileFailed"),
         ("pattern: 'fn ???'", "structural.query.compileFailed"),
     ] {
-        let single = search_detailed("fn main() {}", "fixture.rs", "rs", None, Some(rule));
+        let single = evaluate_source("fn main() {}", "fixture.rs", "rs", None, Some(rule));
         assert_eq!(single.status, "parserFailed", "{rule}");
         assert_eq!(single.diagnostics.len(), 1, "{rule}");
         assert_eq!(single.diagnostics[0].code, expected, "{rule}");
@@ -111,7 +111,7 @@ fn ast_audit_unanchored_directory_reports_unsupported_files() {
 #[test]
 fn structural_review_deep_document_keeps_recall() {
     let source = format!("const x = {}probe(){};", "[".repeat(600), "]".repeat(600));
-    let result = search_detailed(&source, "deep.ts", "ts", Some("probe()"), None);
+    let result = evaluate_source(&source, "deep.ts", "ts", Some("probe()"), None);
     assert_eq!(result.status, "ok");
     assert_eq!(result.matches.len(), 1);
 }
@@ -560,12 +560,12 @@ fn search_files_accepts_single_file_root() {
 
 #[test]
 fn detailed_search_distinguishes_empty_from_unsupported() {
-    let empty = search_detailed("const x = 1;\n", "a.ts", "ts", Some("target($X)"), None);
+    let empty = evaluate_source("const x = 1;\n", "a.ts", "ts", Some("target($X)"), None);
     assert_eq!(empty.status, "ok");
     assert!(empty.matches.is_empty());
     assert!(empty.diagnostics.is_empty());
 
-    let unsupported = search_detailed(
+    let unsupported = evaluate_source(
         "target(value);\n",
         "note.txt",
         "txt",
@@ -582,7 +582,7 @@ fn detailed_search_distinguishes_empty_from_unsupported() {
 
 #[test]
 fn detailed_search_reports_invalid_query_with_recovery() {
-    let result = search_detailed("x\n", "a.ts", "ts", Some("foo($X)"), Some("rule: {}"));
+    let result = evaluate_source("x\n", "a.ts", "ts", Some("foo($X)"), Some("rule: {}"));
     assert_eq!(result.status, "parserFailed");
     assert_eq!(result.query.kind, "invalid");
     assert_eq!(result.diagnostics[0].code, "structural.query.invalid");
@@ -591,7 +591,7 @@ fn detailed_search_reports_invalid_query_with_recovery() {
 
 #[test]
 fn ast_audit_detailed_search_reports_unknown_node_kind() {
-    let result = search_detailed(
+    let result = evaluate_source(
         "const x = 1;",
         "a.ts",
         "ts",
@@ -608,7 +608,7 @@ fn ast_audit_detailed_search_reports_unknown_node_kind() {
 #[test]
 fn detailed_search_matches_carry_the_node_kind() {
     let content = "target(value);\n";
-    let first = search_detailed(content, "a.ts", "ts", Some("target($X)"), None);
+    let first = evaluate_source(content, "a.ts", "ts", Some("target($X)"), None);
     assert_eq!(first.matches.len(), 1);
     // node_kind is populated from the matched tree-sitter node (a
     // `target(value)` call), not left None.
@@ -727,7 +727,7 @@ fn search_detailed_reports_oversize_as_truncated() {
     const CAP: usize = crate::signatures::MAX_PARSE_SIZE;
     let content = content_of_at_least(CAP + 1);
     assert!(content.len() > CAP, "fixture must be over the cap");
-    let result = search_detailed(&content, "a.ts", "ts", Some("target($X)"), None);
+    let result = evaluate_source(&content, "a.ts", "ts", Some("target($X)"), None);
     assert_eq!(
         result.status, "truncated",
         "oversize single content is a size truncation, not a parse failure"
@@ -747,7 +747,7 @@ fn search_detailed_accepts_content_at_cap() {
     const CAP: usize = crate::signatures::MAX_PARSE_SIZE;
     let content = content_of_exactly(CAP);
     assert_eq!(content.len(), CAP, "fixture must be exactly at the cap");
-    let result = search_detailed(&content, "a.ts", "ts", Some("target($X)"), None);
+    let result = evaluate_source(&content, "a.ts", "ts", Some("target($X)"), None);
     assert_eq!(result.status, "ok");
     assert_eq!(result.matches.len(), 1);
     assert!(result.diagnostics.is_empty());
@@ -1276,7 +1276,7 @@ fn search_files_separates_unsupported_from_prefilter_skips() {
 fn structural_review_pattern_depth_is_explicitly_incomplete() {
     let source = format!("const x = {}probe(){};", "[".repeat(600), "]".repeat(600));
     let pattern = format!("{}probe(){}", "[".repeat(600), "]".repeat(600));
-    let result = search_detailed(&source, "deep.ts", "ts", Some(&pattern), None);
+    let result = evaluate_source(&source, "deep.ts", "ts", Some(&pattern), None);
     assert_eq!(result.status, "truncated");
     assert!(result.matches.is_empty());
     assert_eq!(result.diagnostics[0].code, "structural.match.depthLimit");
@@ -1286,7 +1286,7 @@ fn structural_review_pattern_depth_is_explicitly_incomplete() {
 fn structural_review_backtracking_exhaustion_cannot_satisfy_negation() {
     let source = format!("probe({});", vec!["1"; 150].join(","));
     let rule = "kind: call_expression\nnot:\n  pattern: probe($$$A, $$$B, absent)";
-    let result = search_detailed(&source, "wide.ts", "ts", None, Some(rule));
+    let result = evaluate_source(&source, "wide.ts", "ts", None, Some(rule));
     assert_eq!(result.status, "truncated");
     assert!(result.matches.is_empty());
     assert_eq!(
@@ -1405,7 +1405,7 @@ fn structural_review_deep_relational_traversal_keeps_recall() {
 #[test]
 fn structural_review_compile_interruption_stays_typed_in_detailed_search() {
     octo::INTERRUPT_NEXT_COMPILE_PARSE.with(|interrupt| interrupt.set(true));
-    let result = search_detailed("probe();", "fixture.ts", "ts", Some("probe()"), None);
+    let result = evaluate_source("probe();", "fixture.ts", "ts", Some("probe()"), None);
     assert_eq!(result.status, "truncated");
     assert_eq!(result.diagnostics[0].code, "structural.parse.interrupted");
     assert_eq!(result.diagnostics[0].stage, "parse");
@@ -1635,7 +1635,7 @@ fn every_demand_counts_the_same_matches_and_a_priced_file_rebuilds_them() {
 #[test]
 fn a_rebuild_cut_by_a_limit_is_incomplete_not_changed() {
     let oversize = "x".repeat(MAX_STRUCTURAL_CONTENT_BYTES + 1);
-    let cut = search_detailed(&oversize, "big.rs", "rs", Some("$A"), None);
+    let cut = evaluate_source(&oversize, "big.rs", "rs", Some("$A"), None);
     assert_eq!(cut.status, "truncated");
     match files::Rebuilt::of(cut) {
         Rebuilt::Incomplete(diagnostics) => {
@@ -1643,6 +1643,45 @@ fn a_rebuild_cut_by_a_limit_is_incomplete_not_changed() {
         }
         Rebuilt::Matches(_) | Rebuilt::Changed => panic!("a cut rebuild is incomplete"),
     }
-    let whole = search_detailed("fn a() {}\n", "a.rs", "rs", Some("fn $N() {}"), None);
+    let whole = evaluate_source("fn a() {}\n", "a.rs", "rs", Some("fn $N() {}"), None);
     assert!(matches!(files::Rebuilt::of(whole), Rebuilt::Matches(matches) if matches.len() == 1));
+}
+
+/// A walk cut at its cap names the first candidate it left out: it and every
+/// later candidate are unread. The cap is an explicit `max_files` or the
+/// walk ceiling of an unbounded scan.
+#[test]
+fn a_capped_file_walk_names_the_first_candidate_it_left_out() {
+    let root = TmpDir::new();
+    for index in 0..6 {
+        fs::write(root.join(format!("f{index}.rs")), "fn a() {}\n").expect("write");
+    }
+    let options = |max_files| StructuralSearchFilesOptions {
+        path: root.to_string_lossy().to_string(),
+        pattern: Some("fn $N() {}".to_owned()),
+        rule: None,
+        include: None,
+        exclude_dir: None,
+        exclude: None,
+        ignore: crate::search::walk::IgnorePolicy::default(),
+        max_depth: None,
+        max_files,
+        skip_files: None,
+        max_file_bytes: None,
+    };
+    let name = |path: &Option<std::path::PathBuf>| {
+        path.as_ref()
+            .and_then(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+    };
+    let capped = search_files_detailed(options(Some(4))).expect("search");
+    assert!(capped.scan_truncated);
+    assert_eq!(capped.files.len(), 4);
+    assert_eq!(name(&capped.scan_frontier).as_deref(), Some("f4.rs"));
+    let whole = search_files_detailed(options(Some(6))).expect("search");
+    assert!(!whole.scan_truncated && whole.scan_frontier.is_none());
+    let _ceiling = crate::scan_budget::lower_walk_ceiling(3);
+    let unbounded = search_files_detailed(options(None)).expect("search");
+    assert_eq!(unbounded.scan_resume, Some(3));
+    assert_eq!(name(&unbounded.scan_frontier).as_deref(), Some("f3.rs"));
 }

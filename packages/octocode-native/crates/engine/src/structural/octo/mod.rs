@@ -10,8 +10,10 @@ mod error;
 mod line_index_support;
 mod matching;
 mod pattern;
+mod position;
 mod recovery;
 mod rule;
+mod selector;
 
 pub(super) use error::CompileError;
 pub(super) use matching::{ExecutionError, named_children, node_text, parse_tree_with_deadline};
@@ -180,6 +182,7 @@ pub(super) fn compile_matcher(
                             content,
                             deadline,
                             root,
+                            line_index: &line_index,
                         };
                         let mut captures = CaptureEnv::default();
                         if compiled.matches(candidate, Some(ancestors), &document, &mut captures)? {
@@ -224,3 +227,6 @@ fn is_document_probe(pattern: &str) -> bool {
 #[cfg(test)]
 #[path = "mod_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod rule_features_tests;

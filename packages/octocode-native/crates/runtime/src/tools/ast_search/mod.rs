@@ -15,6 +15,9 @@ mod output;
 mod paging_tests;
 #[cfg(test)]
 mod policy_tests;
+mod region;
+#[cfg(test)]
+mod region_tests;
 #[cfg(test)]
 mod rule_tests;
 mod scan_window;
@@ -24,6 +27,9 @@ mod symbols_tests;
 mod syntax;
 #[cfg(test)]
 mod test_rows;
+mod unwalked;
+#[cfg(test)]
+mod unwalked_tests;
 
 use serde_json::Value;
 
@@ -268,6 +274,11 @@ pub(super) fn cpp_header_note(
     {
         return None;
     }
+    // An optional note: a parser panic leaves the row's matches intact.
+    crate::tools::leads::best_effort(|| header_parse_note(path, source)).flatten()
+}
+
+fn header_parse_note(path: &std::path::Path, source: &str) -> Option<String> {
     let errors = |language| octocode_engine::structural::count_syntax_errors(source, language);
     let (c, cpp) = (errors("c").ok()?, errors("cpp").ok()?);
     let repair = "set language:\"cpp\" (languageGlobs for a directory).";
@@ -280,14 +291,13 @@ pub(super) fn cpp_header_note(
     if cpp > 0 {
         return None;
     }
-    let keyword = octocode_engine::portable::structural_search_detailed(
+    let keyword = octocode_engine::structural::search_detailed(
         source,
         &path.to_string_lossy(),
         Some("c"),
         None,
         Some(CPP_KEYWORD_NAMES),
     )
-    .ok()?
     .matches
     .into_iter()
     .next()?

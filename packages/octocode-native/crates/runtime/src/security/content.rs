@@ -500,7 +500,8 @@ impl ContentSecurity {
 
     pub fn sanitize_text(&self, content: &str, file_path: Option<&Path>) -> SanitizationResult {
         let path = file_path.map(|path| path.to_string_lossy());
-        let native = octocode_engine::portable::sanitize_content(content, path.as_deref());
+        let native =
+            octocode_engine::security::sanitizer::sanitize_content(content, path.as_deref());
         self.guard_native(native, file_path)
     }
 
@@ -510,8 +511,8 @@ impl ContentSecurity {
     /// mistaken for configuration; every credential pattern still applies.
     pub fn sanitize_leaf(&self, content: &str, source_path: Option<&str>) -> SanitizationResult {
         let native = match source_path {
-            Some(path) => octocode_engine::portable::sanitize_leaf(content, path),
-            None => octocode_engine::portable::sanitize_content(content, None),
+            Some(path) => octocode_engine::security::sanitizer::sanitize_leaf(content, path),
+            None => octocode_engine::security::sanitizer::sanitize_content(content, None),
         };
         self.guard_native(native, None)
     }
@@ -522,7 +523,7 @@ impl ContentSecurity {
         file_path: Option<&Path>,
     ) -> SanitizationResult {
         let native = native.unwrap_or_else(|error| SanitizationResult {
-            content: "[CONTENT-REDACTED-SANITIZER-FAILURE]".to_owned(),
+            content: octocode_engine::security::SANITIZER_FAILURE_PLACEHOLDER.to_owned(),
             has_secrets: true,
             secrets_detected: vec!["sanitizer-failure".to_owned()],
             warnings: vec![error.to_string()],
@@ -1123,7 +1124,7 @@ mod tests {
             ),
         ];
         for (content, path) in corpus {
-            let expected = octocode_engine::portable::sanitize_content(
+            let expected = octocode_engine::security::sanitizer::sanitize_content(
                 &content,
                 path.map(|path| path.to_string_lossy()).as_deref(),
             )

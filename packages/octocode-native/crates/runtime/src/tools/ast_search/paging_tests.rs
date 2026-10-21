@@ -4,7 +4,7 @@
 //! explicit count is honored exactly.
 use super::{AstSearchQuery, execute_ast};
 use crate::tools::cancel::NeverCancel;
-use crate::tools::stream_page::json_chars;
+
 use crate::tools::test_support::{Fixture, checks, simple_policy};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -115,7 +115,7 @@ fn symbol_pages_fill_the_window_and_walk_every_symbol_once() {
     );
     let mut all = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
-        let chars = json_chars(out);
+        let chars = octocode_engine::json_size::utf16_units(out).unwrap_or(0);
         assert!(chars <= WINDOW, "page {index} is {chars} chars");
         // Every page but the last is filled: a count cut leaves most of it empty.
         if out["pagination"]["hasMore"] == true {
@@ -157,7 +157,7 @@ fn directory_symbol_pages_measure_rows_as_delivered() {
     );
     let mut all = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
-        let chars = json_chars(out);
+        let chars = octocode_engine::json_size::utf16_units(out).unwrap_or(0);
         assert!(chars <= WINDOW, "page {index} is {chars} chars");
         if out["pagination"]["hasMore"] == true {
             assert!(
@@ -225,7 +225,7 @@ fn a_file_of_three_thousand_matches_pages_by_bytes_and_reaches_each_once() {
     );
     let mut cells = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
-        let chars = json_chars(out);
+        let chars = octocode_engine::json_size::utf16_units(out).unwrap_or(0);
         assert!(chars <= WINDOW, "page {index} is {chars} chars");
         cells.extend(match_cells(out));
     }
@@ -238,7 +238,7 @@ fn a_file_of_three_thousand_matches_pages_by_bytes_and_reaches_each_once() {
     // 100 rows a page was 30 calls; a filled window is about a dozen.
     assert!(outputs.len() <= 14, "{} calls", outputs.len());
     for out in &outputs[..outputs.len() - 1] {
-        let chars = json_chars(out);
+        let chars = octocode_engine::json_size::utf16_units(out).unwrap_or(0);
         assert!(
             chars * 10 >= WINDOW * 5,
             "a page of {chars} chars left the window half empty"
@@ -262,7 +262,7 @@ fn many_files_page_by_bytes_with_one_total() {
     );
     let mut cells = Vec::new();
     for (index, out) in outputs.iter().enumerate() {
-        let chars = json_chars(out);
+        let chars = octocode_engine::json_size::utf16_units(out).unwrap_or(0);
         assert!(chars <= WINDOW, "page {index} is {chars} chars");
         cells.extend(match_cells(out));
     }
@@ -310,7 +310,7 @@ fn a_syntax_tree_pages_by_bytes_and_reaches_every_node_once() {
         delivered
             .as_object_mut()
             .map(|row| row.remove("returnedBytes"));
-        let chars = json_chars(&delivered);
+        let chars = octocode_engine::json_size::utf16_units(&delivered).unwrap_or(0);
         assert!(chars <= WINDOW, "page {index} is {chars} chars");
         ids.extend(
             out["nodes"]

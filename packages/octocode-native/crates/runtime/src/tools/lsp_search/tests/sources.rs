@@ -248,7 +248,7 @@ fn member_qualified_symbol_names_anchor_on_the_last_member() {
 
 #[test]
 fn rust_context_overlays_the_engine_headless_defaults() {
-    let mut config = octocode_engine::lsp::types::JsLanguageServerConfig {
+    let mut config = octocode_engine::lsp::types::LspLanguageServerConfig {
         command: "rust-analyzer".into(),
         args: None,
         workspace_root: "/repo".into(),
@@ -287,8 +287,8 @@ fn rust_context_overlays_the_engine_headless_defaults() {
 
 fn rust_server_config(
     context: serde_json::Value,
-) -> octocode_engine::lsp::types::JsLanguageServerConfig {
-    let mut config = octocode_engine::lsp::types::JsLanguageServerConfig {
+) -> octocode_engine::lsp::types::LspLanguageServerConfig {
+    let mut config = octocode_engine::lsp::types::LspLanguageServerConfig {
         command: "rust-analyzer".into(),
         args: None,
         workspace_root: "/repo".into(),

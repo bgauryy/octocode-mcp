@@ -38,4 +38,4 @@ node <skill-folder>/scripts/provider-usage.mjs
 ## Key setup (humans)
 
 - Key: [ScrapingAnt dashboard](https://app.scrapingant.com/); API: [docs.scrapingant.com](https://docs.scrapingant.com/).
-- Set `SCRAPING_ANT` in the shell, a trusted project `.octocode/.env`, or `<HOME>/.octocode/.env`; scripts read it only via the pattern above. Keep it out of logs and chat.
+- Store and pass `SCRAPING_ANT` using [shared configuration handling](configuration.md); the commands above show this provider's consumers.

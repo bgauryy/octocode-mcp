@@ -24,7 +24,7 @@ The **Octocode home** is one folder shared by the CLI, the MCP server, the VS Co
 | `.credentials.lock` | Octocode | Serializes credential writes between processes. |
 | `skills/` | Octocode | Skills installed with `npx octocode skill install`; hosts such as Claude, Cursor, or Codex link to these copies. |
 | `stats.json` | Octocode | Clasify calls and tokens. Written only when `storage.stats` (`OCTOCODE_ENABLE_STATS=1`) is on and storage is persistent. |
-| `logs/evictions.jsonl` | Octocode | Cached checkouts that cleanup removed; `npx octocode cache status` shows recent ones. |
+| `logs/evictions.jsonl` | Octocode | Cached checkouts that cleanup removed, one JSON line each (reason, path, bytes, time). |
 | `tmp/response/` | cache | GitHub file bodies and directory listings, shared by CLI and MCP to save rate limit. |
 | `tmp/clone/` | cache | `ghCloneRepo` (CLI) checkouts, keyed by owner, repo, the commit the ref names, sparse selection, and GitHub host; may hold local edits. |
 | `tmp/materialize/v3/` | cache | Files `ghStructure` materialized at an immutable commit SHA. A manifest beside each commit directory lists the files; a directory without its manifest is cleared, never reused. |
@@ -49,7 +49,7 @@ CLI and MCP share the file-based cache roots under `OCTOCODE_HOME`; there is no 
 | When | Synchronously at native runtime start: once per CLI process and at MCP server start. No background timer. Skipped in `memory` mode or when `tmp/` does not exist. |
 | Failure | Best-effort; an unavailable or read-only cache home never blocks the CLI or MCP startup. |
 | Ownership | Only Octocode-owned directories; other `tmp/` content stays. |
-| Manual | `npx octocode cache status` prints the cache home and recent evictions; `npx octocode cache clear` deletes cached GitHub files and listings. Remove `tmp/` checkouts directly. |
+| Manual | Delete `tmp/response/` and `tmp/artifact/` to drop cached GitHub and registry responses, or a `tmp/clone/` checkout to drop it. `npx octocode config home` prints the home. |
 
 GitHub responses are cached in memory (4,096 entries, 64 MiB) and, with persistent storage, in `tmp/response/`. File bodies and directory listings (`ghGetFileContent`, the listings `ghStructure` reads) are fresh for 60 seconds, then revalidated by ETag; bodies read at a commit SHA are never revalidated. Search pages (`ghSearchCode`, `ghSearchRepo`, and the `ghSearchHistory` searches) are served from cache for 60 seconds with no request or spacing wait; a page GitHub marks incomplete is never stored. REST history reads (pull-request and commit lists, `ghGetHistoryItem`) send a conditional request every call, so a `304` skips the body. Package calls keep per-process memos. Provider, client, branch, credential, and session caches are process-local.
 
@@ -166,7 +166,7 @@ Any env var can go in the client config instead of a shell profile:
 {"mcpServers":{"octocode":{"command":"npx","args":["-y","octocode-mcp@latest"],"env":{"GITHUB_TOKEN":"ghp_...","OCTOCODE_LSP_PREWARM":"off"}}}}
 ```
 
-`npx octocode install --ide cursor` writes this entry; `install --list` prints every client id ([CLI `install`](../packages/octocode/docs/OCTOCODE_CLI.md#install--mcp-client-setup)).
+`npx octocode install --ide cursor` writes this entry; `install --list` shows every client id with its entry status and config path ([CLI `install`](../packages/octocode/docs/OCTOCODE_CLI.md#install--mcp-client-setup)).
 
 ## All settings reference
 

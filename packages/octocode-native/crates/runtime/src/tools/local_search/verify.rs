@@ -300,7 +300,7 @@ fn redact_key_block_lines<'a>(
     let fits = |value_line: &str, n: u32| {
         let core = strip_clip_markers(value_line).trim();
         source(n).is_some_and(|source| {
-            crate::security::redaction_placeholder()
+            octocode_engine::security::placeholder_regex()
                 .split(core)
                 .map(str::trim)
                 .all(|segment| segment.is_empty() || source.contains(segment))
@@ -1125,7 +1125,7 @@ fn visit_values(
                 .map(|s| s.strip_suffix('\r').unwrap_or(s))
                 .unwrap_or(&text);
             let hit = &mut file.matches[index];
-            hit.value = octocode_engine::portable::materialize_search_line(
+            hit.value = octocode_engine::search::text_parser::line_match(
                 text,
                 line,
                 hit.column,

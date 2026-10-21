@@ -5,7 +5,7 @@ description: "Use when someone wants to see or explain a system's architecture v
 
 # Octocode Architecture View
 
-tools: `npx octocode` / `octocode-mcp`
+tools: [shared Octocode MCP/CLI guide](references/octocode-usage.md)
 related-skill: `octocode-architect`
 output: `<workspace>/.octocode/` for workspace work | `<home>/.octocode/` when no workspace applies
 routes: load/run a reference, doc, script, or scheme only when it changes the next action; otherwise keep the rule here.

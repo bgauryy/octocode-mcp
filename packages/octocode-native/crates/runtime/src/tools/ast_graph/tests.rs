@@ -191,6 +191,52 @@ mod expand_scan_tests {
         }
     }
 
+    /// Restores the contract `maxFiles` maximum when a test that lowered it ends.
+    struct MaxFilesMaximum;
+    impl MaxFilesMaximum {
+        fn lower(maximum: u32) -> Self {
+            super::super::page::MAX_FILES_MAXIMUM.with(|cell| cell.set(Some(maximum)));
+            Self
+        }
+    }
+    impl Drop for MaxFilesMaximum {
+        fn drop(&mut self) {
+            super::super::page::MAX_FILES_MAXIMUM.with(|cell| cell.set(None));
+        }
+    }
+
+    /// A scan cut at `maxFiles` is a partial graph, never an empty answer:
+    /// the files it did not read may hold the cycle. At the maximum the cut
+    /// is terminal and says so; below it `expandScan` reaches the rest.
+    #[test]
+    fn a_scan_cut_graph_is_partial_never_empty() {
+        let temp = fixture(&[
+            ("a.ts", "export const a = 1;\n"),
+            ("b.ts", "export const b = 1;\n"),
+            ("c.ts", "export const c = 1;\n"),
+        ]);
+        let root = temp.0.as_path();
+        let _maximum = MaxFilesMaximum::lower(2);
+        let widenable = topology(root, json!({"operation":"cycles","maxFiles":1}));
+        let terminal = topology(root, json!({"operation":"cycles","maxFiles":2}));
+        for (out, is_terminal) in [(&widenable, false), (&terminal, true)] {
+            assert!(out.get("status").is_none(), "{out}");
+            assert_eq!(out["isPartial"], true, "{out}");
+            assert_eq!(out["partialReasons"], json!(["maxFiles"]), "{out}");
+            assert_eq!(out["coverage"]["state"], "partial", "{out}");
+            assert_eq!(out["terminalLimit"] == true, is_terminal, "{out}");
+            assert_eq!(
+                out["next"].get("expandScan").is_some(),
+                !is_terminal,
+                "{out}"
+            );
+        }
+        assert!(
+            terminal["warnings"].to_string().contains("terminal"),
+            "the terminal cut is named: {terminal}"
+        );
+    }
+
     fn drift_fixture() -> Fixture {
         fixture(&[
             ("base/a.ts", "export const a = 1\n"),
@@ -228,6 +274,40 @@ mod expand_scan_tests {
         assert!(widened["next"].get("expandScan").is_none(), "{widened}");
         let uncut = topology(root, drift_query(root, 100));
         assert_eq!(widened["nodes"], uncut["nodes"]);
+    }
+
+    /// A diff of two scan-cut graphs proves nothing about the files neither
+    /// read: it is partial, never an empty answer. Identical trees give an
+    /// empty diff, so only the cut can tell the two apart.
+    #[test]
+    fn a_scan_cut_drift_is_partial_never_empty() {
+        let same = [
+            ("a.ts", "export const a = 1;\n"),
+            ("b.ts", "export const b = 1;\n"),
+            ("c.ts", "export const c = 1;\n"),
+        ];
+        let files: Vec<(String, &str)> = ["base", "head"]
+            .iter()
+            .flat_map(|dir| {
+                same.iter()
+                    .map(move |(name, body)| (format!("{dir}/{name}"), *body))
+            })
+            .collect();
+        let borrowed: Vec<(&str, &str)> = files.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+        let temp = fixture(&borrowed);
+        let root = temp.0.as_path();
+        let uncut = topology(root, drift_query(root, 100));
+        assert_eq!(
+            uncut["status"], "empty",
+            "an uncut equal diff is empty: {uncut}"
+        );
+        let _maximum = MaxFilesMaximum::lower(2);
+        for (max_files, is_terminal) in [(1, false), (2, true)] {
+            let out = topology(root, drift_query(root, max_files));
+            assert!(out.get("status").is_none(), "{out}");
+            assert_eq!(out["isPartial"], true, "{out}");
+            assert_eq!(out["terminalLimit"] == true, is_terminal, "{out}");
+        }
     }
 
     /// A drift that skipped a file or hit the edge cap has no continuation
@@ -512,9 +592,17 @@ mod scope_refusal_tests {
                     .expect("fixture file");
             }
         }
-        for query in [
-            json!({"operation":"cycles","path":root.0.as_path()}),
-            json!({"operation":"deadCode","path":root.0.as_path(),"entrypoints":["packages/small/f0.ts"]}),
+        // An unanchored query re-roots at either admissible package; one
+        // anchored on a file only at the directory that holds it.
+        for (query, narrowing) in [
+            (
+                json!({"operation":"cycles","path":root.0.as_path()}),
+                vec!["narrowScope", "narrowScope2"],
+            ),
+            (
+                json!({"operation":"deadCode","path":root.0.as_path(),"entrypoints":["packages/small/f0.ts"]}),
+                vec!["narrowScope"],
+            ),
         ] {
             let operation = query["operation"].clone();
             let error = run(query, root.0.as_path()).expect_err("scope refused");
@@ -534,7 +622,8 @@ mod scope_refusal_tests {
                 .keys()
                 .map(String::as_str)
                 .collect();
-            assert_eq!(order, ["expandScan", "narrowScope"], "{operation}");
+            let expected: Vec<&str> = ["expandScan"].into_iter().chain(narrowing).collect();
+            assert_eq!(order, expected, "{operation}");
         }
     }
 }
@@ -1126,6 +1215,75 @@ mod review_fix_tests {
         let expand = &next["expandScan"]["query"]["queries"][0];
         assert_eq!(expand["maxFiles"], 30_000, "{next}");
         assert_eq!(expand["path"], ".", "{next}");
+    }
+
+    /// Every admissible root the refusal names is one executable re-rooting,
+    /// in the message's order (largest first), bounded like the message; a
+    /// directory over the admission bound is neither named nor offered.
+    #[test]
+    fn scope_too_broad_offers_one_re_rooting_per_admissible_directory() {
+        let temp = Fixture::new();
+        let dirs = [("d0", 2_000), ("d1", 3_000), ("d2", 2_500), ("big", 30_000)];
+        let entries = dirs
+            .iter()
+            .flat_map(|(dir, count)| files(dir, *count))
+            .chain(files("d3", 1_000))
+            .chain(files("d4", 900))
+            .chain(files("d5", 800))
+            .chain(files("d6", 700))
+            .collect::<Vec<_>>();
+        let error = refusal(
+            temp.0.as_path(),
+            json!({"operation":"cycles"}),
+            &entries,
+            false,
+        );
+        let next = error.next.expect("continuations");
+        let offered: Vec<(String, String)> = next
+            .as_object()
+            .expect("next map")
+            .iter()
+            .filter(|(name, _)| name.starts_with("narrowScope"))
+            .map(|(name, call)| {
+                (
+                    name.clone(),
+                    call["query"]["queries"][0]["path"]
+                        .as_str()
+                        .expect("path")
+                        .to_owned(),
+                )
+            })
+            .collect();
+        let expected = ["d1", "d2", "d0", "d3", "d4"];
+        assert_eq!(
+            offered
+                .iter()
+                .map(|(_, path)| path.as_str())
+                .collect::<Vec<_>>(),
+            expected,
+            "{next}"
+        );
+        assert_eq!(
+            offered
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "narrowScope",
+                "narrowScope2",
+                "narrowScope3",
+                "narrowScope4",
+                "narrowScope5"
+            ],
+        );
+        for dir in expected {
+            assert!(
+                error.message.contains(&format!("{dir} (")),
+                "{}",
+                error.message
+            );
+        }
+        assert!(!error.message.contains("big") && !error.message.contains("d5"));
     }
 
     /// A count cut short lists only directories the walk finished: never

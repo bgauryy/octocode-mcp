@@ -91,7 +91,7 @@ impl ResponsePageOptions {
             return render();
         }
         let budget = self.response_length.unwrap_or(auto_page);
-        if crate::tools::stream_page::json_chars(structured) > budget {
+        if octocode_engine::json_size::utf16_units(structured).unwrap_or(0) > budget {
             self.page_rows(budget);
             return None;
         }
@@ -191,8 +191,13 @@ impl ResponsePagination {
 fn max_response_length(tool: &str) -> usize {
     crate::contracts::tool_contract_named(tool)
         .and_then(Result::ok)
-        .and_then(|contract| contract.pointer("/inputSchema/properties/responseLength/maximum"))
-        .and_then(Value::as_u64)
+        .and_then(|contract| {
+            let input = &contract["inputSchema"];
+            crate::contracts::property_schemas(input, &input["$defs"], "responseLength")
+                .into_iter()
+                .filter_map(|schema| schema["maximum"].as_u64())
+                .min()
+        })
         .and_then(|maximum| usize::try_from(maximum).ok())
         .unwrap_or(usize::MAX)
 }
@@ -357,8 +362,9 @@ impl ResponsePager {
                 .get(rows_key(&input.tool))
                 .and_then(Value::as_array)
                 .is_some_and(|rows| {
-                    rows.iter()
-                        .any(|row| crate::tools::stream_page::json_chars(row) > length)
+                    rows.iter().any(|row| {
+                        octocode_engine::json_size::utf16_units(row).unwrap_or(0) > length
+                    })
                 });
             let mut paged = input.clone();
             paged.options.response_length = Some(length);
@@ -431,7 +437,9 @@ fn pagination_block_chars(input: &ResponseInput, pagination: &ResponsePagination
     }
     pagination_value(&page, &options).map_or(0, |value| {
         // `,"responsePagination":` around the value.
-        crate::tools::stream_page::json_chars(&value) + "responsePagination".len() + 4
+        octocode_engine::json_size::utf16_units(&value).unwrap_or(0)
+            + "responsePagination".len()
+            + 4
     })
 }
 

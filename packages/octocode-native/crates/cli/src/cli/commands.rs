@@ -161,13 +161,13 @@ pub(super) enum Command {
     Tool(ToolCommand),
 
     // ── System commands ──────────────────────────────────────────────────────
-    /// List tools with agent instructions, or print one tool's input contract.
+    /// List tools or query fields; --view full shows the complete reference.
     #[command(long_about = SCHEMA_HELP)]
     Schema {
         /// Tool name, e.g. `localSearch`. Omit to list every enabled tool.
         tool: Option<String>,
-        /// Contract view of one tool.
-        #[arg(long, value_parser = ["query", "variants", "full"], requires = "tool")]
+        /// View: query (default for a tool), variants, or full (also the catalog).
+        #[arg(long, value_parser = ["query", "variants", "full"])]
         view: Option<String>,
         /// Narrow the query view to one branch by a const field, e.g. `operation=symbols`.
         #[arg(long, value_name = "FIELD=VALUE", requires = "tool")]
@@ -211,12 +211,6 @@ pub(super) enum Command {
         #[arg(long)]
         socket: std::path::PathBuf,
     },
-    /// Show the cache home directory (`status`) or delete all cached GitHub and package registry responses (`clear`).
-    #[command(hide = true)]
-    Cache {
-        #[arg(value_enum)]
-        action: CacheAction,
-    },
     /// Manage auto-downloadable language servers (`list`, `install`, `uninstall`, `clean`, `status`).
     #[command(name = "lsp-server", hide = true)]
     LspServer {
@@ -237,24 +231,18 @@ pub(super) enum Command {
     },
 }
 
-#[derive(clap::ValueEnum, Clone, Copy, Debug)]
-pub(super) enum CacheAction {
-    /// Print the cache home directory and recent evictions.
-    Status,
-    /// Delete all cached GitHub and package registry responses.
-    Clear,
-}
+const SCHEMA_HELP: &str =
+    "Discover tools and query fields. Full reference remains available on demand.
 
-const SCHEMA_HELP: &str = "List tools with agent instructions, or print one tool's input contract.
+  octocode schema                         enabled tools and purposes
+  octocode schema <tool>                  compact query schema
+  octocode schema <tool> --select operation=symbols
+                                          one operation's query schema
+  octocode schema <tool> --view variants  required fields and examples
+  octocode schema <tool> --view full      complete tool contract
+  octocode schema --view full             fields, instructions and grammars
 
-  octocode schema                                  enabled tools, fields, agent instructions
-  octocode schema <tool>                           variants, usage, then the full contract
-  octocode schema <tool> --view query              the self-contained query schema
-  octocode schema <tool> --view query --select operation=symbols
-                                                   one branch of the query schema
-  octocode schema <tool> --view variants           branch names, selectors, examples
-
-A terminal gets indented JSON; a pipe gets one line.";
+JSON: indented on a terminal, one line on a pipe.";
 
 #[derive(Subcommand, Debug)]
 pub(super) enum ConfigCommand {

@@ -200,12 +200,9 @@ fn prune_sweeps_orphaned_temporary_files_but_not_fresh_ones() {
 }
 
 #[test]
-fn clear_removes_both_tiers_and_corrupt_files_are_dropped() {
+fn corrupt_files_are_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::<u32>::new(CacheConfig::default(), Some(dir.path().into()));
-    store.put(key("a", "x"), 1, 4, CacheClass::Immutable);
-    store.clear();
-    assert!(store.get(&key("a", "x")).is_none());
     store.put(key("b", "x"), 2, 4, CacheClass::Immutable);
     for file in json_files(dir.path()) {
         fs::write(&file, b"corrupt").unwrap();

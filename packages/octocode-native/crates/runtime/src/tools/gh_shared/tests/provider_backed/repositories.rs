@@ -79,6 +79,9 @@ async fn top_repository_leads_to_its_tree() {
     let replay: crate::contracts::tool_types::GhStructureQuery =
         serde_json::from_value(lead["query"]["queries"][0].clone())
             .expect("valid ghStructure query");
+    let crate::contracts::tool_types::GhStructureQuery::Tree(replay) = replay else {
+        panic!("repository lead must select the tree view");
+    };
     assert_eq!(replay.repo.as_str(), "top");
     let empty = run(
         &none,

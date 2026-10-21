@@ -90,7 +90,7 @@ fn validate_registry_target(base: &Url) -> Result<Option<DnsPin>, ArtifactError>
         Some(Host::Domain(name)) => {
             let dns_host = name.to_ascii_lowercase();
             let host = dns_host.trim_end_matches('.');
-            if host.is_empty() || host == "localhost" || host.ends_with(".localhost") {
+            if host.is_empty() || octocode_github::names_localhost(host) {
                 return Err(registry_target_error());
             }
             if base.scheme() == "https"
@@ -753,6 +753,23 @@ mod tests {
         }
         let public = "https://104.16.0.1/";
         assert!(validate_registry(&npm_query(Some(public)), &npm_registry(public), false).is_ok());
+    }
+
+    /// `localhost` names are refused by name, before DNS: a resolver may map
+    /// a `*.localhost` name anywhere (RFC 6761 only says it should not).
+    #[test]
+    fn a_registry_named_localhost_is_refused_without_resolving_it() {
+        for url in [
+            "http://localhost:4873/",
+            "https://LOCALHOST./",
+            "http://verdaccio.localhost/",
+            "https://a.localhost./",
+        ] {
+            let error =
+                validate_registry(&npm_query(Some(url)), &npm_registry(url), false).expect_err(url);
+            assert_eq!(error.code, "invalidInput", "{url}");
+            assert!(validate_registry(&npm_query(Some(url)), &npm_registry(url), true).is_ok());
+        }
     }
 
     #[test]

@@ -116,7 +116,7 @@ pub(super) async fn page_dates<C: octocode_github::ConditionalCache>(
 /// warning naming the count. Each row dates its whole page inline.
 pub(super) fn expand(
     value: &mut Value,
-    pinned: &GhStructureQuery,
+    pinned: &GhStructureQueryTree,
     page: &super::listing::ListingPage<'_>,
     undated: usize,
 ) -> Result<(), ProviderError> {

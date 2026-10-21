@@ -53,6 +53,7 @@ pub(crate) fn make_fifo(path: &Path) {
 }
 
 /// Whether `node` runs on this machine.
+#[cfg(unix)]
 pub(crate) fn node_available() -> bool {
     std::process::Command::new("node")
         .arg("--version")
@@ -63,6 +64,7 @@ pub(crate) fn node_available() -> bool {
 /// Gate for a test that needs `node`: `true` when it can run. Without node a
 /// local run skips the test; under `CI` it fails instead, so a runner that
 /// lacks node cannot silently lose the coverage.
+#[cfg(unix)]
 pub(crate) fn require_node() -> bool {
     if node_available() {
         return true;

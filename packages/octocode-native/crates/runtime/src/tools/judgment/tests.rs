@@ -512,3 +512,54 @@ fn per_call_usage_excludes_replayed_tokens_and_retains_unknown_attempts() {
         })
     );
 }
+
+#[tokio::test]
+async fn noncanonical_provider_answers_are_not_cached() {
+    for grouped in [false, true] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(|request: &Request| {
+                let body: Value = request.body_json().unwrap();
+                let answers: serde_json::Map<String, Value> = body["questions"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(|id| {
+                        (
+                            id.clone(),
+                            json!({"type":"noul","noul":0.9,"explanation":"extension"}),
+                        )
+                    })
+                    .collect();
+                ResponseTemplate::new(200).set_body_json(json!({
+                    "model":"jev-test","answers":answers,
+                    "usage":{"input_tokens":10,"output_tokens":2}
+                }))
+            })
+            .expect(2)
+            .mount(&server)
+            .await;
+        let evaluator = evaluator(&server);
+        let budget = evaluation_budget(&evaluator);
+        let gate = evaluator.gate();
+        let state = json!("source");
+        let questions =
+            vec![json!({"type":"noul","instructions":"Evidence?"}); if grouped { 2 } else { 1 }];
+        let input = EvaluationInput {
+            state: &state,
+            questions: &questions,
+            assets: None,
+            long_context: false,
+        };
+        for _ in 0..2 {
+            let error = evaluator
+                .evaluate_prepared(input, None, &budget, &gate)
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "invalidClassificationResponse");
+            assert_eq!(error.provider_calls, 1);
+            assert_eq!(error.usage().known_usage_calls, 1);
+        }
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+}

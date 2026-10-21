@@ -92,7 +92,8 @@ export async function startServer({ env = {}, cwd = ROOT, entry = path.join(ROOT
     const rawSc = response.result?.structuredContent;
     const sc = expandShared(rawSc);
     const entry = {
-      label, tool, args, ms: Date.now() - started, bytes: bytes ? bytes(rawSc, text) : Buffer.byteLength(text, 'utf8'), text, sc,
+      label, tool, args, ms: Date.now() - started, bytes: bytes ? bytes(rawSc, text) : Buffer.byteLength(text, 'utf8'),
+      responseBytes: Buffer.byteLength(JSON.stringify(response.result ?? response.error ?? null), 'utf8'), text, sc,
       isError: !!(response.error || response.result?.isError),
       rowErrors: collect(sc, r => r.status === 'error').length,
       ...(keepRaw && { raw: rawSc, transport: response.error?.message }),

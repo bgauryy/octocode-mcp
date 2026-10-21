@@ -5,7 +5,7 @@ use crate::lsp::spawn_limits;
 use crate::lsp::transport::{
     ClientRequestContext, CpuClock, JsonRpcConnection, ProgressTracker, Readiness, WaitBudget,
 };
-use crate::lsp::types::{JsCodeSnippet, JsExactPosition, JsLanguageServerConfig, JsRange};
+use crate::lsp::types::{LspCodeSnippet, LspExactPosition, LspLanguageServerConfig, LspRange};
 use crate::lsp::uri::{path_to_uri, uri_to_path};
 use crate::text::LineIndex;
 use serde_json::{Value, json};
@@ -106,7 +106,7 @@ const _: () = {
 /// Returns `true` if the process exited within `timeout_duration` without
 /// needing to be killed.
 async fn wait_for_graceful_exit(child: &mut Child, timeout_duration: Duration) -> bool {
-    end_child(child, timeout_duration, |pid| group_kill_pid(Some(pid))).await
+    end_child(child, timeout_duration, crate::process::kill_tree_blocking).await
 }
 
 /// Ends `child` and sweeps its process group with `sweep(pid)` on both paths:
@@ -116,10 +116,14 @@ async fn wait_for_graceful_exit(child: &mut Child, timeout_duration: Duration) -
 /// pid reserved); after the reap the pid could be recycled by an unrelated
 /// process leading its own group. The leader is reaped last, and hard-killed
 /// only when it outlived the window.
-async fn end_child(child: &mut Child, timeout_duration: Duration, sweep: impl FnOnce(u32)) -> bool {
+async fn end_child<F: std::future::Future<Output = ()>>(
+    child: &mut Child,
+    timeout_duration: Duration,
+    sweep: impl FnOnce(u32) -> F,
+) -> bool {
     let exited = exited_unreaped(child, timeout_duration).await;
     if let Some(pid) = child.id() {
-        sweep(pid);
+        sweep(pid).await;
     }
     if exited {
         let _ = child.wait().await;
@@ -139,7 +143,8 @@ async fn exited_unreaped(child: &mut Child, limit: Duration) -> bool {
     let Some(pid) = child.id() else {
         return true;
     };
-    let exit = tokio::task::spawn_blocking(move || wait_for_exit_without_reaping(pid));
+    let exit =
+        tokio::task::spawn_blocking(move || crate::process::wait_for_exit_without_reaping(pid));
     timeout(limit, exit).await.is_ok()
 }
 
@@ -149,69 +154,6 @@ async fn exited_unreaped(child: &mut Child, limit: Duration) -> bool {
     // down), so reaping here cannot misdirect a signal.
     timeout(limit, child.wait()).await.is_ok()
 }
-
-/// Blocks until `pid` (an unreaped child of this process) exits, leaving it
-/// waitable. Returns early on any error other than `EINTR` (for example
-/// `ECHILD` once it was reaped elsewhere); the caller then reaps or kills it.
-#[cfg(unix)]
-fn wait_for_exit_without_reaping(pid: u32) {
-    let id = libc::id_t::from(pid);
-    loop {
-        // SAFETY: `siginfo_t` is plain data that `waitid` fills in; zero is a
-        // valid initial value.
-        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        // SAFETY: `info` is a valid, exclusively borrowed `siginfo_t` for the
-        // call. `WNOWAIT` leaves the child waitable, so tokio's later
-        // `wait`/`kill` still reaps it.
-        let result =
-            unsafe { libc::waitid(libc::P_PID, id, &mut info, libc::WEXITED | libc::WNOWAIT) };
-        if result == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
-            return;
-        }
-    }
-}
-
-/// Put the spawned language server in its own process group so the whole tree
-/// (e.g. rust-analyzer's `proc-macro-srv`, `cargo`/build scripts) can be killed
-/// as a unit. Without this a hard kill signals only the direct child and leaks
-/// its grandchildren to init. On Windows the Job Object attached right after
-/// spawn (`MemoryCapGuard`) serves the same tree-teardown role.
-#[cfg(unix)]
-fn configure_lsp_process_group(command: &mut tokio::process::Command) {
-    command.process_group(0);
-}
-
-#[cfg(not(unix))]
-fn configure_lsp_process_group(_command: &mut tokio::process::Command) {}
-
-/// Best-effort SIGKILL of the child's entire process group before reaping the
-/// leader, so grandchildren die with it. No-op on non-Unix, where the Job
-/// Object handles tree teardown when the guard is dropped.
-#[cfg(unix)]
-fn group_kill(child: &Child) {
-    group_kill_pid(child.id());
-}
-
-/// Group-kill by a previously-captured pid. Callers that have already reaped the
-/// child (e.g. after a graceful `child.wait()`) must use this, because
-/// `Child::id()` returns `None` post-reap and would make the sweep a no-op.
-#[cfg(unix)]
-fn group_kill_pid(pid: Option<u32>) {
-    if let Some(pid) = pid {
-        // SAFETY: the child is spawned as its own process-group leader (see
-        // `configure_lsp_process_group`), so the negative pid targets exactly
-        // that group. `kill` with an invalid/dead group is a harmless no-op.
-        unsafe {
-            libc::kill(-(pid as i32), libc::SIGKILL);
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn group_kill(_child: &Child) {}
-
-#[cfg(not(unix))]
-fn group_kill_pid(_pid: Option<u32>) {}
 
 async fn lsp_spawn_program(validated_command: &str, args: &mut Vec<String>) -> Result<String> {
     if executable_has_node_shebang(validated_command).await? {
@@ -496,7 +438,7 @@ pub struct NativeLspClient {
 /// methods take `connection` alone and never while holding it acquire
 /// `child`. The `StdMutex` fields are leaf locks held only for a copy.
 struct NativeLspClientInner {
-    config: JsLanguageServerConfig,
+    config: LspLanguageServerConfig,
     child: Mutex<Option<Child>>,
     // Stored behind an `Arc` so callers can clone a handle out from under the
     // lock and then release the guard BEFORE awaiting the (potentially
@@ -541,7 +483,7 @@ struct NativeLspClientInner {
     /// outlive the child and be released only after the child is reaped
     /// (closing a kill-on-close job hard-kills the tree). Unit on Unix, where
     /// the watchdog (or `pre_exec` on other Unix targets) applies the cap.
-    memory_cap_guard: StdMutex<Option<spawn_limits::MemoryCapGuard>>,
+    memory_cap_guard: StdMutex<Option<crate::process::Job>>,
     /// macOS and Linux: the RSS watchdog enforcing `max_memory_mb` on the
     /// server tree. Dropped (aborted) by `stop` before the child is reaped.
     memory_watchdog: StdMutex<Option<spawn_limits::AbortOnDrop>>,
@@ -563,27 +505,9 @@ struct CachedResponse {
 
 impl CachedResponse {
     fn new(value: Arc<Value>) -> Self {
-        let json_bytes = json_len(&value);
+        let json_bytes = crate::json_size::bytes(value.as_ref()).unwrap_or(0);
         Self { value, json_bytes }
     }
-}
-
-/// Serialized JSON length of `value`, counted without building the text.
-fn json_len(value: &Value) -> usize {
-    struct Count(usize);
-    impl std::io::Write for Count {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0 += bytes.len();
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let mut count = Count(0);
-    // Writing a `Value` to an infallible sink cannot fail.
-    let _ = serde_json::to_writer(&mut count, value);
-    count.0
 }
 
 /// Response reuse for one lspSearch call. `generation` is part of every
@@ -618,7 +542,7 @@ fn response_cache() -> moka::sync::Cache<String, CachedResponse> {
 }
 
 impl NativeLspClient {
-    pub fn new(config: JsLanguageServerConfig) -> Self {
+    pub fn new(config: LspLanguageServerConfig) -> Self {
         // Every launch path (discovery, runtime, napi) gets the per-server
         // safe defaults; user-supplied options still win key by key.
         let mut config = config;
@@ -717,7 +641,7 @@ impl NativeLspClient {
         let mut command_args = self.inner.config.args.clone().unwrap_or_default();
         let command_program = lsp_spawn_program(&validated_command, &mut command_args).await?;
         let mut command = tokio::process::Command::new(&command_program);
-        configure_lsp_process_group(&mut command);
+        crate::process::contain(command.as_std_mut());
         command
             .args(command_args)
             .current_dir(&self.inner.config.workspace_root)
@@ -754,7 +678,7 @@ impl NativeLspClient {
         let mut child = command
             .spawn()
             .map_err(|err| Error::new(format!("Failed to start language server: {err}")))?;
-        let memory_cap_guard = match spawn_limits::MemoryCapGuard::attach(&child, memory_cap) {
+        let memory_cap_guard = match crate::process::Job::attach_async(&child, memory_cap) {
             Ok(guard) => guard,
             Err(error) => {
                 cleanup_failed_start(&mut child, None).await;
@@ -1206,7 +1130,9 @@ impl Drop for NativeLspClientInner {
             // status if it has already terminated; if it has not yet, `kill_on_drop`
             // on the spawn command remains the backstop when `child` is dropped
             // here (it registers the pid with tokio's orphan reaper).
-            group_kill(&child);
+            if let Some(pid) = child.id() {
+                crate::process::kill_tree(pid);
+            }
             let _ = child.start_kill();
             let _ = child.try_wait();
         }
@@ -1485,7 +1411,7 @@ impl NativeLspClient {
         character: u32,
         policy: &SnippetReadPolicy,
         settle: Option<Duration>,
-    ) -> Result<Vec<JsCodeSnippet>> {
+    ) -> Result<Vec<LspCodeSnippet>> {
         let uri = path_to_uri(&file_path)?;
         let mut params = json!({
             "textDocument": { "uri": uri },
@@ -1748,7 +1674,7 @@ fn capability_value_supported(value: &Value) -> bool {
 
 async fn initialize(
     connection: &JsonRpcConnection,
-    config: &JsLanguageServerConfig,
+    config: &LspLanguageServerConfig,
 ) -> Result<Value> {
     let params = initialize_params(config)?;
     connection
@@ -1756,7 +1682,7 @@ async fn initialize(
         .await
 }
 
-fn initialize_params(config: &JsLanguageServerConfig) -> Result<Value> {
+fn initialize_params(config: &LspLanguageServerConfig) -> Result<Value> {
     let root_uri = path_to_uri(&config.workspace_root)?;
     let mut params = json!({
         "processId": std::process::id(),
@@ -1825,7 +1751,7 @@ fn initialize_params(config: &JsLanguageServerConfig) -> Result<Value> {
 async fn snippets_from_locations(
     value: &Value,
     policy: &SnippetReadPolicy,
-) -> Result<Vec<JsCodeSnippet>> {
+) -> Result<Vec<LspCodeSnippet>> {
     let mut snippets = Vec::new();
     let mut content_cache = SnippetContentCache::new(policy.clone());
     match value {
@@ -1893,7 +1819,7 @@ impl SnippetContentCache {
 
     /// Whole-line snippet for `range`, [`SNIPPET_CONTENT_WITHHELD`] when the
     /// policy refuses the path, or the read error.
-    async fn read_range_content(&mut self, file_path: &str, range: &JsRange) -> Result<String> {
+    async fn read_range_content(&mut self, file_path: &str, range: &LspRange) -> Result<String> {
         if !self.files.contains_key(file_path) {
             let entry = match self.policy.shared_read(file_path) {
                 Some(shared) => shared,
@@ -1950,7 +1876,7 @@ pub(crate) fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<S
 async fn snippet_from_location_like(
     value: &Value,
     content_cache: &mut SnippetContentCache,
-) -> Result<Option<JsCodeSnippet>> {
+) -> Result<Option<LspCodeSnippet>> {
     let uri = value
         .get("uri")
         .or_else(|| value.get("targetUri"))
@@ -1978,7 +1904,7 @@ async fn snippet_from_location_like(
         Ok(text) => text,
         Err(err) => format!("[content unavailable — could not read {uri}: {err}]"),
     };
-    Ok(Some(JsCodeSnippet {
+    Ok(Some(LspCodeSnippet {
         uri: uri.to_owned(),
         range,
         content,
@@ -1996,14 +1922,14 @@ async fn snippet_from_location_like(
     }))
 }
 
-fn parse_range(value: &Value) -> Result<JsRange> {
+fn parse_range(value: &Value) -> Result<LspRange> {
     let start = value
         .get("start")
         .ok_or_else(|| Error::new("LSP range missing start"))?;
     let end = value
         .get("end")
         .ok_or_else(|| Error::new("LSP range missing end"))?;
-    Ok(JsRange {
+    Ok(LspRange {
         start: parse_position(start)?,
         end: parse_position(end)?,
     })
@@ -2101,7 +2027,7 @@ fn truncate_stderr_line(line: String) -> String {
 fn cpu_clock_for(child: &Child) -> Option<CpuClock> {
     #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     {
-        let clock = crate::lsp::process_tree::TreeCpuClock::new(child.id()?);
+        let clock = crate::process::TreeCpuClock::new(child.id()?);
         Some(Arc::new(move || clock.read()))
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
@@ -2159,14 +2085,16 @@ fn memory_watchdog_for(
 }
 
 async fn cleanup_failed_start(child: &mut Child, stderr_task: Option<JoinHandle<()>>) {
-    group_kill(child);
+    if let Some(pid) = child.id() {
+        crate::process::kill_tree_blocking(pid).await;
+    }
     let _ = child.kill().await;
     if let Some(task) = stderr_task {
         task.abort();
     }
 }
 
-fn parse_position(value: &Value) -> Result<JsExactPosition> {
+fn parse_position(value: &Value) -> Result<LspExactPosition> {
     // Required, numeric fields. Coercing a missing/malformed line or character
     // to 0 silently mis-positions snippets and masks protocol/server corruption,
     // so validate and surface InvalidArg instead.
@@ -2179,7 +2107,7 @@ fn parse_position(value: &Value) -> Result<JsExactPosition> {
         .and_then(Value::as_u64)
         .ok_or_else(|| Error::new("LSP position missing numeric 'character'"))?;
     let out_of_range = |field: &str| Error::new(format!("LSP position '{field}' exceeds u32"));
-    Ok(JsExactPosition {
+    Ok(LspExactPosition {
         line: u32::try_from(line).map_err(|_| out_of_range("line"))?,
         character: u32::try_from(character).map_err(|_| out_of_range("character"))?,
     })
@@ -2194,7 +2122,7 @@ fn parse_position(value: &Value) -> Result<JsExactPosition> {
 ///
 /// Lines break on `\r\n`, `\n`, and lone `\r` (as the server counts them),
 /// using the source's precomputed line index.
-fn slice_range_content(source: &CachedSource, range: &JsRange) -> String {
+fn slice_range_content(source: &CachedSource, range: &LspRange) -> String {
     let line_count = source.lines.content_len();
     let start = range.start.line as usize;
     if start >= line_count {

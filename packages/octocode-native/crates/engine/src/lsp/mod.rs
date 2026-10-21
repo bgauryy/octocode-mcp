@@ -7,7 +7,6 @@ pub(crate) mod grammar;
 pub mod managed;
 mod module_path;
 pub mod pool;
-mod process_tree;
 mod project_config;
 pub mod resolver;
 mod spawn_limits;

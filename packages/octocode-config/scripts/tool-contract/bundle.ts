@@ -10,7 +10,8 @@ import {
   type EnforcementContractIr,
 } from '@octocodeai/octocode-core/schema';
 
-export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export type Json =
+  null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
 
 type ToolRecord = {
@@ -23,7 +24,8 @@ type ToolRecord = {
 const isObject = (value: Json | undefined): value is JsonObject =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 
-export const pascal = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
+export const pascal = (value: string): string =>
+  value.charAt(0).toUpperCase() + value.slice(1);
 
 /** `workspace:uri` → `WorkspaceUri`, `anchored` → `Anchored`. */
 const typeName = (title: string): string =>
@@ -39,7 +41,7 @@ function sortKeys(value: Json): Json {
   return Object.fromEntries(
     Object.keys(value)
       .sort()
-      .map((key) => [key, sortKeys(value[key] as Json)])
+      .map(key => [key, sortKeys(value[key] as Json)])
   );
 }
 
@@ -53,7 +55,8 @@ function withoutAnnotations(value: Json): Json {
   );
 }
 
-const shapeKey = (value: Json): string => JSON.stringify(sortKeys(withoutAnnotations(value)));
+const shapeKey = (value: Json): string =>
+  JSON.stringify(sortKeys(withoutAnnotations(value)));
 
 class Definitions {
   readonly defs: Record<string, Json> = {};
@@ -71,10 +74,14 @@ class Definitions {
    * named by the title; use-site annotations stay at the use site.
    */
   hoistTitles(value: Json, root = true): Json {
-    if (Array.isArray(value)) return value.map((item) => this.hoistTitles(item, false));
+    if (Array.isArray(value))
+      return value.map(item => this.hoistTitles(item, false));
     if (!isObject(value)) return value;
     const walked = Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [key, this.hoistTitles(child, false)])
+      Object.entries(value).map(([key, child]) => [
+        key,
+        this.hoistTitles(child, false),
+      ])
     );
     if (root || typeof walked.title !== 'string') return walked;
     const name = typeName(walked.title);
@@ -85,6 +92,60 @@ class Definitions {
       ...(description === undefined ? {} : { description }),
       ...(fallback === undefined ? {} : { default: fallback }),
     };
+  }
+
+  reuseQuery(inputName: string, queryName: string): void {
+    const target = `#/$defs/${queryName}`;
+    const resolve = (reference: string): Json | undefined =>
+      reference.startsWith('#/$defs/')
+        ? this.defs[reference.slice('#/$defs/'.length)]
+        : undefined;
+    const expand = (schema: Json, active = new Set<string>()): Json => {
+      if (Array.isArray(schema))
+        return schema.map(value => expand(value, active));
+      if (!isObject(schema)) return schema;
+      const clean = withoutAnnotations(schema) as JsonObject;
+      const reference = clean.$ref;
+      if (
+        typeof reference === 'string' &&
+        Object.keys(clean).length === 1 &&
+        !active.has(reference)
+      ) {
+        const resolved = resolve(reference);
+        if (resolved !== undefined)
+          return expand(resolved, new Set([...active, reference]));
+      }
+      return Object.fromEntries(
+        Object.entries(clean).map(([key, value]) => [
+          key,
+          expand(value, active),
+        ])
+      );
+    };
+    const expected = shapeKey(expand(this.defs[queryName] as Json));
+    const visited = new Set<JsonObject>();
+    const visit = (schema: Json | undefined): void => {
+      if (!isObject(schema) || visited.has(schema)) return;
+      visited.add(schema);
+      if (typeof schema.$ref === 'string') visit(resolve(schema.$ref));
+      const queries = isObject(schema.properties)
+        ? schema.properties.queries
+        : undefined;
+      const seenArrays = new Set<JsonObject>();
+      const visitArray = (array: Json | undefined): void => {
+        if (!isObject(array) || seenArrays.has(array)) return;
+        seenArrays.add(array);
+        if (typeof array.$ref === 'string') visitArray(resolve(array.$ref));
+        if (array.items && shapeKey(expand(array.items)) === expected)
+          array.items = { $ref: target };
+      };
+      visitArray(queries);
+      for (const key of ['anyOf', 'oneOf', 'allOf']) {
+        const branches = schema[key];
+        if (Array.isArray(branches)) branches.forEach(visit);
+      }
+    };
+    visit(this.defs[inputName]);
   }
 }
 
@@ -97,7 +158,10 @@ function stringConstsAsEnums(value: Json): Json {
   if (Array.isArray(value)) return value.map(stringConstsAsEnums);
   if (!isObject(value)) return value;
   const walked = Object.fromEntries(
-    Object.entries(value).map(([key, child]) => [key, stringConstsAsEnums(child)])
+    Object.entries(value).map(([key, child]) => [
+      key,
+      stringConstsAsEnums(child),
+    ])
   );
   if (typeof walked.const === 'string' && walked.enum === undefined) {
     const { const: constant, ...rest } = walked;
@@ -108,10 +172,17 @@ function stringConstsAsEnums(value: Json): Json {
 
 /** The union keyword a schema branches on, as authored. */
 const unionKey = (schema: JsonObject): 'oneOf' | 'anyOf' | undefined =>
-  Array.isArray(schema.oneOf) ? 'oneOf' : Array.isArray(schema.anyOf) ? 'anyOf' : undefined;
+  Array.isArray(schema.oneOf)
+    ? 'oneOf'
+    : Array.isArray(schema.anyOf)
+      ? 'anyOf'
+      : undefined;
 
 const singleValue = (schema: Json | undefined): string | undefined =>
-  isObject(schema) && Array.isArray(schema.enum) && schema.enum.length === 1 && typeof schema.enum[0] === 'string'
+  isObject(schema) &&
+  Array.isArray(schema.enum) &&
+  schema.enum.length === 1 &&
+  typeof schema.enum[0] === 'string'
     ? schema.enum[0]
     : undefined;
 
@@ -126,36 +197,50 @@ const singleValue = (schema: Json | undefined): string | undefined =>
 function nameUntaggableVariants(schema: JsonObject, owner: string): JsonObject {
   const key = unionKey(schema);
   const branches = key ? schema[key] : undefined;
-  if (!key || !Array.isArray(branches) || !branches.every((branch) => isObject(branch) && branch.title === undefined)) {
+  if (
+    !key ||
+    !Array.isArray(branches) ||
+    !branches.every(branch => isObject(branch) && branch.title === undefined)
+  ) {
     return schema;
   }
   const objects = branches as JsonObject[];
-  const properties = (branch: JsonObject): JsonObject => (isObject(branch.properties) ? branch.properties : {});
-  const discriminators = Object.keys(properties(objects[0] ?? {})).filter((key) =>
-    objects.every((branch) => singleValue(properties(branch)[key]) !== undefined)
+  const properties = (branch: JsonObject): JsonObject =>
+    isObject(branch.properties) ? branch.properties : {};
+  const discriminators = Object.keys(properties(objects[0] ?? {})).filter(key =>
+    objects.every(branch => singleValue(properties(branch)[key]) !== undefined)
   );
   const valuesOf = (key: string): string[] =>
-    objects.map((branch) => singleValue(properties(branch)[key]) as string);
+    objects.map(branch => singleValue(properties(branch)[key]) as string);
   const required = (branch: JsonObject): string[] =>
-    Array.isArray(branch.required) ? branch.required.filter((key): key is string => typeof key === 'string') : [];
+    Array.isArray(branch.required)
+      ? branch.required.filter((key): key is string => typeof key === 'string')
+      : [];
   // A required discriminator with unique values lets typify tag the enum
   // itself. Optional discriminators cannot be serde tags; their values name variants.
   if (
     discriminators.some(
-      (key) =>
-        new Set(valuesOf(key)).size === objects.length && objects.every((branch) => required(branch).includes(key))
+      key =>
+        new Set(valuesOf(key)).size === objects.length &&
+        objects.every(branch => required(branch).includes(key))
     )
   ) {
     return schema;
   }
   const [discriminator] = discriminators;
-  if (!discriminator) return nameByOwnField(objects, owner, required, schema, key);
+  if (!discriminator)
+    return nameByOwnField(objects, owner, required, schema, key);
   const values = valuesOf(discriminator);
   const titled = objects.map((branch, index) => {
     const value = values[index] as string;
-    const peers = objects.filter((_, other) => other !== index && values[other] === value);
-    const own = required(branch).find((key) => peers.every((peer) => !required(peer).includes(key)));
-    const suffix = peers.length === 0 ? '' : own ? typeName(own) : String(index);
+    const peers = objects.filter(
+      (_, other) => other !== index && values[other] === value
+    );
+    const own = required(branch).find(key =>
+      peers.every(peer => !required(peer).includes(key))
+    );
+    const suffix =
+      peers.length === 0 ? '' : own ? typeName(own) : String(index);
     return { ...branch, title: `${owner}${typeName(value)}${suffix}` };
   });
   return { ...schema, [key]: titled };
@@ -174,34 +259,65 @@ function nameByOwnField(
 ): JsonObject {
   const names = objects.map((branch, index) => {
     const peers = objects.filter((_, other) => other !== index);
-    const own = required(branch).find((key) => peers.every((peer) => !required(peer).includes(key)));
+    const own = required(branch).find(key =>
+      peers.every(peer => !required(peer).includes(key))
+    );
     return own === undefined ? undefined : `${owner}${typeName(own)}`;
   });
   const titles = names.filter((name): name is string => name !== undefined);
-  if (titles.length !== objects.length || new Set(titles).size !== titles.length) return schema;
-  return { ...schema, [key]: objects.map((branch, index) => ({ ...branch, title: titles[index] as string })) };
+  if (
+    titles.length !== objects.length ||
+    new Set(titles).size !== titles.length
+  )
+    return schema;
+  return {
+    ...schema,
+    [key]: objects.map((branch, index) => ({
+      ...branch,
+      title: titles[index] as string,
+    })),
+  };
 }
 
-export function buildToolTypesBundle(ir: EnforcementContractIr = buildEnforcementContractIr()): {
+export function buildToolTypesBundle(
+  ir: EnforcementContractIr = buildEnforcementContractIr()
+): {
   fingerprint: string;
   bundle: JsonObject;
 } {
   const definitions = new Definitions();
   const register = (name: string, source: JsonObject): void => {
-    const { $schema: _schema, $defs: inner = {}, title: _title, ...body } = source;
+    const {
+      $schema: _schema,
+      $defs: inner = {},
+      title: _title,
+      ...body
+    } = source;
     const normalize = (schema: Json, owner?: string): Json => {
       const exclusive = stringConstsAsEnums(schema);
-      return definitions.hoistTitles(owner && isObject(exclusive) ? nameUntaggableVariants(exclusive, owner) : exclusive);
+      return definitions.hoistTitles(
+        owner && isObject(exclusive)
+          ? nameUntaggableVariants(exclusive, owner)
+          : exclusive
+      );
     };
     for (const [local, schema] of Object.entries(inner as JsonObject)) {
       // Zod emits `__schemaN` for a cyclic schema core left unnamed; a
       // generated type needs a stable, core-owned name.
       if (/^__schema\d+$/.test(local)) {
-        throw new Error(`${name} has an unnamed recursive schema (${local}); name it in core with .meta({ id })`);
+        throw new Error(
+          `${name} has an unnamed recursive schema (${local}); name it in core with .meta({ id })`
+        );
       }
-      definitions.add(local, { ...(normalize(schema) as JsonObject), title: local });
+      definitions.add(local, {
+        ...(normalize(schema) as JsonObject),
+        title: local,
+      });
     }
-    definitions.add(name, { ...(normalize(body, name) as JsonObject), title: name });
+    definitions.add(name, {
+      ...(normalize(body, name) as JsonObject),
+      title: name,
+    });
   };
   for (const tool of ir.tools as unknown as ToolRecord[]) {
     const base = pascal(tool.name);
@@ -210,11 +326,7 @@ export function buildToolTypesBundle(ir: EnforcementContractIr = buildEnforcemen
     register(`${base}Output`, tool.outputSchema);
     // The bulk envelope repeats the row schema; reference the Query type so
     // both languages expose one row type, not two.
-    const input = definitions.defs[`${base}Input`] as JsonObject;
-    const queries = (input.properties as JsonObject | undefined)?.queries;
-    if (isObject(queries) && queries.items && shapeKey(queries.items) === shapeKey(definitions.defs[`${base}Query`] as Json)) {
-      queries.items = { $ref: `#/$defs/${base}Query` };
-    }
+    definitions.reuseQuery(`${base}Input`, `${base}Query`);
   }
   const names = Object.keys(definitions.defs).sort();
   return {
@@ -223,7 +335,9 @@ export function buildToolTypesBundle(ir: EnforcementContractIr = buildEnforcemen
       $schema: 'https://json-schema.org/draft/2020-12/schema',
       $comment: `@generated by @octocodeai/config scripts/generate-tool-contract.ts from contract ${ir.fingerprint}; do not edit.`,
       title: 'OctocodeToolTypes',
-      $defs: Object.fromEntries(names.map((name) => [name, definitions.defs[name] as Json])),
+      $defs: Object.fromEntries(
+        names.map(name => [name, definitions.defs[name] as Json])
+      ),
     },
   };
 }

@@ -2,8 +2,8 @@
  * Refuse network requests to non-public hosts, so a page, a ledger row, or a prompt-injected agent cannot
  * steer a script at internal services or cloud metadata. Checks the literal host, every redirect hop, and
  * the DNS answer the connection actually uses (the check runs inside the socket's lookup, so a name that
- * answers differently the second time cannot slip through). Kept identical in octocode-brainstorming and
- * octocode-scraping because each skill installs on its own.
+ * answers differently the second time cannot slip through).
+ * Source: skills/common/scripts/lib/net-guard.mjs; regenerate installed copies with skills/common/build.mjs.
  */
 import { lookup } from 'node:dns/promises';
 import { lookup as lookupCallback } from 'node:dns';

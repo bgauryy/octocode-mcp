@@ -6,6 +6,7 @@ mod drift;
 mod edges;
 mod freshness;
 mod graph;
+mod js_paths;
 mod linking;
 mod liveness;
 mod memo;

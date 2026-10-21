@@ -5,10 +5,11 @@
  * user has approved the plan. Only HTTPS URLs on public hosts, allowed content types, and files under the size
  * cap are accepted.
  */
+import { fail } from './lib/fail.mjs';
+import { isMainModule } from './lib/entrypoint.mjs';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { guardedFetch, urlProblem as guardProblem } from './lib/net-guard.mjs';
 
 const USAGE = `Usage: fetch-asset.mjs --run-dir <workspace>/.octocode/octocode-brainstorming/tmp/<run> --url <https-url> [--url ...] [--max-mb <1-100>] [--approve]
@@ -41,10 +42,6 @@ export const TYPES = {
   'image/svg+xml': '.svg',
 };
 
-function fail(code, message, exitCode = 1) {
-  console.log(JSON.stringify({ ok: false, error: { code, message } }));
-  process.exit(exitCode);
-}
 
 /** Why a URL may not be fetched, or null when it may: HTTPS on a public host only. */
 export function urlProblem(raw) {
@@ -103,9 +100,7 @@ async function download(plan, assetsDir, maxBytes, manifest) {
   return { url: plan.url, finalUrl: res.finalUrl, file, contentType: type, bytes: data.length, sha256, fetchedAt: new Date().toISOString() };
 }
 
-// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
-const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
-if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) { console.log(USAGE); process.exit(0); }
   const opts = { urls: [], runDir: null, maxMb: 25, approve: false };

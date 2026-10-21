@@ -42,6 +42,7 @@ Before and after the change, run realistic requests and edge cases: action clear
 
 | When | Read | Why |
 |---|---|---|
+| Repository evidence needs Octocode | [MCP/CLI guide](references/octocode-usage.md) | Discovery, invocation, complete reads, recovery |
 | Wording, tags, techniques, loaders | [Writing](references/writing.md) | Techniques, effective context |
 | Tool descriptions, schemas, MCP wire | [Tools](references/tools.md) | Layer owners, set audit |
 | Delegation, handoffs, base prompts, cross-app payloads | [Agents](references/agents.md) | Frozen base, Zod packet |

@@ -8,16 +8,15 @@ pub(crate) use content::{
     redact_private_key_blocks, snippet_may_hold_key_material,
 };
 pub use content::{ContentSecurity, ValidationResult};
-pub(crate) use walk::redaction_placeholder;
 pub use walk::sanitize_json;
 
 /// Secret-scrubbed host-boundary error text. A secret echoed by a remote
 /// server or embedded in a provider payload is redacted; a sanitizer failure
 /// fails closed to a redaction placeholder.
 pub fn scrub_error_text(text: &str) -> String {
-    octocode_engine::portable::sanitize_content(text, None)
+    octocode_engine::security::sanitizer::sanitize_content(text, None)
         .map(|result| result.content)
-        .unwrap_or_else(|_| "[CONTENT-REDACTED-SANITIZER-FAILURE]".to_owned())
+        .unwrap_or_else(|_| octocode_engine::security::SANITIZER_FAILURE_PLACEHOLDER.to_owned())
 }
 
 /// [`scrub_error_text`] over every string leaf of an error payload.

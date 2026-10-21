@@ -8,11 +8,12 @@ function validator() {
 }
 
 export function createQueryDefaults(tools, ajv = validator()) {
-  const schemas = new Map(tools.map(tool => [tool.name, tool.inputSchema]));
+  const schemas = new Map(tools.map(tool => [tool.name, { root: tool.querySchema ?? tool.inputSchema, isRow: tool.querySchema !== undefined }]));
   const checks = new WeakMap();
   return (tool, query) => {
-    const root = schemas.get(tool);
-    if (!root) return {};
+    const entry = schemas.get(tool);
+    if (!entry?.root) return {};
+    const { root, isRow } = entry;
     const resolve = schema => {
       const seen = new Set();
       while (schema?.$ref?.startsWith('#/') && !seen.has(schema)) {
@@ -47,6 +48,18 @@ export function createQueryDefaults(tools, ajv = validator()) {
       }
       return defaults;
     };
-    return collect(root.properties.queries.items);
+    if (isRow) return collect(root);
+    const members = (schema, key, seen = new Set()) => {
+      schema = resolve(schema);
+      if (!schema || typeof schema !== 'object' || seen.has(schema)) return [];
+      seen.add(schema);
+      return [
+        ...(Object.hasOwn(schema, key) ? [schema[key]] : []),
+        ...['allOf', 'anyOf', 'oneOf'].flatMap(union =>
+          (schema[union] ?? []).flatMap(branch => members(branch, key, seen))),
+      ];
+    };
+    const rows = members(root, 'properties').flatMap(properties => members(properties.queries, 'items'));
+    return collect({ anyOf: rows });
   };
 }

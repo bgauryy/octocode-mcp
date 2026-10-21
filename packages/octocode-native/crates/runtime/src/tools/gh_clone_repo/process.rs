@@ -1,5 +1,5 @@
 use super::CloneError;
-use crate::tools::bounded_process::{BoundedError, run_bounded};
+use crate::tools::bounded_process::{BoundedError, run_bounded, run_bounded_records};
 use crate::tools::cancel::CancellationCheck;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::ffi::OsString;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-const MAX_OUTPUT_BYTES: usize = 5 * 1024 * 1024;
+pub(super) const MAX_OUTPUT_BYTES: usize = 5 * 1024 * 1024;
 
 pub struct GitRunRequest<'a> {
     pub args: Vec<OsString>,
@@ -58,11 +58,20 @@ pub struct GitOutput {
     pub stderr: String,
 }
 
+type RecordConsumer<'a> = dyn FnMut(&[u8]) -> Result<(), CloneError> + Send + 'a;
+
 pub trait GitRunner: Send + Sync {
     fn run(
         &self,
         request: &GitRunRequest<'_>,
         control: &GitRunControl<'_>,
+    ) -> Result<GitOutput, CloneError>;
+
+    fn run_nul_records(
+        &self,
+        request: &GitRunRequest<'_>,
+        control: &GitRunControl<'_>,
+        record: &mut (dyn FnMut(&[u8]) -> Result<(), CloneError> + Send),
     ) -> Result<GitOutput, CloneError>;
 
     fn assert_available(&self, control: &GitRunControl<'_>) -> Result<(), CloneError> {
@@ -280,11 +289,12 @@ fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
-impl GitRunner for SystemGit {
-    fn run(
+impl SystemGit {
+    fn execute(
         &self,
         request: &GitRunRequest<'_>,
         control: &GitRunControl<'_>,
+        records: Option<&mut RecordConsumer<'_>>,
     ) -> Result<GitOutput, CloneError> {
         control
             .cancellation
@@ -311,20 +321,32 @@ impl GitRunner for SystemGit {
         let timeout = request
             .timeout
             .min(control.deadline.saturating_duration_since(Instant::now()));
-        let output = run_bounded(
-            self.command(request, &git_home, askpass.as_ref()),
-            &format!("git {}", request.label),
-            timeout,
-            MAX_OUTPUT_BYTES,
-            control.cancellation,
-        )
+        let command = self.command(request, &git_home, askpass.as_ref());
+        let label = format!("git {}", request.label);
+        let output = match records {
+            Some(record) => run_bounded_records(
+                command,
+                &label,
+                timeout,
+                MAX_OUTPUT_BYTES,
+                control.cancellation,
+                &mut |line| record(line).map_err(|error| error.message),
+            ),
+            None => run_bounded(
+                command,
+                &label,
+                timeout,
+                MAX_OUTPUT_BYTES,
+                control.cancellation,
+            ),
+        }
         .map_err(|error| match error {
             BoundedError::Cancelled(message) => CloneError::new("cancelled", message),
             BoundedError::TimedOut(_) => CloneError::new(
                 "timeout",
                 format!("git {} exceeded its execution deadline", request.label),
             ),
-            BoundedError::Failed(message) => CloneError::new("gitFailed", message),
+            BoundedError::Failed(message) => process_failure(message),
         })?;
         drop(askpass);
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -339,12 +361,38 @@ impl GitRunner for SystemGit {
             } else {
                 format!(": {}", stderr.trim())
             };
-            return Err(CloneError::new(
-                "gitFailed",
-                format!("git {} failed{suffix}", request.label),
-            ));
+            return Err(process_failure(format!(
+                "git {} failed{suffix}",
+                request.label
+            )));
         }
         Ok(GitOutput { stdout, stderr })
+    }
+}
+
+impl GitRunner for SystemGit {
+    fn run(
+        &self,
+        request: &GitRunRequest<'_>,
+        control: &GitRunControl<'_>,
+    ) -> Result<GitOutput, CloneError> {
+        self.execute(request, control, None)
+    }
+
+    fn run_nul_records(
+        &self,
+        request: &GitRunRequest<'_>,
+        control: &GitRunControl<'_>,
+        record: &mut (dyn FnMut(&[u8]) -> Result<(), CloneError> + Send),
+    ) -> Result<GitOutput, CloneError> {
+        self.execute(request, control, Some(record))
+    }
+}
+
+fn process_failure(message: String) -> CloneError {
+    CloneError {
+        hints: vec!["Resolve the reported Git process or resource failure before retrying.".into()],
+        ..CloneError::new("gitFailed", message)
     }
 }
 
@@ -528,6 +576,40 @@ mod env_and_scrub_tests {
             !Path::new(helper).exists(),
             "helper removed after git exits"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_limit_reports_the_failed_stage_without_suggesting_different_repo_inputs() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = crate::tools::test_support::Fixture::new();
+        let script = home.0.join("git");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\ndd if=/dev/zero bs=1048576 count=6 2>/dev/null\n",
+        )
+        .expect("fixture git");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+        let error = SystemGit::new(&script)
+            .run(
+                &request(),
+                &GitRunControl {
+                    cancellation: &crate::tools::cancel::NeverCancel,
+                    deadline: Instant::now() + Duration::from_secs(10),
+                    cache_home: &home.0,
+                },
+            )
+            .expect_err("collected process output remains bounded");
+        assert_eq!(error.code, "gitFailed");
+        assert!(error.message.contains("git test"), "{}", error.message);
+        assert!(error.message.contains("output limit"), "{}", error.message);
+        assert!(
+            error
+                .hints
+                .iter()
+                .any(|hint| hint.contains("process or resource"))
+        );
+        assert!(error.hints.iter().all(|hint| !hint.contains("owner/repo")));
     }
 
     /// Git may echo the injected header value without its

@@ -4,7 +4,7 @@ Load when running a style pass, ruling on wording, structure, formatting, code, 
 
 ## Review procedure
 
-- Precedence: [SKILL.md](../SKILL.md#when-running-the-style-pass).
+- Precedence: [SKILL.md](../SKILL.md#writing-rules).
 - Check changed text for structure, claims, steps, terminology, links, and accessibility.
 - Review comment (Conventional Comments) per material issue: label (issue, suggestion, question, nitpick, praise), blocking or not, location, rewrite, why; the label opens `Issue`. Group nitpicks: "`setup.md:14`: `The file is deleted by the job` → The job deletes the file."
 - Fix depends on an uncertain fact: verify with `octocode-research` first.
@@ -88,10 +88,6 @@ Apply when the request asks for controlled technical English. This is guidance o
 - One caption line; no prose repeat of edges. Text keeps thresholds, commands, IDs, owners, and reasons.
 - Short linear chains stay inline: `build -> test -> publish`.
 
-## Audience
+## Reader
 
-| Reader | Signals | Rule |
-|---|---|---|
-| Agent (also serves a human) | Prompt, `SKILL.md`, `AGENTS.md`, tool description, handoff | No decoration |
-| Human | "explain", README, guide, RFC, review | Tables for comparisons |
-| Human, visual | "interactive", "visual", "slides" | Viewable format |
+Match the requested reader and task; use the [shared format chooser](report-output.md#choose-the-format) for Markdown, Mermaid and widgets. No audience classification is required.

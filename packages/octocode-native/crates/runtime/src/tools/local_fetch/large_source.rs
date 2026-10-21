@@ -403,10 +403,12 @@ impl RangeView {
     }
 }
 
-/// Range views of streamed sources by canonical path and line range.
+/// Range views of streamed sources by canonical path and line range. The
+/// byte weight bounds the memo; the entry cap only stops a flood of tiny
+/// views (a view weighs about 350 KB per GB of range).
 static RANGE_VIEWS: octocode_io::memo::Memo<(std::path::PathBuf, usize, usize), RangeView> =
     octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
-        max_entries: 16,
+        max_entries: 256,
         max_weight: 4 * 1024 * 1024,
         keep_newest: false,
     });
@@ -450,10 +452,12 @@ struct StreamIndex {
 /// inode) recorded only for a file untouched for
 /// [`octocode_engine::graph::SourceStamp::SETTLE`] is the proof that the
 /// bytes, and so the digest, are unchanged, as the graph and LSP memos use
-/// it.
+/// it. A miss costs a whole-file pass, so the byte weight bounds the memo
+/// and the entry cap sits far above a working set of large sources (an
+/// index weighs about 80 KB per 10 million lines).
 static INDEXES: octocode_io::memo::Memo<std::path::PathBuf, StreamIndex> =
     octocode_io::memo::Memo::new(octocode_io::memo::MemoLimits {
-        max_entries: 16,
+        max_entries: 1024,
         max_weight: 8 * 1024 * 1024,
         keep_newest: false,
     });
@@ -1130,10 +1134,11 @@ fn serve_window(
 
 /// Several `ranges`: each (overlaps and neighbours merged, in line order) is
 /// one streamed window read, joined with an omission marker between
-/// non-adjacent spans, as a whole-file read joins them. A span that does not
-/// fit one window page is read on its own, so the rejection names it and
-/// leads to that span's read (`readBoundedLines`) and to one read of every
-/// other requested range (`readOtherRanges`).
+/// non-adjacent spans, as a whole-file read joins them. The page ends at the
+/// first span that does not fit one window page: it holds every span before
+/// it and that span's first page, continued by that span's own pages
+/// (`continueWindow`) and one read of every requested range after it
+/// (`readOtherRanges`), so each requested line is on exactly one page.
 fn fetch_ranges(
     q: &LocalFetchQuery,
     source: &Opened<'_>,
@@ -1165,9 +1170,11 @@ fn fetch_ranges(
         Err(error) => return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", error),
     };
     let mut parts = Vec::with_capacity(merged.len());
+    // The span the page stops inside: its range and the calls that read on.
+    let mut cut = None;
     for (index, ((one, span), streamed)) in ones.into_iter().zip(streamed).enumerate() {
         let (start, end) = (span.first, span.requested_last);
-        let part = serve_window(
+        let mut part = serve_window(
             &one,
             streamed,
             span,
@@ -1181,30 +1188,17 @@ fn fetch_ranges(
         if part.status == "error" {
             return part;
         }
-        if part.next.is_some() {
-            let others = merged
-                .iter()
-                .enumerate()
-                .filter(|(other, _)| *other != index)
-                .map(|(_, span)| *span)
-                .collect::<Vec<_>>();
-            let read_other_ranges = (!others.is_empty()).then(|| {
+        if let Some(mut next) = part.next.take() {
+            let after = &merged[index + 1..];
+            next.read_other_ranges = (!after.is_empty()).then(|| {
                 let mut rest = q.clone();
-                rest.set_line_spans(&others);
+                rest.set_line_spans(after);
+                rest.snapshot = part.source_sha256.as_deref().and_then(|d| d.parse().ok());
                 FetchCall { query: rest }
             });
-            return unsupported(
-                q,
-                len,
-                &format!(
-                    "lines {start}-{end} need more than one streamed window page, so these ranges cannot be served in one read. Read that span on its own (its pages continue it), and the other ranges in their own read."
-                ),
-                NextCalls {
-                    read_bounded_lines: Some(FetchCall { query: one }),
-                    read_other_ranges,
-                    ..NextCalls::default()
-                },
-            );
+            cut = Some((start, end, next));
+            parts.push(part);
+            break;
         }
         parts.push(part);
     }
@@ -1266,6 +1260,18 @@ fn fetch_ranges(
     // Each window held its lines; one line says it for all.
     result.warnings.insert(0, streamed_warning(len));
     result.pagination = None;
+    if let Some((start, end, next)) = cut {
+        let after = if next.read_other_ranges.is_some() {
+            "; the ranges after it are read on their own"
+        } else {
+            ""
+        };
+        result.warnings.push(format!(
+            "Lines {start}-{end} need more than one window page: this page ends inside them and their later pages read that range alone{after}."
+        ));
+        result.is_partial = Some(true);
+        result.next = Some(next);
+    }
     result
 }
 

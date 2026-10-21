@@ -329,36 +329,6 @@ fn logout_with(
     }
 }
 
-pub(super) fn cache(runtime: &ToolRuntime, action: super::commands::CacheAction) -> u8 {
-    use super::commands::CacheAction;
-    match action {
-        CacheAction::Status => {
-            let view = runtime.inspect_config();
-            println!("cache home: {}", view.home.join("tmp").display());
-            let (recent, log_bytes) =
-                octocode_native::cache::evictions::recent_evictions(&view.home, 5);
-            if recent.is_empty() {
-                println!("recent evictions: none recorded");
-            } else {
-                println!(
-                    "recent evictions (last {}, log {} bytes):",
-                    recent.len(),
-                    log_bytes
-                );
-                for line in recent {
-                    println!("  {line}");
-                }
-            }
-            0
-        }
-        CacheAction::Clear => {
-            runtime.clear_response_caches();
-            println!("cleared the GitHub content and package registry caches");
-            0
-        }
-    }
-}
-
 #[cfg(test)]
 mod auth_tests {
     use super::*;

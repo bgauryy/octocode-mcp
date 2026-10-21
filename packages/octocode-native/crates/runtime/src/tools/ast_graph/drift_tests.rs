@@ -332,12 +332,15 @@ fn automatic_topology_pages_cover_every_file_and_bind_the_response_window() {
 /// Characters a default response spends on a page of `nodes`: optional
 /// fields pruned, and the fields all of them share stated once.
 fn delivered_chars(nodes: &Value) -> usize {
-    use crate::tools::{id::ToolId, stream_page::json_chars};
+    use crate::tools::id::ToolId;
     let mut row = json!({"data": {"nodes": nodes}});
     crate::response::extras::prune_row(&mut row, ToolId::AstTopology, &json!({}));
     let mut rows = [row];
     let shared = crate::contracts::shared_fields::hoist(ToolId::AstTopology, &mut rows);
-    json_chars(&rows[0]["data"]["nodes"]) + shared.map_or(0, |shared| json_chars(&shared))
+    octocode_engine::json_size::utf16_units(&rows[0]["data"]["nodes"]).unwrap_or(0)
+        + shared.map_or(0, |shared| {
+            octocode_engine::json_size::utf16_units(&shared).unwrap_or(0)
+        })
 }
 
 /// A window-sized page is cut by what the response delivers, not by the

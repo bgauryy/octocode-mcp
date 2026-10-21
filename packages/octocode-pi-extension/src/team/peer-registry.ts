@@ -5,7 +5,7 @@ import { runningPid } from '../agentdb/liveness.js';
 /**
  * The agents-communication package lists the non-default databases its live processes use (a session started with
  * `--database <file>`) as one `<pid>.json` per process in `<Octocode home>/agents-communication/active-databases/`.
- * The package writes it and owns the format (`scripts/docs/DB.md`, "Active database registry"); this only reads it:
+ * The package writes it and owns the format (`docs/DB.md` of the package, "Active database registry"); this only reads it:
  *
  *   { "version": 1, "database": "/abs/file.sqlite", "pid": 123, "started": "1791187200" | null, "updatedAt": 1791187200000 }
  *

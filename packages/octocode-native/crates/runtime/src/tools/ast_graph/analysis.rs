@@ -111,7 +111,7 @@ fn answer(
     let weight = answer
         .0
         .iter()
-        .map(crate::tools::stream_page::json_chars)
+        .map(|value| octocode_engine::json_size::utf16_units(value).unwrap_or(0))
         .sum::<usize>();
     ANSWERS.put(
         key,
@@ -196,9 +196,10 @@ pub(crate) fn analyze(
     }
     let results_digest = crate::digest::json_sha256(&items);
     // A suppressed verdict (no entrypoint resolved) proves nothing either
-    // way: a partial answer that names why, never an empty one.
+    // way, and neither does a graph the scan cut: both are partial answers
+    // that name why, never an empty one.
     let suppressed = summary["suppressed"] == true;
-    let answer_empty = pending_endpoint.is_none() && !suppressed && answer_is_empty(&items);
+    let answer_empty = pending_endpoint.is_none() && !suppressed && answer_is_empty(&items, cuts);
     let budget = crate::tools::page_windows::page_budget(response_window, &answer_fields(q, b));
     let (page, pagination) = paginate(items, q, budget);
     base.insert("nodes".into(), Value::Array(page));
@@ -468,9 +469,11 @@ pub(super) fn state_coverage(base: &mut Map<String, Value>, parts: Map<String, V
 }
 
 /// Whether an operation's answer rows say nothing was found: no rows, or only
-/// rows that report a miss (`found:false`, a path that does not exist).
-pub(super) fn answer_is_empty(items: &[Value]) -> bool {
-    items.iter().all(|row| row["found"] == json!(false))
+/// rows that report a miss (`found:false`, a path that does not exist), over
+/// a graph no scan cut left partial (the files it never read may hold the
+/// answer).
+pub(super) fn answer_is_empty(items: &[Value], cuts: ScanCuts) -> bool {
+    !cuts.graph_cut() && items.iter().all(|row| row["found"] == json!(false))
 }
 
 /// An empty answer is an empty result, as a search with no match is: every

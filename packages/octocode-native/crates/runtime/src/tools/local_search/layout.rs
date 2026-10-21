@@ -34,15 +34,15 @@ pub(super) struct Layout {
     pub(super) total_items: u32,
     pub(super) matches_per: u32,
     pub(super) out_of_range: bool,
-    /// Context lines around each row (0 for matchOnly).
-    pub(super) context_lines: u32,
+    /// Resolved context around each row (empty for matchOnly).
+    pub(super) context: SearchContext,
     pub(super) streamed: bool,
     /// The response budget's per-row value share, when rows are shown.
     pub(super) budget_cap: Option<usize>,
     /// The tighter of the matchOnly display bound and `budget_cap`.
     pub(super) display_cap: Option<usize>,
     /// Context windows of nearby rows merge into one block.
-    pub(super) merge_context: Option<u32>,
+    pub(super) merge_context: Option<SearchContext>,
     /// What each shown file's rendered path adds to its stored one: the
     /// root's workspace-relative prefix (see [`PageCosts`]).
     pub(super) prefix_chars: usize,
@@ -66,9 +66,9 @@ impl Layout {
         let view = query.result_view;
         let list = list_view(view);
         let match_only = view == LocalSearchQueryResultView::MatchOnly;
-        let context_lines = query.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES);
-        let costs = PageCosts::new(query, paths, output_root, context_lines)
-            .with_owners(&parsed.files, outlines);
+        let context = query.context();
+        let costs =
+            PageCosts::new(query, paths, output_root, context).with_owners(&parsed.files, outlines);
         let hits_total: usize = if list {
             0
         } else {
@@ -154,15 +154,15 @@ impl Layout {
             (Some(a), None) => Some(a),
             (None, b) => b,
         };
-        // Content views emit a ±contextLines window per match row; windows of
+        // Content views emit a resolved context window per match row; windows of
         // nearby rows overlap, so merge them into one block per run of lines.
         // matchOnly carries exact spans and multiline rows span several
         // lines, so neither has per-row windows to merge.
         let merge_context = (!list
             && !match_only
             && query.multiline == LocalSearchQueryMultiline::Off
-            && context_lines > 0)
-            .then_some(context_lines);
+            && !context.is_empty())
+        .then_some(context);
         Self {
             list,
             out_of_range: total_files > 0 && query.page().max(1) > total_pages,
@@ -171,7 +171,11 @@ impl Layout {
             files_per_page,
             total_items,
             matches_per,
-            context_lines: if match_only { 0 } else { context_lines },
+            context: if match_only {
+                SearchContext::default()
+            } else {
+                context
+            },
             streamed,
             budget_cap,
             display_cap,
@@ -234,7 +238,9 @@ impl Layout {
                         .then_some(file.match_count),
                     pagination: None,
                 };
-                crate::tools::stream_page::json_chars(&projected) + costs.prefix_chars + 1
+                octocode_engine::json_size::utf16_units(&projected).unwrap_or(0)
+                    + costs.prefix_chars
+                    + 1
             })
             .collect::<Vec<_>>();
         let pages = crate::tools::page_windows::Paging::Chars(page_budget).windows(&sizes);
@@ -286,7 +292,7 @@ pub(super) struct PageCosts {
     pub(super) match_only_limit: Option<usize>,
     /// Span rows carry `column` in the response (see [`shows_span_columns`]).
     pub(super) span_columns: bool,
-    pub(super) expand_context: u32,
+    pub(super) expand_context: SearchContext,
     /// Multiline values are read once per file (see [`expansion_rows`]).
     pub(super) multiline: bool,
     pub(super) read_chars: usize,
@@ -357,7 +363,7 @@ impl PageCosts {
         query: &LocalSearchQuery,
         paths: &PathPolicy,
         output_root: &std::path::Path,
-        context_lines: u32,
+        context: SearchContext,
     ) -> Self {
         let match_only = query.result_view == LocalSearchQueryResultView::MatchOnly;
         let prefix_chars = match paths.workspace_relative(output_root).as_deref() {
@@ -369,7 +375,11 @@ impl PageCosts {
             prefix_chars,
             match_only_limit: match_only.then_some(effective_match_content_length(query) as usize),
             span_columns: shows_span_columns(query),
-            expand_context: if match_only { 0 } else { context_lines },
+            expand_context: if match_only {
+                SearchContext::default()
+            } else {
+                context
+            },
             multiline: query.multiline != LocalSearchQueryMultiline::Off,
             shows_names: !list_view(query.result_view),
             owners: std::collections::HashMap::new(),
@@ -402,7 +412,7 @@ impl PageCosts {
                             .filter_map(|matched| {
                                 let owner = outline.label(outline.owner(matched.line)?)?;
                                 let full = ENCLOSING_FIELD_CHARS
-                                    + crate::tools::stream_page::json_chars(&owner);
+                                    + octocode_engine::json_size::utf16_units(&owner).unwrap_or(0);
                                 Some((
                                     matched.line,
                                     Owner {
@@ -464,7 +474,7 @@ impl PageCosts {
             // Its line range, and a share of the extra read every
             // `RANGES_MAX_ITEMS` ranges open.
             let digits = |n: u32| n.checked_ilog10().map_or(1, |log| log as usize + 1);
-            row + 2 * digits(matched.line.saturating_add(self.expand_context))
+            row + 2 * digits(matched.line.saturating_add(self.expand_context.after))
                 + 4
                 + self.read_chars.div_ceil(RANGES_MAX_ITEMS)
         } else {
@@ -538,7 +548,7 @@ pub(super) fn row_chars(
     if !span_columns {
         row.column = None;
     }
-    crate::tools::stream_page::json_chars(&row)
+    octocode_engine::json_size::utf16_units(&row).unwrap_or(0)
         + crate::tools::stream_page::json_text_chars(value)
         + 1
 }
@@ -576,7 +586,9 @@ pub(super) fn pagination_chars(file: &octocode_engine::types::TextSearchFile) ->
         more_lines_unlisted: None,
         out_of_range: false,
     };
-    ",\"pagination\":".len() + crate::tools::stream_page::json_chars(&empty) + more_lines
+    ",\"pagination\":".len()
+        + octocode_engine::json_size::utf16_units(&empty).unwrap_or(0)
+        + more_lines
 }
 
 /// Whether every file entry (by index), with all its rows, fits `budget`
@@ -768,7 +780,7 @@ pub(super) fn expansion_read_chars(query: &LocalSearchQuery, multiline: bool) ->
             "confidence": "exact",
         }})
     };
-    crate::tools::stream_page::json_chars(&read)
+    octocode_engine::json_size::utf16_units(&read).unwrap_or(0)
 }
 
 /// A caller-sized page: the same `page`/`matchPage` show the same rows at
@@ -787,7 +799,7 @@ fn multiline_expansion(
     query: &LocalSearchQuery,
     path: &str,
     clipped: &[&SearchMatch],
-    context: u32,
+    context: SearchContext,
 ) -> (Option<Value>, Value) {
     let longest = clipped
         .iter()
@@ -802,7 +814,7 @@ fn multiline_expansion(
         .unwrap_or(1);
     let fetch = Continuation::new(
         ToolId::LocalFetch,
-        json!({"path": path, "ranges": [format!("{}-{}", first.saturating_sub(context).max(1), READ_TO_END_LINE)]}),
+        json!({"path": path, "ranges": [format!("{}-{}", first.saturating_sub(context.before).max(1), READ_TO_END_LINE)]}),
     )
     .confidence("exact")
     .build();
@@ -827,8 +839,8 @@ fn multiline_expansion(
 /// Reads that return every clipped value of a page whole. A grid page whose
 /// longest clipped value fits both the contract maximum and the per-row
 /// budget gets one widened copy of the query. Otherwise each file gets its
-/// own read: a line row's value is its hit line with up to `context` lines
-/// on each side, so a localFetch of those source lines (`ranges`, merged, at
+/// own read: a line row's value is its hit line with the requested context
+/// before and after it, so a localFetch of those source lines (`ranges`, merged, at
 /// most [`RANGES_MAX_ITEMS`] per read) holds it whole, and localFetch pages a
 /// long read itself. A clipped multiline row hides how many lines its match
 /// spans, so its file is searched again alone with `matchContentLength`
@@ -839,7 +851,7 @@ pub(super) fn expand_values(
     paths: &PathPolicy,
     root: &std::path::Path,
     files: &[SearchFile],
-    context: u32,
+    context: SearchContext,
     multiline: bool,
     grid: Option<GridPage>,
 ) -> Vec<Value> {
@@ -1081,7 +1093,7 @@ mod tests {
                 let read = if n % 7 == 3 {
                     RowRead::Long
                 } else {
-                    let (start, end) = hit_windows([line], context)[0];
+                    let (start, end) = hit_windows([line], SearchContext::symmetric(context))[0];
                     RowRead::Window { start, end }
                 };
                 let before = reads.rows();
@@ -1098,7 +1110,7 @@ mod tests {
                         .iter()
                         .filter(|(_, read)| *read != RowRead::Long)
                         .map(|(line, _)| *line),
-                    context,
+                    SearchContext::symmetric(context),
                 );
                 assert_eq!(
                     reads.rows(),
@@ -1131,7 +1143,7 @@ mod tests {
         let entries = std::cell::Cell::new(0usize);
         let read = |matched: &TextSearchMatch| {
             if matched.original_chars.is_some() {
-                let (start, end) = hit_windows([matched.line], 1)[0];
+                let (start, end) = hit_windows([matched.line], SearchContext::symmetric(1))[0];
                 RowRead::Window { start, end }
             } else {
                 RowRead::None
@@ -1190,7 +1202,7 @@ mod tests {
             }
             assert_eq!(
                 row_chars(&matched, cap, span_columns),
-                crate::tools::stream_page::json_chars(&row) + 1,
+                octocode_engine::json_size::utf16_units(&row).unwrap_or(0) + 1,
                 "{cap:?} {span_columns}"
             );
         }

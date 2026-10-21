@@ -13,7 +13,7 @@ import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
 const PACKAGE = path.resolve(import.meta.dirname, '../../octocode-agents-communication');
-const SCHEMA = fs.readFileSync(path.join(PACKAGE, 'scripts/schema.sql'), 'utf8');
+const SCHEMA = fs.readFileSync(path.join(PACKAGE, 'assets/schema.sql'), 'utf8');
 const NOW = 1_800_000_000_000;
 
 interface Lease { path: string; kind?: 'file' | 'tree'; owner?: string; expiresAt?: number; reason?: string; key?: string }
@@ -166,7 +166,7 @@ describe('peer leases (agents-communication database, read-only)', () => {
   });
 });
 
-/** One registry entry as the package writes it (`scripts/communication/registry.py`). */
+/** One registry entry as the package writes it (`src/runtime/registry.ts`). */
 function entry(dir: string, name: string, fields: Record<string, unknown>): void {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify({ version: PEER_REGISTRY_VERSION, database: '/db.sqlite', pid: process.pid, started: processStartTime(process.pid) ?? null, updatedAt: NOW, ...fields }));
@@ -302,16 +302,16 @@ describe('peer leases in the team reservation gate', () => {
     expect(team.reservation(target, 'src/a.ts')).toBeUndefined();
   });
 
-  const python = process.env['OCTOCODE_PYTHON'] || 'python3';
+  const entry = path.join(PACKAGE, 'dist/communication.js');
 
-  const runnable = fs.existsSync(path.join(PACKAGE, 'scripts/communication.py')) && spawnSync(python, ['--version']).status === 0;
+  const runnable = fs.existsSync(entry);
 
   it.skipIf(!runnable)('sees a package session started with --database <file> through the registry the package writes, until it expires', () => {
     const { cwd, team } = collaborate(true);
     const custom = path.join(tmp(), 'custom.sqlite');
     const run = (command: string, input: object, session?: string) => {
-      const args = ['-B', path.join(PACKAGE, 'scripts/communication.py'), command, JSON.stringify(input), '--workspace', cwd, '--database', custom, ...(session ? ['--session', session] : [])];
-      const result = spawnSync(python, args, { encoding: 'utf8', env: { ...process.env } });
+      const args = [entry, command, JSON.stringify(input), '--workspace', cwd, '--database', custom, ...(session ? ['--session', session] : [])];
+      const result = spawnSync(process.execPath, args, { encoding: 'utf8', env: { ...process.env } });
       expect(result.status, result.stderr).toBe(0);
       return JSON.parse(result.stdout) as { id?: string; ok?: boolean };
     };
@@ -332,8 +332,8 @@ describe('peer leases in the team reservation gate', () => {
   it.skipIf(!runnable)('agrees with the package itself: a lease taken through its CLI refuses a case and Unicode alias', () => {
     const { cwd, team } = collaborate(true);
     const run = (command: string, input: object, session?: string) => {
-      const args = ['-B', path.join(PACKAGE, 'scripts/communication.py'), command, JSON.stringify(input), '--workspace', cwd, '--database', peerDbPath(), ...(session ? ['--session', session] : [])];
-      const result = spawnSync(python, args, { encoding: 'utf8', env: { ...process.env, OCTOCODE_HOME: process.env['OCTOCODE_HOME'] ?? '' } });
+      const args = [entry, command, JSON.stringify(input), '--workspace', cwd, '--database', peerDbPath(), ...(session ? ['--session', session] : [])];
+      const result = spawnSync(process.execPath, args, { encoding: 'utf8', env: { ...process.env, OCTOCODE_HOME: process.env['OCTOCODE_HOME'] ?? '' } });
       expect(result.status, result.stderr).toBe(0);
       return JSON.parse(result.stdout) as { id?: string; ok?: boolean };
     };

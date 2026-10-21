@@ -1,7 +1,6 @@
 //! `operation:"refs"` (branches and tags) and `operation:"languages"`.
 use super::*;
 use crate::contracts::tool_types::ExtraKind;
-use crate::contracts::tool_types::GhStructureQueryOperation;
 use crate::tools::paging::push_warnings;
 use octocode_github::MAX_PER_PAGE;
 use octocode_github::{NamedRef, RefKind, RefMatch};
@@ -11,27 +10,14 @@ use octocode_github::{NamedRef, RefKind, RefMatch};
 const DEFAULT_REFS_PER_PAGE: usize = crate::tools::id::gh_structure_policy::REFS_PAGE_SIZE;
 const _: () = assert!(DEFAULT_REFS_PER_PAGE <= MAX_PER_PAGE);
 
-/// Run a non-tree operation; `None` for the tree listing.
-pub(super) async fn execute_operation<C: octocode_github::ConditionalCache>(
-    provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
-    context: &RequestContext,
-) -> Option<Result<ToolData, ProviderError>> {
-    match query.operation? {
-        GhStructureQueryOperation::Tree => None,
-        GhStructureQueryOperation::Refs => Some(refs(provider, query, context).await),
-        GhStructureQueryOperation::Languages => Some(languages(provider, query, context).await),
-    }
-}
-
 /// The default branch and its head commit, and one page of tag names; with
 /// `extras: ["details"]` also the same page of branches (`{name: sha}`),
 /// read only when asked. A page continues while a listed kind has more, so
 /// every listed tag (and branch) is named exactly once. A tag name is
 /// itself a ref, so tags carry no SHA. With `ref`: that ref's commit and its `refKind` only.
-async fn refs<C: octocode_github::ConditionalCache>(
+pub(super) async fn refs<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryRefs,
     context: &RequestContext,
 ) -> Result<ToolData, ProviderError> {
     let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
@@ -45,10 +31,16 @@ async fn refs<C: octocode_github::ConditionalCache>(
             Ok(sha) => sha,
             Err(error) => {
                 // The failure names a renamed repository as it is now.
-                let renamed = super::canonical(provider, query, context)
-                    .await
-                    .ok()
-                    .flatten();
+                let renamed = super::canonical(
+                    provider,
+                    query,
+                    query.owner.as_str(),
+                    query.repo.as_str(),
+                    context,
+                )
+                .await
+                .ok()
+                .flatten();
                 let at = renamed.as_ref().map_or(query, |(_, canonical)| canonical);
                 return Err(super::traverse::missing_ref(
                     error,
@@ -68,7 +60,15 @@ async fn refs<C: octocode_github::ConditionalCache>(
                 .await?
         };
         let mut value = json!({ "commitSha": sha, "refKind": kind.as_str() });
-        if let Some((warning, _)) = super::canonical(provider, query, context).await? {
+        if let Some((warning, _)) = super::canonical(
+            provider,
+            query,
+            query.owner.as_str(),
+            query.repo.as_str(),
+            context,
+        )
+        .await?
+        {
             push_warning_front(&mut value, warning);
         }
         return Ok(ToolData::from(value));
@@ -102,7 +102,15 @@ async fn refs<C: octocode_github::ConditionalCache>(
         "tags": tags.refs.iter().map(|named| named.name.as_str()).collect::<Vec<_>>(),
     });
     // The default-branch read named the canonical repository: leads use it.
-    let (renamed_warning, canonical) = super::canonical(provider, query, context).await?.unzip();
+    let (renamed_warning, canonical) = super::canonical(
+        provider,
+        query,
+        query.owner.as_str(),
+        query.repo.as_str(),
+        context,
+    )
+    .await?
+    .unzip();
     let query = canonical.as_ref().unwrap_or(query);
     if let Some(warning) = renamed_warning {
         push_warning_front(&mut value, warning);
@@ -168,9 +176,9 @@ async fn refs<C: octocode_github::ConditionalCache>(
 
 /// Bytes of code per language on the default branch, largest first, with
 /// the rename warning a renamed repository's other operations carry.
-async fn languages<C: octocode_github::ConditionalCache>(
+pub(super) async fn languages<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryLanguages,
     context: &RequestContext,
 ) -> Result<ToolData, ProviderError> {
     let languages = provider
@@ -182,7 +190,15 @@ async fn languages<C: octocode_github::ConditionalCache>(
         .map(|(name, bytes)| (name, json!(bytes)))
         .collect();
     let mut value = json!({ "languages": languages });
-    if let Some((warning, _)) = super::canonical(provider, query, context).await? {
+    if let Some((warning, _)) = super::canonical(
+        provider,
+        query,
+        query.owner.as_str(),
+        query.repo.as_str(),
+        context,
+    )
+    .await?
+    {
         push_warning_front(&mut value, warning);
     }
     Ok(ToolData::from(value))

@@ -46,6 +46,7 @@ import { spilledMessage, Team } from './team/session.js';
 import { registerCollab } from './team/tools.js';
 import { registerTurnSetup } from './turn.js';
 import { registerActivity } from './ui/activity.js';
+import { registerEditor } from './ui/editor.js';
 import { registerNotify } from './ui/notify.js';
 import { packageVersion, registerUi } from './ui/chrome.js';
 import { Delivery } from './ui/delivery.js';
@@ -141,7 +142,8 @@ export default function octocode(pi: ExtensionAPI): void {
   registerBrowserTool(pi, new BrowserTool(permission));
   const collab = registerCollab(pi, team, { stopAgent: isSubagent ? undefined : (id, by) => agents?.stop(id, by), beforeLeave: async (reason) => agents?.stopAll(reason) });
   if (!isSubagent) {
-    registerPermissionCommand(pi, commands, permission, () => provenance.size());
+    registerPermissionCommand(commands, permission, () => provenance.size());
+    registerEditor(pi, permission);
     registerTrustCommand(commands);
     registerAskUser(pi);
     agents = registerAgentTool(pi, () => profiles, team, permission, () => refused);

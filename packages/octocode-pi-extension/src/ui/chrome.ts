@@ -6,6 +6,7 @@ import { packageRoot } from '../shared/package.js';
 import { appKey, expandKey, statusColor, stopRowTimers } from '../shared/render.js';
 import { bannerLines, type BannerPaint } from './banner.js';
 import { STATUS } from '../shared/status.js';
+import { thinkingTranscript } from './thinking.js';
 import { registerFooter } from './footer.js';
 
 let version: { value: string | undefined } | undefined;
@@ -167,7 +168,17 @@ export function registerUi(pi: ExtensionAPI, isSubagent: boolean): void {
 
 function decorate(ctx: ExtensionContext, shineFrom: number | undefined): void {
   // The spinner and thinking label are painted strings: repaint them whenever a theme switch invalidates the header.
-  ctx.ui.setHeader((tui, current) => bannerHeader(tui, current, shineFrom, () => paintIndicators(ctx)));
+  ctx.ui.setHeader((tui, current) => {
+    const header = bannerHeader(tui, current, shineFrom, () => paintIndicators(ctx));
+    const transcript = thinkingTranscript(tui);
+    return {
+      ...header,
+      render(width: number) {
+        transcript.refresh();
+        return header.render(width);
+      },
+    };
+  });
   paintIndicators(ctx);
 }
 

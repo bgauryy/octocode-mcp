@@ -69,6 +69,9 @@ pub struct GraphFactsMappedScan<T> {
     pub files_skipped: u32,
     pub truncated: bool,
     pub scan_resume: Option<u32>,
+    /// The first candidate (absolute path, walk order) the walk cap left
+    /// out: it and every later candidate are unread.
+    pub scan_frontier: Option<String>,
     pub pruned_dirs: Vec<String>,
 }
 
@@ -323,7 +326,7 @@ pub fn walk_graph_fact_files(
     let overrides = parser_overrides(&root, options.language_globs.as_deref())?;
     let max_files = options
         .max_files
-        .unwrap_or(crate::scan_budget::SCAN_WALK_FILES as u32);
+        .unwrap_or(u32::try_from(crate::scan_budget::walk_ceiling()).unwrap_or(u32::MAX));
     let extensions = crate::signatures::graph_facts::graph_fact_extensions();
     // A file only `languageGlobs` map to a grammar has an extension no grammar
     // claims, so with overrides the walk admits it by glob as well.
@@ -433,17 +436,21 @@ fn evaluate_walk<T: Send>(
         map,
         stop,
     };
-    let started = std::time::Instant::now();
+    let mut pacer = crate::scan_budget::ScanPacer::new(budget.filter(|_| timed));
     let mut kept: Vec<(String, T)> = Vec::new();
     let mut skipped = Vec::new();
     let (mut evaluated, mut parsed) = (0, 0);
     let mut scan_resume = None;
-    for chunk in entries.chunks(crate::scan_budget::SCAN_CHUNK_FILES) {
-        if timed && evaluated > 0 && budget.is_some_and(|budget| started.elapsed() >= budget) {
+    let mut rest = entries.as_slice();
+    while !rest.is_empty() {
+        if pacer.spent() {
             scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
             break;
         }
+        let (chunk, tail) = rest.split_at(pacer.next_chunk().min(rest.len()));
+        rest = tail;
         evaluated += chunk.len();
+        pacer.record(chunk.len());
         for outcome in chunk
             .par_iter()
             .map(|entry| evaluator.evaluate(entry))
@@ -476,6 +483,7 @@ fn evaluate_walk<T: Send>(
         files_skipped,
         truncated,
         scan_resume,
+        scan_frontier: query.first_unlisted,
         pruned_dirs: query.pruned_dirs,
     })
 }
@@ -719,6 +727,58 @@ mod tests {
         .expect("scan graph facts");
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].source_stamp, None);
+    }
+
+    /// A walk cut at its file cap names the first candidate it left out, and
+    /// every file before it is in the walk: a lowered walk ceiling cuts an
+    /// unbounded scan the same way an explicit `max_files` does.
+    #[test]
+    fn a_capped_walk_names_the_first_candidate_it_left_out() {
+        let fixture = tempfile::tempdir().expect("fixture");
+        let root = fixture.path().to_path_buf();
+        create_supported_files(&root, 5);
+        let walk = |options: GraphFactsScanOptions| {
+            walk_graph_fact_files(&options, &|_, _| true, &|| false).expect("walk")
+        };
+        let options = |max_files| GraphFactsScanOptions {
+            path: path_string(&root),
+            max_files,
+            ..Default::default()
+        };
+        let capped = walk(options(Some(3)));
+        let names = |paths: &[String]| {
+            paths
+                .iter()
+                .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let listed: Vec<String> = capped.entries.iter().map(|e| e.path.clone()).collect();
+        assert_eq!(names(&listed), ["entry-0.ts", "entry-1.ts", "entry-2.ts"]);
+        let frontier = capped.first_unlisted.expect("a cut walk has a frontier");
+        assert_eq!(names(&[frontier]), ["entry-3.ts"]);
+        assert_eq!(walk(options(Some(5))).first_unlisted, None);
+        let _ceiling = crate::scan_budget::lower_walk_ceiling(2);
+        let unbounded = walk(options(None));
+        assert_eq!(unbounded.entries.len(), 2);
+        assert_eq!(
+            names(&[unbounded.first_unlisted.expect("frontier")]),
+            ["entry-2.ts"]
+        );
+        let scanned = scan_with_budget(
+            options(None),
+            &|_, _| true,
+            &|_| true,
+            &|view| Some(view.relative_path.to_owned()),
+            &|| false,
+            None,
+        )
+        .expect("scan");
+        assert!(scanned.truncated);
+        assert_eq!(scanned.scan_resume, Some(2));
+        assert_eq!(
+            names(&[scanned.scan_frontier.expect("scan frontier")]),
+            ["entry-2.ts"]
+        );
     }
 
     /// An unset `max_files` caps nothing but the time: a tree past the old

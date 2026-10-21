@@ -7,7 +7,7 @@ Load when a gatherer or the parent starts searching or picks surfaces for trends
 - Combine `scripts/search.mjs` (configured providers, merged by canonical URL, multi-provider hits first) with host search and fetch. `--kind papers` for studies, `--kind news` for recent events, `--since` for a window.
 - Results are leads: read the page before taking a claim. A page or syndicated story from several providers is one source.
 - Vet sources like a [fact-checker](critical-thinking.md#search-like-a-fact-checker), including its stop rule.
-- Keys come only from the environment, filled by `npx octocode config get` (environment or `<HOME>/.octocode/.env`, never printed); `npx octocode config check TAVILY_API_KEY` reports whether one is set. A missing key skips that provider.
+- Keys: `TAVILY_API_KEY`, `EXA_API_KEY`, `SERPER_API_KEY`; load them using [shared configuration handling](configuration.md). A missing key skips that provider.
 
 ## Surfaces
 

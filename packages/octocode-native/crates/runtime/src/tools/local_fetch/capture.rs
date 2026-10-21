@@ -53,8 +53,7 @@ pub(crate) fn capture_text(
         }
     }
     check()?;
-    if bytes.contains(&0)
-        || octocode_engine::text::sniff(&bytes) == octocode_engine::text::BinaryVerdict::Binary
+    if octocode_engine::text::sniff_complete(&bytes) == octocode_engine::text::BinaryVerdict::Binary
     {
         return Err(Box::new(executor::refuse_binary(query, &validated.display)));
     }
@@ -64,14 +63,14 @@ pub(crate) fn capture_text(
     {
         return Err(Box::new(executor::stale_snapshot(query)));
     }
-    let text = String::from_utf8(bytes).map_err(|_| {
+    let text = octocode_engine::text::decode_unicode(&bytes).ok_or_else(|| {
         failure(
             "classificationContextUnavailable",
-            "The source is not valid UTF-8 text; no sections were assessed. Use a text representation with known encoding.".into(),
+            "The source is not valid UTF-8 or BOM-marked UTF-16 text; no sections were assessed. Use a text representation with known encoding.".into(),
         )
     })?;
     Ok(CapturedText {
-        text,
+        text: text.into_owned(),
         canonical: validated.canonical,
         snapshot,
     })
@@ -90,6 +89,42 @@ mod tests {
             } else {
                 Err("cancelled".into())
             }
+        }
+    }
+
+    #[test]
+    fn utf16_capture_preserves_decoded_text_and_raw_snapshot() {
+        let root = tempfile::tempdir().expect("root");
+        let file = root.path().join("source.txt");
+        let paths = super::super::tests::Paths(root.path().into());
+        let query = super::super::tests::q(&file);
+        let source = "α😀\r\nsecond\n";
+        for little in [true, false] {
+            let mut bytes = if little {
+                vec![0xff, 0xfe]
+            } else {
+                vec![0xfe, 0xff]
+            };
+            for unit in source.encode_utf16() {
+                bytes.extend(if little {
+                    unit.to_le_bytes()
+                } else {
+                    unit.to_be_bytes()
+                });
+            }
+            std::fs::write(&file, &bytes).expect("write");
+            let captured = capture_text(&query, &paths, &NeverCancel).expect("capture");
+            assert_eq!(captured.text, source);
+            assert_eq!(captured.snapshot, crate::digest::sha256(&bytes));
+            bytes.push(1);
+            std::fs::write(&file, &bytes).expect("malformed");
+            assert_eq!(
+                capture_text(&query, &paths, &NeverCancel)
+                    .unwrap_err()
+                    .error_code
+                    .as_deref(),
+                Some("binaryFileUnsupported")
+            );
         }
     }
 

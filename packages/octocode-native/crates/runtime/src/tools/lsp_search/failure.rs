@@ -172,7 +172,8 @@ impl LspFailure {
         let mut value = failure(query, canonical_uri, self.code, &self.message, false);
         value["hints"] = json!([self.hint]);
         if query.operation() == "callers" {
-            let mut references = query_value(query);
+            let mut references =
+                crate::tools::result::query_row(query, &["graphDepth", "page", "snapshot"]);
             references["operation"] = json!("references");
             value["next"]["findReferences"] = continuation(references);
         }

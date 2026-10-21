@@ -8,7 +8,7 @@ npx octocode schema | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end
 
 ## Language matrix
 
-The default build registers **30 extensions in 12 language families**, from one registry (`crates/engine/src/signatures/languages.rs`; the expected set is asserted in `languages_tests.rs`). Structural match, syntax trees, symbols, signatures, graph facts, and LSP grammar adapters all derive from it. Built-in language-server routes are a separate table (`crates/engine/src/lsp/config.rs`) covering **27 extensions**: Assembly has no route.
+The default build registers **30 extensions in 12 language families**, from one registry (`crates/engine/src/signatures/languages.rs`; the expected set is asserted in `languages_tests.rs`). Structural match, syntax trees, symbols, signatures, graph facts, and LSP grammar adapters all derive from it. Built-in language-server routes are a separate table (`crates/engine/src/lsp/config/catalog.rs`) covering **27 extensions**: Assembly has no route.
 
 | Language | Extensions | Native AST (match, tree, symbols, rewrite) | Cross-file graph links | Built-in LSP route |
 |---|---|---|---|---|

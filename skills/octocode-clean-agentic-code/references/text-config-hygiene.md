@@ -31,4 +31,4 @@ Load when comments, docs, agent instructions, or configuration hold stale or dup
 
 - Before deleting keys, aliases, or duplicate commands, trace consumers, precedence, inheritance, callers, documented entrypoints; duplicated defaults may pin behavior across preset updates.
 - Config lives with its owner (shared: central; package-specific: consumer).
-- Skills: document needed parameters and `<HOME>/.octocode/.env`; use existing config access, never a bundled env reader.
+- Skills: document needed parameters and follow [shared configuration ownership](configuration.md); remove duplicate env readers only after checking their consumers.

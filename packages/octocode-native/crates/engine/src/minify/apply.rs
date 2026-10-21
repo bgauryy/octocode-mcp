@@ -6,10 +6,31 @@ use crate::minify::strategies::{
 };
 use crate::text::file_extension::extension_of;
 
+#[must_use]
+pub fn apply_content_view_minification(content: &str, file_path: &str) -> String {
+    let file_path = file_path.to_owned();
+    transform_on_deep_stack(content, move |content| {
+        crate::minify::apply::apply_content_view_minification_inner(content, &file_path)
+    })
+}
+
+/// Run a content transform on the deep-stack pool. A panic or an unavailable
+/// pool yields `None` there, so the caller gets the original content rather
+/// than `String::default()`, an empty view.
+fn transform_on_deep_stack(
+    content: &str,
+    transform: impl FnOnce(&str) -> String + Send + 'static,
+) -> String {
+    let shared: std::sync::Arc<str> = content.into();
+    let job_content = std::sync::Arc::clone(&shared);
+    crate::signatures::run_on_deep_stack(move || Some(transform(&job_content)))
+        .unwrap_or_else(|| shared.to_string())
+}
+
 /// Content-view minification — agent-readable; indentation is kept wherever
 /// it can carry syntax.
 /// Agent-readable content view minification pipeline.
-pub fn apply_content_view_minification_inner(content: &str, file_path: &str) -> String {
+pub(crate) fn apply_content_view_minification_inner(content: &str, file_path: &str) -> String {
     if content.len() > MAX_SIZE {
         return content.to_owned();
     }
@@ -89,6 +110,18 @@ pub fn apply_content_view_minification_inner(content: &str, file_path: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A transform that panics (or a pool that cannot run it)
+    /// yields the original content, never an empty content view.
+    #[test]
+    fn failed_deep_stack_transform_returns_the_original_content() {
+        let out = transform_on_deep_stack("fn keep() {}", |_| panic!("minifier bug"));
+        assert_eq!(out, "fn keep() {}");
+        assert_eq!(
+            transform_on_deep_stack("a  b", |content| content.replace("  ", " ")),
+            "a b"
+        );
+    }
 
     #[test]
     fn content_view_keeps_php_inline_html_indentation() {

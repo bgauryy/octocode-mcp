@@ -13,7 +13,7 @@ use crate::tools::cancel::CancellationCheck;
 use octocode_engine::lsp::client::{
     LocationRequest, NativeLspClient, SNIPPET_CONTENT_WITHHELD, SnippetReadPolicy,
 };
-use octocode_engine::lsp::types::JsCodeSnippet;
+use octocode_engine::lsp::types::LspCodeSnippet;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashSet};
 use std::time::Duration;
@@ -36,7 +36,7 @@ pub(super) async fn get_locations(
     path: &str,
     line: u32,
     character: u32,
-) -> Result<Vec<JsCodeSnippet>, LspFailure> {
+) -> Result<Vec<LspCodeSnippet>, LspFailure> {
     settled_locations(
         client,
         snippet_policy,
@@ -57,7 +57,7 @@ async fn settled_locations(
     request: LocationRequest,
     (path, line, character): (&str, u32, u32),
     settle: Option<Duration>,
-) -> Result<Vec<JsCodeSnippet>, LspFailure> {
+) -> Result<Vec<LspCodeSnippet>, LspFailure> {
     let mut snippets = cancellable(
         cancel,
         client.get_locations(
@@ -82,7 +82,7 @@ pub(super) async fn get_spelled_locations(
     cancel: &dyn CancellationCheck,
     request: LocationRequest,
     (path, line, character): (&str, u32, u32),
-) -> Result<(Vec<JsCodeSnippet>, bool), LspFailure> {
+) -> Result<(Vec<LspCodeSnippet>, bool), LspFailure> {
     let mut snippets = cancellable(
         cancel,
         client.get_locations(
@@ -106,7 +106,7 @@ pub(super) async fn get_spelled_locations(
 /// one spelling only. Every location is renamed to its canonical path (as
 /// [`snippet_identity`] keys it), later twins are dropped, and the flag says
 /// whether any location was renamed.
-pub(super) fn one_spelling(snippets: Vec<JsCodeSnippet>) -> (Vec<JsCodeSnippet>, bool) {
+pub(super) fn one_spelling(snippets: Vec<LspCodeSnippet>) -> (Vec<LspCodeSnippet>, bool) {
     let mut seen = HashSet::new();
     let mut respelled = false;
     let snippets = snippets
@@ -130,7 +130,7 @@ pub(super) fn one_spelling(snippets: Vec<JsCodeSnippet>) -> (Vec<JsCodeSnippet>,
 /// target (or two spellings of one path) name the same definition, as the
 /// hierarchy walk's node keys do. A path that cannot be canonicalized (gone,
 /// or not local) falls back to its decoded form.
-pub(super) fn snippet_identity(snippet: &JsCodeSnippet) -> String {
+pub(super) fn snippet_identity(snippet: &LspCodeSnippet) -> String {
     let path = super::scope::canonical(&uri_to_path(&snippet.uri));
     format!(
         "{}:{}:{}:{}:{}",
@@ -162,7 +162,7 @@ pub(super) async fn resolve_definition_chain(
     path: &str,
     line: u32,
     character: u32,
-) -> Result<(Vec<JsCodeSnippet>, Vec<String>), LspFailure> {
+) -> Result<(Vec<LspCodeSnippet>, Vec<String>), LspFailure> {
     let definition = |target: String, line: u32, character: u32| async move {
         get_locations(
             client,
@@ -260,7 +260,7 @@ pub(super) async fn resolve_definition_chain(
     Ok((current, warnings))
 }
 
-fn hop_failure_warning(snippet: &JsCodeSnippet, depth: usize, failure: &LspFailure) -> String {
+fn hop_failure_warning(snippet: &LspCodeSnippet, depth: usize, failure: &LspFailure) -> String {
     format!(
         "Definition-provider follow-up hop {} at {}:{}:{} failed ({}): {}. The retained earlier location is a candidate, not verified terminal identity.",
         depth + 1,
@@ -279,7 +279,7 @@ pub(super) struct AliasSearch<'a> {
     pub(super) symbol: Option<&'a str>,
     pub(super) include_declaration: bool,
     pub(super) anchor: Position<'a>,
-    pub(super) provider: &'a [JsCodeSnippet],
+    pub(super) provider: &'a [LspCodeSnippet],
 }
 
 /// References through aliasing imports (`import { x as y }`) the server did
@@ -423,7 +423,7 @@ pub(super) async fn recover_aliases(
 /// the server requests that failed (each one an alias left unchecked).
 #[derive(Debug, Default)]
 pub(super) struct AliasRecovery {
-    pub(super) snippets: Vec<JsCodeSnippet>,
+    pub(super) snippets: Vec<LspCodeSnippet>,
     pub(super) capped: bool,
     pub(super) failures: RequestFailures,
 }
@@ -490,7 +490,7 @@ fn aliasing_imports(source: &str, file: &str, symbol: &str) -> Vec<(u32, u32)> {
     if !may_rename(source, symbol) {
         return Vec::new();
     }
-    let Some(facts) = octocode_engine::portable::extract_graph_facts(source, file) else {
+    let Some(facts) = octocode_engine::signatures::extract_graph_facts(source, file) else {
         return Vec::new();
     };
     let Ok(parsed) = serde_json::from_str::<Value>(&facts) else {

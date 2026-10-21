@@ -15,7 +15,7 @@ use super::LspExecutionConfig;
 use crate::policy::path::PathPolicy;
 use octocode_engine::lsp::config::default_server_for_file;
 use octocode_engine::lsp::pool::{LspClientPool, canonical_lsp_key};
-use octocode_engine::lsp::types::JsLanguageServerConfig;
+use octocode_engine::lsp::types::LspLanguageServerConfig;
 use octocode_engine::lsp::workspace::resolve_workspace_root_for_file;
 use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
@@ -173,7 +173,7 @@ pub fn schedule(
 /// opened without a readiness timeout.
 pub(super) async fn warm(
     pool: &LspClientPool,
-    config: JsLanguageServerConfig,
+    config: LspLanguageServerConfig,
     file: String,
 ) -> bool {
     let warmed = async {

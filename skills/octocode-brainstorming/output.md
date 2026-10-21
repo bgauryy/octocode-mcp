@@ -1,5 +1,7 @@
 # Output
 
+<!-- report-contract {"statuses":["Recommended","Open","Rejected"],"required":["Directions","Recommendation","Dissent","Limits","Sources"],"anyOf":[]} -->
+
 Deliver task content only; no probe output or process metadata.
 
 ## Response
@@ -46,6 +48,18 @@ Show `Interim (phase <n> of 4)`: interim answer with confidence, what is open, w
 
 Respond with the framing before or instead of a full brief: the user's view in one line; sub-questions marked known, assumed, or researched; options labeled by origin (user or agent); hypothesis statuses; the answer with evidence; the 1–3 questions that would most change the decision; what changed from the expected answer; Sources.
 
+## Presentation choices
+
+Recommendation → compared directions → strongest dissent → limits and sources. Put extended reasoning below a compact comparison.
+
+| Format | Use when / why |
+|---|---|
+| Comparison table | Compare options against the same explicit criteria and evidence. |
+| `quadrantChart` / `radar-beta` | Show two-axis tradeoffs / comparable profiles only when placements, scales and estimates are explained. |
+| `mindmap` / `flowchart` | Explore concepts / explain the decision path; these do not prove the recommendation. |
+
+Follow the [shared visual-first, content-only rules](references/report-output.md#choose-the-format), including image embedding and iframe alternatives; load the [Mermaid chooser](references/report-mermaid.md) for specialized syntax or [widget schemas](references/report-widgets.md) before authoring graph/chart JSON.
+
 ## Saved report
 
 | Result | Where it goes |
@@ -56,7 +70,7 @@ Respond with the framing before or instead of a full brief: the user's view in o
 
 Default path: `<workspace>/.octocode/octocode-brainstorming/<YYYY-MM-DD>-<slug>.md`, where `<workspace>` is the repository root, else the current directory, never inside an existing `.octocode/`.
 
-Start the file with this header, one value per line: `status` (one listed word) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`).
+Use the [shared header rules](references/report-output.md#report-header) with these skill-specific status values:
 
 ```yaml
 ---
@@ -76,24 +90,4 @@ Add these sections only when they have content, in this order around the require
 - `## Comparison`, after Directions: which directions survived, changed, or were rejected, and why; evidence vs inference; reconciled contradictions; material dissent.
 - `## Next action`, after Limits: the smallest useful test, step, narrower question, or reopening signal. For an RFC handoff, list the decision, constraints, alternatives, evidence, acceptance criteria, and open questions.
 
-Date the file name with `date +%F`; one report is one `.md` file. Render it, fix every `warning:` line, and reply with a short summary and the `.html` and `.md` paths:
-
-```bash
-node <skill-folder>/scripts/render-report.mjs <saved.md>
-```
-
-`<skill-folder>` holds this file. The page lands beside the Markdown, unopened; pass `--open` only when asked. Markdown is the source; re-render after edits.
-
-Before starting work that may repeat an earlier report, list the saved ones:
-
-```bash
-node <skill-folder>/scripts/render-report.mjs <workspace>/.octocode --manifest
-```
-
-Pass `<workspace>/.octocode/octocode-brainstorming` to list only this skill's reports; read a match's Markdown, not its HTML.
-
-Evidence and visuals: back every claim with its evidence (a `path:line` reference, a command and its result, or a source link), and show shaped data (shares, scores, trends, trade-offs, flows) as a chart or diagram, not prose.
-
-Charts that fit: `quadrantChart` of directions by evidence and impact; `radar-beta` of options by criteria; `pie` of verified vs dropped claims.
-
-Markdown that renders well: `##` sections; tables with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (shown as a colored chip); `> [!WARNING]` alerts for risks; task lists for next steps; `mermaid` flows (`flowchart`, `sequenceDiagram`, `timeline`, `gantt`) and charts (`pie`, `xychart-beta`, `quadrantChart`, `radar-beta`); code references as `` `path/to/file.ts:42` ``; source links with a short label.
+Follow [shared report guidance](references/report-output.md) for rendering, `--manifest`, evidence, diagrams, and presentation.

@@ -66,7 +66,7 @@ export async function generateToolContract(): Promise<{
       [contractFile('cli-presentation.json'), `${JSON.stringify(buildCliPresentation())}\n`],
       [contractFile('provenance.json'), `${JSON.stringify(provenance, null, 2)}\n`],
       [contractFile('tool-types.schema.json'), bundleJson],
-      [tsPath, await renderTypeScript(fingerprint, bundle)],
+      [tsPath, await renderTypeScript(fingerprint, bundle, ir.tools.map((tool) => String(tool.name)))],
     ]),
     bundleJson,
     rustHeader: rustHeader(fingerprint, sha256(bundleJson)),

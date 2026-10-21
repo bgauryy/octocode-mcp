@@ -202,9 +202,8 @@ impl Chosen {
             .next_candidates(crate::tools::id::ToolId::LocalFetch)
     }
 
-    /// The first-page note: the provider's error when the view is shown
-    /// unfiltered because it could not answer, else the chunks the
-    /// candidate budget left unjudged.
+    /// Explain withheld evidence and candidate coverage, or the provider's
+    /// error when the view is returned unfiltered.
     pub(super) fn disclosure(&self) -> Option<String> {
         if let Some(error) = &self.provider {
             return Some(crate::tools::selection::unclassified_warning(
@@ -213,12 +212,16 @@ impl Chosen {
                 "its content is",
             ));
         }
-        self.next_candidates()?;
+        let notice = self.outcome.disclosure();
+        if self.next_candidates().is_none() {
+            return notice.map(str::to_owned);
+        }
         let total = self.outcome.receipt.total_items;
         let unjudged = self.outcome.unjudged.len();
         let judged = usize::try_from(total).unwrap_or(0).saturating_sub(unjudged);
         Some(format!(
-            "clasifyContext judged {judged} of {total} chunks (candidate budget); {unjudged} were not judged: the next candidate page judges them."
+            "clasifyContext judged {judged} of {total} chunks (candidate budget); {unjudged} were not judged: the next candidate page judges them. {}",
+            notice.unwrap_or_default()
         ))
     }
 
@@ -275,32 +278,37 @@ impl Chosen {
     /// leads (each a copy of `query`). The page's text leaves room for
     /// them, so the row stays within the response window it was cut for.
     pub(super) fn row_chars(&self, query: &serde_json::Value) -> usize {
-        use crate::tools::stream_page::json_chars;
         let receipt = serde_json::to_value(&self.outcome.receipt)
             .as_ref()
-            .map_or(0, json_chars);
+            .map_or(0, |value| {
+                octocode_engine::json_size::utf16_units(value).unwrap_or(0)
+            });
         // `"selection":` and the like around the values.
         const KEYS: usize = 100;
         if !self.outcome.leaves_out() {
             // No unfiltered or candidate-page lead: the view leaves nothing out.
-            return json_chars(&json!(self.outcome.token)) + receipt + KEYS;
+            return octocode_engine::json_size::utf16_units(&json!(self.outcome.token))
+                .unwrap_or(0)
+                + receipt
+                + KEYS;
         }
         let whole = crate::tools::selection::unfiltered_row(query, &[]);
         let unknown = self
             .unknown_reads(query)
             .iter()
-            .map(json_chars)
+            .map(|value| octocode_engine::json_size::utf16_units(value).unwrap_or(0))
             .sum::<usize>();
-        let candidates = self
-            .next_candidates()
-            .map_or(0, |token| json_chars(query) + json_chars(&json!(token)));
+        let candidates = self.next_candidates().map_or(0, |token| {
+            octocode_engine::json_size::utf16_units(query).unwrap_or(0)
+                + octocode_engine::json_size::utf16_units(&json!(token)).unwrap_or(0)
+        });
         // `"unfiltered":{"tool":…,"query":{"queries":[…]}}` and the like.
         let calls = 2 + usize::from(candidates > 0) + self.unknown_reads(query).len();
-        json_chars(&json!(self.outcome.token))
+        octocode_engine::json_size::utf16_units(&json!(self.outcome.token)).unwrap_or(0)
             + receipt
             + unknown
             + candidates
-            + json_chars(&whole)
+            + octocode_engine::json_size::utf16_units(&whole).unwrap_or(0)
             + KEYS * calls
     }
 }
@@ -1292,7 +1300,7 @@ mod tests {
             .map(|wire| {
                 let mut extras = 0;
                 for key in ["selection", "next"] {
-                    extras += crate::tools::stream_page::json_chars(&wire[key]);
+                    extras += octocode_engine::json_size::utf16_units(&wire[key]).unwrap_or(0);
                 }
                 extras
             })
@@ -1309,6 +1317,14 @@ mod tests {
     #[test]
     fn unfiltered_unknown_reads_exactly_the_unknown_chunks_beside_the_whole_view() {
         let result = word_read(None);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("not proof of absence")),
+            "{:?}",
+            result.warnings
+        );
         let receipt = result.selection.as_ref().expect("receipt");
         assert_eq!(
             (

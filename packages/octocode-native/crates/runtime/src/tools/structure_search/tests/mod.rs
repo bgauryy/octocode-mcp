@@ -392,18 +392,22 @@ fn a_line_sort_names_binary_and_unreadable_files_instead_of_counting_them() {
             )
         })
         .collect::<Vec<_>>();
-    let mut expected = vec![
+    let expected = vec![
         ("text.rs".to_owned(), json!(2)),
         ("empty.rs".to_owned(), json!(0)),
         ("blob.bin".to_owned(), json!("binary")),
     ];
     // Root reads every file whatever its mode.
     #[cfg(unix)]
-    if std::fs::read(root.0.join("locked.rs")).is_err() {
-        expected.push(("locked.rs".to_owned(), json!("unreadable")));
-    } else {
-        expected.insert(1, ("locked.rs".to_owned(), json!(1)));
-    }
+    let expected = {
+        let mut expected = expected;
+        if std::fs::read(root.0.join("locked.rs")).is_err() {
+            expected.push(("locked.rs".to_owned(), json!("unreadable")));
+        } else {
+            expected.insert(1, ("locked.rs".to_owned(), json!(1)));
+        }
+        expected
+    };
     assert_eq!(lines, expected, "{out}");
 }
 

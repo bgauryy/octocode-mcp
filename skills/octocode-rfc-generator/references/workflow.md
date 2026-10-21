@@ -22,7 +22,7 @@ Only when a consequential disagreement survives source review, no direct check s
 
 - Keep RFC revision, criteria, source evidence, proposed answers, and gaps together; [closure rules](checklist.md#track-and-close-questions) still apply.
 - Delegated reviewers (when authorized): Delphi: same evidence, independent first positions, then share; keep dissent. Task contract for each: objective a different question, inputs the shared evidence, constraints read-only (you keep write authority and judgment), output a position; keep partial returns.
-- Key: `OCTOCODE_CLASSIFICATION_API` in `<HOME>/.octocode/.env`.
+- Key: `OCTOCODE_CLASSIFICATION_API`; use [shared configuration handling](configuration.md) and [live tool availability](octocode-usage.md#availability).
 
 ```mermaid
 flowchart TD

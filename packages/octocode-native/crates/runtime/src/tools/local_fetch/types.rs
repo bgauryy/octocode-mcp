@@ -226,8 +226,8 @@ pub struct NextCalls {
     pub continue_window: Option<FetchCall>,
     #[serde(rename = "readBoundedLines", skip_serializing_if = "Option::is_none")]
     pub read_bounded_lines: Option<FetchCall>,
-    /// The other requested `ranges` of a streamed multi-range read refused
-    /// for the span `readBoundedLines` reads on its own.
+    /// The requested `ranges` after the span a streamed multi-range page
+    /// stopped inside (that span reads on through `continueWindow`).
     #[serde(
         rename = "readOtherRanges",
         skip_serializing_if = "Option::is_none",
@@ -957,7 +957,8 @@ impl RegexMatch for LocalFetchRegex {
         case_sensitive: bool,
         input: &str,
     ) -> Result<RegexSpans, ExtractionError> {
-        use octocode_engine::portable::{RustRangesError, rust_find_ranges};
+        use octocode_engine::search::rust_ranges::RustRangesError;
+        use octocode_engine::search::rust_ranges::rust_find_ranges;
         let limit = super::extraction::MAX_REGEX_MATCHES;
         // One probe past the limit tells a capped prefix from the whole set.
         let mut spans = rust_find_ranges(pattern, !case_sensitive, input, limit + 1).map_err(

@@ -377,7 +377,7 @@ fn walk_files(
         root,
     };
     let (resume, window_rows) = resumes.options(walking, q.walk_offset(), requested);
-    let mut native = octocode_engine::portable::query_file_system(
+    let mut native = octocode_engine::search::fs_query::query_file_system(
         FileSystemQueryOptions {
             time_budget: walking.budget(),
             resume,
@@ -481,14 +481,16 @@ fn files_costs(rows: &[Row], prefix: &str, deferred_detail: bool) -> Vec<super::
         .enumerate()
         .map(|(index, row)| {
             let header = *headers.entry(row.dir.as_str()).or_insert_with(|| {
-                crate::tools::stream_page::json_chars(
+                octocode_engine::json_size::utf16_units(
                     &json!({"dir":super::group_dir(prefix, &row.dir),"files":[]}),
-                ) + 1
+                )
+                .unwrap_or(0)
+                    + 1
             });
             super::RowCost {
                 // Reserve the deferred detail fields before paging so
                 // they cannot overflow the window.
-                entry: crate::tools::stream_page::json_chars(&row.entry)
+                entry: octocode_engine::json_size::utf16_units(&row.entry).unwrap_or(0)
                     + 1
                     + usize::from(deferred_detail && row.kind != "directory")
                         * DETAIL_FIELDS_RESERVE,

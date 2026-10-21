@@ -352,6 +352,7 @@ async fn an_unpinned_later_page_leads_to_the_restart() {
 
 /// A user server for `extension` launched by `command`, through a config
 /// file written under `dir`.
+#[cfg(unix)]
 fn user_server(dir: &std::path::Path, extension: &str, command: &str) -> super::LspExecutionConfig {
     let config = dir.join("lsp-servers.json");
     std::fs::write(
@@ -377,6 +378,7 @@ fn executable(path: &std::path::Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+#[cfg(unix)]
 async fn run_row(
     row: serde_json::Value,
     paths: &crate::policy::path::PathPolicy,
@@ -779,7 +781,7 @@ fn widened_content_reports_its_first_line_and_single_file_pages_hoist_the_path()
 
 #[test]
 fn provider_receipt_exposes_effective_invocation_and_omits_empty_optional_fields() {
-    let config = octocode_engine::lsp::types::JsLanguageServerConfig {
+    let config = octocode_engine::lsp::types::LspLanguageServerConfig {
         command: "rust-analyzer".into(),
         args: Some(vec!["--stdio".into()]),
         workspace_root: "/repo".into(),
@@ -817,7 +819,7 @@ fn provider_receipt_exposes_effective_invocation_and_omits_empty_optional_fields
     );
     assert!(receipt.get("readiness").is_none());
 
-    let config_without_args = octocode_engine::lsp::types::JsLanguageServerConfig {
+    let config_without_args = octocode_engine::lsp::types::LspLanguageServerConfig {
         args: Some(Vec::new()),
         ..config
     };
@@ -840,7 +842,7 @@ fn provider_receipt_exposes_effective_invocation_and_omits_empty_optional_fields
             "bundled",
         ),
     ] {
-        let config = octocode_engine::lsp::types::JsLanguageServerConfig {
+        let config = octocode_engine::lsp::types::LspLanguageServerConfig {
             args: Some(vec![argv.into()]),
             source,
             ..config_without_args.clone()
@@ -1307,7 +1309,10 @@ async fn walk_reference_pages(
             })
             .collect::<Vec<(u64, u64)>>();
         let more = row["pagination"]["hasMore"] == true;
-        pages.push((rows, crate::tools::stream_page::json_chars(&row)));
+        pages.push((
+            rows,
+            octocode_engine::json_size::utf16_units(&row).unwrap_or(0),
+        ));
         if !more {
             break;
         }
@@ -1602,7 +1607,7 @@ fn local_search_identity_continuations_validate_as_anchored_queries() {
         let validated = crate::contracts::validate_query("lspSearch", continuation)
             .unwrap_or_else(|error| panic!("{operation}: {error:?}"));
         let parsed: LspSearchQuery = serde_json::from_value(validated).expect("typed query");
-        assert!(matches!(parsed, LspSearchQuery::Anchored(_)), "{operation}");
+        assert_eq!(parsed.anchor_line(), Some(749), "{operation}");
         assert_eq!(parsed.operation(), operation);
         assert_eq!(parsed.symbol_name(), Some("run_and_clear_commit_hooks"));
     }
@@ -1684,7 +1689,7 @@ async fn compact_reference_terminal_fit_preserves_controls_and_cursor_identity()
         // The measured public terminal row plus the existing shared envelope
         // reserve fits; the repeated-query reserve would leave a tiny tail.
         let mut low = 1;
-        let mut high = crate::tools::stream_page::json_chars(&full) * 2;
+        let mut high = octocode_engine::json_size::utf16_units(&full).unwrap_or(0) * 2;
         assert!(crate::tools::page_windows::terminal_row_fits(
             Some(high),
             &full
@@ -1743,5 +1748,74 @@ async fn compact_reference_terminal_fit_preserves_controls_and_cursor_identity()
         )
         .await;
         assert_eq!(stale["errorCode"], "staleSnapshot");
+    }
+}
+
+#[test]
+fn anchored_operation_shapes_preserve_controls_and_replay() {
+    for operation in [
+        "definition",
+        "typeDefinition",
+        "implementation",
+        "references",
+        "callers",
+        "callees",
+        "supertypes",
+        "subtypes",
+        "hover",
+    ] {
+        let mut row = serde_json::json!({
+            "operation": operation, "path": "/repo/a.ts", "symbolName": "run", "line": 7,
+            "orderHint": 2, "page": 3, "pageSize": 4, "snapshot": "stable", "workspaceRoot": "/repo"
+        });
+        let locations = matches!(
+            operation,
+            "definition" | "typeDefinition" | "implementation" | "references"
+        );
+        let hierarchy = matches!(operation, "callers" | "callees" | "supertypes" | "subtypes");
+        let importer = matches!(operation, "references" | "callers");
+        if locations {
+            row["groupByFile"] = true.into();
+            row["contextLines"] = 2.into();
+        }
+        if hierarchy {
+            row["graphDepth"] = 3.into();
+        }
+        if importer {
+            row["importerPage"] = 4.into();
+        }
+        if operation == "references" {
+            row["includeDeclaration"] = false.into();
+        }
+        if operation == "subtypes" {
+            row["candidatePage"] = 5.into();
+        }
+        let mut parsed = query(row);
+        assert_eq!(parsed.operation(), operation);
+        assert_eq!(parsed.path(), Some("/repo/a.ts"));
+        assert_eq!(parsed.workspace_root(), Some("/repo"));
+        assert_eq!(parsed.symbol_name(), Some("run"));
+        assert_eq!(parsed.anchor_line(), Some(7));
+        assert_eq!(parsed.order_hint(), Some(2));
+        assert_eq!(parsed.page(), Some(3));
+        assert_eq!(parsed.page_size(), Some(4));
+        assert_eq!(parsed.snapshot(), Some("stable"));
+        assert_eq!(parsed.group_by_file(), locations.then_some(true));
+        assert_eq!(parsed.context_lines(), locations.then_some(2));
+        assert_eq!(parsed.graph_depth(), hierarchy.then_some(3));
+        assert_eq!(
+            parsed.include_declaration(),
+            (operation == "references").then_some(false)
+        );
+        assert_eq!(parsed.importer_page(), if importer { 4 } else { 1 });
+        assert_eq!(
+            parsed.candidate_page(),
+            if operation == "subtypes" { 5 } else { 1 }
+        );
+        parsed.set_path("/canonical/a.ts".to_owned());
+        parsed.set_workspace_root("/canonical".to_owned());
+        assert_eq!(parsed.path(), Some("/canonical/a.ts"));
+        assert_eq!(parsed.workspace_root(), Some("/canonical"));
+        assert_eq!(query(parsed.to_row()), parsed);
     }
 }

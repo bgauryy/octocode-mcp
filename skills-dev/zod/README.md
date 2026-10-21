@@ -78,7 +78,6 @@ Each rule file contains:
 
 ```
 ├── SKILL.md                          # Entry point for AI agents
-├── AGENTS.md                         # Compiled guide with all rules expanded
 ├── rules/                            # Individual rules (Incorrect→Correct)
 │   ├── parse-*                       # Parsing & type safety (CRITICAL)
 │   ├── schema-*                      # Schema design (CRITICAL)

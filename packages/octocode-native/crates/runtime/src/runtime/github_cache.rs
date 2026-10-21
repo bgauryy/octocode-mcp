@@ -20,10 +20,6 @@ impl GitHubContentCache {
         self.store.clear_memory();
     }
 
-    pub fn clear(&self) {
-        self.store.clear();
-    }
-
     fn key(partition: &Partition, resource: &str) -> CacheKey {
         CacheKey {
             namespace: "github-content".into(),
@@ -267,25 +263,6 @@ mod tests {
         let second = cache.get(&part, "github-content:big").await.unwrap();
         assert_eq!(first.bytes.len(), 4 << 20);
         assert_eq!(first.bytes.as_ptr(), second.bytes.as_ptr());
-    }
-
-    #[tokio::test]
-    async fn explicit_clear_empties_both_tiers() {
-        let dir = tempfile::tempdir().unwrap();
-        let part = partition("endpoint/credential").await;
-        let cache = GitHubContentCache::new(CacheConfig::default(), Some(dir.path().into()));
-        cache
-            .put(
-                &part,
-                "github-content:a".into(),
-                content(None),
-                Retention::Pinned,
-            )
-            .await;
-        cache.clear();
-        assert_eq!(cache.get(&part, "github-content:a").await, None);
-        let reader = GitHubContentCache::new(CacheConfig::default(), Some(dir.path().into()));
-        assert_eq!(reader.get(&part, "github-content:a").await, None);
     }
 
     #[tokio::test]

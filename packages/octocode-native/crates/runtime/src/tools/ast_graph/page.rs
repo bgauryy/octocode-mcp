@@ -8,8 +8,18 @@ use crate::tools::result::Continuation;
 use serde_json::{Map, Value, json};
 use std::{collections::BTreeMap, path::Path};
 
+#[cfg(test)]
+thread_local! {
+    /// The `maxFiles` maximum this test thread scans under (tests lower it).
+    pub(super) static MAX_FILES_MAXIMUM: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+}
+
 /// Most files one scan may walk: the contract `maxFiles` maximum.
 pub(super) fn max_files_maximum() -> u32 {
+    #[cfg(test)]
+    if let Some(lowered) = MAX_FILES_MAXIMUM.with(std::cell::Cell::get) {
+        return lowered;
+    }
     u32_of_usize(crate::tools::id::query_limits::ast_topology::MAX_FILES_MAXIMUM)
 }
 
@@ -42,7 +52,7 @@ pub(super) fn paginate(
 /// only adds row facts the final response pager charges. Each page holds at
 /// least one item, so a walk always moves.
 fn delivered_windows(items: &[Value], budget: usize) -> Vec<std::ops::Range<usize>> {
-    use crate::tools::stream_page::{json_chars, json_text_chars};
+    use crate::tools::stream_page::json_text_chars;
     let mut row = json!({"data": {"nodes": items}});
     crate::response::extras::prune_row(&mut row, ToolId::AstTopology, &json!({}));
     let rows = match row["data"]["nodes"].take() {
@@ -50,7 +60,9 @@ fn delivered_windows(items: &[Value], budget: usize) -> Vec<std::ops::Range<usiz
         _ => return vec![],
     };
     // `"key":value,` inside a row, or inside the `shared` map.
-    let field_chars = |key: &str, value: &Value| json_text_chars(key) + json_chars(value) + 4;
+    let field_chars = |key: &str, value: &Value| {
+        json_text_chars(key) + octocode_engine::json_size::utf16_units(value).unwrap_or(0) + 4
+    };
     let mut windows = Vec::new();
     let mut start = 0;
     while start < rows.len() {
@@ -72,11 +84,12 @@ fn delivered_windows(items: &[Value], budget: usize) -> Vec<std::ops::Range<usiz
                     .map(|(key, value)| (count - 1) * field_chars(key, value))
                     .sum::<usize>()
             };
-            let used = (full + json_chars(next) + 1).saturating_sub(saved);
+            let used = (full + octocode_engine::json_size::utf16_units(next).unwrap_or(0) + 1)
+                .saturating_sub(saved);
             if end > start && used > budget {
                 break;
             }
-            full += json_chars(next) + 1;
+            full += octocode_engine::json_size::utf16_units(next).unwrap_or(0) + 1;
             end += 1;
         }
         windows.push(start..end);

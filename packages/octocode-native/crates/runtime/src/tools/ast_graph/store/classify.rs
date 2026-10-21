@@ -5,6 +5,7 @@
 //! file, a generated client is not dead code). Classification reads at most
 //! [`HEAD_BYTES`] per file and never fails ingest: an unreadable file simply
 //! gets no content-based role.
+use super::super::js_paths::{BUNDLED_OUTPUT_DIRS, DECLARATION_EXTENSIONS, TYPE_STUB_EXTENSIONS};
 use std::io::Read;
 use std::path::Path;
 
@@ -119,20 +120,16 @@ fn path_roles(path: &str) -> u8 {
         .iter()
         .any(|marker| name.contains(marker))
         || name.starts_with("chunk-")
-        || dirs.iter().any(|dir| {
-            matches!(
-                *dir,
-                "dist" | "build" | "out" | ".next" | ".output" | ".nuxt"
-            )
-        }) && (name.ends_with(".js") || name.ends_with(".mjs") || name.ends_with(".cjs"))
+        || dirs.iter().any(|dir| BUNDLED_OUTPUT_DIRS.contains(dir))
+            && (name.ends_with(".js") || name.ends_with(".mjs") || name.ends_with(".cjs"))
     {
         roles |= ROLE_BUNDLED;
     }
 
-    if name.ends_with(".d.ts")
-        || name.ends_with(".d.mts")
-        || name.ends_with(".d.cts")
-        || name.ends_with(".pyi")
+    if DECLARATION_EXTENSIONS
+        .iter()
+        .chain(TYPE_STUB_EXTENSIONS)
+        .any(|extension| name.ends_with(extension))
     {
         roles |= ROLE_DECLARATION;
     }

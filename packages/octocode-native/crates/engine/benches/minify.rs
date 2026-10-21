@@ -9,7 +9,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use octocode_engine::portable::apply_content_view_minification;
+use octocode_engine::minify::apply::apply_content_view_minification;
 
 /// A realistic JS module: comments (stripped), imports, classes, control flow —
 /// the kind of content OXC actually has to parse and regenerate, not a

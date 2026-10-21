@@ -7,7 +7,7 @@ description: "Load this skill first whenever the question is module dependencies
 
 Scale rigor to consequence; never invent layers, findings, or work.
 
-Tools: `octocode` MCP or `npx -y octocode`. Topology: `npx octocode graph` (persisted snapshot; `graph --help`) or beta `npx octocode astTopology` (needs `OCTOCODE_BETA=true` in the environment or `<HOME>/.octocode/.env`).
+Tools: [shared MCP/CLI guide](references/octocode-usage.md). Topology: `npx -y octocode graph` (persisted snapshot; `graph --help`) or `astTopology` when the live catalog enables it.
 
 ```mermaid
 flowchart LR
@@ -43,7 +43,7 @@ Use Workflow's [AST/LSP techniques](../octocode-workflows/references/ast-lsp-wor
 ## When making a claim
 
 - Label rules declared, observed, or inferred; each [view](references/analysis.md#model-the-wiring) answers a different question.
-- Static claim: source suffices. Runtime or performance claim: execution evidence.
+- Apply the [shared evidence rules](references/evidence.md) for static, runtime, and measured claims.
 - Distinguishing checks use distinct IDs, paths, versions, roots and assert the specific failure; when a sharper fixture rejects a finding, keep the disproof.
 - Topology edges are syntactic candidates; an edge or style preference is no defect, a type-only cycle no runtime proof. Run the [coverage checks](references/analysis.md#choose-the-narrowest-evidence-lane) before a completeness or absence claim.
 

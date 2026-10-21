@@ -1,5 +1,7 @@
 # Output
 
+<!-- report-contract {"statuses":["Proposed","Accepted","Rejected","Superseded"],"required":["Summary","Proposed design","Validation and success","Open questions"],"anyOf":[]} -->
+
 ## Structure
 
 Always include `## Summary`, `## Proposed design`, `## Validation and success`, and `## Open questions` (each question starts `Blocking:`, an objection stating its consequence, or `Non-blocking:`, a concern; `None.` when nothing is open) under exactly those names. Other sections are optional: combine or omit them, keeping the table's names.
@@ -33,11 +35,23 @@ Save at `<workspace>/.octocode/octocode-rfc-generator/<YYYY-MM-DD>-<slug>/RFC.md
 
 No companion `PLAN.md`, `KPI.md`, `PREREQUISITES.md`, `IMPLEMENTATION.md`, or `RESOURCES.md`.
 
+## Presentation choices
+
+Summary → proposed behavior → alternatives and rollout → validation → open questions. Keep current facts distinct from proposed behavior.
+
+| Format | Use when / why |
+|---|---|
+| `flowchart` / `sequenceDiagram` / `stateDiagram-v2` | Explain proposed data flow / interactions / lifecycle, including failure paths. |
+| Alternatives table / `gantt` | Compare tradeoffs / show a schedule only when dates and dependencies are justified. |
+| Markdown images / linked prototype | Show proposed UI with a clear mockup label / let readers inspect a separate interactive prototype. |
+
+Follow the [shared visual-first, content-only rules](references/report-output.md#choose-the-format), including image embedding and iframe alternatives; load the [Mermaid chooser](references/report-mermaid.md) for specialized syntax or [widget schemas](references/report-widgets.md) before authoring graph/chart JSON.
+
 ## Saved report
 
 Save every RFC; render its folder after each revision.
 
-Start the file with this header, one value per line: `status` (one listed word) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`).
+Use the [shared header rules](references/report-output.md#report-header) with these skill-specific status values:
 
 ```yaml
 ---
@@ -50,22 +64,4 @@ next: <the one next action for whoever continues, in the imperative>
 
 Then the `#` title, a lead paragraph stating the answer, and the Structure sections.
 
-Date the folder with `date +%F`, never from memory. Render and fix every `warning:` line:
-
-```bash
-node <skill-folder>/scripts/render-report.mjs <rfc-folder>
-```
-
-`<skill-folder>` holds this file. `<rfc-folder>/index.html` sits beside `RFC.md`; `--open` only when the user asks. Markdown is the source.
-
-Before starting work that may repeat an earlier report, list the saved ones:
-
-```bash
-node <skill-folder>/scripts/render-report.mjs <workspace>/.octocode --manifest
-```
-
-`<workspace>/.octocode/octocode-rfc-generator` lists only this skill's reports; read a match's Markdown, not its HTML.
-
-Evidence and visuals: back every claim with its evidence (a `path:line` reference, a command and its result, or a source link), and show shaped data (shares, scores, trends, trade-offs, flows) as a chart or diagram, not prose.
-
-Markdown that renders well: `##` sections; tables with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (shown as a colored chip); `> [!WARNING]` alerts for risks; task lists for next steps; `mermaid` flows (`flowchart`, `sequenceDiagram`, `timeline`, `gantt`) and charts (`pie`, `xychart-beta`, `quadrantChart`, `radar-beta`); code references as `` `path/to/file.ts:42` ``; source links with a short label.
+Follow [shared report guidance](references/report-output.md) for rendering, `--manifest`, evidence, diagrams, and presentation.

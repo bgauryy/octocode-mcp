@@ -3,7 +3,7 @@
 `contract.json` holds the vectors for the reservation (path lease) rules that two systems implement separately and must
 agree on, because an agent of one reads the other's reservations:
 
-- `packages/octocode-agents-communication` (Python, `scripts/communication/paths.py`): the shared SQLite database for
+- `packages/octocode-agents-communication` (TypeScript, `src/runtime/paths.ts`): the shared SQLite database for
   Claude, Codex and Pi agents.
 - `packages/octocode-pi-extension` (TypeScript, `src/team/lease-key.ts`): Pi's own team database, which also reads the
   package's active leases before a guarded write (`src/team/peer-leases.ts`).
@@ -12,7 +12,7 @@ Each package runs the same file in its own suite:
 
 | Suite | What it calls |
 |---|---|
-| `packages/octocode-agents-communication/tests/coordination-contract.test.mjs` | `communication.paths`, and the real `lock` / `lock_many` commands |
+| `packages/octocode-agents-communication/tests/coordination-contract.test.ts` | `paths` and `unicode16` from `dist/runtime.js`, and the real `lock` / `lock_many` commands |
 | `packages/octocode-pi-extension/tests/coordination-contract.test.ts` | `lease-key.ts`, `pathKey`, and `TeamStore.lock` / `conflict` |
 
 ## Vectors

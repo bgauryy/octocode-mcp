@@ -51,6 +51,7 @@ pub(crate) fn decorate(tool: ToolId, structured: &mut Value, response_query: &Va
                     excluded_items: 0,
                     unknown_items: 0,
                     reason: Some("sourceUnavailable".into()),
+                    failures: Vec::new(),
                     usage: None,
                 })
                 .unwrap_or(Value::Null)

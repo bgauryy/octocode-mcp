@@ -29,6 +29,7 @@ description: "Load this skill first whenever the user asks whether a change, pro
 
 | When | Read | Why |
 |---|---|---|
+| Repository evidence needs Octocode | [MCP/CLI guide](references/octocode-usage.md) | Discovery, invocation, complete reads, recovery |
 | Planning a comparison | [design](references/design.md) | KPI, cases, splits, verdicts |
 | Choosing graders or judges | [grading](references/grading.md) | pass@k, judge calibration |
 | Runner, suite or run-folder layout, leakage, multi-agent subject | [harness](references/harness.md) | Folders, run identity, access, clean lab |

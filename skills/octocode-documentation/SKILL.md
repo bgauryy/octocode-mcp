@@ -4,68 +4,47 @@ description: "Load this skill first whenever you write, rewrite or review a READ
 ---
 
 # Octocode Documentation
-
-Write and review technical docs with verified claims.
+Write or review the requested document with verified facts and a useful next step for its reader.
 
 ```mermaid
 flowchart LR
-  A[Request] --> M{Wording only?}
-  M -- yes --> S[STYLE]
-  M -- no --> R[RESEARCH, pick mode]
-  R --> D{Decision open?}
-  D -- yes --> RFC[octocode-rfc-generator]
-  D -- no --> W[WRITE] --> S --> V[VERIFY]
-  S -- fact gap --> R
-  V -- gap --> R
+  A[Read request and existing page] --> B{Facts uncertain?}
+  B -- yes --> C[Check sources]
+  B -- no --> D[Write or review]
+  C --> D --> E[Check claims, examples and links]
+  E -- gap --> C
+  E -- ready --> F[Deliver; name unchecked items]
 ```
 
-## When a fact needs evidence
+## Workflow
 
-- Verify commands, paths, APIs, env vars, and behavior in the repo; take commands only from manifests, Makefiles, or CI.
-- A claim no further search will settle: mark it unresolved with its impact, or omit it.
-- Code and docs disagree: judge by contract, tests, decision history; fix stale docs, flag contract-violating code, or document the discrepancy without a promise.
-- Link stable source paths; line anchors only in reviews. Explain behavior, never copy implementation.
+1. Read the requested page, nearby conventions and relevant sources. Infer the reader and goal; ask only when missing information changes the content or destination. A named document authorizes editing it.
+2. Verify changed claims about commands, paths, APIs, settings and behavior against code, contracts and tests. For wording-only edits, preserve meaning without a broad investigation. If sources disagree, resolve from evidence or state the discrepancy.
+3. Write at the owning path; return findings for a review. Lead with the answer, put conditions beside actions, and arrange steps in execution order. Match the reader's task; no mode labels or page-type classification is required.
+4. Use short paragraphs, lists for steps, tables for comparisons, and diagrams only when they clarify relationships. Keep each fact in its owning page and link to it. Choose Mermaid by the question using the [shared format chooser](references/report-output.md#choose-the-format); explain its takeaway and draw only evidenced relationships.
+5. Check changed facts, commands, examples and links; run the project's documentation check. Correct failures, then report what changed and what remains unverified. Never imply an example ran when it was only read.
 
-## When choosing the mode
+## Writing rules
 
-- One mode per request ([mode table](references/write.md#mode)).
-- Wording-only on a named file is a style pass; a page needing an unverified fact is not.
-- Unclear: choose the smallest deliverable; ask only if the choice changes audience or content.
-- One Diátaxis [page type](references/write.md#page-type) per page; split unless one reader needs both.
+- Follow the user, then project style, local convention and this skill. Preserve verified meaning.
+- Use concrete verbs, consistent terms and descriptive links. Keep prerequisites before steps and expected results beside examples.
+- Use the smallest document that serves the reader; split only when it improves navigation or ownership. Do not force a taxonomy or a fixed section template onto shipped docs.
+- Link stable source paths; use line anchors for review findings. Explain behavior without copying implementation. Omit unsupported claims or name their uncertainty and impact.
 
-## When writing
-
-- A request naming a document authorizes writing it, in scope, for the session; ask only about an unresolved destination or effect.
-- Lead with the fact; conditions beside actions; concrete verbs; short steps.
-- Flow, branch, or state hard in prose: [Mermaid](references/style-guide.md#diagrams).
-- Link related pages by repo-relative path; deep facts stay in their owning page.
-
-## When running the style pass
-
-- Preserve verified meaning.
-- Precedence: user request, project style, local convention, this pack.
-- Run the project's doc check, if any; this skill ships no prose grader.
-
-## When verifying
-
-Definition of Done: changed claims, paths, commands, links, and examples match their sources and style passes; report what stays unresolved.
-
-## Resources
+## Resources (load only as needed)
 
 | When | Read | Why |
 |---|---|---|
-| Mode, page type, repo facts, ADR, `AGENTS.md`, drafting, verifying | [write](references/write.md) | Tables, claim map, ADR, agent files |
-| Style pass, review, wording ruling, controlled English, or a Mermaid diagram | [style-guide](references/style-guide.md) | Review procedure, rules, diagrams, audience, [word list](assets/google-word-list.tsv) |
-| Saving or rendering a report | [output.md](output.md), [render-report.mjs](scripts/render-report.mjs) | Format, renderer, manifest |
+| Repository evidence needs Octocode | [MCP/CLI guide](references/octocode-usage.md) | Search, exact reads, recovery |
+| Evidence spans files, or writing an ADR or agent instructions | [Write and verify](references/write.md) | Source checks and specialized conventions |
+| Detailed wording or style review | [Style guide](references/style-guide.md) | Editorial rules and optional word lookup |
+| Delivering or saving the result | [output.md](output.md) | Response and saved-report contract |
+| Rendering a saved report | [render-report.mjs](scripts/render-report.mjs) | Shared Markdown viewer and catalog |
 
 ## Related skills
 
-- Claim needs verification: `octocode-research`.
-- Decision still open: `octocode-rfc-generator`.
-- Wording changes agent behavior: `octocode-agentic-prompts`.
-- Skill structure or triggers: `octocode-skills` (this skill reviews the prose).
-- For an orchestrated multi-actor task: [octocode-workflows composition](../octocode-workflows/references/composition.md).
+Use `octocode-research` for unresolved code evidence, `octocode-rfc-generator` for an open design decision, `octocode-agentic-prompts` when wording controls agent behavior, and `octocode-skills` for skill packaging. Use [workflow composition](../octocode-workflows/references/composition.md) only when coordinating multiple actors.
 
 ## Output
 
-Follow [output.md](output.md).
+Follow [output.md](output.md); shipped documents keep their own format. Report BLUF with evidence and verification gaps.

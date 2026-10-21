@@ -38,6 +38,15 @@ impl GlobParsers {
         octocode_engine::graph::parser_overrides(root, rules.as_deref()).map(Self)
     }
 
+    /// Whether any rule names `path`: a file only `languageGlobs` map to a
+    /// grammar is a candidate of a graph-facts walk, even when two rules of
+    /// different parsers name it (the scan then skips it as ambiguous).
+    pub(crate) fn names(&self, path: &std::path::Path) -> bool {
+        self.0
+            .iter()
+            .any(|(_, matcher)| octocode_engine::search::glob::matches(matcher, path, false))
+    }
+
     /// The parser extension the rules select for `path`; none when no rule
     /// matches it, or when rules of different parsers do (the graph scan
     /// skips such a file as ambiguous).
@@ -180,17 +189,13 @@ pub(crate) fn compile_check(
 ) -> Result<(), RuleError> {
     let mut first_error = None;
     for extension in extensions {
-        let result = octocode_engine::portable::structural_search_detailed(
+        let result = octocode_engine::structural::search_detailed(
             "",
             &format!("pattern.{extension}"),
             None,
             pattern,
             rule,
-        )
-        .map_err(|error| RuleError {
-            code: INVALID_PATTERN,
-            message: untagged(&error.to_string()).to_owned(),
-        })?;
+        );
         match result.diagnostics.iter().find(|diagnostic| {
             matches!(
                 diagnostic.code.as_str(),

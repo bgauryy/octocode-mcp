@@ -45,7 +45,8 @@ fn try_log(home: &Path, reason: &str, path: &Path, bytes: u64) -> std::io::Resul
 
 /// Last `limit` eviction lines (oldest first), plus the live log size in
 /// bytes. Best-effort: an unreadable log reads as empty.
-pub fn recent_evictions(home: &Path, limit: usize) -> (Vec<String>, u64) {
+#[cfg(test)]
+pub(crate) fn recent_evictions(home: &Path, limit: usize) -> (Vec<String>, u64) {
     let file = home.join(LOG_DIR).join(LOG_FILE);
     let size = fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
     let Ok(text) = fs::read_to_string(&file) else {

@@ -1,5 +1,6 @@
 import { cpSync, existsSync, lstatSync, readFileSync, rmSync } from 'node:fs';
-import { basename, join, relative, sep } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
+import { build as buildCommon } from '../../../skills/common/build.mjs';
 
 const EXCLUDED = new Set([
   '__pycache__', 'coverage', 'dist', 'node_modules', 'out', 'target', 'tests',
@@ -9,6 +10,7 @@ const EXCLUDED = new Set([
 /** The only skill staging path used by build and prepack. */
 export function stageSkills(source, target) {
   if (!existsSync(source)) throw new Error(`Skills source not found: ${source}`);
+  buildCommon({ root: resolve(source, '..') });
   rmSync(target, { recursive: true, force: true });
   const manifests = new Map();
   cpSync(source, target, {
@@ -16,6 +18,9 @@ export function stageSkills(source, target) {
     filter: path => {
       const name = basename(path);
       if (name.startsWith('.') || EXCLUDED.has(name) || lstatSync(path).isSymbolicLink()) return false;
+      if (lstatSync(path).isDirectory() && existsSync(join(path, 'package.json')) &&
+          !existsSync(join(path, 'SKILL.md')) &&
+          JSON.parse(readFileSync(join(path, 'package.json'), 'utf8')).private === true) return false;
       const [skill, ...parts] = relative(source, path).split(sep);
       if (!skill || !parts.length) return true;
       if (!manifests.has(skill)) {

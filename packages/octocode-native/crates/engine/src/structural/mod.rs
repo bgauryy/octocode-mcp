@@ -110,7 +110,22 @@ fn no_matches(
     }
 }
 
-pub(crate) fn search_detailed(
+/// Match one source using the selected grammar, or the path's extension.
+pub fn search_detailed(
+    content: &str,
+    file_path: &str,
+    extension: Option<&str>,
+    pattern: Option<&str>,
+    rule: Option<&str>,
+) -> StructuralSearchDetailedResult {
+    let extension = extension.map_or_else(
+        || crate::text::file_extension::extension_of(file_path, true, "txt"),
+        str::to_owned,
+    );
+    evaluate_source(content, file_path, &extension, pattern, rule)
+}
+
+pub(crate) fn evaluate_source(
     content: &str,
     file_path: &str,
     ext: &str,

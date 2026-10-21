@@ -91,9 +91,12 @@ pub(super) fn configured_tool<'a>(tool: &'a Value, machine: &Value) -> &'a Value
     }
 }
 
-/// `octocode schema`: instructions, the grammar inventory, and every enabled
-/// tool with its compact field list.
-pub(super) fn catalog(machine: &Value) -> Result<Value, SchemaError> {
+/// Enabled tools and discovery commands; the full view adds instructions,
+/// the grammar inventory, setup routes and field summaries.
+pub(super) fn catalog(machine: &Value, view: Option<&str>) -> Result<Value, SchemaError> {
+    if view.is_some_and(|view| view != "full") {
+        return Err(usage("Without a tool, only --view full is supported."));
+    }
     let presentation = presentation()?;
     let instruction_view = match (
         machine["presentation"]["selection"] == true,
@@ -123,7 +126,7 @@ pub(super) fn catalog(machine: &Value) -> Result<Value, SchemaError> {
             "run": "octocode <tool> '<json>' (or --input FILE|-)",
             "query": "octocode schema <tool> --view query [--select FIELD=VALUE]",
             "variants": "octocode schema <tool> --view variants",
-            "full": "octocode schema <tool>",
+            "full": "octocode schema <tool> --view full",
             // First-run setup an agent cannot discover from the tool list.
             "setup": {
                 "auth": "octocode auth status (login: octocode auth login)",
@@ -138,6 +141,24 @@ pub(super) fn catalog(machine: &Value) -> Result<Value, SchemaError> {
         value["grammars"] = Value::String(grammars);
     }
     value["tools"] = Value::Array(listed);
+    if view.is_none() {
+        if let Some(tools) = value["tools"].as_array_mut() {
+            for tool in tools {
+                if let Some(row) = tool.as_object_mut() {
+                    row.remove("fields");
+                }
+            }
+        }
+        if let Some(catalog) = value.as_object_mut() {
+            catalog.remove("grammars");
+            catalog.remove("instructions");
+        }
+        value["commands"] = json!({
+            "run": "octocode <tool> '<json>' (or --input FILE|-)",
+            "query": "octocode schema <tool> [--select operation=VALUE]",
+            "full": "octocode schema --view full"
+        });
+    }
     Ok(value)
 }
 
@@ -158,11 +179,11 @@ pub(super) fn tool_view(
         return Err(usage(format!("Unknown tool: {name}. Known tools: {known}")));
     };
     let configured = configured_tool(tool, machine);
-    let view = view.unwrap_or("full");
+    let view = view.unwrap_or("query");
     let mut value = match select {
         None => configured["views"][view].clone(),
         Some(_) if view != "query" => {
-            return Err(usage("--select requires --view query and a tool name"));
+            return Err(usage("--select requires the query view and a tool name"));
         }
         Some(selection) => selected(tool, selection)?.clone(),
     };
@@ -337,7 +358,7 @@ mod tests {
 
     #[test]
     fn catalog_lists_only_enabled_tools() {
-        let value = catalog(&machine(&["astTopology", "clasify"])).expect("catalog");
+        let value = catalog(&machine(&["astTopology", "clasify"]), None).expect("catalog");
         let names: Vec<&str> = value["tools"]
             .as_array()
             .expect("tools")
@@ -359,7 +380,7 @@ mod tests {
             for clasify in [false, true] {
                 let mut machine = machine(if clasify { &[] } else { &["clasify"] });
                 machine["presentation"] = json!({ "selection": selection });
-                let value = catalog(&machine).expect("catalog");
+                let value = catalog(&machine, Some("full")).expect("catalog");
                 let instructions = value["instructions"].as_str().expect("instructions");
                 assert_eq!(instructions.contains("<clasify>"), selection || clasify);
                 assert_eq!(instructions.contains("clasifyContext"), selection);
@@ -457,8 +478,13 @@ mod tests {
             .starts_with("Unknown operation: nope. Operations: ")
         );
         assert_eq!(
-            message(tool_view(&m, "lspSearch", None, Some("operation=callers"))),
-            "--select requires --view query and a tool name"
+            message(tool_view(
+                &m,
+                "lspSearch",
+                Some("full"),
+                Some("operation=callers")
+            )),
+            "--select requires the query view and a tool name"
         );
         // A JSON-quoted string selects the same row as the bare value.
         let bare =

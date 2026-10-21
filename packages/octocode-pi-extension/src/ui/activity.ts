@@ -92,6 +92,7 @@ export class Activity {
 
   /** An assistant streaming event (`thinking_delta` with its `delta`, `text_start`, `toolcall_delta`, …); true when the line changed. */
   stream(type: string, now: number, delta?: string): boolean {
+    if (this.phase === 'idle') return false;
     const phase: Phase | undefined = type.startsWith('thinking') ? 'thinking' : type.startsWith('text') ? 'writing' : type.startsWith('toolcall') ? 'calling' : undefined;
     if (type === 'thinking_start') this.thought.reset();
     const thought = type === 'thinking_delta' && typeof delta === 'string' && this.thought.add(delta);

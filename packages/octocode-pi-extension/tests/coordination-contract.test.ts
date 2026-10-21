@@ -10,8 +10,8 @@ import { tmp } from './helpers.js';
 
 /**
  * The reservation rules Pi's team shares with the octocode-agents-communication package. The vectors live in
- * test-utils/agent-coordination/contract.json; the package's own suite runs the same file against its Python
- * (packages/octocode-agents-communication/tests/coordination-contract.test.mjs).
+ * test-utils/agent-coordination/contract.json; the package's own suite runs the same file against its TypeScript runtime
+ * (packages/octocode-agents-communication/tests/coordination-contract.test.ts).
  */
 interface Spot { path: string; kind: LeaseKind }
 interface Contract {

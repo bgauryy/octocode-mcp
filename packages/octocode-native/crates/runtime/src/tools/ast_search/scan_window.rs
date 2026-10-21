@@ -76,7 +76,7 @@ pub(super) fn cut_reason(max_files: Option<u32>) -> &'static str {
 /// Why an unbounded cut has no continuation, for the scan diagnostic: the
 /// walk ceiling, reachable files only by narrowing the scope.
 pub(super) fn ceiling_note(resume: Option<u32>) -> Option<String> {
-    let ceiling = octocode_engine::scan_budget::SCAN_WALK_FILES;
+    let ceiling = octocode_engine::scan_budget::walk_ceiling();
     resume
         .filter(|resume| octocode_engine::scan_budget::resume_offset(*resume).is_none())
         .map(|_| {

@@ -273,14 +273,14 @@ fn definition_identity_treats_a_symlink_and_its_target_as_one() {
     std::fs::write(&target, "export function f() {}\n").expect("target");
     let link = root.join("link.ts");
     std::os::unix::fs::symlink(&target, &link).expect("symlink");
-    let snippet = |path: &std::path::Path| octocode_engine::lsp::types::JsCodeSnippet {
+    let snippet = |path: &std::path::Path| octocode_engine::lsp::types::LspCodeSnippet {
         uri: octocode_engine::lsp::uri::path_to_uri(&path.to_string_lossy()).expect("uri"),
-        range: octocode_engine::lsp::types::JsRange {
-            start: octocode_engine::lsp::types::JsExactPosition {
+        range: octocode_engine::lsp::types::LspRange {
+            start: octocode_engine::lsp::types::LspExactPosition {
                 line: 0,
                 character: 16,
             },
-            end: octocode_engine::lsp::types::JsExactPosition {
+            end: octocode_engine::lsp::types::LspExactPosition {
                 line: 0,
                 character: 17,
             },
@@ -718,16 +718,25 @@ fn hover_rejects_walk_controls_with_the_operations_that_take_them() {
         row[field] = value;
         let error = crate::contracts::validate("lspSearch", serde_json::json!({"queries":[row]}))
             .expect_err("hover with a walk control");
-        let message = error
+        let issue = error
             .issues
             .iter()
-            .map(|issue| format!("{issue:?}"))
-            .collect::<String>();
+            .find(|issue| {
+                issue.rule_id == "schema.unknown-field"
+                    && issue.path.last().is_some_and(|part| part == field)
+            })
+            .expect("unsupported operation field");
+        let guidance = issue.schema.as_ref().expect("sibling operation guidance");
+        assert_eq!(guidance["siblingConflict"], true);
         assert!(
-            message.contains(&format!("{field} only applies to"))
-                && message.contains(applies)
-                && message.contains("remove it from hover"),
-            "{message}"
+            guidance["siblingRequires"]
+                .as_array()
+                .expect("allowed operations")
+                .iter()
+                .any(|requirement| requirement
+                    .as_str()
+                    .is_some_and(|text| text.contains(applies))),
+            "{guidance}"
         );
     }
 }
@@ -1509,7 +1518,9 @@ fn a_memory_exhausted_server_is_final_and_leaves_an_unverified_text_lead() {
     assert!(failure.hint.contains("unverified"), "{}", failure.hint);
 
     let query = query(serde_json::json!({
-        "operation": "callers", "path": "/repo/src/lib.rs", "symbolName": "greet", "line": 3
+        "operation": "callers", "path": "/repo/src/lib.rs", "symbolName": "greet", "line": 3,
+        "graphDepth": 3, "importerPage": 2, "page": 2, "pageSize": 4,
+        "snapshot": "caller-snapshot", "workspaceRoot": "/repo", "orderHint": 1
     }));
     let row = failure.row(&query, "file:///repo/src/lib.rs");
     assert_eq!(row["errorCode"], "serverCrashed", "{row}");
@@ -1530,6 +1541,14 @@ fn a_memory_exhausted_server_is_final_and_leaves_an_unverified_text_lead() {
     assert_eq!(rerun["operation"], "references", "{row}");
     assert_eq!(rerun["symbolName"], "greet", "{row}");
     assert_eq!(rerun["line"], 3, "{row}");
+    assert_eq!(rerun["path"], "/repo/src/lib.rs", "{row}");
+    assert_eq!(rerun["workspaceRoot"], "/repo", "{row}");
+    assert_eq!(rerun["orderHint"], 1, "{row}");
+    assert_eq!(rerun["importerPage"], 2, "{row}");
+    assert_eq!(rerun["pageSize"], 4, "{row}");
+    for field in ["graphDepth", "page", "snapshot", "candidatePage"] {
+        assert!(rerun.get(field).is_none(), "{field}: {row}");
+    }
     // Every lead the row hands out is valid input of its tool.
     public_row(&row);
 }
@@ -1750,7 +1769,7 @@ fn caller_pages_fill_the_budget_with_compact_rows() {
     for call in 0.. {
         assert!(call < 100, "the walk must end");
         let row = with_next(&q, call_items_payload(&q, &items, None, budget, &paths));
-        let chars = crate::tools::stream_page::json_chars(&row["files"]);
+        let chars = octocode_engine::json_size::utf16_units(&row["files"]).unwrap_or(0);
         assert!(chars <= budget, "page {call} is {chars} chars");
         fills.push(chars);
         seen.extend(

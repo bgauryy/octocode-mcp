@@ -196,7 +196,7 @@ impl PageReplayMemo {
         snapshot: &str,
         replay: PageReplay,
     ) -> (Arc<PageReplay>, bool) {
-        let weight = crate::cache::json_len(&replay);
+        let weight = octocode_engine::json_size::bytes(&replay).unwrap_or(usize::MAX);
         self.store.put_confirmed(
             self.key(key, snapshot),
             replay,
@@ -339,15 +339,16 @@ struct RepairLead {
 impl RepairLead {
     /// The note a lossy or approximate lead needs: what it drops (a field
     /// the contract does not own, or one another form of the row declares)
-    /// and which values it guesses. `row` renames the one-row repair call's
-    /// `queries.0` to the caller's row.
+    /// and which values it guesses. A row field reads `queries[N].field`, as
+    /// every repair message names a row; `row` renames the one-row repair
+    /// call's `queries.0` to the caller's row.
     fn note(&self, row: Option<usize>) -> Option<String> {
         let rename = |paths: &[String]| {
             paths
                 .iter()
-                .map(|path| match (row, path.strip_prefix("queries.0.")) {
-                    (Some(row), Some(rest)) => format!("queries.{row}.{rest}"),
-                    _ => path.clone(),
+                .map(|path| match path.strip_prefix("queries.0.") {
+                    Some(rest) => format!("queries[{}].{rest}", row.unwrap_or(0)),
+                    None => path.clone(),
                 })
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -814,16 +815,6 @@ impl ToolRuntime {
         config::inspector_data(&self.input, &self.config)
     }
 
-    /// Delete every cached response: GitHub content and registry answers.
-    pub fn clear_response_caches(&self) {
-        self.github_cache.clear();
-        self.page_replays.store.clear();
-        self.section_sessions.clear();
-        if let Some(artifact) = &self.artifact_cache {
-            artifact.clear();
-        }
-    }
-
     /// Resolved presentation switches shared by MCP and CLI discovery.
     fn presentation(&self) -> Value {
         let mcp = &self.config.resolved.mcp;
@@ -939,7 +930,7 @@ impl ToolRuntime {
             .collect::<Vec<_>>();
         json!({
             "fingerprint": contracts::tool_types::TOOL_TYPES_CONTRACT_FINGERPRINT,
-            "grammarCapabilities": octocode_engine::portable::grammar_capabilities(),
+            "grammarCapabilities": octocode_engine::signatures::languages::grammar_capabilities(),
             // Languages whose lspSearch server resolves here (resolution only);
             // hosts render it into the lspSearch description.
             "lspServers": self.lsp_server_languages(),
@@ -1661,7 +1652,8 @@ impl ChannelRun {
         // Only a response that can page needs that body: an explicit window,
         // or one near the automatic page size.
         let pageable = self.options.explicit()
-            || crate::tools::stream_page::json_chars(&structured) * 2 > self.output.auto_page_chars;
+            || octocode_engine::json_size::utf16_units(&structured).unwrap_or(0) * 2
+                > self.output.auto_page_chars;
         let body = match admitted.filter(|_| pageable) {
             Some(rows) => Some(self.envelope_of(rows, &rejected_at, scope, context)?.0),
             None => None,
@@ -2665,28 +2657,6 @@ mod construction_tests {
         let env = &runtime.lsp_execution_config().env;
         let name = config::field::LSP_CACHE_DIR.env_name().expect("bound");
         assert_eq!(env.get(name).map(String::as_str), Some("/tmp/lsp-cache"));
-    }
-
-    /// `cache clear` empties both response caches, each in its own
-    /// directory, and leaves the rest of the home alone.
-    #[test]
-    fn clearing_response_caches_empties_both_directories() {
-        let home = tempfile::tempdir().expect("home");
-        let runtime = runtime(home.path(), &[("OCTOCODE_STORAGE_MODE", "persistent")]);
-        let tmp = home.path().join("tmp");
-        for (dir, file) in [("response", "a.json"), ("artifact", "b.json")] {
-            std::fs::create_dir_all(tmp.join(dir)).expect("dir");
-            std::fs::write(tmp.join(dir).join(file), "{}").expect("entry");
-        }
-        std::fs::write(home.path().join("keep.txt"), "x").expect("other");
-        runtime.clear_response_caches();
-        for dir in ["response", "artifact"] {
-            let left = std::fs::read_dir(tmp.join(dir))
-                .map(|entries| entries.count())
-                .unwrap_or(0);
-            assert_eq!(left, 0, "{dir}");
-        }
-        assert!(home.path().join("keep.txt").exists());
     }
 
     /// Local tools reach only the GitHub checkouts (clones, materialized

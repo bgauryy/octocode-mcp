@@ -1,4 +1,5 @@
 use crate::tools::num::{u32_of, u32_of_signed};
+pub(super) use octocode_engine::types::SearchContext;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -10,9 +11,13 @@ pub use crate::contracts::tool_types::{
 /// The engine counts in `u32`; the wire contract owns the field set and its
 /// JSON integer types.
 impl LocalSearchQuery {
-    /// Context lines per hit; the contract bounds the request.
-    pub(crate) fn context_lines(&self) -> Option<u32> {
-        self.context_lines.map(u32_of_signed)
+    /// Resolve the shorthand once; explicit zero overrides either side.
+    pub(crate) fn context(&self) -> SearchContext {
+        let symmetric = self.context_lines.map(u32_of_signed).unwrap_or(0);
+        SearchContext {
+            before: self.context_before.map(u32_of_signed).unwrap_or(symmetric),
+            after: self.context_after.map(u32_of_signed).unwrap_or(symmetric),
+        }
     }
     pub(crate) fn match_content_length(&self) -> Option<u32> {
         self.match_content_length.map(|n| u32_of(n.get()))
@@ -122,9 +127,13 @@ impl LocalSearchQuery {
         if query.default_excludes.defaults() {
             query.default_excludes = None;
         }
-        if query.context_lines() == Some(super::executor::DEFAULT_CONTEXT_LINES) {
-            query.context_lines = None;
-        }
+        let context = query.context();
+        let symmetric = context.before == context.after;
+        query.context_lines =
+            (symmetric && context.before > 0).then_some(i64::from(context.before));
+        query.context_before =
+            (!symmetric && context.before > 0).then_some(i64::from(context.before));
+        query.context_after = (!symmetric && context.after > 0).then_some(i64::from(context.after));
         let length = query.match_content_length.take();
         if length.map(|n| u32_of(n.get()))
             != Some(super::executor::effective_match_content_length(&query))

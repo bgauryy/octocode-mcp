@@ -169,7 +169,7 @@ async fn dropping_a_constraint_the_caller_set_is_a_named_low_confidence_repair()
     assert!(
         crate::support::checks::hint(payload, "text")[0]
             .as_str()
-            .is_some_and(|note| note.contains("queries.0.glob")),
+            .is_some_and(|note| note.contains("queries[0].glob")),
         "{payload}"
     );
     runtime.close().await;
@@ -341,13 +341,13 @@ async fn approximate_and_lossy_coordinate_repairs_are_named() {
             "ghGetFileContent",
             json!({"path":"https://github.com/o/r/blob/main/src/a.rs"}),
             json!({"path":"src/a.rs","owner":"o","repo":"r","ref":"main"}),
-            "queries.0.path, queries.0.ref",
+            "queries[0].path, queries[0].ref",
         ),
         (
             "ghSearchHistory",
             json!({"owner":"o","repo":"r","operation":"pullRequest","path":"src/a.rs"}),
             json!({"owner":"o","repo":"r","operation":"pullRequest"}),
-            "queries.0.path",
+            "queries[0].path",
         ),
     ] {
         let error = runtime

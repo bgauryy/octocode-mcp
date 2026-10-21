@@ -50,7 +50,7 @@ impl PushDiagnosticsStore {
             let mut retained_bytes = 2usize; // JSON array brackets
             let mut retained_len = items.len();
             for (index, item) in items.iter().enumerate() {
-                let item_bytes = super::partial::encoded_len(item)
+                let item_bytes = crate::json_size::bytes(item)
                     .unwrap_or(MAX_PUSH_DIAGNOSTIC_BYTES_PER_DOCUMENT + 1);
                 let next_bytes = retained_bytes
                     .saturating_add(usize::from(index > 0))

@@ -1023,8 +1023,11 @@ __metadata:
   resolution: "@octocodeai/octocode-agents-communication@workspace:packages/octocode-agents-communication"
   dependencies:
     "@octocodeai/config": "workspace:*"
+    "@types/node": "npm:^24.19.2"
     esbuild: "npm:^0.28.2"
+    json-schema-to-typescript: "npm:16.0.0"
     octocode-mcp-cli: "workspace:*"
+    typescript: "npm:^6.0.3"
   bin:
     octocode-agents-communication: ./bin/octocode-agents-communication.mjs
   languageName: unknown
@@ -1061,10 +1064,10 @@ __metadata:
 
 "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::locator=octocode-monorepo%40workspace%3A.":
   version: 21.0.1
-  resolution: "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core#///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::hash=76cb0f&locator=octocode-monorepo%40workspace%3A."
+  resolution: "@octocodeai/octocode-core@file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core#///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core::hash=788e17&locator=octocode-monorepo%40workspace%3A."
   dependencies:
     zod: "npm:^4.6.2"
-  checksum: 10c0/4d86b2ce4897240b151450a6b90753f93b51ed6b165a275cc09ff1299a2dc4dfa1bf47bfedaa79494cf88d3afe7e408a0f51e3ede6d080c6468f3bde94347237
+  checksum: 10c0/251727c4a07bc08f91c6cb1a88847699170cea69371ee3eb27570e3a64693706a5603f871325038a598905d2caa9cf7c5b226176735da6dc795feb66fee0a4b2
   languageName: node
   linkType: hard
 
@@ -1175,6 +1178,12 @@ __metadata:
     typebox: "*"
   bin:
     octocode-pi-api: ./dist/api/cli.js
+  languageName: unknown
+  linkType: soft
+
+"@octocodeai/skills-common@workspace:skills/common":
+  version: 0.0.0-use.local
+  resolution: "@octocodeai/skills-common@workspace:skills/common"
   languageName: unknown
   linkType: soft
 

@@ -5,7 +5,7 @@ description: "Use when writing, structuring, reviewing, or hardening Rust and a 
 
 # Rust Best Practices
 
-tools: `npx octocode` / `octocode-mcp`
+tools: [shared Octocode MCP/CLI guide](references/octocode-usage.md)
 related-skill: `octocode-research`
 output: `<workspace>/.octocode/` for workspace work | `<home>/.octocode/` when no workspace applies
 

@@ -20,7 +20,9 @@ Root automation for the Octocode monorepo. Call a script directly only for a fla
 | [artifact-freshness.mjs](artifact-freshness.mjs) | Checks the embedded version and contract fingerprint of staged native artifacts. | Imported by workspace health; tests: [artifact-freshness.test.mjs](artifact-freshness.test.mjs) |
 | [brew-formula.mjs](brew-formula.mjs) | Renders the Homebrew formula from published npm platform payloads. | `node skills-dev/octocode-dev/scripts/dev.mjs brew:formula [version] [--out FILE]` |
 
-Related checks: [publish guard](prepublish.test.mjs).
+Shared script support: [entry-point detection](lib/entrypoint.mjs) preserves invocation through installed skill symlinks.
+
+Related checks: [publish guard](prepublish.test.mjs), [symlinked entry points](entry-symlink.test.mjs).
 
 ## Notes
 

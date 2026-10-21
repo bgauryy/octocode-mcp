@@ -733,7 +733,7 @@ fn a_default_walk_reaches_every_row_once_in_budget_sized_pages() {
     .expect("query");
     let (walk, bodies) = walk_search(root.path(), start, None);
     for (index, body) in bodies.iter().enumerate() {
-        let chars = crate::tools::stream_page::json_chars(&body["files"]);
+        let chars = octocode_engine::json_size::utf16_units(&body["files"]).unwrap_or(0);
         assert!(
             chars <= crate::tools::page_windows::page_budget(None, &serde_json::json!({})),
             "page {}: {chars} chars",

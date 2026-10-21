@@ -12,10 +12,9 @@ writeFileSync(
   'OCTOCODE_BETA=1\nOCTOCODE_CLASSIFICATION_API=validation-parity-fake-key\nOCTOCODE_CLASSIFICATION_API_HOST=http://127.0.0.1:9\n'
 );
 
-// One case list, two surfaces of the real addon: the MCP and CLI surfaces
-// answer a rejected call with the same typed envelope and repair guidance,
-// because native is the only validator and the only error projection. Needs a
-// current native build.
+// One case list, two availability surfaces of the real addon. Both calls use
+// executeMcp, so this checks native validation across surface configuration;
+// the built CLI executable versus MCP transport is checked by stdio acceptance.
 type Runtime = {
   executeMcp(requestId: string, tool: string, input: unknown): Promise<unknown>;
   close(): Promise<void>;
@@ -136,7 +135,7 @@ const cases: ReadonlyArray<{
   },
 ];
 
-describe('CLI and MCP validation guidance parity', () => {
+describe('N-API validation guidance across CLI and MCP availability surfaces', () => {
   it.each(cases)('$name', async ({ tool, query, says, never = [] }) => {
     const input = { queries: [{ ...brief, ...query }] };
     const mcp = await rejection(mcpRuntime, tool, input);

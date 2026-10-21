@@ -240,7 +240,7 @@ pub(super) fn graph(runtime: &ToolRuntime, command: GraphCommand, mode: super::O
         eprintln!("{error}");
         0
     } else {
-        super::write_text(&octocode_engine::portable::json_to_yaml_string(
+        super::write_text(&octocode_engine::text::yaml_utils::json_to_yaml_string(
             output.value,
             None,
         ))

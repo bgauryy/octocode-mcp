@@ -17,9 +17,9 @@ import { PeerRegistry } from './peer-registry.js';
  * listed database of a live process is read the same way.
  */
 
-/** `PRAGMA application_id` of the package database (`scripts/schema.sql`: it spells "OCTO" ... "COMM"); a different file is not ours. */
+/** `PRAGMA application_id` of the package database (`assets/schema.sql` of the package: it spells "OCTO" ... "COMM"); a different file is not ours. */
 export const PEER_APPLICATION_ID = 1329678147;
-/** `PRAGMA user_version` of the schema this reads (`scripts/schema.sql`); any other is skipped with one warning. One version: the package opens only this schema. */
+/** `PRAGMA user_version` of the schema this reads (`assets/schema.sql`); any other is skipped with one warning. One version: the package opens only this schema. */
 export const PEER_SCHEMA_VERSION = 7;
 /** How long a read waits for the package's writer: a refusal is advisory, so an edit never stalls on it. */
 const BUSY_MS = 200;

@@ -9,7 +9,7 @@ use crate::tools::test_support::{Fixture, assert_row_contract, node_available, r
 use octocode_engine::error::ErrorKind;
 use octocode_engine::lsp::client::NativeLspClient;
 use octocode_engine::lsp::pool::{LspClientPool, LspPoolOptions};
-use octocode_engine::lsp::types::JsLanguageServerConfig;
+use octocode_engine::lsp::types::LspLanguageServerConfig;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -67,8 +67,8 @@ fn fixture() -> (Fixture, PathBuf, PathBuf) {
     (dir, root, script)
 }
 
-fn config(root: &Path, script: &Path, pids: Option<&Path>) -> JsLanguageServerConfig {
-    JsLanguageServerConfig {
+fn config(root: &Path, script: &Path, pids: Option<&Path>) -> LspLanguageServerConfig {
+    LspLanguageServerConfig {
         command: script.to_string_lossy().into_owned(),
         args: Some(Vec::new()),
         workspace_root: root.to_string_lossy().into_owned(),

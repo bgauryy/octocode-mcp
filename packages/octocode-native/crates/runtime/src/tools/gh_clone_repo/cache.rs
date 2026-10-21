@@ -1,6 +1,6 @@
 use super::{CloneContext, CloneError, check_control, hash};
 use crate::cache::evictions::log_eviction;
-use crate::civil_date::{days_from_civil, iso8601_millis, unix_millis};
+use crate::civil_date::{iso8601_millis, rfc3339_millis, unix_millis};
 use octocode_io::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -261,8 +261,8 @@ pub(super) fn valid_clone(path: &Path, ttl: Duration) -> Option<CacheMeta> {
     {
         return None;
     }
-    let cloned = parse_iso_millis(&meta.cloned_at)?;
-    let expires = parse_iso_millis(&meta.expires_at)?;
+    let cloned = rfc3339_millis(&meta.cloned_at)?;
+    let expires = rfc3339_millis(&meta.expires_at)?;
     let effective_expiry = cloned.saturating_add(ttl.as_millis() as i64).min(expires);
     (path.is_dir() && unix_millis() < effective_expiry).then_some(meta)
 }
@@ -276,8 +276,8 @@ pub(super) struct CacheAge {
 
 impl CacheAge {
     pub fn of(meta: &CacheMeta, ttl: Duration) -> Option<Self> {
-        let cloned = parse_iso_millis(&meta.cloned_at)?;
-        let expires = parse_iso_millis(&meta.expires_at)?;
+        let cloned = rfc3339_millis(&meta.cloned_at)?;
+        let expires = rfc3339_millis(&meta.expires_at)?;
         Some(Self {
             cloned_at: meta.cloned_at.clone(),
             expires_at: iso8601_millis(cloned.saturating_add(ttl.as_millis() as i64).min(expires)),
@@ -434,7 +434,7 @@ pub(super) fn evict(context: &CloneContext<'_>, protected: Option<&Path>) {
         let Some(meta) = meta else { continue };
         live.push((
             branch.clone(),
-            parse_iso_millis(&meta.cloned_at).unwrap_or(0),
+            rfc3339_millis(&meta.cloned_at).unwrap_or(0),
             meta.size_bytes.unwrap_or_else(|| directory_size(&branch)),
         ));
     }
@@ -543,50 +543,33 @@ fn cache_io(error: io::Error) -> CloneError {
     )
 }
 
-fn parse_iso_millis(value: &str) -> Option<i64> {
-    if !value.is_ascii()
-        || value.len() != 24
-        || &value[4..5] != "-"
-        || &value[7..8] != "-"
-        || &value[10..11] != "T"
-        || &value[23..] != "Z"
-    {
-        return None;
-    }
-    let year = value[0..4].parse::<i64>().ok()?;
-    let month = value[5..7].parse::<i64>().ok()?;
-    let day = value[8..10].parse::<i64>().ok()?;
-    let hour = value[11..13].parse::<i64>().ok()?;
-    let minute = value[14..16].parse::<i64>().ok()?;
-    let second = value[17..19].parse::<i64>().ok()?;
-    let millis = value[20..23].parse::<i64>().ok()?;
-    if !(1..=12).contains(&month)
-        || !(1..=31).contains(&day)
-        || hour > 23
-        || minute > 59
-        || second > 59
-    {
-        return None;
-    }
-    Some(
-        days_from_civil(year, month, day) * 86_400_000
-            + hour * 3_600_000
-            + minute * 60_000
-            + second * 1_000
-            + millis,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    fn clone_cache_rejects_malformed_timestamps() {
+        for bad in ["2026-01-01T00x00y00z000Z", "2026-02-31T00:00:00.000Z"] {
+            let sha = "a".repeat(40);
+            let mut meta = CacheMeta::new(
+                &identity("o", "r", &sha, None, 1),
+                &sha,
+                Duration::from_secs(60),
+            );
+            meta.cloned_at = bad.into();
+            assert!(
+                CacheAge::of(&meta, Duration::from_secs(60)).is_none(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
     fn timestamp_round_trip() {
         for value in [0, 1_700_000_000_123, 1_900_000_000_999] {
-            assert_eq!(parse_iso_millis(&iso8601_millis(value)), Some(value));
+            assert_eq!(rfc3339_millis(&iso8601_millis(value)), Some(value));
         }
-        assert_eq!(parse_iso_millis("2024-01-01T00:00:00.00éZ"), None);
+        assert_eq!(rfc3339_millis("2024-01-01T00:00:00.00éZ"), None);
     }
 
     #[test]

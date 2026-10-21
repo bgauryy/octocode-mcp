@@ -9,23 +9,6 @@ use std::sync::Mutex as StdMutex;
 /// Cap on the retained partial-result bytes for one token.
 const MAX_PARTIAL_RESULT_BYTES: usize = 16 * 1024 * 1024;
 
-/// Byte length of `value`'s JSON encoding, counted without retaining it.
-pub(super) fn encoded_len(value: &impl serde::Serialize) -> Option<usize> {
-    struct Counter(usize);
-    impl std::io::Write for Counter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0 += buf.len();
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let mut counter = Counter(0);
-    serde_json::to_writer(&mut counter, value).ok()?;
-    Some(counter.0)
-}
-
 #[derive(Default)]
 struct PartialResultBuffer {
     values: Vec<Value>,
@@ -62,7 +45,7 @@ impl PartialResultStore {
         let Some(buffer) = buffers.get_mut(token) else {
             return;
         };
-        let bytes = encoded_len(&value).unwrap_or(MAX_PARTIAL_RESULT_BYTES + 1);
+        let bytes = crate::json_size::bytes(&value).unwrap_or(MAX_PARTIAL_RESULT_BYTES + 1);
         if buffer.bytes.saturating_add(bytes) > MAX_PARTIAL_RESULT_BYTES {
             buffer.overflowed = true;
             return;
@@ -198,20 +181,5 @@ mod tests {
         let guard = store.begin("big".to_owned());
         store.record("big", json!("x".repeat(MAX_PARTIAL_RESULT_BYTES)));
         assert!(guard.finish(Value::Null).is_err());
-    }
-}
-
-#[cfg(test)]
-mod encoded_len_tests {
-    use super::encoded_len;
-    use serde_json::json;
-
-    #[test]
-    fn encoded_len_matches_the_serialized_byte_count() {
-        let value = json!({"message": "héllo \"quoted\"", "items": [1, 2.5, null, {"k": "v"}]});
-        assert_eq!(
-            encoded_len(&value),
-            Some(serde_json::to_vec(&value).unwrap().len())
-        );
     }
 }

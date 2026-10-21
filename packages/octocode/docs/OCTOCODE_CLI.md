@@ -51,9 +51,8 @@ Beta means `OCTOCODE_BETA=true` (or `local.beta: true`).
 | `graph` | Build and query a persisted code graph. See [`graph`](#graph--persisted-code-graph). |
 | `help` | Help for any command. |
 
-Hidden maintenance commands: `cache status|clear` (cache directory, recent
-evictions; `clear` deletes cached GitHub and registry responses) and
-`lsp-server list|install|uninstall|clean|status` (see [`lsp-server`](#lsp-server--language-servers)).
+Hidden maintenance command: `lsp-server list|install|uninstall|clean|status`
+(see [`lsp-server`](#lsp-server--language-servers)).
 
 `npx octocode <command> --help` is the live reference. A tool's help ends with
 its required fields, per variant, and one runnable example. A bare
@@ -88,9 +87,14 @@ Replace `npx octocode` with `octocode` when the package is installed globally.
 
 ### Schema discovery
 
+Use `npx octocode -h` for a summary, `--help` for output rules and exit codes,
+and `<tool> --help` for required fields and an example.
+
 ```bash
-npx octocode schema                                          # enabled tools, fields, instructions
-npx octocode schema <tool>                                   # variants, usage, full query schema, availability
+npx octocode schema                                          # enabled tools and purposes
+npx octocode schema <tool>                                   # compact query schema and availability
+npx octocode schema --view full                            # fields, instructions, grammars
+npx octocode schema <tool> --view full                      # complete tool reference
 npx octocode schema <tool> --view variants                   # branch names, required fields, examples
 npx octocode schema <tool> --view query                      # self-contained query schema
 npx octocode schema ghSearchHistory --view query --select operation=commit
@@ -123,8 +127,7 @@ The CLI and MCP server share cache data under the configured Octocode home:
 | Tree | `tmp/materialize/v3/{owner}/{repo}/{commitSha}` | Materialized repository trees; `{commitSha}.manifest.json` beside each records the files written |
 | Response | `tmp/response/` | Eligible GitHub and npm response payloads |
 
-`cache status` prints the cache directory and recent evictions; `cache clear`
-removes cached GitHub responses. See
+Delete a bucket to drop it; `config home` prints the home. See
 [Cache storage and lifecycle](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md#cache-storage-and-lifecycle).
 
 ---
@@ -224,19 +227,35 @@ percentile)).
 ## `install` — MCP client setup
 
 ```bash
+npx octocode install --list                              # every client: status and config path
 npx octocode install --ide cursor
+npx octocode install --ide cursor --scope workspace      # this project's .cursor/mcp.json
+npx octocode install --ide claude-code --scope local     # this directory only, in ~/.claude.json
 npx octocode install --ide claude-code --check
 npx octocode install --ide claude-desktop --force
-npx octocode install --ide cursor --dry-run   # preview; --json for the entry
+npx octocode install --ide cursor --dry-run              # preview; --json for the entry
+npx octocode install --ide cursor --remove               # delete the entry (backup kept)
 ```
 
-`install --list` prints the client ids: Cursor, Claude Desktop, Claude Code,
-Windsurf, Trae, Antigravity, VS Code Cline/Roo/Continue, Zed, OpenCode, Gemini
-CLI, Kiro, Codex, Goose. Use an exact id; a partial id such as `claude` is
-rejected with the ids it could mean. Other flags: `--method npx|bunx|pnpm`,
-`--enable-local true|false`, `--pass-env`, `--rollback <file.bak>`. Without
-`--ide` on a terminal, the native CLI lists clients and asks for a number.
-Press Enter to cancel. Piped or JSON invocations require `--ide`.
+Clients: Cursor, Claude Desktop, Claude Code, Windsurf, Trae, Antigravity, VS
+Code Cline/Roo/Continue, Zed, OpenCode, Gemini CLI, Kiro, Codex, Goose. Use an
+exact id; a partial id such as `claude` is rejected with the ids it could mean.
+
+`install --list [--scope …]` shows each client's entry: `installed`, `disabled`,
+`custom` (an `octocode` entry install did not write), `absent`, `invalid`
+(unreadable config) or `unsupported` (no such scope), with the config path.
+`--scope` picks the file: `home` (default, the user config), `workspace` (the
+project file under the current directory: Cursor, Claude Code, Continue, Kiro,
+Codex) or `local` (Claude Code's per-directory section of `~/.claude.json`).
+
+`--remove` deletes the entry and keeps the previous file as a rolling backup;
+no entry is a successful no-op, and a `custom` entry needs `--force`. Other
+flags: `--method npx|bunx|pnpm`, `--enable-local true|false`, `--pass-env`
+(copies `GITHUB_TOKEN` and `OCTOCODE_ENABLE_LOCAL` from this shell into the
+entry, so the client config stores the token in plain text), `--rollback
+<file.bak>`. Without `--ide` on a terminal, the native CLI lists clients with
+their status and asks for a number. Press Enter to cancel. Piped or JSON
+invocations require `--ide`.
 
 ---
 

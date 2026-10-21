@@ -6,6 +6,7 @@
 //!
 //! It returns a `TextSearchResult` with byte and time stats from the walk.
 
+use crate::types::SearchContext;
 use aho_corasick::AhoCorasick;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -983,7 +984,7 @@ fn capture_sort_time(opts: &TextSearchOptions, entry: &ignore::DirEntry) -> Opti
 
 fn build_searcher(
     opts: &TextSearchOptions,
-    context_lines: u32,
+    context: SearchContext,
     binary: BinaryDetection,
 ) -> Searcher {
     let mut sb = SearcherBuilder::new();
@@ -1002,10 +1003,8 @@ fn build_searcher(
     if opts.invert_match.unwrap_or(false) {
         sb.invert_match(true);
     }
-    if context_lines > 0 {
-        sb.before_context(context_lines as usize);
-        sb.after_context(context_lines as usize);
-    }
+    sb.before_context(context.before as usize);
+    sb.after_context(context.after as usize);
     sb.build()
 }
 
@@ -1368,7 +1367,7 @@ struct FileSearcher<'a, M: Matcher> {
     matcher: &'a M,
     searcher: Searcher,
     prefix_searcher: Option<Searcher>,
-    context_lines: u32,
+    context: SearchContext,
     work: MatchWork,
     deadline: Option<Instant>,
     stop: &'a AtomicBool,
@@ -1418,10 +1417,10 @@ impl<M: Matcher> FileSearcher<'_, M> {
             return Ok(outcome);
         };
         let prefix = read_prefix(file, offset)?;
-        let (opts, context_lines) = (self.opts, self.context_lines);
+        let (opts, context) = (self.opts, self.context);
         let prefix_searcher = self
             .prefix_searcher
-            .get_or_insert_with(|| build_searcher(opts, context_lines, BinaryDetection::none()));
+            .get_or_insert_with(|| build_searcher(opts, context, BinaryDetection::none()));
         let mut prefix_sink = CollectSink::new(
             self.matcher,
             self.work,
@@ -1469,10 +1468,10 @@ fn collect<M: Matcher + Sync>(
     } = control;
     let only_matching = opts.only_matching.unwrap_or(false);
     // only-matching emits bare spans; only-matching ignores context too.
-    let context_lines = if mode == Mode::Normal && !only_matching {
-        opts.context_lines.unwrap_or(0)
+    let context = if mode == Mode::Normal && !only_matching {
+        opts.context
     } else {
-        0
+        SearchContext::default()
     };
     let limit = collection_limit(opts);
 
@@ -1525,15 +1524,15 @@ fn collect<M: Matcher + Sync>(
         let mut files = FileSearcher {
             opts,
             matcher,
-            searcher: build_searcher(opts, context_lines, BinaryDetection::quit(b'\x00')),
+            searcher: build_searcher(opts, context, BinaryDetection::quit(b'\x00')),
             prefix_searcher: None,
-            context_lines,
+            context,
             // `mode`/`only_matching` are invariant for the whole search.
             work: MatchWork {
                 deferred_snippet: (opts.defer_values
                     && opts.digest_max_bytes == Some(u64::MAX)
                     && !opts.perl_regex.unwrap_or(false)
-                    && context_lines == 0
+                    && context.is_empty()
                     && !only_matching
                     && !opts.multiline.unwrap_or(false))
                 .then_some(opts.max_snippet_chars.unwrap_or(DEFAULT_MAX_SNIPPET_CHARS) as usize),
@@ -2017,7 +2016,7 @@ fn build_result(
     let capped = !cap_reasons.is_empty();
     let cap_reason = capped.then(|| cap_reasons.join(", "));
 
-    let context_lines = opts.context_lines.unwrap_or(0);
+    let context = opts.context;
     let max_snippet = opts.max_snippet_chars.unwrap_or(DEFAULT_MAX_SNIPPET_CHARS) as usize;
 
     // Totals cover every kept file, including files the cap dropped from the
@@ -2049,7 +2048,7 @@ fn build_result(
                         source: None,
                     }
                 }
-                Mode::Normal => assemble_file(r.path, r.entry, context_lines, max_snippet),
+                Mode::Normal => assemble_file(r.path, r.entry, context, max_snippet),
                 // files-only / files-without-match: path list, matchCount 1, no
                 // snippets.
                 Mode::FilesOnly | Mode::FilesWithoutMatch => TextSearchFile {
@@ -2110,7 +2109,7 @@ fn build_result(
 /// partial result carries `capReason` `cancelled`). `fixed_string` is honored by
 /// escaping the pattern for the regex engine; the CLI gave `-F` precedence over
 /// `-P`, so PCRE2 only applies when `fixed_string` is not set.
-pub(crate) fn search_cancellable(
+pub fn search_cancellable(
     opts: TextSearchOptions,
     path_filter: Arc<dyn TextSearchPathFilter>,
     cancelled: &(dyn Fn() -> bool + Sync),

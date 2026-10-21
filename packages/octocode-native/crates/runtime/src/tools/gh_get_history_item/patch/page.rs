@@ -208,7 +208,7 @@ fn patchless_rows_chars(files: &[Value], views: &[Option<String>], lengths: &[us
             }
             remove_nulls(&mut row);
             compact_file_header(&mut row);
-            crate::tools::stream_page::json_chars(&row) + 1
+            octocode_engine::json_size::utf16_units(&row).unwrap_or(0) + 1
         })
         .sum()
 }

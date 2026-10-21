@@ -500,7 +500,7 @@ fn yaml(mut value: Value, keys: &[&str]) -> String {
     let mut rows = Vec::new();
     let tag = flow_tag(&value);
     flow_rows(&mut value, &mut rows, 0, &tag);
-    let text = octocode_engine::portable::json_to_yaml_string(
+    let text = octocode_engine::text::yaml_utils::json_to_yaml_string(
         value,
         Some(octocode_engine::types::YamlConversionConfig {
             sort_keys: Some(false),

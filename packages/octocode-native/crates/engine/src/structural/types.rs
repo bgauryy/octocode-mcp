@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 
 /// Precise position of one captured metavariable node. Line is 1-based (usable
 /// as an `lspSearch` `line`); columns are 0-based UTF-16 code-unit
@@ -171,6 +172,10 @@ pub struct StructuralSearchFilesDetailedResult {
     /// unevaluated candidate (pass it back as `skip_files`). `None` when the
     /// scan is complete, or was cut by an explicit `max_files`.
     pub scan_resume: Option<u32>,
+    /// The first candidate (walk order) the walk cap left out: the walk
+    /// stopped before it, so it and every later candidate are unread. `None`
+    /// when the walk reached the end of its scope.
+    pub scan_frontier: Option<PathBuf>,
     pub files: Vec<StructuralSearchDetailedFileResult>,
     pub total_matches: u32,
     pub parsed_files: u32,

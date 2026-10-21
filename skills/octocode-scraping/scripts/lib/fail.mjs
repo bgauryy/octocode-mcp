@@ -1,5 +1,6 @@
 /**
- * The one error shape for every scraping script: compact JSON on stdout, then exit.
+ * Source: skills/common/scripts/lib/fail.mjs; regenerate skill copies with skills/common/build.mjs.
+ * Shared script error shape: compact JSON on stdout, then exit.
  * Exit 2 = invalid input, 1 = runtime failure or nothing found.
  */
 export function fail(code, message, exitCode = 1, extra = {}) {

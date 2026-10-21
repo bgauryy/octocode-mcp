@@ -18,6 +18,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 pub use crate::contracts::tool_types::GhStructureQuery;
+use crate::contracts::tool_types::{
+    GhStructureQueryLanguages, GhStructureQueryRefs, GhStructureQueryTree,
+};
 
 mod dates;
 mod listing;
@@ -28,25 +31,87 @@ use listing::*;
 use materialize::*;
 use traverse::*;
 
-/// Run one ghStructure row. A listing of a missing path names the path and
-/// lists the nearest existing directory (case-corrected) with
-/// `hints.viewTree`; without a located directory it lists the parent.
 pub async fn run<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     query: &GhStructureQuery,
     request: Result<&RequestContext, ProviderError>,
     home: &Path,
 ) -> Result<ToolData, GhFailure> {
+    if let GhStructureQuery::Tree(query) = query {
+        return run_tree(provider, query, request, home).await;
+    }
+    let context = request.map_err(|error| search_failure(error, None))?;
+    let error = match execute(provider, query, context, home).await {
+        Ok(output) => return Ok(output),
+        Err(error) => error,
+    };
+    let (owner, repo) = repository(query);
+    let renamed = canonical(provider, query, owner, repo, context)
+        .await
+        .ok()
+        .flatten();
+    let query = renamed.as_ref().map_or(query, |(_, canonical)| canonical);
+    let (owner, repo) = repository(query);
+    let failure = with_ref_recovery(search_failure(error, None), owner, repo);
+    let failure = with_default_branch(provider, failure, ToolId::GhStructure, query, context).await;
+    Err(crate::tools::gh_shared::with_search_repair(
+        failure,
+        ToolId::GhStructure,
+        query,
+        1,
+        Some(repo),
+    ))
+}
+
+fn repository(query: &GhStructureQuery) -> (&str, &str) {
+    match query {
+        GhStructureQuery::Tree(query) => (query.owner.as_str(), query.repo.as_str()),
+        GhStructureQuery::Refs(query) => (query.owner.as_str(), query.repo.as_str()),
+        GhStructureQuery::Languages(query) => (query.owner.as_str(), query.repo.as_str()),
+    }
+}
+
+pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhStructureQuery,
+    context: &RequestContext,
+    home: &Path,
+) -> Result<ToolData, ProviderError> {
+    match query {
+        GhStructureQuery::Tree(query) => execute_tree(provider, query, context, home).await,
+        GhStructureQuery::Refs(query) => refs::refs(provider, query, context).await,
+        GhStructureQuery::Languages(query) => refs::languages(provider, query, context).await,
+    }
+}
+
+/// Run one ghStructure row. A listing of a missing path names the path and
+/// lists the nearest existing directory (case-corrected) with
+/// `hints.viewTree`; without a located directory it lists the parent.
+async fn run_tree<C: octocode_github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhStructureQueryTree,
+    request: Result<&RequestContext, ProviderError>,
+    home: &Path,
+) -> Result<ToolData, GhFailure> {
     let context = request.map_err(|error| search_failure(error, None))?;
     let listed = listed_at(query).map_err(|error| search_failure(error, None))?;
     let query = listed.as_ref().unwrap_or(query);
-    let error = match execute(provider, query, context, home).await {
+    let error = match execute_tree(provider, query, context, home).await {
         Ok(output) => return Ok(output),
         Err(error) => error,
     };
     let error = classify_unresolved_sha(provider, query, context, error).await;
     // Recovery leads name a renamed repository as it is now.
-    let renamed = canonical(provider, query, context).await.ok().flatten();
+    let renamed = canonical(
+        provider,
+        query,
+        query.owner.as_str(),
+        query.repo.as_str(),
+        context,
+    )
+    .await
+    .ok()
+    .flatten();
     let query = renamed.as_ref().map_or(query, |(_, canonical)| canonical);
     let path = query.path.as_deref().unwrap_or_default().trim_matches('/');
     let requested = query.ref_.as_ref().map(|value| value.as_str());
@@ -101,12 +166,12 @@ pub async fn run<C: octocode_github::ConditionalCache>(
 /// ([`crate::tools::gh_shared::listing_path`]), so the listing, its
 /// continuations and its recovery leads all name one path; `None` when it
 /// already does. A path climbing above the root is invalid input.
-fn listed_at(query: &GhStructureQuery) -> Result<Option<GhStructureQuery>, ProviderError> {
+fn listed_at(query: &GhStructureQueryTree) -> Result<Option<GhStructureQueryTree>, ProviderError> {
     let Some(requested) = query.path.as_deref() else {
         return Ok(None);
     };
     let path = crate::tools::gh_shared::listing_path(requested)?;
-    Ok((path != requested).then(|| GhStructureQuery {
+    Ok((path != requested).then(|| GhStructureQueryTree {
         path: Some(path),
         ..query.clone()
     }))
@@ -119,7 +184,7 @@ fn listed_at(query: &GhStructureQuery) -> Result<Option<GhStructureQuery>, Provi
 /// original error.
 async fn classify_unresolved_sha<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     context: &RequestContext,
     error: ProviderError,
 ) -> ProviderError {
@@ -253,18 +318,23 @@ struct Traversal {
     omitted: std::collections::BTreeMap<String, usize>,
 }
 
-pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
+async fn execute_tree<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     context: &RequestContext,
     home: &Path,
 ) -> Result<ToolData, ProviderError> {
-    if let Some(output) = refs::execute_operation(provider, query, context).await {
-        return output;
-    }
     let scope = Scope::of(query)?;
     let (resolved_branch, commit_sha) = resolve_listing_ref(provider, query, context).await?;
-    let (renamed_warning, canonical) = canonical(provider, query, context).await?.unzip();
+    let (renamed_warning, canonical) = canonical(
+        provider,
+        query,
+        query.owner.as_str(),
+        query.repo.as_str(),
+        context,
+    )
+    .await?
+    .unzip();
     let query = canonical.as_ref().unwrap_or(query);
     let listing = Listing {
         owner: &query.owner,
@@ -313,7 +383,7 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
         push_warning_front(&mut value, warning);
     }
     // Continuations read the same commit.
-    let pinned = GhStructureQuery {
+    let pinned = GhStructureQueryTree {
         ref_: Some(commit_sha.parse().map_err(
             |error: crate::contracts::tool_types::error::ConversionError| {
                 ProviderError::new(ProviderErrorKind::Decode, error.to_string())
@@ -359,7 +429,7 @@ pub(crate) async fn execute<C: octocode_github::ConditionalCache>(
 /// An empty filtered listing, broadened ([`crate::tools::gh_shared::broaden`]):
 /// the same commit's listing without its `include` globs, so what the tree
 /// holds names why they matched nothing. Never a materialization.
-fn broaden_listing(pinned: &GhStructureQuery) -> Option<Value> {
+fn broaden_listing(pinned: &GhStructureQueryTree) -> Option<Value> {
     crate::tools::gh_shared::broaden(
         ToolId::GhStructure,
         &query_row(pinned, &[]),
@@ -384,7 +454,7 @@ struct PageDating {
 /// hands its files to local tools and stays undated.
 async fn date_page<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     commit_sha: &str,
     page: &ListingPage<'_>,
     context: &RequestContext,
@@ -414,12 +484,16 @@ async fn date_page<C: octocode_github::ConditionalCache>(
 /// name, `None` when the name stands. A listing or refs page is read, dated
 /// and continued under the canonical name: later requests skip the
 /// redirect, and every lead names the repository as it is now.
-async fn canonical<C: octocode_github::ConditionalCache>(
+async fn canonical<
+    C: octocode_github::ConditionalCache,
+    Q: serde::Serialize + serde::de::DeserializeOwned,
+>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &Q,
+    owner: &str,
+    repo: &str,
     context: &RequestContext,
-) -> Result<Option<(String, GhStructureQuery)>, ProviderError> {
-    let (owner, repo) = (query.owner.as_str(), query.repo.as_str());
+) -> Result<Option<(String, Q)>, ProviderError> {
     let Some(to) = crate::tools::gh_shared::canonical_repo(
         provider,
         owner,
@@ -434,11 +508,10 @@ async fn canonical<C: octocode_github::ConditionalCache>(
     let decode = |error: &dyn std::fmt::Display| {
         ProviderError::new(ProviderErrorKind::Decode, error.to_string())
     };
-    let canonical = GhStructureQuery {
-        owner: to.0.parse().map_err(|error| decode(&error))?,
-        repo: to.1.parse().map_err(|error| decode(&error))?,
-        ..query.clone()
-    };
+    let mut canonical = serde_json::to_value(query).map_err(|error| decode(&error))?;
+    canonical["owner"] = json!(to.0);
+    canonical["repo"] = json!(to.1);
+    let canonical = serde_json::from_value(canonical).map_err(|error| decode(&error))?;
     Ok(Some((
         crate::tools::gh_shared::renamed_warning(owner, repo, &to),
         canonical,
@@ -484,7 +557,7 @@ impl Scope {
         });
     }
 
-    fn of(query: &GhStructureQuery) -> Result<Self, ProviderError> {
+    fn of(query: &GhStructureQueryTree) -> Result<Self, ProviderError> {
         let filters = query
             .include
             .iter()
@@ -631,7 +704,7 @@ mod tests {
 
     #[test]
     fn materialization_page_boundary_continues_and_page_ceiling_is_explicit() {
-        let query: GhStructureQuery = serde_json::from_value(json!({
+        let query: GhStructureQueryTree = serde_json::from_value(json!({
             "owner": "a", "repo": "b", "ref": "a".repeat(40),
             "path": "", "mainGoal": "Read every materialized file", "reasoning": "Preserve the remaining listing"
         })).expect("query");
@@ -726,7 +799,7 @@ mod tests {
     /// tools do, and an omitted entry outside the globs is not named.
     #[test]
     fn include_globs_match_relative_to_the_listed_path() {
-        let query: GhStructureQuery = serde_json::from_value(json!({
+        let query: GhStructureQueryTree = serde_json::from_value(json!({
             "owner":"a","repo":"b","path":"pkg","include":["src/*.rs"]
         }))
         .expect("query");

@@ -1,3 +1,34 @@
+/// The grammar inventory, built once.
+#[must_use]
+pub fn grammar_capabilities() -> &'static [crate::types::GrammarCapability] {
+    static CAPABILITIES: std::sync::LazyLock<Vec<crate::types::GrammarCapability>> =
+        std::sync::LazyLock::new(build_grammar_capabilities);
+    &CAPABILITIES
+}
+
+fn build_grammar_capabilities() -> Vec<crate::types::GrammarCapability> {
+    all_entries()
+        .iter()
+        .map(|entry| crate::types::GrammarCapability {
+            language: entry.name.to_owned(),
+            language_id: entry.language_id.map(str::to_owned),
+            selector_aliases: entry
+                .selector_aliases
+                .iter()
+                .map(|alias| (*alias).to_owned())
+                .collect(),
+            extensions: entry
+                .extensions
+                .iter()
+                .map(|extension| (*extension).to_owned())
+                .collect(),
+            structural_search: true,
+            signature_outline: !entry.body_query.is_empty(),
+            graph_facts: !entry.body_query.is_empty(),
+        })
+        .collect()
+}
+
 use std::sync::LazyLock;
 use tree_sitter::Language;
 

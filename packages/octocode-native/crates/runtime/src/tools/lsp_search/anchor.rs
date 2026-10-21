@@ -4,7 +4,7 @@
 
 use super::LspSearchQuery;
 use octocode_engine::lsp::resolver::resolve_position_in_file_content;
-use octocode_engine::lsp::types::{JsFuzzyPosition, JsResolvedSymbol};
+use octocode_engine::lsp::types::{LspFuzzyPosition, LspResolvedSymbol};
 use octocode_io::memo::{Memo, MemoLimits};
 use serde_json::{Value, json};
 
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 /// text)`: resolution is a pure function of them (a parse past its budget
 /// is an error, never stored), and a warm repeat skips the parse. The 256
 /// most recently used are kept.
-static RESOLVED: Memo<[u8; 32], JsResolvedSymbol> = Memo::new(MemoLimits {
+static RESOLVED: Memo<[u8; 32], LspResolvedSymbol> = Memo::new(MemoLimits {
     max_entries: 256,
     max_weight: 256,
     keep_newest: false,
@@ -101,7 +101,7 @@ pub(super) fn resolve_anchor(
 /// names each other one by the `orderHint` that selects it, its column, and
 /// the qualified spelling (`target.config`) that anchors on it without a
 /// hint.
-fn disclose_same_line(symbol: &mut Value, resolved: &JsResolvedSymbol, name: &str) {
+fn disclose_same_line(symbol: &mut Value, resolved: &LspResolvedSymbol, name: &str) {
     let columns = &resolved.occurrences_on_line;
     if columns.len() < 2 {
         return;
@@ -162,7 +162,7 @@ fn resolve_symbol(
     name: &str,
     line_hint: Option<u32>,
     order_hint: Option<u32>,
-) -> Result<JsResolvedSymbol, String> {
+) -> Result<LspResolvedSymbol, String> {
     let key: [u8; 32] = {
         use sha2::{Digest, Sha256};
         let mut digest = Sha256::new();
@@ -192,12 +192,12 @@ fn resolve_symbol_in(
     name: &str,
     line_hint: Option<u32>,
     order_hint: Option<u32>,
-) -> Result<JsResolvedSymbol, String> {
+) -> Result<LspResolvedSymbol, String> {
     let resolve = |symbol_name: &str| {
         resolve_position_in_file_content(
             path,
             source,
-            &JsFuzzyPosition {
+            &LspFuzzyPosition {
                 symbol_name: symbol_name.to_owned(),
                 line_hint,
                 order_hint,
@@ -280,7 +280,7 @@ fn last_member_start(name: &str) -> Option<usize> {
 
 /// UTF-16 width of the qualifier when the resolved line spells `name` at the
 /// resolved column; `None` when the hit is not the qualified expression.
-fn qualifier_width(resolved: &JsResolvedSymbol, name: &str, member_start: usize) -> Option<u32> {
+fn qualifier_width(resolved: &LspResolvedSymbol, name: &str, member_start: usize) -> Option<u32> {
     let column = resolved.position.character as usize;
     let line: Vec<u16> = resolved.line_content.encode_utf16().collect();
     let spelled: Vec<u16> = name.encode_utf16().collect();

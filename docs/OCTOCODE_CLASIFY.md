@@ -36,6 +36,8 @@ Standalone evaluation, section assessment and inline selection share validation,
 
 Identical evidence, questions, model, image bytes and options reuse complete validated answers for 30 minutes. Concurrent identical requests share one provider call. GitHub bytes are cached by resolved commit. New whole-source evaluations reacquire local files and URLs to check their content; section work continuations use their frozen capture plan and verify source access and freshness before new inference. Persistent storage also saves answers and captured URL/image evidence.
 
+Local file reads and local text section captures recognize BOM-marked UTF-16 in either byte order. Coordinates describe decoded text; snapshots still identify original file bytes. Local UTF-16 reads above the bounded whole-file decoding limit fail explicitly with a conversion/splitting hint; ranges do not bypass that limit. GitHub section capture still requires UTF-8. Unmarked encodings are not inferred by section capture, and binary content remains rejected.
+
 ## JEV API support
 
 Octocode supports all four [JEV question primitives](https://docs.typesafe.ai/primitives), evaluation through `POST /v1/systemone`, and model discovery through `GET /v1/models`.
@@ -175,7 +177,7 @@ Reference an asset key in `state` or the questions. An image source uses the sam
 }
 ```
 
-Results include each asset's saved `path`, origin, snapshot, format, dimensions, size and expiry. Inspect that image when details matter. Check presence before using Box coordinates: Box can return a location for an absent object. Octocode does not switch models after rejection.
+Results include each asset's saved `path`, origin, snapshot, format, dimensions, size and expiry. Inspect that image when details matter. Check presence before using Box coordinates: Box can return a location for an absent object. For diagrams, ask object presence and each directed relationship separately; recognizing both endpoints does not establish an arrow or its direction. Inspect the image when a relationship is uncertain. Octocode does not switch models after rejection.
 
 ## Classifiers on search and fetch
 
@@ -208,7 +210,7 @@ Whole-file `localFetch` keeps declarations and their documentation together when
 
 Keyword relevance prioritizes source-content windows for the bounded assessment budget, with each classifier getting an admission turn. This ordering does not select or exclude evidence: the classifier makes those decisions, and selected output stays in source order. Unassessed evidence remains unknown and recoverable.
 
-Each classifier becomes a shared three-level Score rubric: no useful evidence, background, direct evidence. A candidate is selected when any question assigns direct evidence probability above 0.5; excluded only when all assign no useful evidence above 0.5; otherwise unknown. `selection` reports scope, status and selected/excluded/unknown counts. “Complete” covers that view, not the whole repository.
+Each classifier becomes a shared three-level Score rubric: no useful evidence, background, direct evidence. A candidate is selected when any question assigns direct evidence probability above 0.5; excluded only when all assign no useful evidence above 0.5; otherwise unknown. `selection` reports scope, status and selected/excluded/unknown counts; operational `failures` are a subset of unknowns. “Complete” covers that view, not the whole repository. A filtered result, including zero selected candidates, is not proof of absence: inspect the unfiltered evidence before making that claim.
 
 AST/LSP remain ordinary identity and structure tools. Their candidate paths/ranges can feed `clasify` when expensive body reads need screening; classification does not prove identity, reachability or absence.
 
@@ -260,7 +262,7 @@ Oversized whole-source inputs fail rather than classify a truncated prefix; inli
 
 ## Results and rating
 
-**8/10 for integration and DX** — engineering assessment on 2026-10-15, not model accuracy. Strengths: unread-resource inputs, typed primitives, one evaluator and actionable recovery. Limits: chunk boundaries, experimental images and workload-dependent quality/savings. [Recovery validation](../.octocode/octocode-dev/2026-10-15-jev-recovery/README.md) passed 48 Rust tests and 24 CLI/MCP checks.
+**8/10 for integration and DX** — engineering assessment on 2026-10-15, not model accuracy. Strengths: unread-resource inputs, typed primitives, one evaluator and actionable recovery. Limits: chunk boundaries, experimental images and workload-dependent quality/savings. Recovery validation (local, unpublished `.octocode/octocode-dev/2026-10-15-jev-recovery/README.md`) passed 48 Rust tests and 24 CLI/MCP checks.
 
 | Measured workflow | Tool input + output tokens | Guidance |
 |---|---:|---|
@@ -269,6 +271,6 @@ Oversized whole-source inputs fail rather than classify a truncated prefix; inli
 | Scoped GitHub fetch | −72% | Pin the ref and narrow the view |
 | Exact local read | +32% | Read directly |
 
-These [paired cases](../.octocode/octocode-eval-benchmark/2026-10-15-jev-flow-review-v2/README.md) do not establish whole-agent savings. GitHub search left every candidate unknown. A separate [whole-agent evaluation](../.octocode/octocode-eval-benchmark/2026-10-15-jev-e2e/README.md) found 2.8–10.7% savings on a forced-classification document task, while eight optional-use runs did not choose classification.
+These paired cases (local, unpublished `.octocode/octocode-eval-benchmark/2026-10-15-jev-flow-review-v2/README.md`) do not establish whole-agent savings. GitHub search left every candidate unknown. A separate whole-agent evaluation (local, unpublished `.octocode/octocode-eval-benchmark/2026-10-15-jev-e2e/README.md`) found 2.8–10.7% savings on a forced-classification document task, while eight optional-use runs did not choose classification.
 
 Measure all host input/output, including questions and recovery reads, separately from JEV usage. For inline selection, request `extras:["stats"]` to receive `selection.usage`: provider calls, known/unknown usage calls, reported tokens, replayed evaluations and resolved models. This receipt does not require persistent stats. Whole-source `replayed:true` identifies historical usage; section batch replay instead reports zero current usage; `responsePagination.replayed:true` marks a saved output page, so neither is a fresh provider spend. With stats and persistent storage enabled, `<octocode-home>/stats.json` records inference separately from model discovery (`discovery_calls`). Missing usage is unknown, not zero.

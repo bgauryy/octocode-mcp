@@ -190,7 +190,13 @@ const ZERO_BASED_ALLOWED = [
 export function zeroBasedTexts(published) {
   const out = [];
   const walk = (n, at) => {
-    if (typeof n === 'string') { if (ZERO_BASED.test(n) && !ZERO_BASED_ALLOWED.some(re => re.test(at))) out.push(`${at}: ${n.match(ZERO_BASED)[0]}`); return; }
+    if (typeof n === 'string') {
+      const text = /^astSearch\.inputSchema\..*\.rule\.description$/.test(at)
+        ? n.replace(/\brange: exact 0-based scalar bounds\b/gi, '')
+        : n;
+      if (ZERO_BASED.test(text) && !ZERO_BASED_ALLOWED.some(re => re.test(at))) out.push(`${at}: ${text.match(ZERO_BASED)[0]}`);
+      return;
+    }
     if (!n || typeof n !== 'object') return;
     for (const [k, v] of Object.entries(n)) walk(v, at ? `${at}.${k}` : k);
   };

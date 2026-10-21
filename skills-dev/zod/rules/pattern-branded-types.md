@@ -33,8 +33,8 @@ convert(priceInEur, 1.1) // No error! EUR passed as USD
 const USD = z.number().brand<"USD">()
 const EUR = z.number().brand<"EUR">()
 
-type USD = z.infer<typeof USD> // number & { __brand: "USD" }
-type EUR = z.infer<typeof EUR> // number & { __brand: "EUR" }
+type USD = z.infer<typeof USD> // number & z.$brand<"USD">
+type EUR = z.infer<typeof EUR> // number & z.$brand<"EUR">
 
 function convert(amount: USD, rate: number): EUR {
   return EUR.parse(amount * rate)

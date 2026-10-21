@@ -2,7 +2,7 @@ use serde_json::{Map, Value};
 
 /// YAML text as a JSON value: the one YAML reader. Only `true` and `false`
 /// are booleans (YAML 1.2), so `y`, `no` or `on` stay strings as keys and as
-/// values, exactly what `json_to_yaml_string_inner` writes plain.
+/// values, exactly what `json_to_yaml_string` writes plain.
 ///
 /// # Errors
 /// The parser's message when `text` is not valid YAML or not representable
@@ -18,7 +18,18 @@ pub fn yaml_to_json(text: &str) -> Result<Value, String> {
 ///   - Keys can be sorted alphabetically (`sort_keys`)
 ///   - Priority keys appear first (`keys_priority`)
 ///   - Multiline strings → YAML block scalars (handled automatically by the serializer)
-pub fn json_to_yaml_string_inner(json: Value, sort_keys: bool, priority_keys: &[String]) -> String {
+pub fn json_to_yaml_string(
+    json: Value,
+    config: Option<crate::types::YamlConversionConfig>,
+) -> String {
+    let sort_keys = config
+        .as_ref()
+        .and_then(|config| config.sort_keys)
+        .unwrap_or(false);
+    let priority_keys = config
+        .as_ref()
+        .and_then(|config| config.keys_priority.as_deref())
+        .unwrap_or_default();
     let ordered = order_keys(json, sort_keys, priority_keys);
     // `yaml_12` without the `%YAML` header keeps `yes`/`no`/dates plain, as
     // every response has always shown them. An unbounded fold width keeps long
@@ -82,12 +93,18 @@ mod tests {
     use serde_json::json;
 
     fn emit(v: serde_json::Value) -> String {
-        json_to_yaml_string_inner(v, false, &[])
+        json_to_yaml_string(v, None)
     }
 
     #[test]
     fn keys_sorted_when_sort_keys_enabled() {
-        let out = json_to_yaml_string_inner(json!({"z": 1, "a": 2}), true, &[]);
+        let out = json_to_yaml_string(
+            json!({"z": 1, "a": 2}),
+            Some(crate::types::YamlConversionConfig {
+                sort_keys: Some(true),
+                keys_priority: None,
+            }),
+        );
         let a = out.find("a:").expect("a key present");
         let z = out.find("z:").expect("z key present");
         assert!(a < z);
@@ -95,10 +112,12 @@ mod tests {
 
     #[test]
     fn priority_keys_emitted_first() {
-        let out = json_to_yaml_string_inner(
+        let out = json_to_yaml_string(
             json!({"c": 3, "a": 1, "b": 2}),
-            false,
-            &["b".to_owned(), "c".to_owned()],
+            Some(crate::types::YamlConversionConfig {
+                sort_keys: Some(false),
+                keys_priority: Some(vec!["b".to_owned(), "c".to_owned()]),
+            }),
         );
         let b = out.find("b:").expect("b present");
         let c = out.find("c:").expect("c present");
@@ -108,10 +127,12 @@ mod tests {
 
     #[test]
     fn multiline_strings_use_block_scalars_with_sorted_keys() {
-        let out = json_to_yaml_string_inner(
+        let out = json_to_yaml_string(
             json!({"z": "last", "a": "first\nsecond line", "b": 42, "c": true}),
-            true,
-            &[],
+            Some(crate::types::YamlConversionConfig {
+                sort_keys: Some(true),
+                keys_priority: None,
+            }),
         );
         let a = out.find("a:").expect("a");
         let b = out.find("b:").expect("b");
@@ -234,7 +255,7 @@ mod tests {
         ];
         for sample in samples {
             let value = json!({"k": sample, "l": [sample], sample: 1});
-            let yaml = json_to_yaml_string_inner(value.clone(), false, &[]);
+            let yaml = json_to_yaml_string(value.clone(), None);
             let back = yaml_to_json(&yaml).unwrap_or_else(|e| panic!("{sample:?}: {e}\n{yaml}"));
             assert_eq!(back, value, "{sample:?} via\n{yaml}");
         }

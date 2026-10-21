@@ -12,7 +12,7 @@
 use super::failure::LspFailure;
 use super::source::read_bounded_source;
 use octocode_engine::graph::GraphFactsDocument;
-use octocode_engine::lsp::types::{JsCodeSnippet, JsExactPosition, JsRange};
+use octocode_engine::lsp::types::{LspCodeSnippet, LspExactPosition, LspRange};
 use octocode_engine::signatures::TYPE_DECLARATION_KINDS;
 use octocode_engine::signatures::graph_facts::GraphFactNoteKind;
 use std::collections::BTreeSet;
@@ -216,7 +216,7 @@ pub(super) fn direct_bases(
 }
 
 pub(super) fn type_document(content: &str, path: &str) -> Result<GraphFactsDocument, String> {
-    let facts = octocode_engine::portable::extract_graph_facts(content, path)
+    let facts = octocode_engine::signatures::extract_graph_facts(content, path)
         .ok_or_else(|| format!("Type heritage parsing unavailable for {path}"))?;
     let document: GraphFactsDocument = serde_json::from_str(&facts)
         .map_err(|error| format!("Type heritage parsing failed for {path}: {error}"))?;
@@ -246,7 +246,7 @@ pub(super) fn type_document(content: &str, path: &str) -> Result<GraphFactsDocum
 /// function or a variable has no extends/implements clause naming it, so a
 /// scan for it would report "no implementations" instead of "unanswered".
 pub(super) fn anchors_type_declaration(content: &str, file: &str, line: u32, name: &str) -> bool {
-    let Some(facts) = octocode_engine::portable::extract_graph_facts(content, file) else {
+    let Some(facts) = octocode_engine::signatures::extract_graph_facts(content, file) else {
         return false;
     };
     let Ok(document) = serde_json::from_str::<GraphFactsDocument>(&facts) else {
@@ -275,7 +275,7 @@ pub(super) fn implementation_failure_has_fallback(failure: &LspFailure) -> bool 
 pub(super) struct HeritageScan {
     pub(super) base: String,
     pub(super) files: usize,
-    pub(super) found: Vec<JsCodeSnippet>,
+    pub(super) found: Vec<LspCodeSnippet>,
     pub(super) unread: Vec<String>,
 }
 
@@ -347,8 +347,8 @@ pub(super) async fn hedged<T, E, H>(
 /// The declarations of `content` whose `extends` / `implements` clause names
 /// `base` (as written, or as the last segment of a dotted name), located at
 /// the declaration's name. Matched by name, not resolved to a declaration.
-pub(super) fn subtype_snippets(content: &str, file: &str, base: &str) -> Vec<JsCodeSnippet> {
-    let Some(facts) = octocode_engine::portable::extract_graph_facts(content, file) else {
+pub(super) fn subtype_snippets(content: &str, file: &str, base: &str) -> Vec<LspCodeSnippet> {
+    let Some(facts) = octocode_engine::signatures::extract_graph_facts(content, file) else {
         return Vec::new();
     };
     let Ok(document) = serde_json::from_str::<GraphFactsDocument>(&facts) else {
@@ -376,14 +376,14 @@ pub(super) fn subtype_snippets(content: &str, file: &str, base: &str) -> Vec<JsC
             continue;
         }
         let name = &declaration.selection_range;
-        found.push(JsCodeSnippet {
+        found.push(LspCodeSnippet {
             uri: uri.clone(),
-            range: JsRange {
-                start: JsExactPosition {
+            range: LspRange {
+                start: LspExactPosition {
                     line: name.start.line,
                     character: name.start.character,
                 },
-                end: JsExactPosition {
+                end: LspExactPosition {
                     line: name.end.line,
                     character: name.end.character,
                 },
@@ -404,7 +404,7 @@ pub(super) fn scan_subtypes(
     files: &BTreeSet<String>,
     base: &str,
     stopped: &(dyn Fn() -> bool + Sync),
-) -> (Vec<JsCodeSnippet>, Vec<String>) {
+) -> (Vec<LspCodeSnippet>, Vec<String>) {
     let files = files.iter().collect::<Vec<_>>();
     let workers = crate::tools::workers::workers(None, files.len(), None);
     let chunk = files.len().div_ceil(workers).max(1);

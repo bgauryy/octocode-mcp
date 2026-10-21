@@ -654,9 +654,11 @@ for (const t of ALL_TOOLS) {
   else {
     const r = spawnSync(process.execPath, [CLI, 'schema', t], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, OCTOCODE_BETA: 'true' }, maxBuffer: 64 << 20 });
     let j = {}; try { j = JSON.parse(r.stdout); } catch {}
-    pub[t] = { description: j.description ?? '', inputSchema: j.inputSchema ?? {}, cliOnly: !!ct.cliOnly, bytes: null };
+    if (r.status !== 0 || !j.querySchema) throw new Error(`CLI schema ${t} did not return a query schema: ${r.stderr || r.stdout}`);
+    pub[t] = { description: j.description ?? '', inputSchema: j.querySchema, querySchema: j.querySchema, cliOnly: !!ct.cliOnly, bytes: null };
   }
-  const items = pub[t].inputSchema?.properties?.queries?.items ?? {};
+  const items = pub[t].querySchema ?? pub[t].inputSchema?.properties?.queries?.items;
+  if (!items) throw new Error(`No published query schema for ${t}`);
   pub[t].top = topProps(items);
 }
 /** Full contract row fields (continuation fields included) and published row fields, per tool. */

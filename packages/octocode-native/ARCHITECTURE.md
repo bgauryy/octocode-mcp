@@ -54,7 +54,7 @@ Search and fetch never hand off to `clasify`, and emit no automatic reread lead 
 | `tools` | Public operations composed from shared runtime services and engine primitives | Independent config, auth, or response systems |
 | `response` | Contract-checked rows, compression, pagination, continuations, and sanitized rendering | Tool execution |
 | `tools/lsp_search` + `runtime/domain_dispatch` | Runtime composition around the engine language-server pool (pool owned by the runtime engine, dispatched and prewarmed through `domain_dispatch`) | A second lifecycle implementation |
-| `tools/<shared>` (the list and each module's purpose live in `tools/module_boundaries.rs` `SHARED_MODULES`) | Logic two or more tools use: for example `empty_walk` (why an empty local walk is empty and the minimal flags that lift it), `leads` (follow-up queries one tool offers into another), `page_windows` (byte-budget page sizing), `declarations_cache`, `gh_shared` | Tool-specific behavior. The guard rejects new tool-to-tool and shared-to-tool edges; `ALLOWED_EDGES` and `SHARED_TO_TOOL_PENDING` own the explicit exceptions and their reasons, and stale exceptions fail the guard. |
+| `tools/<shared>` (the list and each module's purpose live in `tools/module_boundaries.rs` `SHARED_MODULES`) | Logic two or more tools use: for example `empty_walk` (why an empty local walk is empty and the minimal flags that lift it), `leads` (follow-up queries one tool offers into another), `page_windows` (byte-budget page sizing), `declarations_cache`, `gh_shared` | Tool-specific behavior. The guard rejects new tool-to-tool and shared-to-tool edges; `ALLOWED_EDGES` owns the explicit exceptions and their reasons, and stale exceptions fail the guard. |
 | `tools/ast_graph/store` | CLI-only persisted code graph (`npx octocode graph ingest` / `graph query`): immutable snapshots under `<workspace>/.octocode/graph/` | A public tool contract or MCP surface |
 | `crates/runtime-napi` | Host conversion and native runtime lifecycle | An alternate execution path |
 | `crates/cli` | Arguments, human output, and shell exits | Node, N-API, or duplicated tools |
@@ -62,6 +62,13 @@ Search and fetch never hand off to `clasify`, and emit no automatic reread lead 
 | `crates/cli/src/cli/mcp_install.rs`, `mcp_manage.rs`, `mcp_clients.rs` | MCP client configuration writers and the client path catalogue | Tool execution |
 | `crates/cli/src/cli/lsp_provision/` | Verified language-server downloads: allowlisted hosts, SHA-256 pinned assets, bounded time and size, streamed through an owner-only spool file under a per-target `flock` | Engine LSP discovery |
 | `crates/io` | Primitives the crates above the engine share ([`crates/io/src/lib.rs`](crates/io/src/lib.rs) lists them) | Tool, provider, or contract logic |
+
+The engine owns shared process containment and teardown (`process`), streaming
+JSON size measurement (`json_size`), and redaction placeholder matching
+(`security`). Runtime rows catch unwinding panics at `runtime/domain_dispatch`;
+worker-thread isolation, sanitizer errors, and minifier fallback stay with their
+owners. These independent threads and recovery policies cannot be replaced by
+an outer row catch. Consumers call each engine operation at its defining module.
 
 Six crates, and these Cargo edges only: `engine` and `io` are leaves;
 `github` → `io`; `runtime` → `io`, `engine`, `github`; `cli` → `io`, `runtime`,
@@ -171,7 +178,7 @@ Config remains the shared home/dotenv policy owner; core contracts are unchanged
 
 ## Language capability ownership
 
-`crates/engine/src/signatures/languages.rs` is the sole native grammar inventory. Structural search/rewrite, signatures, graph facts, syntax inspection, directory language filters, and LSP grammar adapters derive from that registry; built-in language-server routing comes from a separate server table (`lsp/config.rs`). Counts, grammar features, and per-language coverage: [SUPPORTED_LANGUAGES_AND_FEATURES.md](docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md). YAML rule parsing is configuration syntax, not YAML source support.
+`crates/engine/src/signatures/languages.rs` is the sole native grammar inventory. Structural search/rewrite, signatures, graph facts, syntax inspection, directory language filters, and LSP grammar adapters derive from that registry; built-in language-server routing comes from a separate server table (`lsp/config/catalog.rs`). Counts, grammar features, and per-language coverage: [SUPPORTED_LANGUAGES_AND_FEATURES.md](docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md). YAML rule parsing is configuration syntax, not YAML source support.
 
 `engine::lsp::managed` owns the pinned server manifest and the verified install layout `<home>/lsp/<server>/<tag>/<bin>` with a `.ok` marker; the CLI only downloads and installs. Route resolution order is in [LSP_SERVER_LIFECYCLE.md](docs/engine/LSP_SERVER_LIFECYCLE.md#resolution). Engine LSP discovery reads no `OCTOCODE_*` process environment; the runtime passes resolved options.
 

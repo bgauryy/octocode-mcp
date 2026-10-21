@@ -530,3 +530,109 @@ fn value_escapes_and_module_level_calls_keep_callees_live() {
     ]);
     assert_eq!(dead, vec![("d".to_owned(), Value::Null)]);
 }
+
+#[test]
+fn package_main_in_lib_resolves_to_src_root() {
+    let temp = fixture(&[
+        ("package.json", r#"{"main":"lib/index.js"}"#),
+        (
+            "src/index.ts",
+            "import { a } from './a'; export const main = a();\n",
+        ),
+        ("src/a.ts", "export function a() { return 1; }\n"),
+    ]);
+    let out = topology(temp.0.as_path(), json!({"operation":"deadCode"}));
+    assert_eq!(out["graphSummary"]["entrypointsResolvedCount"], 1, "{out}");
+    assert!(
+        !out["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["reason"] == "unreachable-file" || row["reason"] == "dead-cluster"),
+        "{out}"
+    );
+}
+
+#[test]
+fn an_unmapped_build_entry_does_not_guess_an_index_root() {
+    let temp = fixture(&[
+        ("package.json", r#"{"main":"dist/missing.js"}"#),
+        ("src/index.ts", "export function start() { return 1; }\n"),
+    ]);
+    let out = topology(
+        temp.0.as_path(),
+        json!({"operation":"deadCode", "includeTests":false}),
+    );
+    assert_eq!(out["graphSummary"]["entrypointsResolvedCount"], 0, "{out}");
+    assert_eq!(out["graphSummary"]["suppressed"], true, "{out}");
+    assert_eq!(out["confidence"], "low", "{out}");
+}
+
+/// The warning that names `entry` as a declared package entry with no scanned source.
+fn names_unmapped_entry(out: &Value, entry: &str) -> bool {
+    out["warnings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|w| w.contains("map to no scanned source") && w.contains(entry))
+}
+
+#[test]
+fn an_unmapped_entry_beside_a_resolved_one_is_disclosed_and_lowers_confidence() {
+    // `bin` maps to `src/cli.ts`; `main` names a bundle whose source name
+    // differs, so nothing maps it. Files reachable only from that bundle's
+    // source read as unreachable, and the result must say why.
+    let temp = fixture(&[
+        (
+            "package.json",
+            r#"{"main":"dist/my-lib.cjs.js","bin":{"y":"dist/cli.js"},"exports":{"./package.json":"./package.json","./*":"./dist/*.js"}}"#,
+        ),
+        (
+            "src/index.ts",
+            "import { b } from './b'; export const lib = b();\n",
+        ),
+        ("src/b.ts", "export function b() { return 1; }\n"),
+        ("src/cli.ts", "export const cli = 1;\n"),
+    ]);
+    for operation in ["deadCode", "reachability"] {
+        let out = topology(
+            temp.0.as_path(),
+            json!({"operation":operation, "includeTests":false}),
+        );
+        assert_eq!(out["graphSummary"]["entrypointsResolvedCount"], 1, "{out}");
+        assert_eq!(out["confidence"], "low", "{operation}: {out}");
+        assert!(
+            names_unmapped_entry(&out, "dist/my-lib.cjs.js"),
+            "{operation}: {out}"
+        );
+        // Only the unmapped module entry is named: not the mapped `bin`, a
+        // non-code export, or a subpath pattern.
+        assert!(!names_unmapped_entry(&out, "dist/cli.js"), "{out}");
+        assert!(!names_unmapped_entry(&out, "package.json"), "{out}");
+        assert!(!names_unmapped_entry(&out, "*"), "{out}");
+    }
+}
+
+#[test]
+fn fully_mapped_entries_raise_no_unmapped_warning() {
+    let temp = fixture(&[
+        (
+            "package.json",
+            r#"{"main":"lib/index.js","scripts":{"x":"node dist/generated.js"}}"#,
+        ),
+        (
+            "src/index.ts",
+            "import { a } from './a'; export const main = a();\n",
+        ),
+        ("src/a.ts", "export function a() { return 1; }\n"),
+    ]);
+    let out = topology(
+        temp.0.as_path(),
+        json!({"operation":"deadCode", "includeTests":false}),
+    );
+    assert_eq!(out["graphSummary"]["entrypointsResolvedCount"], 1, "{out}");
+    // A script token is a guess at an entry, not a declaration: no warning.
+    assert!(!names_unmapped_entry(&out, "generated.js"), "{out}");
+    assert_ne!(out["confidence"], "low", "{out}");
+}

@@ -1,5 +1,7 @@
 # Output
 
+<!-- report-contract {"statuses":["Done","Partial"],"required":["Removed","Deferred","Checks"],"anyOf":[]} -->
+
 ## Response
 
 BLUF: outcome first, then removed or consolidated items as claim–evidence (proof of redundancy, behavior preserved), checks run, uncertain deferrals. Markdown, task content only (no probe output or process metadata); the source diff is the implementation.
@@ -8,11 +10,23 @@ BLUF: outcome first, then removed or consolidated items as claim–evidence (pro
 
 Approved edits stay in place. Report: `<workspace>/.octocode/octocode-clean-agentic-code/<YYYY-MM-DD>-<slug>.md`; `<workspace>` = repository root, else current directory, never inside an existing `.octocode/`. A user- or parent-named path wins; harness or subagent scratch folders do not (link from scratch notes).
 
+## Presentation choices
+
+Removed or consolidated items → proof → preserved behavior → deferred candidates and checks.
+
+| Format | Use when / why |
+|---|---|
+| Short evidence table / `diff` fence | Tie each removal to proof and its behavior check; show focused changes. |
+| `flowchart` | Explain ownership or dependency changes when the refactor is hard to follow. |
+| `chart` bar | Compare measured size or runtime before/after; fewer lines alone do not prove better quality. |
+
+Follow the [shared visual-first, content-only rules](references/report-output.md#choose-the-format), including image embedding and iframe alternatives; load the [Mermaid chooser](references/report-mermaid.md) for specialized syntax or [widget schemas](references/report-widgets.md) before authoring graph/chart JSON.
+
 ## Saved report
 
 Save and render on a table, diagram, over ~40 lines or five findings, or user request; else answer briefly in chat. Save every result when user or project instructions say so.
 
-Start the file with this header, one value per line: `status` (one listed word) and `question` are required; add `confidence` when it applies and `next` only when something is pending (never `none`).
+Use the [shared header rules](references/report-output.md#report-header) with these skill-specific status values:
 
 ```yaml
 ---
@@ -33,22 +47,4 @@ Then the `#` title and a lead paragraph stating the answer. Always include `## R
 
 End `## Checks` with the change command, such as `git diff -- <paths>`.
 
-Date the file name with `date +%F`; one report, one `.md`. Render, fix every `warning:` line, reply with a short summary and the `.html` and `.md` paths:
-
-```bash
-node <skill-folder>/scripts/render-report.mjs <saved.md>
-```
-
-Before starting work that may repeat an earlier report, list the saved ones:
-
-```bash
-node <skill-folder>/scripts/render-report.mjs <workspace>/.octocode --manifest
-```
-
-`<skill-folder>` holds this file; `--open` only on request; `<workspace>/.octocode/octocode-clean-agentic-code` lists this skill's reports only. Read and edit Markdown, not HTML; re-render after edits.
-
-Evidence and visuals: back every claim with its evidence (a `path:line` reference, a command and its result, or a source link), and show shaped data (shares, scores, trends, trade-offs, flows) as a chart or diagram, not prose.
-
-Charts: `xychart-beta` of lines or files before and after; `pie` of removals by category.
-
-Markdown that renders well: `##` sections; tables with a plain word such as `High`, `Confirmed`, or `P1` alone in a cell (shown as a colored chip); `> [!WARNING]` alerts for risks; task lists for next steps; `mermaid` flows (`flowchart`, `sequenceDiagram`, `timeline`, `gantt`) and charts (`pie`, `xychart-beta`, `quadrantChart`, `radar-beta`); code references as `` `path/to/file.ts:42` ``; source links with a short label.
+Follow [shared report guidance](references/report-output.md) for rendering, `--manifest`, evidence, diagrams, and presentation.

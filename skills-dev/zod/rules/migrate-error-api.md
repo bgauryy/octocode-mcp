@@ -1,7 +1,7 @@
 ---
 title: "v4: Unified Error Parameter"
 impact: MEDIUM
-description: Use v4 error parameter everywhere. message, required_error, invalid_type_error, errorMap removed.
+description: Use v4 error parameter everywhere. message deprecated; required_error and invalid_type_error removed; errorMap renamed.
 tags: migration, v4, errors, message
 ---
 
@@ -14,7 +14,7 @@ Zod v3 had multiple ways to customize errors: `message`, `required_error`, `inva
 ## Incorrect
 
 ```typescript
-// BAD: all removed in v4
+// Migrate: removed options below; message still works but is deprecated
 const name = z.string({ required_error: "Required", invalid_type_error: "Not a string" })
 const age = z.number().min(18, { message: "Too young" })
 const email = z.email({ errorMap: myErrorMap })

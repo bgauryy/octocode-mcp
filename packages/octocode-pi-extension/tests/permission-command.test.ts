@@ -3,6 +3,7 @@ import { Permission } from '../src/permission/ask.js';
 import { registerPermissionCommand } from '../src/permission/command.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { PERMISSION_ENV } from '../src/shared/env.js';
+import { registerEditor } from '../src/ui/editor.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
@@ -11,7 +12,8 @@ function setup(options: { trusted?: boolean; env?: NodeJS.ProcessEnv; confirms?:
   // Sessions start in full; these fixtures export workspace, or manual for the strict (`trusted: false`) case.
   const permission = new Permission({ pi: fake.pi, env: options.env ?? { OCTOCODE_PERMISSION: options.trusted === false ? 'manual' : 'workspace' }, isSubagent: false });
   const commands = new Subcommands();
-  registerPermissionCommand(fake.pi, commands, permission, () => 42);
+  registerPermissionCommand(commands, permission, () => 42);
+  registerEditor(fake.pi, permission);
   const ctx = Object.assign(fakeCtx({ cwd: tmp(), ui: { confirms: options.confirms ?? [] } }), { isProjectTrusted: () => options.trusted ?? true });
   // Audit entries come back from the session, as Pi keeps them.
   ctx.sessionManager.getEntries = (() => fake.entries.map((entry) => ({ type: 'custom', ...entry }))) as never;

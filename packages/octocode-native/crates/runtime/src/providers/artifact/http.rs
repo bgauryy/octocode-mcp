@@ -21,11 +21,6 @@ impl ArtifactCache {
     pub fn new(dir: Option<std::path::PathBuf>) -> Self {
         Self(Store::new(CacheConfig::default(), dir))
     }
-
-    /// Drop every cached registry answer, in memory and on disk.
-    pub fn clear(&self) {
-        self.0.clear();
-    }
 }
 
 /// A registry answer lives five minutes: a new release shows up soon.
@@ -514,7 +509,7 @@ impl RegistryClient<'_> {
         };
         self.cached(artifact_type, key, request, not_found_is_empty, |bytes| {
             let value = view(bytes)?;
-            let weight = crate::cache::json_len(&value);
+            let weight = octocode_engine::json_size::bytes(&value).unwrap_or(usize::MAX);
             Some((value, weight))
         })
         .await
@@ -591,7 +586,7 @@ impl RegistryClient<'_> {
         let Some(cache) = self.cache else {
             return;
         };
-        let size = crate::cache::json_len(fact);
+        let size = octocode_engine::json_size::bytes(fact).unwrap_or(usize::MAX);
         cache.0.put(
             fact_key(resource),
             fact.clone(),

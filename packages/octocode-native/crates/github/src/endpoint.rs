@@ -108,3 +108,47 @@ pub fn is_loopback(url: &Url) -> bool {
         None => false,
     }
 }
+
+/// A hostname that must be denied when local registry access is forbidden.
+/// This broad deny rule does not authorize sending credentials over HTTP.
+pub fn names_localhost(host: &str) -> bool {
+    let host = host.trim_end_matches('.');
+    host.eq_ignore_ascii_case("localhost") || host.to_ascii_lowercase().ends_with(".localhost")
+}
+
+#[cfg(test)]
+mod localhost_rule_tests {
+    use super::{is_loopback, names_localhost};
+    use url::Url;
+
+    #[test]
+    fn the_deny_rule_is_broader_than_the_credential_rule() {
+        // Deny: every RFC 6761 `localhost` name, any case, with or without the root dot.
+        for host in [
+            "localhost",
+            "LOCALHOST.",
+            "a.localhost",
+            "Verdaccio.LocalHost.",
+        ] {
+            assert!(names_localhost(host), "{host}");
+        }
+        for host in ["notlocalhost", "localhost.example.com", "example.com", ""] {
+            assert!(!names_localhost(host), "{host}");
+        }
+        // Credentials over HTTP: only the exact loopback names and addresses.
+        for url in [
+            "http://localhost:4873/",
+            "http://127.0.0.2/",
+            "http://[::1]/",
+        ] {
+            assert!(is_loopback(&Url::parse(url).unwrap()), "{url}");
+        }
+        for url in [
+            "http://a.localhost/",
+            "http://localhost./",
+            "http://10.0.0.1/",
+        ] {
+            assert!(!is_loopback(&Url::parse(url).unwrap()), "{url}");
+        }
+    }
+}

@@ -2295,3 +2295,17 @@ fn ingest_denials_share_the_path_policy_codes() {
         scan.value
     );
 }
+
+#[test]
+fn authored_lib_javascript_keeps_its_symbols() {
+    let dir = fixture();
+    write_under(
+        &dir,
+        "app/lib",
+        &[("math.js", "export function add(a, b) { return a + b; }\n")],
+    );
+    let ingested = ingest_fixture(dir.0.as_path(), None);
+    assert_eq!(ingested.class, ExitClass::Success, "{}", ingested.value);
+    let outline = ask(dir.0.as_path(), "symbols", Some("lib/math.js"), |_| {});
+    assert_eq!(ids(&outline), vec!["lib/math.js#add"], "{}", outline.value);
+}

@@ -29,7 +29,7 @@
   "workspaces": [
     "packages/*",
     "packages/octocode-native/npm/*",
-    "skills"
+    "skills/common"
   ],
   "resolutions": {
     "@octocodeai/config": "workspace:*",

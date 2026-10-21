@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Octocode report viewer: render skill Markdown output as one self-contained local HTML page.
-// Canonical copy: skills/octocode-skills/scripts/render-report.mjs. Every skill ships a byte-identical
-// copy at scripts/render-report.mjs; sync with skills/octocode-skills/scripts/report-viewer-sync.mjs.
+// Source: skills/common/scripts/render-report.mjs. Skill copies are generated; do not edit them.
+// Regenerate with node skills/common/build.mjs.
 
+import { isMainModule } from './lib/entrypoint.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 const HELP = `Render skill Markdown output as one self-contained HTML report. The page stays closed.
 
 Usage:
-  node scripts/render-report.mjs <file.md | folder> [--out <file.html>] [--title <text>] [--open] [--json]
-  node scripts/render-report.mjs <file.md | folder> --manifest
+  node scripts/render-report.mjs <file.md | folder> [--out <file.html>] [--title <text>] [--open] [--json] [--strict]
+  node scripts/render-report.mjs <file.md | folder> --manifest [--query <text>] [--limit <n>] [--offset <n>] [--all]
   node scripts/render-report.mjs --self-test
   node scripts/render-report.mjs --help
 
@@ -31,11 +32,14 @@ load mermaid from a pinned CDN; offline, the diagram source is shown instead. Ra
 Leaves the page closed. Pass --open only when the reader asked to see it. --no-open is
 accepted and keeps the page closed. CI, or Linux with no display, also stays closed.
 
---manifest writes no HTML. It prints one JSON catalog for agents: for every report, its path,
-skill, kind, title, date, header fields (status, confidence, question, next, and any others),
-lead paragraph, headings, links, and code references, newest first. Nothing is clipped; read a
-report's Markdown for its full body.`;
+--manifest writes no HTML. Default: 20 compact records (path/title/status/question), with a
+next argument array to reach the rest. --query filters titles, paths and questions. --limit and
+--offset select a page. --all explicitly returns the full unabridged catalog for file processing.
+--strict rejects validation warnings with exit 2 before writing HTML. JSON render results always
+say render: unverified: file generation does not establish browser rendering success. Open the
+page and inspect its Render check before claiming the diagrams work.`;
 
+const PANZOOM_URL = 'https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.6.2/dist/panzoom.min.js';
 const MERMAID_URL = 'https://cdn.jsdelivr.net/npm/mermaid@12.1.0/dist/mermaid.esm.min.mjs';
 const SKIP_DIRS = new Set(['node_modules', 'tmp', 'view']);
 const PRIMARY = ['rfc.md', 'readme.md', 'index.md'];
@@ -44,7 +48,7 @@ const KINDS = {
   'octocode-architect': 'Architecture', 'octocode-roast': 'Roast', 'octocode-clean-agentic-code': 'Cleanup',
   'octocode-documentation': 'Documentation', 'octocode-eval-benchmark': 'Evaluation', 'octocode-skills': 'Skill review',
   'octocode-agentic-prompts': 'Prompt review', 'octocode-scraping': 'Scrape', 'octocode-chrome-devtools': 'Browser session',
-  'octocode-agents-communication': 'Coordination',
+  'octocode-agents-communication': 'Coordination', 'octocode-workflows': 'Workflow',
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -54,6 +58,14 @@ function mdKit() {
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const slugify = (t) => String(t).toLowerCase().trim().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s+/g, '-') || 'section';
   const safeUrl = (u) => (/^(javascript|vbscript|data):/i.test(String(u).replace(/[\s\u0000-\u001f]/g, '')) ? '#' : String(u).trim());
+  const decode = (value) => { try { return decodeURIComponent(value); } catch { return value; } };
+  const encodePath = (path) => path.split('/').map(encodeURIComponent).join('/');
+  const routeHref = (path, slug = '') => '#/' + (path ? encodePath(path) + (slug ? '@' + encodeURIComponent(slug) : '') : '');
+  const routeParse = (hash) => {
+    const raw = hash.replace(/^#\/?/, '');
+    const at = raw.lastIndexOf('@');
+    return at > 0 ? { path: decode(raw.slice(0, at)), slug: decode(raw.slice(at + 1)) } : { path: decode(raw) || null, slug: '' };
+  };
   const ALERTS = { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' };
   const INLINE_TAG = /^<(\/?)(br|kbd|sub|sup|mark|ins|del|s|u|b|i|small)\s*\/?>$/i;
 
@@ -138,7 +150,7 @@ function mdKit() {
       s = s.replace(/<(https?:\/\/[^>\s]+)>/g, (_, u) => keep(link(u, esc(u))));
       s = s.replace(/<\/?[A-Za-z][^<>]*>/g, (tag) => { const t = tag.match(INLINE_TAG); return t ? keep(`<${t[1]}${t[2].toLowerCase()}>`) : tag; });
       s = s.replace(/!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"([^"]*)")?\s*\)/g, (_, a, u, t) => keep(`<img alt="${esc(a)}" src="${esc(safeUrl(u))}"${t ? ` title="${esc(t)}"` : ''} loading="lazy">`));
-      s = s.replace(/\[((?:[^[\]]|\[[^\]]*\])*)\]\(\s*<?([^)\s>]*)>?(?:\s+"([^"]*)")?\s*\)/g, (_, t, u, ti) => keep(link(u, inline(t), ti)));
+      s = s.replace(/\[((?:[^[\]]|\[[^\]]*\])*)\]\(\s*(?:<([^>\n]*)>|((?:[^()\s]|\([^()]*\))*))(?:\s+"([^"]*)")?\s*\)/g, (_, t, angle, bare, ti) => keep(link(angle ?? bare, inline(t), ti)));
       s = s.replace(/\[\^([^\]\s]+)\]/g, (_, id) => keep(footref(id)));
       s = s.replace(/\[([^[\]]+)\]\[([^\]]*)\]/g, (m, t, id) => { const d = refs[(id || t).toLowerCase()]; return d ? keep(link(d.url, inline(t), d.title)) : m; });
       s = s.replace(/\[([^[\]]+)\](?![(:[])/g, (m, t) => { const d = refs[t.toLowerCase()]; return d ? keep(link(d.url, inline(t), d.title)) : m; });
@@ -181,6 +193,7 @@ function mdKit() {
     const interrupts = (l) => FENCE.test(l) || /^ {0,3}(#{1,6}(\s|$)|>)/.test(l) || HR.test(l) || /^ {0,3}([-*+]|1[.)]) +\S/.test(l) || /^\s*<\/?(details|summary)\b/i.test(l);
 
     function codeBlock(code, lang) {
+      if (lang === 'graph' || lang === 'chart') return `<pre class="widget-src" data-widget="${lang}"><code>${esc(code)}</code></pre>`;
       if (lang === 'mermaid') return `<pre class="mermaid-src"><code class="language-mermaid">${esc(code)}</code></pre>`;
       return `<pre${lang ? ` data-lang="${esc(lang)}"` : ''}><code${lang ? ` class="language-${esc(lang)}"` : ''}>${highlight(code, lang)}</code></pre>`;
     }
@@ -321,17 +334,56 @@ function mdKit() {
     return '';
   };
 
-  return { esc, slugify, safeUrl, frontmatter, highlight, parse, toneOf, GOOD_SCALE };
+  // Data-only widgets: validate before loading a renderer; never execute report code.
+  function widget(kind, source) {
+    const d = JSON.parse(source);
+    const fail = (message) => { throw new Error(message); };
+    const str = (v) => typeof v === 'string' && v.trim().length > 0;
+    if (!d || typeof d !== 'object' || Array.isArray(d)) fail('Expected a JSON object');
+    if (!str(d.title)) fail('A title is required');
+    if (kind === 'graph') {
+      if (!Array.isArray(d.nodes) || !d.nodes.length || !Array.isArray(d.edges)) fail('Provide nodes and edges arrays');
+      const ids = new Set();
+      const nodes = d.nodes.map(n => {
+        if (!n || !str(n.id) || !str(n.label) || ids.has(n.id)) fail('Each node needs a unique id and a label');
+        ids.add(n.id);
+        if (n.url !== undefined && (typeof n.url !== 'string' || !/^https?:\/\//i.test(n.url) || !safeUrl(n.url))) fail('Node URLs must use HTTP or HTTPS');
+        return { id: n.id, label: n.label, description: typeof n.description === 'string' ? n.description : '', url: n.url || '' };
+      });
+      const edges = d.edges.map(e => {
+        if (!e || !ids.has(e.source) || !ids.has(e.target)) fail('Every edge must reference existing node IDs');
+        return { source: e.source, target: e.target, label: typeof e.label === 'string' ? e.label : '' };
+      });
+      return { title: d.title, nodes, edges };
+    }
+    if (!['bar', 'line', 'pie'].includes(d.type)) fail('Chart type must be bar, line, or pie');
+    if (!Array.isArray(d.labels) || !d.labels.length || !d.labels.every(str)) fail('Provide nonempty labels');
+    if (!Array.isArray(d.series) || !d.series.length) fail('Provide at least one series');
+    const series = d.series.map(s => {
+      if (!s || !str(s.name) || !Array.isArray(s.values) || s.values.length !== d.labels.length || !s.values.every(v => typeof v === 'number' && Number.isFinite(v))) fail('Every series needs a name and finite values matching labels');
+      if (d.type === 'pie' && s.values.some(v => v < 0)) fail('Pie values cannot be negative');
+      return { name: s.name, values: s.values };
+    });
+    if (d.type === 'pie' && series.length !== 1) fail('Pie charts require one series');
+    return { title: d.title, type: d.type, labels: d.labels, series, unit: typeof d.unit === 'string' ? d.unit : '' };
+  }
+
+  function widgetBlocks(body) {
+    const entities = { '&amp;':'&', '&quot;':'"', '&#39;':"'", '&lt;':'<', '&gt;':'>' };
+    return [...parse(body).matchAll(/<pre class="widget-src" data-widget="(graph|chart)"><code>([\s\S]*?)<\/code><\/pre>/g)].map(m => ({kind:m[1],source:m[2].replace(/&(?:amp|quot|lt|gt|#39);/g,e=>entities[e])}));
+  }
+  return { widgetBlocks, widget, esc, slugify, safeUrl, frontmatter, highlight, parse, toneOf, GOOD_SCALE, routeHref, routeParse, encodePath };
 }
 
 // ---------------------------------------------------------------------------------------------
 // Page behavior. Inlined into the HTML; reads #report-data.
 // ---------------------------------------------------------------------------------------------
-function client(kit, MERMAID_URL) {
+function client(kit, MERMAID_URL, PANZOOM_URL) {
   const { esc, slugify } = kit;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const decode = (value) => { try { return decodeURIComponent(value); } catch { return value; } };
   const store = {
     get: (k) => { try { return localStorage.getItem(`octocode-report-${k}`); } catch { return null; } },
     set: (k, v) => { try { localStorage.setItem(`octocode-report-${k}`, v); } catch { /* private mode */ } },
@@ -368,19 +420,25 @@ function client(kit, MERMAID_URL) {
   const editorUrl = (abs, line) => {
     const p = abs.replace(/\\/g, '/');
     const lead = p.startsWith('/') ? '' : '/';
-    return editor === 'file' ? `file://${lead}${encodeURI(p)}` : `${editor}://file${lead}${encodeURI(p)}${line ? `:${line}` : ''}`;
+    return editor === 'file' ? `file://${lead}${kit.encodePath(p)}` : `${editor}://file${lead}${kit.encodePath(p)}${line ? `:${line}` : ''}`;
   };
 
   const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 1600); };
-  const copy = (text, msg) => { navigator.clipboard?.writeText(text).then(() => toast(msg), () => toast('Copy failed')); };
+  const copy = async (text, msg) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(text);
+      toast(msg);
+      return true;
+    } catch {
+      toast('Copy unavailable. Select the source text and copy it manually.');
+      return false;
+    }
+  };
 
   // Routes: #/ library, #/<path> document, #/<path>@<slug> section.
-  const parseHash = () => {
-    const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
-    const at = h.lastIndexOf('@');
-    return at > 0 ? { path: h.slice(0, at), slug: h.slice(at + 1) } : { path: h || null, slug: '' };
-  };
-  const href = (p, slug) => `#/${p ? encodeURI(p) + (slug ? `@${encodeURIComponent(slug)}` : '') : ''}`;
+  const parseHash = () => kit.routeParse(location.hash);
+  const href = kit.routeHref;
   const dirOf = (p) => p.slice(0, p.lastIndexOf('/') + 1);
   const resolvePath = (from, rel) => {
     const out = [];
@@ -389,14 +447,15 @@ function client(kit, MERMAID_URL) {
   };
 
   const { toneOf, GOOD_SCALE } = kit;
-  const DIAGRAMS = { flowchart: 'Flowchart', graph: 'Flowchart', sequencediagram: 'Sequence', classdiagram: 'Class diagram', statediagram: 'State diagram', 'statediagram-v2': 'State diagram', erdiagram: 'Entity relationship', gantt: 'Timeline plan', pie: 'Pie chart', mindmap: 'Mind map', timeline: 'Timeline', 'xychart-beta': 'Chart', xychart: 'Chart', quadrantchart: 'Quadrant', journey: 'User journey', gitgraph: 'Git graph', sankey: 'Sankey', 'sankey-beta': 'Sankey', block: 'Block diagram', 'block-beta': 'Block diagram', architecture: 'Architecture', 'architecture-beta': 'Architecture', kanban: 'Kanban', packet: 'Packet', 'packet-beta': 'Packet', requirementdiagram: 'Requirements', c4context: 'C4 context' };
-  const diagramLabel = (src) => { const w = (src.replace(/^%%.*$/gm, '').trim().split(/\s/)[0] || '').toLowerCase(); return DIAGRAMS[w] || w.replace(/-beta$/, '').replace(/-/g, ' '); };
+  const DIAGRAMS = { flowchart: 'Flowchart', graph: 'Flowchart', sequencediagram: 'Sequence', classdiagram: 'Class diagram', statediagram: 'State diagram', 'statediagram-v2': 'State diagram', erdiagram: 'Entity relationship', gantt: 'Timeline plan', pie: 'Pie chart', mindmap: 'Mind map', timeline: 'Timeline', 'xychart-beta': 'Chart', xychart: 'Chart', quadrantchart: 'Quadrant', journey: 'User journey', gitgraph: 'Git graph', sankey: 'Sankey', 'sankey-beta': 'Sankey', block: 'Block diagram', 'block-beta': 'Block diagram', architecture: 'Architecture', 'architecture-beta': 'Architecture', kanban: 'Kanban', packet: 'Packet', 'packet-beta': 'Packet', requirementdiagram: 'Requirements', c4context: 'C4 context', c4container: 'C4 containers', c4component: 'C4 components', c4dynamic: 'C4 interactions', c4deployment: 'C4 deployment', 'agentflow-beta': 'Agent flow', 'swimlane-beta': 'Swimlanes', eventmodeling: 'Event modeling', 'radar-beta': 'Radar chart', treemap: 'Treemap', 'venn-beta': 'Venn diagram', 'wardley-beta': 'Wardley map', 'cynefin-beta': 'Cynefin framework', 'treeview-beta': 'Tree view', ishikawa: 'Cause and effect', 'ishikawa-beta': 'Cause and effect', 'usecase-beta': 'Use cases', 'railroad-beta': 'Railroad diagram', 'railroad-ebnf-beta': 'EBNF grammar', 'railroad-abnf-beta': 'ABNF grammar', 'railroad-peg-beta': 'PEG grammar', 'flowchart-elk': 'Flowchart · ELK', info: 'Mermaid version' };
+  const diagramLabel = (src) => { const w = (kit.frontmatter(src).body.replace(/^%%.*$/gm, '').trim().split(/\s/)[0] || '').toLowerCase(); return DIAGRAMS[w] || w.replace(/-beta$/, '').replace(/-/g, ' '); };
   const chip = (text, tone) => `<span class="chip${tone ? ` t-${tone}` : ''}">${esc(text)}</span>`;
 
   // ----- Library view -----
   let libFilter = '';
   const kindKey = (f) => f.kind || f.group || 'Documents';
   function renderLibrary() {
+    $('#mobile-toc').hidden = true;
     const kinds = new Map();
     for (const f of files) kinds.set(kindKey(f), (kinds.get(kindKey(f)) || 0) + 1);
     if (libFilter && !kinds.has(libFilter)) libFilter = '';
@@ -413,7 +472,8 @@ function client(kit, MERMAID_URL) {
     }
     html += '</ul>';
     $('#page').innerHTML = html;
-    $('#docmeta').innerHTML = `<span class="kind">Library</span><span class="stats"><span>${list.length === files.length ? `${files.length} documents` : `${list.length} of ${files.length} documents`}</span></span>`;
+    $('#library-summary').hidden = false;
+    $('#library-summary').innerHTML = `<span class="kind">Library</span><span class="stats"><span>${list.length === files.length ? `${files.length} documents` : `${list.length} of ${files.length} documents`}</span></span>`;
     $('#toc').innerHTML = `<div class="toc-filters">${filterHtml('l2 tfilter')}</div>`;
     $$('[data-filter]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); libFilter = b.dataset.filter; renderLibrary(); }));
     $('#sources').innerHTML = '<p class="muted">Open a document to list its sources.</p>';
@@ -423,6 +483,11 @@ function client(kit, MERMAID_URL) {
   // ----- Document view -----
   let cites = [];
   function decorate(art, f) {
+    $$('.tablewrap', art).forEach(table => {
+      table.tabIndex = 0;
+      table.setAttribute('role', 'region');
+      table.setAttribute('aria-label', 'Scrollable table');
+    });
     const refs = f.refs || {};
     const seen = {}, toc = [];
     $$('h1,h2,h3,h4', art).forEach((h) => {
@@ -436,6 +501,8 @@ function client(kit, MERMAID_URL) {
       h.append(a);
     });
     $('#toc').innerHTML = toc.join('') || '<p class="muted">No sections</p>';
+    $('#mobile-toc').innerHTML = toc.length ? '<summary>On this page</summary><nav aria-label="Page sections">' + toc.join('') + '</nav>' : '';
+    $('#mobile-toc').hidden = !toc.length;
     const first = $('h1', art)?.nextElementSibling;
     if (first && first.tagName === 'P') first.classList.add('lead');
 
@@ -475,14 +542,14 @@ function client(kit, MERMAID_URL) {
     $$('a[href]', art).forEach((a) => {
       const raw = a.getAttribute('href');
       if (a.classList.contains('anchor') || raw.startsWith('#/')) return;
-      if (raw.startsWith('#')) { const s = decodeURIComponent(raw.slice(1)); a.href = href(f.path, /^fn(ref)?-/.test(s) ? s : slugify(s)); return; }
+      if (raw.startsWith('#')) { const s = decode(raw.slice(1)); a.href = href(f.path, /^fn(ref)?-/.test(s) ? s : slugify(s)); return; }
       if (/^https?:/i.test(raw)) { a.target = '_blank'; a.rel = 'noopener noreferrer'; a.classList.add('ext'); cite(a, 'web', raw); return; }
       if (/^[a-z][\w+.-]*:/i.test(raw)) return;
       const [file, frag] = raw.split('#');
-      const target = resolvePath(f.path, decodeURIComponent(file));
-      if (byPath.has(target)) { a.href = href(target, frag && slugify(frag)); a.classList.add('doclink'); return; }
+      const target = resolvePath(f.path, decode(file));
+      if (byPath.has(target)) { a.href = href(target, frag && slugify(decode(frag))); a.classList.add('doclink'); return; }
       if (refs[raw]) codeLink(a, refs[raw]);
-      else { a.classList.add('missing'); a.title = 'Not found in this workspace'; }
+      else { a.classList.add('missing'); a.title = 'Not found in this workspace'; a.setAttribute('aria-disabled', 'true'); a.removeAttribute('href'); }
     });
     $$('code', art).forEach((c) => {
       if (c.closest('pre,a')) return;
@@ -496,13 +563,18 @@ function client(kit, MERMAID_URL) {
     let n = 0;
     $$('pre > code', art).forEach((code) => {
       const pre = code.parentElement;
+      if (pre.classList.contains('widget-src')) {
+        n++;
+        try { const d = kit.widget(pre.dataset.widget,code.textContent); if (d.nodes) for (const node of d.nodes) if (node.url) cite(pre,'web',node.url,node.label); } catch { /* Invalid input is explained by the widget renderer. */ }
+        return;
+      }
       if (pre.classList.contains('mermaid-src')) {
         const src = code.textContent;
         const fig = document.createElement('figure');
-        fig.className = 'diagram';
+        fig.className = 'diagram'; fig.dataset.render = 'pending';
         fig.innerHTML = `<figcaption><b>Diagram ${++n}</b><span>${esc(diagramLabel(src))}</span>`
-          + '<button data-act="src" aria-pressed="false">Source</button><button data-act="copy">Copy</button><button data-act="zoom">Expand</button></figcaption>'
-          + '<div class="canvas">Rendering diagram…</div><pre hidden><code></code></pre>';
+          + '<button data-act="src" aria-pressed="false">Show source</button><button data-act="copy">Copy source</button><button data-act="download" disabled title="Download vector image">Export SVG</button><button data-act="zoom" disabled>Expand</button></figcaption>'
+          + '<div class="canvas" tabindex="0" role="region" aria-label="Scrollable diagram">Rendering diagram…</div><pre hidden><code></code></pre>';
         $('pre code', fig).textContent = src;
         fig.dataset.src = src;
         pre.replaceWith(fig);
@@ -511,42 +583,21 @@ function client(kit, MERMAID_URL) {
       const bar = document.createElement('div');
       bar.className = 'codebar';
       bar.innerHTML = `<span>${esc(pre.dataset.lang || '')}</span><button type="button">Copy</button>`;
-      $('button', bar).addEventListener('click', (e) => { copy(code.textContent, 'Code copied'); e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy'; }, 1200); });
+      $('button', bar).addEventListener('click', async (e) => {
+        const button = e.currentTarget;
+        if (await copy(code.textContent, 'Code copied')) {
+          button.textContent = 'Copied';
+          setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+        }
+      });
       pre.prepend(bar);
     });
 
-    if (f.source) {
-      const root = String(data.workspace || '').replace(/\\/g, '/').replace(/\/$/, '');
-      const abs = String(f.source).replace(/\\/g, '/');
-      const rel = root && abs.startsWith(root + '/') ? abs.slice(root.length + 1) : abs;
-      cites.push({ id: 'source-doc', kind: 'doc', key: rel, label: rel });
-    }
     renderSources();
-    renderMeta(f, art, toc.length, n);
+    $('#library-summary').replaceChildren();
+    $('#library-summary').hidden = true;
   }
 
-  function renderMeta(f, art, sections, diagrams) {
-    const words = art.textContent.trim().split(/\s+/).length;
-    const items = Object.entries(f.meta).filter(([k]) => k !== 'title').map(([k, v]) => {
-      const tone = (GOOD_SCALE.test(k) && toneOf(v, k)) || (/status|state|severity|priority|confidence|verdict|risk|decision/.test(k) ? toneOf(v) || 'blue' : '');
-      return `<span class="meta-item"><span class="meta-k">${esc(k)}</span>${tone ? chip(v, tone) : `<span class="meta-v">${esc(v)}</span>`}</span>`;
-    });
-    if (f.date && !f.meta.date) items.unshift(`<span class="meta-item"><span class="meta-k">date</span><span class="meta-v">${esc(f.date)}</span></span>`);
-    if (f.source) {
-      const root = String(data.workspace || '').replace(/\\/g, '/').replace(/\/$/, '');
-      const abs = String(f.source).replace(/\\/g, '/');
-      const rel = root && abs.startsWith(root + '/') ? abs.slice(root.length + 1) : abs;
-      items.push(`<span class="meta-item"><span class="meta-k">source</span><a class="meta-v" id="source-doc" href="${editorUrl(abs)}">${esc(rel)}</a></span>`);
-    }
-    const sources = new Set(cites.map((c) => c.key)).size;
-    const stats = [
-      `${Math.max(1, Math.round(words / 230))} min read`,
-      sections && `${sections} ${sections === 1 ? 'section' : 'sections'}`,
-      sources && `${sources} ${sources === 1 ? 'source' : 'sources'}`,
-      diagrams && `${diagrams} ${diagrams === 1 ? 'diagram' : 'diagrams'}`,
-    ].filter(Boolean);
-    $('#docmeta').innerHTML = `<span class="kind">${esc(f.kind || data.kind || 'Report')}</span>${items.join('')}<span class="stats">${stats.map((s) => `<span>${esc(s)}</span>`).join('')}</span>`;
-  }
 
   let sourceList = [];
   function renderSources() {
@@ -570,9 +621,99 @@ function client(kit, MERMAID_URL) {
         + `${s.kind === 'web' && s.label !== s.key ? `<span class="src-url">${esc(s.key.replace(/^https?:\/\/(www\.)?/, ''))}</span>` : ''}${s.ids.length > 1 ? `<span class="src-count">cited ${s.ids.length} times</span>` : ''}</a>`).join('')}</div>`).join('');
   }
 
+  const widgetDisposers = new Set();
+  function disposeWidgets() { for (const dispose of widgetDisposers) dispose(); widgetDisposers.clear(); }
+  const widgetLibraries = new Map();
+  function loadWidgetLibrary(kind) {
+    if (widgetLibraries.has(kind)) return widgetLibraries.get(kind);
+    const config = kind === 'graph'
+      ? ['https://cdn.jsdelivr.net/npm/cytoscape@3.33.1/dist/cytoscape.min.js', 'cytoscape']
+      : ['https://cdn.jsdelivr.net/npm/echarts@6.0.0/dist/echarts.min.js', 'echarts'];
+    const promise = new Promise((resolve, reject) => {
+      if (window[config[1]]) { resolve(window[config[1]]); return; }
+      const script = document.createElement('script');
+      const timer = setTimeout(() => done(new Error('Renderer loading timed out')), 10000);
+      const done = (error) => { clearTimeout(timer); script.onload = script.onerror = null; if (error) { script.remove(); widgetLibraries.delete(kind); reject(error); } else resolve(window[config[1]]); };
+      script.onload = () => window[config[1]] ? done() : done(new Error('Renderer unavailable'));
+      script.onerror = () => done(new Error('Renderer could not load; check your connection'));
+      script.src = config[0]; document.head.append(script);
+    });
+    widgetLibraries.set(kind, promise);
+    return promise;
+  }
+  async function renderWidgets(root) {
+    await Promise.all($$('.widget-src', root).map(async pre => {
+      const kind = pre.dataset.widget, source = $('code', pre).textContent;
+      const card = document.createElement('figure'); card.className = 'data-widget'; card.dataset.render = 'pending'; card.id = pre.id;
+      card.innerHTML = '<figcaption></figcaption><div class="widget-actions"></div><p class="widget-status" role="status"></p><div class="widget-view" role="img"></div><div class="widget-detail" aria-live="polite"></div><details class="widget-values"><summary>Show data</summary><div class="widget-data"></div></details><details class="widget-source"><summary>Show source</summary><pre><code></code></pre></details>';
+      $('pre code', card).textContent = source;
+      pre.replaceWith(card);
+      const status = $('.widget-status', card), view = $('.widget-view', card), actions = $('.widget-actions', card);
+      let d;
+      try { d = kit.widget(kind, source); } catch(e) { card.dataset.render = 'failed'; $('figcaption', card).textContent = 'Invalid ' + kind; status.textContent = e.message; $('.widget-source', card).open = true; view.hidden = true; return; }
+      $('figcaption', card).textContent = d.title; view.setAttribute('aria-label', d.title + '. Use Show data for a text alternative.');
+      const table = kind === 'graph'
+        ? '<h3>Nodes</h3><table><thead><tr><th>Node</th><th>Description</th><th>Evidence</th></tr></thead><tbody>' + d.nodes.map(n => `<tr><td>${esc(n.label)}</td><td>${esc(n.description)}</td><td>${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">Source</a>` : '—'}</td></tr>`).join('') + '</tbody></table><h3>Connections</h3><table><thead><tr><th>From</th><th>To</th><th>Relationship</th></tr></thead><tbody>' + d.edges.map(e => `<tr><td>${esc(d.nodes.find(n => n.id === e.source).label)}</td><td>${esc(d.nodes.find(n => n.id === e.target).label)}</td><td>${esc(e.label)}</td></tr>`).join('') + '</tbody></table>'
+        : '<table><thead><tr><th>Category</th>' + d.series.map(s => `<th>${esc(s.name)}${d.unit ? ' (' + esc(d.unit) + ')' : ''}</th>`).join('') + '</tr></thead><tbody>' + d.labels.map((label,i) => `<tr><td>${esc(label)}</td>${d.series.map(s => `<td>${s.values[i]}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
+      $('.widget-data',card).innerHTML = table;
+      const button = (label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = fn; actions.append(b); return b; };
+      button('Copy source', () => copy(source, 'Widget data copied'));
+      status.textContent = 'Loading interactive ' + kind + '…';
+      let instance, observer, disposed = false;
+      const cleanup = () => { disposed = true; observer?.disconnect(); if (kind === 'graph') instance?.destroy(); else instance?.dispose(); };
+      widgetDisposers.add(cleanup);
+      try {
+        const library = await loadWidgetLibrary(kind);
+        if (disposed || !card.isConnected) return;
+        const css = getComputedStyle(document.documentElement), color = n => css.getPropertyValue(n).trim();
+        if (kind === 'graph') {
+          const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Find nodes'; search.setAttribute('aria-label','Find nodes in ' + d.title); actions.prepend(search);
+          const select = document.createElement('select'); select.setAttribute('aria-label','Select node in ' + d.title); select.innerHTML = '<option value="">All nodes</option>' + d.nodes.map(n => `<option value="${esc(n.id)}">${esc(n.label)}</option>`).join(''); actions.append(select);
+          instance = library({ container: view, elements: [...d.nodes.map(n => ({data:n})), ...d.edges.map(e => ({data:e}))], layout:{name:'breadthfirst',directed:true,padding:32,spacingFactor:1.4}, minZoom:.15,maxZoom:3,userZoomingEnabled:false,style:[
+            {selector:'node',style:{'label':'data(label)','background-color':color('--accent'),'color':color('--ink'),'font-size':14,'text-valign':'bottom','text-margin-y':8,'text-wrap':'wrap','text-max-width':140,'width':28,'height':28}},
+            {selector:'edge',style:{'label':'data(label)','font-size':11,'color':color('--muted'),'line-color':color('--muted'),'target-arrow-color':color('--muted'),'target-arrow-shape':'triangle','curve-style':'bezier','width':1.5,'text-background-color':color('--panel'),'text-background-opacity':1,'text-background-padding':3}},
+            {selector:'.muted',style:{opacity:.15}}, {selector:'.focused',style:{'border-width':4,'border-color':color('--ink')}}
+          ]});
+          const cy = instance;
+          const focus = id => {
+            cy.elements().removeClass('muted focused');
+            const detail = $('.widget-detail',card); detail.replaceChildren();
+            if (!id) { cy.fit(undefined,32); status.textContent = `${d.nodes.length} nodes · ${d.edges.length} connections`; return; }
+            const n = cy.getElementById(id), data = n.data();
+            cy.elements().not(n.closedNeighborhood()).addClass('muted'); n.addClass('focused'); cy.fit(n.closedNeighborhood(),60);
+            const strong = document.createElement('strong'); strong.textContent = data.label; detail.append(strong, document.createTextNode(' — ' + (data.description || 'No description supplied.')));
+            if (data.url) { const a = document.createElement('a'); a.href = data.url; a.target='_blank'; a.rel='noopener noreferrer'; a.textContent='Open source'; detail.append(' ',a); }
+            status.textContent = 'Showing ' + data.label + ' and its neighbors';
+          };
+          select.onchange = () => focus(select.value);
+          cy.on('tap','node',event => { select.value=event.target.id(); focus(select.value); });
+          search.oninput = () => {
+            const term=search.value.trim().toLowerCase();
+            const matches=cy.nodes().filter(n=>n.data('label').toLowerCase().includes(term));
+            cy.elements().removeClass('muted focused'); select.value=''; $('.widget-detail',card).replaceChildren();
+            if(term) { cy.elements().not(matches).addClass('muted'); matches.addClass('focused'); if(matches.length) cy.fit(matches,60); } else cy.fit(undefined,32);
+            status.textContent=term ? `${matches.length} matching nodes` : `${d.nodes.length} nodes · ${d.edges.length} connections`;
+          };
+          button('−',()=>cy.zoom({level:Math.max(cy.minZoom(),cy.zoom()/1.25),renderedPosition:{x:cy.width()/2,y:cy.height()/2}})).setAttribute('aria-label','Zoom out');
+          button('+',()=>cy.zoom({level:Math.min(cy.maxZoom(),cy.zoom()*1.25),renderedPosition:{x:cy.width()/2,y:cy.height()/2}})).setAttribute('aria-label','Zoom in');
+          button('Reset',()=>{search.value='';select.value='';focus('');});
+          status.textContent = `${d.nodes.length} nodes · ${d.edges.length} connections · select a node to explore`;
+        } else {
+          instance=library.init(view,null,{renderer:'svg'});
+          instance.setOption({animation:false,color:[color('--accent'),'#d97706','#15803d','#2563eb'],textStyle:{color:color('--ink'),fontFamily:'system-ui'},aria:{enabled:true,label:{description:d.title + '. ' + d.series.map(s=>s.name + ': ' + d.labels.map((label,i)=>label + ' ' + s.values[i] + (d.unit?' '+d.unit:'')).join(', ')).join('. ')},decal:{show:true}},tooltip:{trigger:d.type==='pie'?'item':'axis',renderMode:'richText'},legend:{bottom:0,type:'scroll',textStyle:{color:color('--ink')}},grid:{left:20,right:20,top:24,bottom:64,containLabel:true},...(d.type==='pie'?{}:{xAxis:{type:'category',data:d.labels,axisLabel:{color:color('--muted'),hideOverlap:true}},yAxis:{type:'value',name:d.unit,axisLabel:{color:color('--muted')},splitLine:{lineStyle:{color:color('--line')}}}}),series:d.series.map(s=>({name:s.name,type:d.type,...(d.type==='pie'?{radius:['35%','65%'],label:{color:color('--ink')},data:d.labels.map((name,i)=>({name,value:s.values[i]}))}:{data:s.values})}))});
+          status.textContent = 'Use the legend to compare series; open Show data for exact values.';
+        }
+        button(kind==='graph'?'Export PNG':'Export SVG',()=>{const a=document.createElement('a');a.download=slugify(d.title)+(kind==='graph'?'.png':'.svg');a.href=kind==='graph'?instance.png({full:true,bg:color('--panel'),scale:2}):instance.getDataURL({type:'svg',backgroundColor:color('--panel')});a.click();});
+        const expand=button('Expand',()=>{card.classList.toggle('widget-large');expand.textContent=card.classList.contains('widget-large')?'Collapse':'Expand';expand.setAttribute('aria-pressed',String(card.classList.contains('widget-large')));});
+        expand.setAttribute('aria-pressed','false');
+        observer=new ResizeObserver(()=>{if(kind==='graph'){instance.resize();}else instance.resize();}); observer.observe(view); card.dataset.render = 'ready';
+      } catch(e) { if(!disposed){card.dataset.render = 'failed'; status.textContent=e.message + '. Data and source remain available.'; $$('details',card).forEach(el=>{el.open=true;});view.hidden=true;} }
+    }));
+  }
+
   // ----- Diagrams -----
   let mermaidReady = null;
-  const getMermaid = () => (mermaidReady ||= import(MERMAID_URL).then((m) => m.default).catch(() => null));
+  const getMermaid = () => (mermaidReady ||= new Promise(resolve => { const timer = setTimeout(()=>resolve(null),10000); import(MERMAID_URL).then(m=>{clearTimeout(timer);resolve(m.default);},()=>{clearTimeout(timer);resolve(null);}); }));
   async function renderDiagrams(root) {
     const figs = $$('.diagram', root);
     if (!figs.length) return;
@@ -580,12 +721,12 @@ function client(kit, MERMAID_URL) {
     const dark = document.documentElement.dataset.theme === 'dark';
     if (mermaid) {
       const css = getComputedStyle(document.documentElement), v = (n) => css.getPropertyValue(n).trim();
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base', fontFamily: 'system-ui, sans-serif', xyChart: { height: 340 }, themeVariables: {
+      mermaid.initialize({ startOnLoad: false, suppressErrorRendering: true, securityLevel: 'strict', theme: 'base', fontFamily: 'system-ui, sans-serif', xyChart: { height: 340 }, themeVariables: {
         xyChart: { plotColorPalette: [v('--accent'), v('--muted'), '#c2410c', '#15803d'].join(','), backgroundColor: v('--panel'), titleColor: v('--ink'), xAxisLabelColor: v('--muted'), yAxisLabelColor: v('--muted'), xAxisTitleColor: v('--muted'), yAxisTitleColor: v('--muted'), xAxisLineColor: v('--line'), yAxisLineColor: v('--line'), xAxisTickColor: v('--line'), yAxisTickColor: v('--line') },
-        pie1: v('--accent'), pie2: '#c2410c', pie3: '#15803d', pie4: v('--muted'), pieStrokeColor: v('--panel'), pieTitleTextColor: v('--ink'), pieSectionTextColor: '#fff', pieLegendTextColor: v('--ink'),
-        darkMode: dark, background: v('--panel'), fontSize: '14px',
+        pie1: '#7135b7', pie2: '#c2410c', pie3: '#15803d', pie4: '#59636f', pieStrokeColor: v('--panel'), pieTitleTextColor: v('--ink'), pieSectionTextColor: '#fff', pieLegendTextColor: v('--ink'),
+        darkMode: dark, background: v('--panel'), fontSize: '16px',
         primaryColor: v('--accent-soft'), primaryBorderColor: v('--accent'), primaryTextColor: v('--ink'),
-        secondaryColor: v('--soft'), tertiaryColor: v('--panel'), lineColor: v('--muted'), textColor: v('--ink'),
+        secondaryColor: v('--soft'), secondaryTextColor: v('--ink'), tertiaryColor: v('--panel'), tertiaryTextColor: v('--ink'), edgeLabelBackground: v('--panel'), lineColor: v('--muted'), textColor: v('--ink'),
         clusterBkg: v('--soft'), clusterBorder: v('--line'), noteBkgColor: v('--soft'), noteBorderColor: v('--line'),
         actorBkg: v('--accent-soft'), actorBorder: v('--accent'), actorTextColor: v('--ink'), signalColor: v('--ink'), signalTextColor: v('--ink'),
       } });
@@ -593,9 +734,29 @@ function client(kit, MERMAID_URL) {
     for (const [k, fig] of figs.entries()) {
       if (!fig.isConnected) return;
       const canvas = $('.canvas', fig);
-      const showSource = (note) => { canvas.hidden = true; $('pre', fig).hidden = false; fig.insertAdjacentHTML('beforeend', `<p class="note">${esc(note)}</p>`); };
+      const showSource = (note) => { fig.dataset.render = 'failed'; canvas.hidden = true; $('pre', fig).hidden = false; $('[data-act="src"]', fig).setAttribute('aria-pressed', 'true'); fig.insertAdjacentHTML('beforeend', `<p class="note">${esc(note)}</p>`); };
       if (!mermaid) { showSource('Mermaid could not load (offline?). Showing the diagram source.'); continue; }
-      try { canvas.innerHTML = (await mermaid.render(`mmd-${Date.now()}-${k}`, fig.dataset.src)).svg; } catch (e) { showSource(`Diagram error: ${String(e?.message || e).split('\n')[0]}`); }
+      try {
+        const { svg } = await mermaid.render(`mmd-${Date.now()}-${k}`, fig.dataset.src);
+        if (!fig.isConnected) return;
+        canvas.innerHTML = svg; fig.dataset.render = 'ready';
+        const finder = document.createElement('div'); finder.className = 'diagram-find';
+        finder.innerHTML = '<input type="search" aria-label="Find text in diagram" placeholder="Find in diagram"><output aria-live="polite"></output>';
+        canvas.before(finder);
+        $('input',finder).oninput = event => {
+          const term = event.target.value.trim().toLowerCase();
+          $$('.diagram-match',canvas).forEach(el=>el.classList.remove('diagram-match'));
+          const labels = $$('text,foreignObject',canvas).filter(el=>!el.parentElement.closest('text,foreignObject') && el.textContent.toLowerCase().includes(term));
+          if(term) labels.forEach(el=>el.classList.add('diagram-match'));
+          $('output',finder).textContent = term ? `${labels.length} matches` : '';
+        };
+        canvas.hidden = !$('pre', fig).hidden;
+        $('[data-act="zoom"]', fig).disabled = false;
+        $('[data-act="download"]', fig).disabled = false;
+        const title = $('svg title', canvas)?.textContent;
+        if (title) canvas.setAttribute('aria-label', title);
+        $('[data-act="src"]', fig).textContent = canvas.hidden ? 'Show diagram' : 'Show source';
+      } catch (e) { if (fig.isConnected) showSource(`Diagram error: ${String(e?.message || e).split('\n')[0]}`); }
     }
   }
 
@@ -648,7 +809,7 @@ function client(kit, MERMAID_URL) {
     document.body.classList.remove('menu');
     const art = $('#page');
     if (!p) {
-      if (art.dataset.path !== '') { art.dataset.path = ''; renderLibrary(); renderNav(null); spy(); scrollTo(0, 0); }
+      if (art.dataset.path !== '') { disposeWidgets(); art.dataset.path = ''; renderLibrary(); renderNav(null); spy(); scrollTo(0, 0); }
       document.title = siteTitle;
       return;
     }
@@ -656,7 +817,17 @@ function client(kit, MERMAID_URL) {
     if (!f) { toast(`Not found: ${p}`); location.hash = '#/'; return; }
     if (art.dataset.path !== p) {
       art.dataset.path = p;
+      disposeWidgets();
       art.innerHTML = kit.parse(f.body);
+      $$('img', art).forEach(img => {
+        const raw = img.getAttribute('src');
+        if (f.images?.[raw]) img.src = f.images[raw];
+        img.addEventListener('error', () => {
+          if (img.nextElementSibling?.classList.contains('image-error')) return;
+          const note = document.createElement('p'); note.className = 'image-error';
+          note.textContent = 'Image could not load: ' + (img.alt || raw); img.after(note);
+        });
+      });
       if (!$('h1', art)) art.insertAdjacentHTML('afterbegin', `<h1>${esc(f.title)}</h1>`);
       decorate(art, f);
       renderNav(p);
@@ -664,6 +835,7 @@ function client(kit, MERMAID_URL) {
       document.title = library ? `${f.title} – ${siteTitle}` : f.title;
       if (!slug) scrollTo(0, 0);
       renderDiagrams(art);
+      renderWidgets(art);
     }
     if (slug) {
       const el = document.getElementById(slug);
@@ -725,7 +897,70 @@ function client(kit, MERMAID_URL) {
 
   // ----- Global interactions -----
   const modal = $('#modal');
+  let modalTrigger = null;
+  let expandedDiagram = null;
+  let panzoomReady;
+  const getPanzoom = () => (panzoomReady ||= new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = PANZOOM_URL;
+    const timer = setTimeout(() => resolve(null), 8000);
+    script.onload = () => { clearTimeout(timer); resolve(window.Panzoom || null); };
+    script.onerror = () => { clearTimeout(timer); resolve(null); };
+    document.head.append(script);
+  }));
+  const fitDiagram = () => {
+    const d = expandedDiagram;
+    if (!d?.panzoom) return;
+    const box = $('#modalbox');
+    d.panzoom.zoom(Math.min((box.clientWidth - 32) / d.width, (box.clientHeight - 32) / d.height, 1), { animate: false });
+    d.panzoom.pan(0, 0, { animate: false });
+  };
+  const openDiagram = async (svg, trigger) => {
+    const box = $('#modalbox'), stage = document.createElement('div');
+    const view = svg.viewBox.baseVal;
+    const d = { svg, canvas: svg.parentElement, style: svg.getAttribute('style'), width: view.width || 800, height: view.height || 600 };
+    expandedDiagram = d;
+    stage.className = 'diagram-stage';
+    stage.style.width = d.width + 'px'; stage.style.height = d.height + 'px';
+    svg.style.cssText += ';width:100%;height:100%;max-width:none;min-width:0';
+    stage.append(svg); box.replaceChildren(stage);
+    box.classList.remove('interactive');
+    box.removeAttribute('style');
+    $('#diagram-help').textContent = 'Loading zoom controls. The diagram remains scrollable.';
+    $$('#diagram-tools button').forEach(b => b.disabled = true);
+    $('#diagram-scale').textContent = 'Loading controls…';
+    modalTrigger = trigger; modal.showModal();
+    const Panzoom = await getPanzoom();
+    if (expandedDiagram !== d) return;
+    if (!Panzoom) { $('#diagram-scale').textContent = 'Zoom unavailable'; $('#diagram-help').textContent = 'Scroll to explore the diagram. Escape closes this view.'; return; }
+    box.classList.add('interactive');
+    $('#diagram-help').textContent = 'Drag to pan · scroll or pinch to zoom · + / − to zoom · 0 to fit · arrows to pan · Escape to close';
+    d.panzoom = Panzoom(stage, { minScale: 0.02, maxScale: 8, step: 0.2, animate: false });
+    d.wheel = (event) => { event.preventDefault(); d.panzoom.zoomWithWheel(event); };
+    box.addEventListener('wheel', d.wheel, { passive: false });
+    stage.addEventListener('panzoomchange', () => { $('#diagram-scale').textContent = Math.round(d.panzoom.getScale() * 100) + '%'; });
+    d.resize = new ResizeObserver(fitDiagram); d.resize.observe(box);
+    $$('#diagram-tools button').forEach(b => b.disabled = false);
+    fitDiagram();
+    box.focus();
+  };
+  const closeModal = () => {
+    if (expandedDiagram) {
+      const d = expandedDiagram;
+      d.resize?.disconnect(); d.panzoom?.destroy();
+      if (d.wheel) $('#modalbox').removeEventListener('wheel', d.wheel);
+      if (d.style === null) d.svg.removeAttribute('style'); else d.svg.setAttribute('style', d.style);
+      d.canvas.append(d.svg);
+      $('#modalbox').replaceChildren();
+      $('#modalbox').removeAttribute('style');
+      expandedDiagram = null;
+    }
+    modal.close();
+    modalTrigger?.focus();
+    modalTrigger = null;
+  };
   document.addEventListener('click', (e) => {
+    if (e.target.closest('a.skip')) { e.preventDefault(); $('#page').focus(); return; }
     if (!e.target.closest('.search')) results.classList.remove('open');
     const anchor = e.target.closest('a.anchor');
     if (anchor) { e.preventDefault(); history.replaceState(null, '', anchor.getAttribute('href')); copy(location.href, 'Link copied'); return; }
@@ -751,19 +986,40 @@ function client(kit, MERMAID_URL) {
     if (act.dataset.act === 'copy' && fig) copy(fig.dataset.src, 'Diagram source copied');
     if (act.dataset.act === 'src' && fig) {
       const pre = $('pre', fig), canvas = $('.canvas', fig), showSrc = pre.hidden;
+      if (!$('svg', canvas)) { pre.hidden = false; canvas.hidden = true; act.setAttribute('aria-pressed', 'true'); toast('Diagram unavailable; source is shown'); return; }
       pre.hidden = !showSrc;
       canvas.hidden = showSrc || !$('svg', canvas);
-      act.textContent = showSrc ? 'Diagram' : 'Source';
+      act.textContent = showSrc ? 'Show diagram' : 'Show source';
       act.setAttribute('aria-pressed', String(showSrc));
+    }
+    if (act.dataset.act === 'download' && fig) {
+      const svg = $('.canvas svg', fig);
+      if (!svg) return;
+      const clone = svg.cloneNode(true);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' }));
+      const link = Object.assign(document.createElement('a'), { href: url, download: `diagram-${slugify(diagramLabel(fig.dataset.src))}.svg` });
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
     if (act.dataset.act === 'zoom' && fig) {
       const svg = $('.canvas svg', fig);
       if (!svg) { toast('Nothing to expand'); return; }
-      $('#modalbox').innerHTML = svg.outerHTML;
-      modal.classList.add('open');
+      openDiagram(svg, act);
     }
   });
-  modal.addEventListener('click', () => modal.classList.remove('open'));
+  $('#modal-close').addEventListener('click', closeModal);
+  $('#diagram-tools').addEventListener('click', (event) => {
+    const action = event.target.closest('button')?.dataset.zoom;
+    const p = expandedDiagram?.panzoom;
+    if (!p) return;
+    if (action === 'in') p.zoomIn();
+    if (action === 'out') p.zoomOut();
+    if (action === 'fit') fitDiagram();
+    if (action === 'actual') { p.zoom(1); p.pan(0, 0); }
+  });
+  modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(); });
+  modal.addEventListener('cancel', (event) => { event.preventDefault(); closeModal(); });
   $('#editor').addEventListener('change', (e) => {
     editor = e.target.value;
     store.set('editor', editor);
@@ -776,15 +1032,30 @@ function client(kit, MERMAID_URL) {
     const art = $('#page');
     if (art.dataset.path) { art.dataset.path = '-'; show(); }
   });
+  let printDetails = [];
+  addEventListener('beforeprint', () => { printDetails = $$('.data-widget details').filter(el=>!el.open); printDetails.forEach(el=>{el.open=true;}); });
+  addEventListener('afterprint', () => { printDetails.forEach(el=>{el.open=false;}); printDetails=[]; });
   $('#print').addEventListener('click', () => print());
   $('#menu').addEventListener('click', () => document.body.classList.toggle('menu'));
   $('#site-title').addEventListener('click', () => { location.hash = '#/'; });
   document.addEventListener('keydown', (e) => {
+    if ($('#render-check').open) return;
+    if (modal.open) {
+      if (e.key === 'Escape') { e.preventDefault(); closeModal(); }
+      const p = expandedDiagram?.panzoom;
+      if (p && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const actions = { '+': () => p.zoomIn(), '=': () => p.zoomIn(), '-': () => p.zoomOut(), '0': fitDiagram,
+          ArrowLeft: () => p.pan(40, 0, { relative: true }), ArrowRight: () => p.pan(-40, 0, { relative: true }),
+          ArrowUp: () => p.pan(0, 40, { relative: true }), ArrowDown: () => p.pan(0, -40, { relative: true }) };
+        if (actions[e.key]) { e.preventDefault(); actions[e.key](); }
+      }
+      return;
+    }
     if (e.metaKey || e.ctrlKey || e.altKey || /input|textarea|select/i.test(e.target.tagName)) return;
     const cur = parseHash().path || home;
     const i = files.findIndex((f) => f.path === cur);
     if (e.key === '/') { e.preventDefault(); q.focus(); q.select(); }
-    else if (e.key === 'Escape') { modal.classList.remove('open'); document.body.classList.remove('menu'); }
+    else if (e.key === 'Escape') { if (modal.open) closeModal(); document.body.classList.remove('menu'); }
     else if (e.key === ']' && files[i + 1]) location.hash = href(files[i + 1].path);
     else if (e.key === '[' && library) location.hash = i > 0 ? href(files[i - 1].path) : '#/';
     else if (e.key === 'g' && library) location.hash = '#/';
@@ -795,27 +1066,43 @@ function client(kit, MERMAID_URL) {
     $('#progress').style.transform = `scaleX(${max > 0 ? scrollY / max : 0})`;
   }, { passive: true });
   addEventListener('hashchange', show);
-  window.__octocodeReport = { files, parse: kit.parse, slugify };
+  const renderStatus = () => {
+    const items = $$('.diagram,.data-widget', $('#page')).map(el=>({title:$('figcaption',el)?.textContent || 'Diagram',state:el.dataset.render || 'pending'}));
+    $$('img', $('#page')).forEach(img=>items.push({title:img.alt || 'Image',state:img.complete ? (img.naturalWidth?'ready':'failed') : 'pending'}));
+    const pending = items.filter(x=>x.state==='pending').length, failed = items.filter(x=>x.state==='failed').length;
+    return {state:failed?'failed':pending?'pending':'ready',total:items.length,pending,failed,items};
+  };
+  const checkDialog = $('#render-check'), checkOutput = $('#render-check-output');
+  let checkTimer;
+  const updateCheck = () => {
+    const result = renderStatus();
+    checkOutput.textContent = result.state === 'ready' ? `Ready: ${result.total} visuals loaded. Check readability and links before sharing.` : `${result.state === 'failed' ? 'Failed' : 'Pending'}: ${result.failed} failed, ${result.pending} pending of ${result.total}. ${result.items.filter(x=>x.state==='failed').map(x=>x.title).join('; ')}. Review the source/error messages; reload after correcting content or connectivity.`;
+  };
+  $('#verify-render').onclick = () => { $$('img', $('#page')).forEach(img=>{img.loading='eager';}); updateCheck(); checkDialog.showModal(); checkTimer=setInterval(updateCheck,500); };
+  $('#render-check-close').onclick = () => checkDialog.close();
+  checkDialog.addEventListener('close',()=>{clearInterval(checkTimer);$('#verify-render').focus();});
+  window.__octocodeReport = { files, parse: kit.parse, slugify, renderStatus };
   show();
 }
 
 // ---------------------------------------------------------------------------------------------
-// Template: one file, no external assets except the lazily loaded mermaid module.
-// Design: cool paper, deep ocean accent, serif reading text with sans interface, varied radii.
+// Template: one file, pinned renderer libraries load only for the content that needs them.
+// Design: violet accents, quiet reading surfaces, consistent type and spacing.
 // ---------------------------------------------------------------------------------------------
 const CSS = String.raw`
-:root{--bg:#f4f6f8;--panel:#fff;--soft:#eceff3;--line:#d9dee5;--ink:#141a21;--muted:#59636f;--accent:#0a6c86;--accent-ink:#06536a;--accent-soft:#dff0f5;--mark:#ffe58a;--code:#f3f5f8;
+:root{--bg:#f8f6fc;--panel:#fff;--soft:#f0ebf8;--line:#ded6ed;--ink:#21182f;--muted:#655a75;--accent:#7135b7;--accent-ink:#57248f;--accent-soft:#eee3fc;--gradient:linear-gradient(120deg,#7135b7,#a32788);--glow:#ede0fc;--on-accent:#fff;--mark:#ffe58a;--code:#f5f1fa;
 --red:#b42318;--red-bg:#fde8e6;--amber:#93590a;--amber-bg:#fdf0d9;--blue:#1d5bbf;--blue-bg:#e3ecfb;--green:#1b7442;--green-bg:#e0f3e7;--gray:#4d5763;--gray-bg:#eceff2;
 --serif:"Iowan Old Style","Charter","Bitstream Charter","Source Serif Pro","Sitka Text",Cambria,Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;--nav:264px;--rail:272px}
-:root[data-theme=dark]{--bg:#12171d;--panel:#182029;--soft:#1f2832;--line:#2c3743;--ink:#e3e8ee;--muted:#98a3b0;--accent:#4fb3cf;--accent-ink:#7cc9de;--accent-soft:#16323c;--mark:#6a5410;--code:#1b232d;
+:root[data-theme=dark]{--bg:#100d18;--panel:#1c1628;--soft:#271e36;--line:#3e3152;--ink:#eee8f7;--muted:#b6a8c9;--accent:#c5a0ff;--accent-ink:#dec4ff;--accent-soft:#352249;--gradient:linear-gradient(120deg,#b38aff,#eb9bdb);--glow:#2b1944;--on-accent:#100d18;--mark:#6a5410;--code:#211a2f;
 --red:#ff8a7f;--red-bg:#3d1f1d;--amber:#f0b45a;--amber-bg:#3a2c15;--blue:#8fb4ff;--blue-bg:#1d2a44;--green:#6fd29a;--green-bg:#173325;--gray:#b3bcc6;--gray-bg:#26303a}
 *{box-sizing:border-box}html{scroll-padding-top:72px}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-underline-offset:2px}button,select,input{font:inherit;color:inherit}
+body{margin:0;background:radial-gradient(ellipse 80% 380px at 30% 0,var(--glow),transparent),var(--bg);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:2px}a.missing{color:var(--muted);text-decoration:underline dotted;cursor:not-allowed}button,select,input{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 kbd{font:12px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--panel)}
 .muted{color:var(--muted);font-size:13px;margin:6px 4px}
-header.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;height:56px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+header.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:10px;height:56px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 2px 16px #7135b70a}
+header.top::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:var(--gradient)}
 #site-title{font-weight:650;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;min-width:0;background:none;border:0;padding:4px 2px;text-align:left}
 .mark-logo{width:26px;height:26px;flex:none;color:var(--accent)}
 .grow{flex:1}
@@ -833,7 +1120,7 @@ mark{background:var(--mark);color:inherit;border-radius:2px}
 .tool:hover{border-color:var(--accent);color:var(--accent)}.tool svg{width:17px;height:17px}
 select.tool{padding:0 6px;font-size:13px}
 #menu{display:none}
-#progress{position:fixed;top:56px;left:0;right:0;height:2px;background:var(--accent);transform:scaleX(0);transform-origin:0 0;z-index:31}
+#progress{position:fixed;top:56px;left:0;right:0;height:2px;background:var(--gradient);transform:scaleX(0);transform-origin:0 0;z-index:31}
 .layout{display:grid;grid-template-columns:var(--nav) minmax(0,1fr) var(--rail);max-width:1560px;margin:0 auto}
 body.single .layout{grid-template-columns:minmax(0,1fr) var(--rail);max-width:1240px}
 body.single nav.side{display:none}
@@ -845,24 +1132,23 @@ nav.side{border-right:1px solid var(--line)}
 #nav a{display:block;padding:6px 8px;border-radius:5px;color:var(--ink);text-decoration:none;font-size:13.5px;line-height:1.35}
 #nav a small{display:block;color:var(--muted);font-size:11.5px}
 #nav a:hover{background:var(--soft)}#nav a.active{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
-main{min-width:0;padding:28px 44px 96px}
-#docmeta{max-width:760px;margin:0 auto 8px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;font-size:13px;color:var(--muted)}
-#docmeta:empty{display:none}
+main{min-width:0;padding:36px 44px 96px}
+#library-summary{max-width:760px;margin:0 auto 24px;padding:16px 20px;display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 18px;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:inset 3px 0 var(--accent)}
+#library-summary:empty{display:none}
 .kind{color:var(--accent-ink);font-weight:650}
-.meta-item{display:inline-flex;align-items:center;gap:6px}.meta-k{color:var(--muted)}.meta-v{color:var(--ink)}
-.stats{display:inline-flex;gap:12px;margin-left:auto}
-article{max-width:760px;margin:0 auto;font:17px/1.7 var(--serif)}
+.stats{display:inline-flex;flex-wrap:wrap;gap:6px 12px;width:100%;padding-top:10px;border-top:1px solid var(--line)}
+article{max-width:760px;margin:0 auto;font:16px/1.7 var(--sans);overflow-wrap:break-word}article p,article li{max-width:75ch}article a{overflow-wrap:anywhere}article h1,article h2{ text-wrap:balance }
 article h1,article h2,article h3,article h4{font-family:var(--sans);line-height:1.25;letter-spacing:-.01em;position:relative}
-article h1{font-size:34px;font-weight:700;margin:6px 0 14px}
-article h2{font-size:23px;font-weight:650;margin:48px 0 12px;padding-top:20px;border-top:1px solid var(--line)}
+article h1{font-size:clamp(28px,3vw,38px);font-weight:750;margin:6px 0 16px;letter-spacing:-.035em;padding-bottom:18px}article h1::after{content:"";position:absolute;bottom:0;left:0;width:64px;height:4px;border-radius:4px;background:var(--gradient)}
+article h2{font-size:23px;font-weight:650;margin:36px 0 14px;padding-top:24px;border-top:1px solid var(--line)}
 article h3{font-size:18.5px;font-weight:650;margin:32px 0 8px}
 article h4{font-size:16px;font-weight:650;margin:24px 0 6px}
-article p.lead{font-size:19.5px;line-height:1.6;color:var(--ink);margin-bottom:28px}
+article p.lead{font-size:18px;line-height:1.6;color:var(--ink);margin-bottom:28px}
 .anchor{margin-left:8px;color:var(--muted);text-decoration:none;font-weight:400;opacity:0}
 h1:hover .anchor,h2:hover .anchor,h3:hover .anchor,h4:hover .anchor,.anchor:focus{opacity:1}
 .flash{animation:flash 1.4s ease-out}@keyframes flash{0%{background:var(--mark)}100%{background:transparent}}
 article ul,article ol{padding-left:1.4em}article li{margin:4px 0}article li>ul,article li>ol{margin:4px 0}
-article li.task{list-style:none;margin-left:-1.3em}article li.task input{appearance:none;-webkit-appearance:none;width:15px;height:15px;margin:0 8px 0 0;vertical-align:-2px;border:1.5px solid var(--muted);border-radius:4px;background:var(--panel);display:inline-grid;place-content:center}article li.task input:checked{background:var(--accent);border-color:var(--accent)}article li.task input:checked::after{content:'';width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+article li.task{list-style:none;margin-left:-1.3em}article li.task input{appearance:none;-webkit-appearance:none;width:15px;height:15px;margin:0 8px 0 0;vertical-align:-2px;border:1.5px solid var(--muted);border-radius:4px;background:var(--panel);display:inline-grid;place-content:center}article li.task input:checked{background:var(--accent);border-color:var(--accent)}article li.task input:checked::after{content:'';width:4px;height:8px;border:solid var(--on-accent);border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
 article code{font:.84em var(--mono);background:var(--code);border:1px solid var(--line);border-radius:4px;padding:.08em .35em}
 article a.coderef{text-decoration:none}article a.coderef code{color:var(--accent-ink);border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:var(--accent-soft)}
 article a.coderef:hover code{border-color:var(--accent)}
@@ -888,22 +1174,27 @@ blockquote{margin:20px 0;padding:2px 18px;border-left:3px solid var(--line);colo
 .alert-important{border-color:var(--accent);background:var(--accent-soft)}.alert-important .alert-title{color:var(--accent-ink)}
 .alert-warning{border-color:var(--amber);background:var(--amber-bg)}.alert-warning .alert-title{color:var(--amber)}
 .alert-caution{border-color:var(--red);background:var(--red-bg)}.alert-caution .alert-title{color:var(--red)}
-hr{border:0;border-top:1px solid var(--line);margin:36px 0}img{max-width:100%;border-radius:6px}
+hr{border:0;border-top:1px solid var(--line);margin:36px 0}img{max-width:100%;height:auto;border-radius:6px}.image-error{padding:12px;border:1px solid var(--line);color:var(--ink);background:var(--soft)}
 details{margin:16px 0;padding:8px 14px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}summary{cursor:pointer;font:600 15px var(--sans)}
 .fnref a{text-decoration:none;font:600 .7em var(--sans)}
 .footnotes{margin-top:48px;padding-top:12px;border-top:1px solid var(--line);font-size:14.5px;color:var(--muted)}.fnback{text-decoration:none}
-.diagram{margin:24px 0;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
-.diagram figcaption{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--soft);font:12px var(--sans);color:var(--muted)}
+.data-widget{margin:24px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+.data-widget figcaption{padding:14px 18px;background:linear-gradient(110deg,var(--accent-soft),var(--soft));font-weight:650}.widget-actions{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px}.widget-actions button,.widget-actions select,.widget-actions input{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:6px 10px;min-height:36px;max-width:100%;min-width:0}.widget-actions input{flex:1;min-width:120px}.widget-actions button{cursor:pointer}.widget-status,.widget-detail{padding:0 16px;font-size:13px;color:var(--muted)}.widget-detail:not(:empty){padding:12px 16px;border-top:1px solid var(--line)}.widget-view{height:380px;width:100%;touch-action:pan-y}.widget-large .widget-view{height:70vh;min-height:480px}.data-widget details{padding:12px 16px;border-top:1px solid var(--line)}.data-widget summary{cursor:pointer;color:var(--accent)}.widget-data{overflow:auto}.data-widget pre{max-height:320px;overflow:auto}.data-widget [hidden]{display:none!important}
+@media print{.widget-actions,.widget-status,.data-widget details pre{display:none!important}.data-widget details{display:block}.data-widget details::details-content{content-visibility:visible}.widget-view{break-inside:avoid}}
+.diagram{margin:24px 0;box-shadow:0 8px 24px #7135b708;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.diagram figcaption{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);background:linear-gradient(110deg,var(--accent-soft),var(--soft));font:12px var(--sans);color:var(--muted)}
 .diagram figcaption b{color:var(--ink);font-weight:600}.diagram figcaption span{margin-right:auto;text-transform:capitalize}
 .diagram figcaption button{border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:2px 8px;font-size:12px;cursor:pointer;color:var(--muted)}
-.diagram figcaption button:hover{color:var(--accent);border-color:var(--accent)}
-.diagram .canvas{display:flex;justify-content:center;padding:18px;overflow:auto;font:13px var(--sans);color:var(--muted)}
+.diagram figcaption button:disabled{opacity:.55;cursor:wait}.diagram figcaption button:hover{color:var(--accent);border-color:var(--accent)}
+.diagram-find{display:flex;gap:12px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}.diagram-find input{min-width:0;flex:1;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--panel)}.diagram-find output{font-size:12px;color:var(--muted)}.diagram-match{outline:3px solid var(--accent);outline-offset:3px;filter:drop-shadow(0 0 3px var(--accent))}
+.diagram .canvas{display:flex;justify-content:safe center;padding:18px;overflow:auto;font:13px var(--sans);color:var(--muted)}
 .diagram .canvas svg{max-width:100%;height:auto}.diagram pre{margin:0;border:0;border-radius:0}
+.diagram [hidden]{display:none!important}
 .diagram .note{margin:0;padding:6px 12px;font:12.5px var(--sans);color:var(--amber);border-top:1px solid var(--line)}
 .lib-filters{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 18px;font-family:var(--sans)}
 .fchip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:4px 11px;font-size:13px;cursor:pointer}
 .fchip small,.tfilter small{color:var(--muted);margin-left:3px}
-.fchip:hover{border-color:var(--accent)}.fchip.on{background:var(--accent);border-color:var(--accent);color:#fff}.fchip.on small{color:inherit;opacity:.8}
+.fchip:hover{border-color:var(--accent)}.fchip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.fchip.on small{color:inherit;opacity:.8}
 .toc-filters{display:flex;flex-direction:column}.tfilter{background:none;border:0;text-align:left;cursor:pointer;font:inherit;font-size:13.5px;color:var(--muted);padding:4px 10px}.tfilter:hover{color:var(--ink)}.tfilter.on{color:var(--accent);font-weight:600}
 .lib-kind{font-size:11.5px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:3px;padding:2px 7px;white-space:nowrap;flex:none}
 .lib-head{margin-bottom:12px}.lib-group h2 small{font:400 13px var(--mono);color:var(--muted);margin-left:8px}
@@ -926,13 +1217,18 @@ details{margin:16px 0;padding:8px 14px;border:1px solid var(--line);border-radiu
 .src:hover{background:var(--soft)}.src-url{display:block;color:var(--muted);font:11px var(--mono)}.src-count{float:right;color:var(--muted);font-size:11px;margin-left:6px}
 #toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,16px);opacity:0;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;transition:.18s;pointer-events:none;z-index:60}
 #toast.show{opacity:1;transform:translate(-50%,0)}
-#modal{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:rgba(8,12,18,.6);padding:4vh 4vw;cursor:zoom-out}
-#modal.open{display:grid}#modalbox{background:var(--panel);border-radius:10px;padding:24px;max-width:100%;max-height:100%;overflow:auto}#modalbox svg{max-width:88vw;max-height:84vh;height:auto}
-@media (max-width:1180px){.layout{grid-template-columns:var(--nav) minmax(0,1fr)}body.single .layout{grid-template-columns:minmax(0,1fr)}aside.rail{display:none}}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:16px;max-width:94vw;max-height:94vh}
+dialog::backdrop{background:rgba(8,12,18,.65)}#modal-close{display:block;margin:0 0 12px auto;padding:8px 16px;border:1px solid var(--line);border-radius:6px;background:var(--soft);color:var(--ink);cursor:pointer}
+#render-check{width:min(560px,94vw);padding:24px;box-shadow:0 24px 80px #0004}#render-check h2{margin:0 0 16px;font-size:22px}#render-check p{line-height:1.6}#render-check p+p{color:var(--muted);font-size:13px}#render-check-close{border:1px solid var(--line);border-radius:6px;padding:8px 16px;background:var(--accent-soft);color:var(--accent-ink);cursor:pointer}
+#modal{width:min(1200px,94vw)}.diagram-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}#diagram-tools{display:flex;gap:6px}#diagram-tools button{min-height:36px;min-width:36px;border:1px solid var(--line);border-radius:6px;background:var(--soft);cursor:pointer}#diagram-tools button:disabled{opacity:.5;cursor:wait}#diagram-scale{font:13px var(--mono);color:var(--muted)}#modal-close{margin:0 0 0 auto}#diagram-help{font-size:12px;color:var(--muted)}#modalbox{height:65vh;max-width:100%;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}#modalbox.interactive{display:flex;align-items:center;justify-content:center;overflow:hidden}.diagram-stage{flex-shrink:0}#modalbox svg{display:block}
+#mobile-toc{display:none;max-width:760px;margin:16px auto 24px}#mobile-toc nav{display:grid;gap:8px;padding:12px 0 4px}#mobile-toc .l3{padding-left:16px;font-size:14px}
+.skip{position:fixed;left:12px;top:-100px;z-index:100;padding:12px 20px;background:var(--panel);color:var(--ink);border:2px solid var(--accent);border-radius:6px}.skip:focus{top:12px}
+@media (max-width:1180px){.layout{grid-template-columns:var(--nav) minmax(0,1fr)}body.single .layout{grid-template-columns:minmax(0,1fr)}aside.rail{display:none}#mobile-toc:not([hidden]){display:block}}
 @media (max-width:820px){.layout,body.single .layout{grid-template-columns:minmax(0,1fr)}#menu{display:inline-grid}nav.side{position:fixed;top:56px;left:0;bottom:0;width:min(320px,86vw);background:var(--panel);z-index:40;transform:translateX(-102%);transition:transform .2s;height:auto}
-body.menu nav.side{transform:none;box-shadow:0 0 40px rgba(0,0,0,.25)}main{padding:20px 18px 80px}.search{width:auto;flex:1}#site-title,.mark-logo,#editor{display:none}article{font-size:16.5px}article h1{font-size:28px}.stats{margin-left:0}}
-@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-@media print{header.top,nav.side,aside.rail,#progress,.codebar,.anchor,.diagram figcaption button{display:none!important}.layout,body.single .layout{display:block}main{padding:0}article{max-width:none;font-size:11.5pt}body{background:#fff;color:#000}
+body.menu nav.side{transform:none;box-shadow:0 0 40px rgba(0,0,0,.25)}main{padding:20px 18px 80px}.search{width:auto;flex:1}#site-title,.mark-logo,#editor{display:none}#library-summary{padding:12px 14px;font-size:12px;gap:8px 12px}article{font-size:16px}article h1{font-size:28px}.stats{margin-left:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media (max-width:600px){.diagram figcaption{flex-wrap:wrap}.diagram figcaption span{flex:1;min-width:calc(100% - 95px)}.diagram figcaption button{min-height:36px}.diagram .canvas{justify-content:flex-start}.diagram .canvas svg{min-width:0;max-width:100%;flex-shrink:1}}
+@media print{.diagram-find,.widget-actions,header.top,nav.side,aside.rail,#mobile-toc,#library-summary,#progress,.codebar,.anchor,.diagram figcaption button{display:none!important}.layout,body.single .layout{display:block}main{padding:0}article{max-width:none;font-size:11.5pt}body{background:#fff;color:#000}
 article a.ext::after{content:" (" attr(href) ")";font-size:.8em;color:#555}article pre,.diagram,.tablewrap{break-inside:avoid}article pre code{white-space:pre-wrap}}
 `;
 
@@ -945,7 +1241,7 @@ const ICONS = {
 
 function pageHtml(payload, title) {
   const json = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-  const script = `(${client.toString()})((${mdKit.toString()})(), ${JSON.stringify(MERMAID_URL)});`.replace(/<\/(script)/gi, '<\\/$1');
+  const script = `(${client.toString()})((${mdKit.toString()})(), ${JSON.stringify(MERMAID_URL)}, ${JSON.stringify(PANZOOM_URL)});`.replace(/<\/(script)/gi, '<\\/$1');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   return `<!doctype html>
 <html lang="en">
@@ -957,7 +1253,7 @@ function pageHtml(payload, title) {
 <style>${CSS}</style>
 </head>
 <body>
-<a class="skip" href="#page" style="position:absolute;left:-999px">Skip to content</a>
+<a class="skip" href="#page">Skip to content</a>
 <header class="top">
   <button class="tool" id="menu" type="button" aria-label="Documents">${ICONS.menu}</button>
   ${ICONS.logo}
@@ -966,19 +1262,21 @@ function pageHtml(payload, title) {
   <div class="search" role="search"><input id="q" type="search" placeholder="Search" autocomplete="off" aria-label="Search the report"><kbd>/</kbd><div id="results" role="listbox"></div></div>
   <select class="tool" id="editor" aria-label="Open code references in" title="Open code references in"><option value="vscode">VS Code</option><option value="cursor">Cursor</option><option value="windsurf">Windsurf</option><option value="file">File</option></select>
   <button class="tool" id="theme" type="button" aria-label="Toggle theme" title="Theme (t)">${ICONS.theme}</button>
+  <button class="tool" id="verify-render" type="button" aria-label="Render check" title="Check diagrams and widgets">✓</button>
   <button class="tool" id="print" type="button" aria-label="Print" title="Print or save as PDF">${ICONS.print}</button>
 </header>
 <div id="progress"></div>
 <div class="layout">
   <nav class="side" aria-label="Documents"><input id="navfilter" type="search" placeholder="Filter documents" aria-label="Filter documents"><div id="nav"></div></nav>
-  <main><div id="docmeta"></div><article id="page"></article></main>
+  <main><div id="library-summary"></div><details id="mobile-toc" hidden></details><article id="page" tabindex="-1"></article></main>
   <aside class="rail" aria-label="Contents and sources">
     <div class="tabs" role="tablist"><button type="button" role="tab" data-tab="toc" id="tab-toc" aria-selected="true">Contents</button><button type="button" role="tab" data-tab="sources" id="tab-sources" aria-selected="false">Sources</button></div>
     <div class="rail-panel" id="toc"></div>
     <div class="rail-panel" id="sources" hidden></div>
   </aside>
 </div>
-<div id="modal" role="dialog" aria-label="Diagram"><div id="modalbox"></div></div>
+<dialog id="render-check" aria-label="Render check"><h2>Render check</h2><p id="render-check-output" role="status"></p><p>This checks diagram, widget and image loading, not factual accuracy or accessibility conformance.</p><button id="render-check-close" autofocus>Close check</button></dialog>
+<dialog id="modal" aria-label="Expanded diagram"><div class="diagram-toolbar"><div id="diagram-tools" role="group" aria-label="Diagram zoom"><button data-zoom="out" aria-label="Zoom out" disabled>−</button><button data-zoom="in" aria-label="Zoom in" disabled>+</button><button data-zoom="fit" disabled>Fit</button><button data-zoom="actual" disabled>100%</button></div><output id="diagram-scale" aria-live="polite"></output><button id="modal-close" type="button" autofocus>Close diagram</button></div><p id="diagram-help">Drag to pan · scroll or pinch to zoom · + / − to zoom · 0 to fit · arrows to pan · Escape to close</p><div id="modalbox" tabindex="0" role="region" aria-label="Interactive expanded diagram" aria-describedby="diagram-help"></div></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 <script type="application/json" id="report-data">${json}</script>
 <script>${script}</script>
@@ -1037,17 +1335,20 @@ function orderFiles(rels) {
   });
 }
 
-const CODE_REF = /^((?:\.{1,2}\/|\/|~\/)?[\w@.+-]+(?:\/[\w@.+\-[\]()]+)*\/?)(?:[:#]L?(\d+)(?:[-–:]L?(\d+))?)?$/;
+const CODE_REF = /^((?:\.{1,2}\/|\/|~\/)?[\w@.% +\-]+(?:\/[\w@.% +\-[\]()]+)*\/?)(?:[:#]L?(\d+)(?:[-–:]L?(\d+))?)?$/;
 
 function resolveRefs(body, docDir, workspace) {
   const refs = {};
   const candidates = new Set();
   const noFences = body.replace(/^ {0,3}(`{3,}|~{3,})[\s\S]*?^ {0,3}\1[ \t]*$/gm, '');
   for (const m of noFences.matchAll(/(`+)([^`\n]+?)\1/g)) candidates.add(m[2].trim());
-  for (const m of noFences.matchAll(/\]\(\s*<?([^)\s>]+)>?/g)) candidates.add(m[1]);
+  for (const m of noFences.matchAll(/\]\(\s*(?:<([^>\n]+)>|((?:[^()\s]|\([^()]*\))+))/g)) candidates.add(m[1] ?? m[2]);
+  for (const m of noFences.matchAll(/^ {0,3}\[[^\]^][^\]]*\]:\s*(?:<([^>\n]+)>|(\S+))/gm)) candidates.add(m[1] ?? m[2]);
   for (const raw of candidates) {
     if (!raw || raw.length > 300 || /^[a-z][\w+.-]*:/i.test(raw) || raw.startsWith('#')) continue;
-    const m = raw.match(CODE_REF);
+    const hash = raw.indexOf('#');
+    const fragment = hash >= 0 && !/^L?\d+(?:[-–:]L?\d+)?$/.test(raw.slice(hash + 1)) ? raw.slice(hash + 1) : null;
+    const m = (fragment === null ? raw : raw.slice(0, hash)).match(CODE_REF);
     if (!m || !/[./]/.test(m[1])) continue;
     let p = m[1];
     try { p = decodeURIComponent(p); } catch { /* keep raw */ }
@@ -1056,8 +1357,34 @@ function resolveRefs(body, docDir, workspace) {
     for (const base of bases) {
       const abs = path.resolve(base, p);
       if (!fs.existsSync(abs)) continue;
+      let line = m[2] ? Number(m[2]) : undefined;
+      if (fragment) {
+        if (!/\.(?:md|markdown|mdown)$/i.test(abs) || !fs.statSync(abs).isFile()) continue;
+        let target;
+        try { target = decodeURIComponent(fragment); } catch { target = fragment; }
+        const sourceLines = fs.readFileSync(abs, 'utf8').split(/\r?\n/);
+        const seen = {};
+        let fence = null;
+        for (let i = 0; i < sourceLines.length; i++) {
+          const text = sourceLines[i];
+          const marker = text.match(/^ {0,3}(`{3,}|~{3,})/);
+          if (marker) {
+            if (!fence) fence = marker[1];
+            else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+            continue;
+          }
+          if (fence) continue;
+          const heading = text.match(/^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/)?.[1]
+            || (text.trim() && /^ {0,3}(=+|-+)\s*$/.test(sourceLines[i + 1] || '') && !/^\s*[-*+|>]/.test(text) ? text.trim() : null);
+          if (!heading) continue;
+          const slug = mdKit().slugify(heading.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'));
+          const count = seen[slug] || 0; seen[slug] = count + 1;
+          if ((count ? `${slug}-${count}` : slug) === target) { line = i + 1; break; }
+        }
+        if (!line) continue;
+      }
       const rel = toPosix(path.relative(workspace, abs)) || '.';
-      refs[raw] = { abs: toPosix(abs), rel: rel.startsWith('..') ? toPosix(abs) : rel, ...(m[2] ? { line: Number(m[2]) } : {}) };
+      refs[raw] = { abs: toPosix(abs), rel: rel.startsWith('..') ? toPosix(abs) : rel, ...(line ? { line } : {}) };
       break;
     }
   }
@@ -1099,7 +1426,7 @@ function collect(target, options = {}) {
 }
 
 // Contract checks for a report saved under .octocode/<skill>/: the rules come from that skill's
-// output.md (installed beside this script's skill folder), so the warnings match the instructions.
+// output.md (installed beside this script's skill folder); prose is not parsed as a schema.
 const SCRIPT_SKILL_DIR = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const contractCache = new Map();
 function contractFor(skill) {
@@ -1110,26 +1437,10 @@ function contractFor(skill) {
   let contract = null;
   if (file) {
     const text = fs.readFileSync(file, 'utf8');
-    const statusLine = (text.match(/^status:\s*(.+)$/m) || [])[1] || '';
-    const required = [];
-    // Each "Always include ..." sentence lists required sections; parenthesized notes and code spans may hold
-    // periods or colons, so the sentence ends only at one outside them.
-    for (const m of text.matchAll(/Always include/g)) {
-      let depth = 0, code = false, end = m.index;
-      for (; end < text.length; end++) {
-        const c = text[end];
-        if (c === '`') code = !code;
-        else if (!code && c === '(') depth++;
-        else if (!code && c === ')') depth--;
-        else if (!code && depth <= 0 && (c === ':' || (c === '.' && /\s|$/.test(text[end + 1] || '')) || c === '\n')) break;
-      }
-      const sentence = text.slice(m.index, end).replace(/\([^)]*\)/g, '');
-      for (const h of sentence.matchAll(/`## ([^`]+)`/g)) if (!required.includes(h[1])) required.push(h[1]);
-    }
-    // "either `## A` (...) or `## B` (...)": one of the two satisfies the contract (a review or a change report).
-    const anyOf = [...text.matchAll(/either `## ([^`]+)`[^`\n]*? or `## ([^`]+)`/g)].map((m) => [m[1], m[2]]);
-    if (/Put findings under `## Findings`/.test(text) && !anyOf.some((g) => g.includes('Findings'))) required.push('Findings');
-    contract = { anyOf, statuses: statusLine.includes('|') || /^[\w ]+$/.test(statusLine) ? statusLine.split('|').map((x) => x.trim()).filter((x) => x && !x.startsWith('<')) : [], required };
+    const encoded = text.match(/<!-- report-contract ([\s\S]*?) -->/);
+    if (!encoded) throw new Error(`Missing explicit report contract in ${file}`);
+    contract = JSON.parse(encoded[1]);
+    if (!Array.isArray(contract.statuses) || !contract.statuses.length || !contract.statuses.every(x=>typeof x === 'string' && x) || !Array.isArray(contract.required) || !contract.required.every(x=>typeof x === 'string' && x) || !Array.isArray(contract.anyOf) || !contract.anyOf.every(g=>Array.isArray(g) && g.length && g.every(x=>typeof x === 'string' && x))) throw new Error(`Invalid report contract in ${file}`);
   }
   contractCache.set(skill, contract);
   return contract;
@@ -1185,7 +1496,7 @@ export function checkReport(full, meta, body, workspace) {
   if (contract) {
     if (meta.status && contract.statuses.length && !contract.statuses.some((w) => w.toLowerCase() === String(meta.status).toLowerCase()))
       warnings.push(`status "${meta.status}" is not one of ${contract.statuses.join(', ')}`);
-    const heads = new Set([...body.matchAll(/^ {0,3}##\s+(.+?)\s*#*\s*$/gm)].map((m) => m[1].toLowerCase()));
+    const heads = new Set(outline(body).headings.filter(h=>h.level===2).map(h=>h.text.toLowerCase()));
     for (const h of contract.required) if (!heads.has(h.toLowerCase())) warnings.push(`missing the required section ## ${h}`);
     for (const g of contract.anyOf) if (!g.some((h) => heads.has(h.toLowerCase()))) warnings.push(`missing a required section: ${g.map((h) => `## ${h}`).join(' or ')}`);
   }
@@ -1206,7 +1517,30 @@ export function buildReport(target, options = {}) {
   };
   const firstH1 = (files[0].body.match(/^ {0,3}#\s+(.+?)\s*#*\s*$/m) || [])[1];
   const title = options.title || (files.length > 1 && !payload.primary ? rootName : (files[0].meta.title || (firstH1 || rels[0]).replace(/[`*_]/g, '')));
-  const warnings = [...new Set(files.flatMap((f) => checkReport(path.join(root, f.path), f.meta, f.body, workspace)))];
+  const kit = mdKit();
+  const warnings = [...new Set(files.flatMap((f) => [
+    ...checkReport(path.join(root, f.path), f.meta, f.body, workspace),
+    ...kit.widgetBlocks(f.body).flatMap((w,i) => { try { kit.widget(w.kind,w.source); return []; } catch(e) { return [`${f.path}: ${w.kind} widget ${i+1}: ${e.message}`]; } })
+  ]))];
+  const imageTypes = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.svg':'image/svg+xml','.avif':'image/avif'};
+  const embedded = new Map();
+  for (const f of files) {
+    f.images = {};
+    for (const match of kit.parse(f.body).matchAll(/<img\b[^>]* src="([^"]*)"/g)) {
+      const raw = match[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      if (/^https?:\/\//i.test(raw)) continue;
+      try {
+        if (!raw || raw.startsWith('#') || /^[a-z][\w+.-]*:/i.test(raw) || raw.startsWith('//')) throw new Error('Use a local image path or HTTPS URL');
+        const full = fs.realpathSync(path.resolve(path.dirname(f.source), decodeURIComponent(raw.split(/[?#]/)[0])));
+        const relative = path.relative(fs.realpathSync(workspace), full);
+        if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('Image must be inside the workspace');
+        const mime = imageTypes[path.extname(full).toLowerCase()];
+        if (!mime) throw new Error('Unsupported image type');
+        if (!embedded.has(full)) embedded.set(full, 'data:' + mime + ';base64,' + fs.readFileSync(full).toString('base64'));
+        f.images[raw] = embedded.get(full);
+      } catch (error) { warnings.push(`${f.path}: image ${raw}: ${error.message}`); }
+    }
+  }
   return { html: pageHtml(payload, title), files: rels, workspace, isDir, abs, warnings };
 }
 
@@ -1240,11 +1574,15 @@ function outline(body) {
 }
 
 function linksIn(body) {
-  const urls = new Set();
-  for (const m of body.matchAll(/\]\(\s*<?(https?:\/\/[^)\s>]+)>?/g)) urls.add(m[1]);
-  for (const m of body.matchAll(/^\s*\[[^\]]+\]:\s*<?(https?:\/\/\S+?)>?(?:\s|$)/gm)) urls.add(m[1]);
-  for (const m of body.matchAll(/(^|[\s(])(https?:\/\/[^\s<>()`]+[^\s<>()`.,;:!?'"])/g)) urls.add(m[2]);
-  return [...urls];
+  // Extract the same links the reader sees, not a second interpretation of Markdown.
+  const html = mdKit().parse(body);
+  const entities = { '&amp;': '&', '&quot;': '"', '&#39;': "'", '&lt;': '<', '&gt;': '>' };
+  const decode = value => value.replace(/&(?:amp|quot|lt|gt|#39);/g, e => entities[e]);
+  const links = [...html.matchAll(/<a\b[^>]*\bhref="(https?:[^" ]*)"/g)].map(m => decode(m[1]));
+  for (const block of mdKit().widgetBlocks(body).filter(w=>w.kind==='graph')) {
+    try { links.push(...mdKit().widget('graph',block.source).nodes.map(n=>n.url).filter(Boolean)); } catch { /* Invalid data has no verified graph links. */ }
+  }
+  return [...new Set(links)];
 }
 
 // Shared reading of each skill's status words: done, attention, failed, open, or inactive.
@@ -1321,6 +1659,17 @@ function openFile(file) {
   try { spawn(cmd[0], cmd[1], { stdio: 'ignore', detached: true }).unref(); return true; } catch { return false; }
 }
 
+export function manifestPage(target, options = {}) {
+  const catalog = buildManifest(target, {workspace:options.workspace});
+  const query = String(options.query || '').toLowerCase();
+  const matches = catalog.documents.filter(d=>!query || [d.path,d.title,d.question].some(v=>String(v || '').toLowerCase().includes(query)));
+  if (options.all) return {...catalog,count:matches.length,documents:matches};
+  const offset = options.offset ?? 0, limit = options.limit ?? 20;
+  const documents = matches.slice(offset, offset+limit).map(({path,title,status,question})=>({path,title,status,question}));
+  const next = offset+documents.length < matches.length ? [target,'--manifest',...(query?['--query',options.query]:[]),'--limit',String(limit),'--offset',String(offset+documents.length),...(options.workspace?['--workspace',options.workspace]:[])] : null;
+  return {root:catalog.root,total:matches.length,offset,count:documents.length,documents,next};
+}
+
 function parseArgs(argv) {
   const args = { positional: [], open: false, json: false };
   for (let i = 0; i < argv.length; i++) {
@@ -1332,6 +1681,10 @@ function parseArgs(argv) {
     else if (a === '--no-open') args.open = false;
     else if (a === '--json') args.json = true;
     else if (a === '--manifest') args.manifest = true;
+    else if (a === '--strict') args.strict = true;
+    else if (a === '--all') args.all = true;
+    else if (a === '--query') { args.query = argv[++i]; if (!args.query || args.query.startsWith('--')) throw new Error('--query requires text'); }
+    else if (a === '--limit' || a === '--offset') { const value = Number(argv[++i]); if (!Number.isSafeInteger(value) || value < (a === '--limit' ? 1 : 0)) throw new Error(`Invalid ${a}`); args[a.slice(2)] = value; }
     else if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--self-test') args.selfTest = true;
     else if (a.startsWith('--')) throw new Error(`Unknown option: ${a}`);
@@ -1357,6 +1710,35 @@ function selfTest() {
     'Setext', '------', '', '<details>', '<summary>More</summary>', '', 'Hidden.', '', '</details>',
   ].join('\n'));
   check('heading', html.includes('<h1>Title</h1>'));
+  const graphInput = {title:'Graph',nodes:[{id:'a',label:'A'},{id:'b',label:'B',url:'https://example.com'}],edges:[{source:'a',target:'b'}]};
+  check('graph links appear in manifest', linksIn('```graph\n'+JSON.stringify(graphInput)+'\n```').includes('https://example.com'));
+  check('graph data normalized', kit.widget('graph',JSON.stringify(graphInput)).edges[0].label === '');
+  const chartInput = {title:'Chart',type:'bar',labels:['One'],series:[{name:'Count',values:[1]}]};
+  check('chart data normalized', kit.widget('chart',JSON.stringify(chartInput)).unit === '');
+  for (const [label,kind,data] of [
+    ['duplicate nodes','graph',{...graphInput,nodes:[graphInput.nodes[0],graphInput.nodes[0]]}],
+    ['missing endpoint','graph',{...graphInput,edges:[{source:'a',target:'missing'}]}],
+    ['unsafe URL','graph',{...graphInput,nodes:[{id:'a',label:'A',url:'javascript:alert(1)'}]}],
+    ['empty title','chart',{...chartInput,title:''}],
+    ['mismatched series','chart',{...chartInput,labels:['One','Two']}],
+    ['string number','chart',{...chartInput,series:[{name:'A',values:['1']}]}],
+    ['unsupported chart','chart',{...chartInput,type:'custom'}],
+    ['negative pie','chart',{...chartInput,type:'pie',series:[{name:'A',values:[-1]}]}],
+    ['multiple pie series','chart',{...chartInput,type:'pie',series:[chartInput.series[0],chartInput.series[0]]}]
+  ]) { let rejected=false; try { kit.widget(kind,JSON.stringify(data)); } catch { rejected=true; } check('rejects '+label,rejected); }
+  check('widget markup escapes embedded HTML',kit.parse('```graph\n{"title":"<script>alert(1)</script>"}\n```').includes('&lt;script&gt;'));
+
+  check('editor file paths cannot become URL fragments or queries', new URL('vscode://file' + kit.encodePath('/docs/a#b?c.md')).hash === '' && new URL('vscode://file' + kit.encodePath('/docs/a#b?c.md')).search === '');
+  for (const p of ['guide@v2.md', 'My Guide.md', '日本語.md', 'a#b.md', '100%.md']) {
+    for (const slug of ['', 'section-2']) {
+      const parsed = kit.routeParse(kit.routeHref(p, slug));
+      check(`route round trip: ${p} ${slug}`, parsed.path === p && parsed.slug === slug);
+    }
+  }
+  check('manifest uses rendered links, ignores examples and unused definitions', JSON.stringify(linksIn('[API](https://example.com/api(v2)?a=1&b=2)\n\n```md\n[fake](https://fake.example)\n```\n\n[unused]: https://unused.example')) === JSON.stringify(['https://example.com/api(v2)?a=1&b=2']));
+
+  check('angle links preserve spaces', kit.parse('[file](<docs/My Guide.md>)').includes('href="docs/My Guide.md"'));
+  check('links preserve balanced parentheses', kit.parse('[API](https://example.com/api(v2))').includes('href="https://example.com/api(v2)"'));
   check('inline formatting', /<strong>bold<\/strong>/.test(html) && /<em>em<\/em>/.test(html) && html.includes('<del>gone</del>'));
   check('bare url', html.includes('<a href="https://example.com/x">'));
   check('table alignment and escaped pipe', html.includes('text-align:center') && html.includes('a | b') && html.includes('<code>x|y</code>'));
@@ -1367,6 +1749,8 @@ function selfTest() {
   check('reference link and footnote', html.includes('href="https://docs.example.com" title="Docs"') && html.includes('id="fn-n"'));
   check('mermaid kept as source', html.includes('class="mermaid-src"') && html.includes('A--&gt;B'));
   check('highlight escapes', html.includes('tk-s">&quot;&lt;b&gt;&quot;') && html.includes('tk-c'));
+  const iframe = kit.parse('<iframe src="https://example.com/embed" title="Demo"></iframe>');
+  check('iframe remains visible text, never an embedded frame', iframe.includes('&lt;iframe') && !iframe.includes('<iframe'));
   check('raw html escaped', html.includes('&lt;script&gt;') && !html.includes('<script>'));
   check('unsafe url blocked', html.includes('<a href="#">x</a>') && html.includes('<br>'));
   check('setext and details', html.includes('<h2>Setext</h2>') && html.includes('<summary>More</summary>'));
@@ -1376,6 +1760,13 @@ function selfTest() {
     fs.mkdirSync(path.join(dir, '.git'));
     fs.mkdirSync(path.join(dir, 'src'));
     fs.writeFileSync(path.join(dir, 'src', 'a.ts'), 'export const a = 1;\n');
+    fs.writeFileSync(path.join(dir, 'src', 'guide.md'), '# Guide\n\n## Usage\n\n```md\n## Ignored\n```\n\n## Usage\n'.replace(/\n/g, '\n'));
+    fs.writeFileSync(path.join(dir, 'src', 'setext.md'), 'Guide\n=====\n\nUsage\n-----\n');
+    check('setext section links resolve', resolveRefs('[guide](../../src/setext.md#usage)', path.join(dir, '.octocode', 'octocode-research'), dir)['../../src/setext.md#usage']?.line === 4);
+    const linked = resolveRefs('[guide][g]\n\n[g]: ../../src/guide.md#usage\n\n[again](../../src/guide.md#usage-1)\n[bad](../../src/guide.md#ignored)', path.join(dir, '.octocode', 'octocode-research'), dir);
+    check('reference definitions resolve section links', linked['../../src/guide.md#usage']?.line === 3);
+    check('duplicate heading anchors resolve and fenced headings do not', linked['../../src/guide.md#usage-1']?.line === 9 && !linked['../../src/guide.md#ignored']);
+
     const rdir = path.join(dir, '.octocode', 'octocode-research');
     fs.mkdirSync(rdir, { recursive: true });
     const md = path.join(rdir, '2025-01-02-topic.md');
@@ -1407,16 +1798,16 @@ function selfTest() {
     const tableFirst = buildManifest(path.join(rdir, '2025-01-04-table.md')).documents[0];
     check('manifest lead after a leading table', tableFirst.lead === 'The lead after the table.');
     const today = localDate(new Date());
-    const roastDir = path.join(dir, '.octocode', 'octocode-roast');
-    fs.mkdirSync(path.join(roastDir, `${today}-folder`), { recursive: true });
-    fs.writeFileSync(path.join(roastDir, '2000-01-01-old.md'), '# Old\n\nNo header.\n');
-    fs.writeFileSync(path.join(roastDir, `${today}-good.md`), '---\nstatus: Needs work\nquestion: Q?\n---\n# Good\n\nLead.\n\n## Findings\n\n| a |\n|---|\n| 1 |\n');
-    fs.writeFileSync(path.join(roastDir, `${today}-folder`, 'notes.md'), '---\nstatus: Confirmed\nquestion: Q?\n---\n# F\n\nLead.\n');
-    const warn = (f) => buildReport(path.join(roastDir, f)).warnings.join('\n');
-    const own = contractFor('octocode-roast');
+    const reportDir = path.join(dir, '.octocode', 'octocode-architect');
+    fs.mkdirSync(path.join(reportDir, `${today}-folder`), { recursive: true });
+    fs.writeFileSync(path.join(reportDir, '2000-01-01-old.md'), '# Old\n\nNo header.\n');
+    fs.writeFileSync(path.join(reportDir, `${today}-good.md`), '---\nstatus: Needs work\nquestion: Q?\n---\n# Good\n\nLead.\n\n## Findings\n\n| a |\n|---|\n| 1 |\n\n## Decision\n\nKeep.\n\n## Checks\n\nNone.\n');
+    fs.writeFileSync(path.join(reportDir, `${today}-folder`, 'notes.md'), '---\nstatus: Confirmed\nquestion: Q?\n---\n# F\n\nLead.\n');
+    const warn = (f) => buildReport(path.join(reportDir, f)).warnings.join('\n');
+    const own = contractFor('octocode-architect');
     if (own) {
       check('report check passes a contract-shaped report', warn(`${today}-good.md`) === '');
-      const maintained = path.join(roastDir, `${today}-good.md`);
+      const maintained = path.join(reportDir, `${today}-good.md`);
       const edited = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
       fs.utimesSync(maintained, edited, edited);
       check('editing a report preserves its original date and links', warn(`${today}-good.md`) === '');
@@ -1424,14 +1815,14 @@ function selfTest() {
       check('report check flags folder, status word, and section', ((w) => /single report is one file/.test(w) && /"Confirmed" is not one of/.test(w) && /## Findings/.test(w))(warn(`${today}-folder/notes.md`)));
     }
     {
-      const run = path.join(roastDir, `${today}-run`);
+      const run = path.join(reportDir, `${today}-run`);
       fs.mkdirSync(path.join(run, 'cases'), { recursive: true });
       fs.writeFileSync(path.join(run, 'README.md'), '---\nstatus: Confirmed\nquestion: Q?\n---\n# Run\n\nLead.\n');
       fs.writeFileSync(path.join(run, 'cases', 'case-01.md'), '# Case 1\n\nTranscript.\n');
       fs.writeFileSync(path.join(run, 'cases', 'README.md'), '# Cases\n');
       check('supporting files in a report folder are not checked', !/case-01|cases\/README/.test(buildReport(run).warnings.join('\n')));
       check('supporting files stay out of the manifest', !buildManifest(path.join(dir, '.octocode')).documents.some((d) => d.path.includes('case-01')));
-      const bare = path.join(roastDir, `${today}-bare`);
+      const bare = path.join(reportDir, `${today}-bare`);
       fs.mkdirSync(bare);
       for (const n of ['a.md', 'b.md']) fs.writeFileSync(path.join(bare, n), '# Note\n');
       const bareWarnings = buildReport(bare).warnings;
@@ -1487,16 +1878,17 @@ function main() {
   if (args.selfTest) return selfTest();
   if (args.positional.length !== 1) { console.error(HELP); return 1; }
   if (args.manifest) {
-    try { console.log(JSON.stringify(buildManifest(args.positional[0], { workspace: args.workspace }))); return 0; } catch (e) { console.error(e.message); return 1; }
+    try { console.log(JSON.stringify(manifestPage(args.positional[0], args))); return 0; } catch (e) { console.error(e.message); return 1; }
   }
   try {
     const report = buildReport(args.positional[0], { title: args.title, workspace: args.workspace });
     const out = path.resolve(args.out || defaultOut(report.abs, report.isDir, report.workspace));
     fs.mkdirSync(path.dirname(out), { recursive: true });
+    if (args.strict && report.warnings.length) { console.error(JSON.stringify({validation:'failed',warnings:report.warnings})); return 2; }
     fs.writeFileSync(out, report.html);
     const opened = args.open && canOpen() ? openFile(out) : false;
     for (const w of report.warnings) console.error(`warning: ${w}`);
-    if (args.json) console.log(JSON.stringify({ out, files: report.files.length, bytes: Buffer.byteLength(report.html), opened, ...(report.warnings.length ? { warnings: report.warnings } : {}) }));
+    if (args.json) console.log(JSON.stringify({ out, validation: report.warnings.length ? 'warnings' : 'passed', render: 'unverified', files: report.files.length, bytes: Buffer.byteLength(report.html), opened, ...(report.warnings.length ? { warnings: report.warnings } : {}) }));
     else console.log(`${out}\n${report.files.length} document${report.files.length === 1 ? '' : 's'}${opened ? ', opened' : ''}`);
     return 0;
   } catch (e) {
@@ -1505,7 +1897,4 @@ function main() {
   }
 }
 
-// Installed skills are often symlinks (.agents/skills/<name> -> skills/<name>): argv[1] keeps the link path while
-// import.meta.url is the real path, so compare real paths or a symlinked call silently does nothing.
-const realOrSelf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) process.exitCode = main();
+if (isMainModule(import.meta.url)) process.exitCode = main();

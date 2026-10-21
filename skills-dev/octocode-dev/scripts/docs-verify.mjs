@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -149,8 +150,21 @@ function missingAnchor(targetPath, linkTarget) {
   return readAnchors(targetPath).has(fragment) ? null : fragment;
 }
 
+// Ignored files are never in a clone, so a link to one cannot resolve for readers.
+function gitIgnoredPaths(paths) {
+  if (paths.length === 0) return new Set();
+  try {
+    const output = execFileSync('git', ['check-ignore', '--no-index', '--stdin'], { cwd: ROOT, input: paths.join('\n'), encoding: 'utf8' });
+    return new Set(output.split('\n').filter(Boolean));
+  } catch (error) {
+    if (error.status === 1) return new Set(); // nothing ignored
+    throw error;
+  }
+}
+
 function validateDocsLinks() {
   const failures = [];
+  const existingLocalLinks = [];
 
   const packageRoots = listPackageRoots();
   const entryDocs = [ROOT, ...packageRoots].flatMap(dir => fs.readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isFile() && entry.name.endsWith('.md')).map(entry => path.join(dir, entry.name)));
@@ -178,8 +192,11 @@ function validateDocsLinks() {
           const targetPath = path.resolve(path.dirname(filePath), relativeTarget);
           if (!fs.existsSync(targetPath)) {
             failures.push(`${relativeFile} points to missing relative file "${linkTarget}"`);
-          } else if (missingAnchor(targetPath, linkTarget) !== null) {
-            failures.push(`${relativeFile} points to missing heading "${linkTarget}"`);
+          } else {
+            existingLocalLinks.push({ relativeFile, linkTarget, targetPath });
+            if (missingAnchor(targetPath, linkTarget) !== null) {
+              failures.push(`${relativeFile} points to missing heading "${linkTarget}"`);
+            }
           }
           continue;
         }
@@ -199,6 +216,11 @@ function validateDocsLinks() {
         }
       }
     }
+  }
+
+  const ignored = gitIgnoredPaths([...new Set(existingLocalLinks.map(link => link.targetPath))]);
+  for (const { relativeFile, linkTarget, targetPath } of existingLocalLinks) {
+    if (ignored.has(targetPath)) failures.push(`${relativeFile} points to gitignored file "${linkTarget}"`);
   }
 
   return failures;
@@ -276,7 +298,7 @@ function validateToolCatalog() {
       `${DISCOVERABLE_TOOL_COUNT} tools`,
       `${DEFAULT_TOOL_COUNT} enabled by default`,
     ],
-    'skills/octocode-research/references/octocode.md': [
+    'skills/common/references/octocode-usage.md': [
       `## ${DISCOVERABLE_TOOL_COUNT} public tools`,
       `The default catalog contains ${DEFAULT_TOOL_COUNT} tools`,
     ],

@@ -4,9 +4,8 @@
  * Results are leads, not evidence: read the page and record a verbatim quote before using a claim.
  * Keys come from the process environment only and are never printed.
  */
-import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fail } from './lib/fail.mjs';
+import { isMainModule } from './lib/entrypoint.mjs';
 
 const PROVIDERS = {
   tavily: { env: 'TAVILY_API_KEY', base: process.env.TAVILY_BASE_URL || 'https://api.tavily.com' },
@@ -23,10 +22,6 @@ and merges results by canonical URL. Results seen by more providers or queries r
 Pass keys without printing them, for example: EXA_API_KEY="$(npx octocode config get EXA_API_KEY)" node search.mjs ...
 Exit 0 with results, 1 when nothing was found or no provider could run, 2 for invalid input.`;
 
-function fail(code, message, exitCode = 1, extra = {}) {
-  console.log(JSON.stringify({ ok: false, ...extra, error: { code, message } }));
-  process.exit(exitCode);
-}
 
 function parseArgs(argv) {
   const opts = { queries: [], kind: 'web', providers: null, limit: 8, since: null, include: [], exclude: [] };
@@ -163,9 +158,7 @@ export async function search(opts, env = process.env) {
   return { providers, results };
 }
 
-// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
-const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
-if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) {
+if (isMainModule(import.meta.url)) {
   const opts = parseArgs(process.argv.slice(2));
   const ran = (opts.providers || Object.keys(PROVIDERS)).filter((n) => process.env[PROVIDERS[n].env]?.trim());
   if (!ran.length) fail('missingKey', `no provider key in the environment; set one of ${Object.values(PROVIDERS).map((p) => p.env).join(', ')}`, 1);

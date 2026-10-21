@@ -8,7 +8,7 @@
 - Deprecated string format chaining (v4)
 - Using z.nativeEnum() (v4)
 - Using required_error/invalid_type_error (v4)
-- Using z.formatError() (v4)
+- Assuming error formatters have the same shape
 - Throwing inside refinements or transforms
 - z.coerce.boolean() for string booleans
 - Assuming z.object() preserves unknown keys
@@ -110,10 +110,10 @@ z.number().min(5, { error: "Too small" })
 z.number().min(5, "Too small") // shorthand
 ```
 
-## Using z.formatError() (v4)
+## Assuming error formatters have the same shape
 
 ```typescript
-// BAD: deprecated
+// Different shape: _errors keys, not treeifyError properties/errors
 z.formatError(error)
 
 // GOOD: use the right formatter

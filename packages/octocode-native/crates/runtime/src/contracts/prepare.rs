@@ -49,19 +49,25 @@ pub(super) fn envelope_issues(tool_name: &str, input: &Value) -> Vec<ValidationI
             message: "queries must be an array of query objects.".into(),
             schema: super::tool_contract_named(tool_name)
                 .and_then(Result::ok)
-                .and_then(|contract| contract.pointer("/inputSchema/properties/queries").cloned()),
+                .and_then(|contract| {
+                    let input = &contract["inputSchema"];
+                    super::schema_facts::property_schemas(input, &input["$defs"], "queries")
+                        .into_iter()
+                        .find(|schema| schema.get("items").is_some())
+                        .cloned()
+                }),
             received: Some(rows.clone()),
         }];
     };
     let envelope_fields = || {
         let fields = super::tool_contract_named(tool_name)
             .and_then(Result::ok)
-            .and_then(|tool| tool["inputSchema"]["properties"].as_object())
-            .map(|properties| {
-                properties
-                    .keys()
+            .map(|tool| {
+                let input = &tool["inputSchema"];
+                super::schema_facts::property_names(input, &input["$defs"])
+                    .into_iter()
                     .filter(|key| *key != "queries")
-                    .cloned()
+                    .map(str::to_owned)
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();

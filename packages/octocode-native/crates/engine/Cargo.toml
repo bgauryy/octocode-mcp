@@ -97,3 +97,5 @@ tree-sitter-cuda = ["dep:tree-sitter-cuda"]
 # (about 6.8 MiB per artifact, docs/DEPENDENCY_AUDIT.md#footprint-interpretation).
 tree-sitter-large-grammars = ["tree-sitter-cpp", "tree-sitter-c-sharp"]
 tree-sitter-scala = ["dep:tree-sitter-scala"]
+# Lets another crate's tests lower the scan walk ceiling (`scan_budget::lower_walk_ceiling`).
+test-hooks = []

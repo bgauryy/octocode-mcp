@@ -20,15 +20,12 @@
 //! to start on large hosts while they use a fraction of it. On macOS it cannot
 //! be lowered at all (inherited mappings make every spawn fail with `EINVAL`).
 
-#[cfg(windows)]
-use crate::error::Error;
-use crate::error::Result;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::sync::Arc;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 
 /// How often the RSS watchdog samples a language-server tree.
 #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))] // Wired on macOS and Linux only.
@@ -170,7 +167,7 @@ pub(crate) async fn watch_memory<A, E>(
     A: Fn() -> bool,
     E: FnOnce(u64),
 {
-    use crate::lsp::process_tree;
+    use crate::process;
     let mut ticker = tokio::time::interval(interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -178,14 +175,14 @@ pub(crate) async fn watch_memory<A, E>(
         if !alive() {
             return;
         }
-        let sample = tokio::task::spawn_blocking(move || process_tree::tree_rss_bytes(pid)).await;
+        let sample = tokio::task::spawn_blocking(move || process::tree_rss_bytes(pid)).await;
         let Ok(Some(rss)) = sample else {
             return;
         };
         resident.store(rss, Ordering::Relaxed);
         if rss > cap_bytes {
             on_exceed(rss);
-            let _ = tokio::task::spawn_blocking(move || process_tree::kill_tree(pid)).await;
+            process::kill_tree_blocking(pid).await;
             return;
         }
     }
@@ -199,99 +196,6 @@ pub(crate) struct AbortOnDrop(pub(crate) tokio::task::JoinHandle<()>);
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.0.abort();
-    }
-}
-
-/// Windows: post-spawn Job Object that always enforces
-/// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (whole-tree teardown) and additionally
-/// holds the memory limit when one is configured. The handle must outlive the
-/// child, so dropping the guard after the child is reaped is the correct order.
-/// On Unix the guard is a unit type (tree teardown is via the process group).
-#[cfg(not(windows))]
-#[derive(Debug)]
-pub(crate) struct MemoryCapGuard;
-
-#[cfg(not(windows))]
-impl MemoryCapGuard {
-    pub(crate) fn attach(_child: &Child, _cap_bytes: Option<u64>) -> Result<Self> {
-        Ok(Self)
-    }
-}
-
-#[cfg(windows)]
-#[derive(Debug)]
-pub(crate) struct MemoryCapGuard(Option<windows_sys::Win32::Foundation::HANDLE>);
-
-// SAFETY: the job handle is an owned kernel handle; Windows job objects are
-// safe to use and close from any thread.
-#[cfg(windows)]
-unsafe impl Send for MemoryCapGuard {}
-
-#[cfg(windows)]
-impl MemoryCapGuard {
-    pub(crate) fn attach(child: &Child, cap_bytes: Option<u64>) -> Result<Self> {
-        use std::mem::{size_of, zeroed};
-        use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_JOB_MEMORY,
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JobObjectExtendedLimitInformation, SetInformationJobObject,
-        };
-
-        let Some(raw) = child.raw_handle() else {
-            // The child already exited; nothing to contain.
-            return Ok(Self(None));
-        };
-        let failure = |what: &str| {
-            Error::new(format!(
-                "Failed to {what} for the language server process guard: {}",
-                std::io::Error::last_os_error()
-            ))
-        };
-        // Always create a kill-on-close Job Object so the entire server tree is
-        // torn down when the guard drops — even when no memory cap is configured
-        // (`max_memory_mb == 0`). Decoupling tree-kill from the memory cap keeps
-        // "no cap" from silently also meaning "no tree teardown". The memory
-        // limit is layered on only when a cap is present.
-        // SAFETY: null security/name creates an unnamed job owned by the returned handle.
-        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-        if job.is_null() {
-            return Err(failure("create a Windows job object"));
-        }
-        // SAFETY: the Windows structure is plain data and zero is its documented baseline.
-        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if let Some(cap_bytes) = cap_bytes {
-            info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_JOB_MEMORY;
-            info.JobMemoryLimit = usize::try_from(cap_bytes).unwrap_or(usize::MAX);
-        }
-        // SAFETY: job is valid and info matches this information class.
-        let configured = unsafe {
-            SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                (&raw const info).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        } != 0;
-        // SAFETY: child owns a valid process handle while `Child` is alive.
-        let assigned = configured && unsafe { AssignProcessToJobObject(job, raw as _) } != 0;
-        if !assigned {
-            // SAFETY: job is owned by this function and not yet published.
-            unsafe { windows_sys::Win32::Foundation::CloseHandle(job) };
-            return Err(failure("apply the Windows job object"));
-        }
-        Ok(Self(Some(job)))
-    }
-}
-
-#[cfg(windows)]
-impl Drop for MemoryCapGuard {
-    fn drop(&mut self) {
-        if let Some(job) = self.0.take() {
-            // Closing a kill-on-close job also terminates any straggler tree.
-            // SAFETY: the handle is owned by this guard.
-            unsafe { windows_sys::Win32::Foundation::CloseHandle(job) };
-        }
     }
 }
 

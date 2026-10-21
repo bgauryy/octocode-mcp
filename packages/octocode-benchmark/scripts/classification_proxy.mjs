@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const hash = value => createHash('sha256').update(value).digest('hex');
 const reportedCount = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 
-export async function startProxy({ endpoint, key, log, timeoutMs = 30000, allowLoopback = false }) {
+export async function startProxy({ endpoint, key, log, timeoutMs = 30000, allowLoopback = false, maxRequests = Infinity }) {
   const upstream = new URL(endpoint);
   const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(upstream.hostname);
   if (upstream.protocol !== 'https:' && !(allowLoopback && loopback && upstream.protocol === 'http:')) {
@@ -23,8 +23,15 @@ export async function startProxy({ endpoint, key, log, timeoutMs = 30000, allowL
   const pending = new Set();
   const record = value => appendFileSync(log, `${JSON.stringify(value)}\n`, { mode: 0o600 });
   const server = createServer(async (request, response) => {
-    if (request.method !== 'POST' || request.url !== '/v1/systemone') {
+    if (!((request.method === 'POST' && request.url === '/v1/systemone') ||
+        (request.method === 'GET' && request.url === '/v1/models'))) {
       response.writeHead(404).end();
+      return;
+    }
+    if (sequence >= maxRequests) {
+      record({ event: 'rejected', reason: 'benchmarkRequestCap', limit: maxRequests });
+      response.writeHead(402, { 'content-type': 'application/json' })
+        .end('{"error":"benchmark request cap"}');
       return;
     }
     const id = ++sequence;
@@ -50,7 +57,7 @@ export async function startProxy({ endpoint, key, log, timeoutMs = 30000, allowL
     const payload = Buffer.concat(body);
     let requestedModel = null;
     try { requestedModel = JSON.parse(payload).model ?? null; } catch { /* Forward exact malformed requests too. */ }
-    record({ event: 'started', id, time: new Date().toISOString(), bytes, requestHash: hash(payload), requestedModel });
+    record({ event: 'started', id, time: new Date().toISOString(), bytes, method: request.method, path: request.url, requestHash: hash(payload), requestedModel });
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), timeoutMs);
     const disconnected = () => { if (!response.writableEnded) abort.abort(); };
@@ -59,15 +66,21 @@ export async function startProxy({ endpoint, key, log, timeoutMs = 30000, allowL
     const done = new Promise(resolve => { finish = resolve; });
     pending.add(done);
     try {
-      const result = await fetch(upstream, {
-        method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: payload, signal: abort.signal, redirect: 'error',
+      const requestHeaders = { 'content-type': 'application/json', authorization: `Bearer ${key}` };
+      for (const name of ['typesafe-danger-zone-images', 'typesafe-danger-zone-long-context']) {
+        const value = request.headers[name];
+        if (typeof value === 'string') requestHeaders[name] = value;
+      }
+      const target = request.method === 'GET' ? new URL('/v1/models', upstream) : upstream;
+      const result = await fetch(target, {
+        method: request.method, headers: requestHeaders,
+        body: request.method === 'POST' ? payload : undefined, signal: abort.signal, redirect: 'error',
       });
       const raw = await result.arrayBuffer();
       let parsed;
       try { parsed = JSON.parse(Buffer.from(raw).toString('utf8')); } catch { /* Unknown usage stays unknown. */ }
       record({ event: 'finished', id, httpStatus: result.status, ms: performance.now() - started,
-        responseBytes: raw.byteLength, responseHash: hash(Buffer.from(raw)),
+        responseContentType: result.headers.get('content-type'), responseBytes: raw.byteLength, responseHash: hash(Buffer.from(raw)),
         resolvedModel: parsed?.model ?? null,
         inputTokens: reportedCount(parsed?.usage?.input_tokens),
         outputTokens: reportedCount(parsed?.usage?.output_tokens) });
@@ -106,9 +119,14 @@ if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(
   const index = process.argv.indexOf('--log');
   if (index < 0 || !process.argv[index + 1]) throw new Error('Usage: classification_proxy.mjs --log <path>');
   const host = process.env.OCTOCODE_CLASSIFICATION_API_HOST ?? 'https://api.typesafe.ai';
+  const capIndex = process.argv.indexOf('--max-requests');
+  const maxRequests = capIndex < 0 ? Infinity : Number(process.argv[capIndex + 1]);
+  if (capIndex >= 0 && (!Number.isSafeInteger(maxRequests) || maxRequests < 1)) {
+    throw new Error('--max-requests must be a positive integer.');
+  }
   const proxy = await startProxy({
     endpoint: new URL('v1/systemone', `${host.replace(/\/$/, '')}/`).href,
-    key: process.env.OCTOCODE_CLASSIFICATION_API, log: process.argv[index + 1],
+    key: process.env.OCTOCODE_CLASSIFICATION_API, log: process.argv[index + 1], maxRequests,
   });
   process.stdout.write(`${JSON.stringify({ url: proxy.url })}\n`);
   let stopping = false;

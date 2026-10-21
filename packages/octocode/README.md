@@ -78,7 +78,7 @@ npx octocode graph query impact --since main  # blast radius of your branch
 | `schema [tool]` | List the enabled tools with agent instructions, or print one tool's input contract. |
 | `config` | Show config and `.env` paths and loaded key names; `home`, `get`, `set`, `unset`, `check`, `view`. |
 | `auth status\|login\|logout` | GitHub sign-in with the device flow, its status, and sign-out. |
-| `install --ide <id>` | Add the Octocode MCP server to a client (`--list` for ids). |
+| `install --ide <id>` | Add (or `--remove`) the Octocode MCP server in a client, at `--scope home\|workspace\|local`; `--list` shows each client's status. |
 | `skill list\|info\|install\|remove\|check` | Manage the bundled Agent Skills. |
 | `help [command]` | Help for any command (also `--help`, `-h`). |
 

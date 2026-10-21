@@ -64,22 +64,24 @@ fn grouped(
 ) -> Option<(Value, bytes::Bytes)> {
     let indexed: Vec<(usize, &Value)> = input.questions.iter().enumerate().collect();
     let each_fits = indexed.iter().all(|question| {
-        crate::cache::json_len(&provider.build_batch_request(
+        octocode_engine::json_size::bytes(&provider.build_batch_request(
             input.state,
             std::slice::from_ref(question),
             model,
             None,
-        )) <= if input.long_context {
-            MAX_TEXT_REQUEST_BYTES
-        } else {
-            MAX_STATE_AND_QUESTION_BYTES
-        }
+        ))
+        .unwrap_or(usize::MAX)
+            <= if input.long_context {
+                MAX_TEXT_REQUEST_BYTES
+            } else {
+                MAX_STATE_AND_QUESTION_BYTES
+            }
     });
     if !each_fits {
         return None;
     }
     let text_request = provider.build_batch_request(input.state, &indexed, model, None);
-    if crate::cache::json_len(&text_request)
+    if octocode_engine::json_size::bytes(&text_request).unwrap_or(usize::MAX)
         > if input.long_context {
             MAX_TEXT_REQUEST_BYTES
         } else {

@@ -729,7 +729,7 @@ fn first_window_reserves_patchless_rows_and_summary() {
             file["patch"] = json!("");
         }
     }
-    let chars = crate::tools::stream_page::json_chars(&meta) + patch_chars;
+    let chars = octocode_engine::json_size::utf16_units(&meta).unwrap_or(0) + patch_chars;
     // The envelope around the row (identity, pagination, continuation,
     // warnings) takes well under 2k chars.
     assert!(chars <= page - 2_000, "row {chars} chars on a {page} page");

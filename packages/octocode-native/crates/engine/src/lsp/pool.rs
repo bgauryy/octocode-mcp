@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use crate::lsp::client::{LspLease, NativeLspClient};
-use crate::lsp::types::JsLanguageServerConfig;
+use crate::lsp::types::LspLanguageServerConfig;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
@@ -873,7 +873,7 @@ fn remove_lru(lru: &mut VecDeque<String>, key: &str) {
 /// that ends in `timeout` still installs the started server (it keeps
 /// indexing); the next acquire waits again through [`PoolClient::resume`]
 /// instead of failing on the stored `timeout`.
-async fn start_client(config: JsLanguageServerConfig) -> SharedResult<NativeLspClient> {
+async fn start_client(config: LspLanguageServerConfig) -> SharedResult<NativeLspClient> {
     let client = NativeLspClient::new(config.clone());
     let starting_client = client.clone();
     let start =
@@ -910,7 +910,10 @@ impl LspClientPool {
         }
     }
 
-    pub async fn acquire(&self, config: JsLanguageServerConfig) -> Result<Option<NativeLspClient>> {
+    pub async fn acquire(
+        &self,
+        config: LspLanguageServerConfig,
+    ) -> Result<Option<NativeLspClient>> {
         let key = canonical_lsp_key(&config)?;
         self.inner
             .acquire(key, || start_client(config))
@@ -923,7 +926,7 @@ impl LspClientPool {
     /// caller's first request. Hold the lease for the whole operation.
     pub async fn acquire_leased(
         &self,
-        config: JsLanguageServerConfig,
+        config: LspLanguageServerConfig,
     ) -> Result<Option<(NativeLspClient, LspLease)>> {
         let key = canonical_lsp_key(&config)?;
         self.inner
@@ -932,7 +935,7 @@ impl LspClientPool {
             .map_err(Arc::unwrap_or_clone)
     }
 
-    pub async fn clear(&self, config: &JsLanguageServerConfig) -> Result<bool> {
+    pub async fn clear(&self, config: &LspLanguageServerConfig) -> Result<bool> {
         let key = canonical_lsp_key(config)?;
         Ok(self.inner.clear(&key).await)
     }
@@ -977,7 +980,7 @@ fn readiness_timeout(language_id: Option<&str>) -> Option<u32> {
     }
 }
 
-pub fn canonical_lsp_key(config: &JsLanguageServerConfig) -> Result<String> {
+pub fn canonical_lsp_key(config: &LspLanguageServerConfig) -> Result<String> {
     let workspace_root = normalize_workspace_root(&config.workspace_root)?;
     let env = config
         .env
@@ -1865,7 +1868,7 @@ mod tests {
         let mut env_b = HashMap::new();
         env_b.insert("A".into(), "1".into());
         env_b.insert("B".into(), "2".into());
-        let first = JsLanguageServerConfig {
+        let first = LspLanguageServerConfig {
             command: "server".into(),
             args: Some(vec!["--stdio".into()]),
             workspace_root: root.join("x/../workspace").to_string_lossy().into_owned(),
@@ -1875,7 +1878,7 @@ mod tests {
             max_memory_mb: None,
             source: Default::default(),
         };
-        let second = JsLanguageServerConfig {
+        let second = LspLanguageServerConfig {
             workspace_root: root.join("workspace").to_string_lossy().into_owned(),
             initialization_options: Some(serde_json::json!({"nested": {"a": 1, "b": 2}, "z": 1})),
             env: Some(env_b),
@@ -2153,7 +2156,7 @@ mod tests {
         let link = base.join("link");
         std::fs::create_dir_all(&real).expect("create real root");
         std::os::unix::fs::symlink(&real, &link).expect("create symlink");
-        let config = |root: &Path| JsLanguageServerConfig {
+        let config = |root: &Path| LspLanguageServerConfig {
             command: "server".into(),
             args: None,
             workspace_root: root.to_string_lossy().into_owned(),

@@ -31,6 +31,49 @@
     }
   },
   {
+    "id": "clasify.example-evaluate",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "source": {
+            "tool": "localFetch",
+            "query": {
+              "path": "src/cache.ts",
+              "fullContent": true
+            }
+          },
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": "Does the source require restarting?"
+            }
+          }
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "questions": {
+            "restart": {
+              "type": "noul",
+              "instructions": "Does the source require restarting?"
+            }
+          },
+          "source": {
+            "tool": "localFetch",
+            "query": {
+              "path": "src/cache.ts",
+              "fullContent": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
     "id": "clasify.example-models",
     "tool": "clasify",
     "input": {
@@ -180,7 +223,7 @@
     }
   },
   {
-    "id": "ghStructure.example-tree/refs/languages",
+    "id": "ghStructure.example-tree",
     "tool": "ghStructure",
     "input": {
       "queries": [
@@ -200,6 +243,52 @@
           "repo": "octocode",
           "path": "packages",
           "maxDepth": 2
+        }
+      ]
+    }
+  },
+  {
+    "id": "ghStructure.example-refs",
+    "tool": "ghStructure",
+    "input": {
+      "queries": [
+        {
+          "owner": "bgauryy",
+          "repo": "octocode",
+          "operation": "refs"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "owner": "bgauryy",
+          "repo": "octocode",
+          "operation": "refs"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ghStructure.example-languages",
+    "tool": "ghStructure",
+    "input": {
+      "queries": [
+        {
+          "owner": "bgauryy",
+          "repo": "octocode",
+          "operation": "languages"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "owner": "bgauryy",
+          "repo": "octocode",
+          "operation": "languages"
         }
       ]
     }
@@ -934,7 +1023,7 @@
     }
   },
   {
-    "id": "lspSearch.example-anchored",
+    "id": "lspSearch.example-anchored:locations",
     "tool": "lspSearch",
     "input": {
       "queries": [
@@ -952,6 +1041,141 @@
         {
           "path": "src/index.ts",
           "operation": "definition",
+          "symbolName": "run",
+          "line": 10,
+          "orderHint": 0,
+          "page": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "lspSearch.example-anchored:references",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "symbolName": "run",
+          "line": 10,
+          "operation": "references"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "operation": "references",
+          "symbolName": "run",
+          "line": 10,
+          "orderHint": 0,
+          "page": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "lspSearch.example-anchored:callers",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "symbolName": "run",
+          "line": 10,
+          "operation": "callers"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "operation": "callers",
+          "symbolName": "run",
+          "line": 10,
+          "orderHint": 0,
+          "page": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "lspSearch.example-anchored:hierarchy",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "symbolName": "run",
+          "line": 10,
+          "operation": "callees"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "operation": "callees",
+          "symbolName": "run",
+          "line": 10,
+          "orderHint": 0,
+          "page": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "lspSearch.example-anchored:subtypes",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "symbolName": "run",
+          "line": 10,
+          "operation": "subtypes"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "operation": "subtypes",
+          "symbolName": "run",
+          "line": 10,
+          "orderHint": 0,
+          "page": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "lspSearch.example-anchored:hover",
+    "tool": "lspSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "symbolName": "run",
+          "line": 10,
+          "operation": "hover"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "path": "src/index.ts",
+          "operation": "hover",
           "symbolName": "run",
           "line": 10,
           "orderHint": 0,
@@ -2688,6 +2912,66 @@
           "operation": "match",
           "path": "/r/a.ts",
           "rule": {
+            "nthChild": "2n++1"
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.rule-position-1",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "nthChild": {
+              "position": 1,
+              "ofRule": {
+                "field": "name"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.rule-position-2",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
+            "range": {
+              "start": {
+                "line": 2
+              },
+              "end": {
+                "line": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.rule-position-3",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "rule": {
             "has": {
               "field": "name"
             }
@@ -2698,7 +2982,7 @@
     "accepted": false
   },
   {
-    "id": "ast-search.rule-position-1",
+    "id": "ast-search.rule-position-4",
     "tool": "astSearch",
     "input": {
       "queries": [
@@ -2715,7 +2999,7 @@
     "accepted": false
   },
   {
-    "id": "ast-search.rule-position-2",
+    "id": "ast-search.rule-position-5",
     "tool": "astSearch",
     "input": {
       "queries": [
@@ -2732,7 +3016,7 @@
     "accepted": false
   },
   {
-    "id": "ast-search.rule-position-3",
+    "id": "ast-search.rule-position-6",
     "tool": "astSearch",
     "input": {
       "queries": [
@@ -2751,7 +3035,7 @@
     "accepted": false
   },
   {
-    "id": "ast-search.rule-position-4",
+    "id": "ast-search.rule-position-7",
     "tool": "astSearch",
     "input": {
       "queries": [
@@ -2782,6 +3066,30 @@
           "path": "/r",
           "minDepth": 3,
           "maxDepth": 2
+        }
+      ]
+    },
+    "accepted": false
+  },
+  {
+    "id": "ast-search.reversed-scope",
+    "tool": "astSearch",
+    "input": {
+      "queries": [
+        {
+          "operation": "match",
+          "path": "/r/a.ts",
+          "pattern": "foo($X)",
+          "scope": {
+            "start": {
+              "line": 2,
+              "column": 1
+            },
+            "end": {
+              "line": 1,
+              "column": 1
+            }
+          }
         }
       ]
     },
@@ -4339,7 +4647,7 @@
     },
     "accepted": false,
     "messages": [
-      "Send exactly one of: state, source."
+      "`source` cannot be combined with `state`: they are mutually exclusive, send one or the other"
     ]
   },
   {
@@ -4359,7 +4667,7 @@
     },
     "accepted": false,
     "messages": [
-      "Send exactly one of: state, source."
+      "Missing required field: state"
     ]
   },
   {
@@ -4385,7 +4693,7 @@
     },
     "accepted": false,
     "messages": [
-      "Send exactly one of: ranges, fullContent."
+      "Missing required field: ranges"
     ]
   },
   {
@@ -4481,7 +4789,7 @@
     },
     "accepted": false,
     "messages": [
-      "Send exactly one of: ranges, fullContent."
+      "`fullContent` cannot be combined with `ranges`: they are mutually exclusive, send one or the other"
     ]
   },
   {

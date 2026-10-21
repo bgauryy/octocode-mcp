@@ -262,7 +262,13 @@ mod contract_owner_tests {
     /// embedded contract.
     #[test]
     fn every_classification_notice_comes_from_the_contract() {
-        for key in ["unresolved", "failedWithRead", "failed", "imageInspection"] {
+        for key in [
+            "filtered",
+            "unresolved",
+            "failedWithRead",
+            "failed",
+            "imageInspection",
+        ] {
             assert!(
                 !super::classification_notice(key).is_empty(),
                 "classificationNotices.{key}"
@@ -454,8 +460,9 @@ mod contract_owner_tests {
         // compactly (the source is pretty-printed at 3.4x the size).
         let text = contract_json();
         assert!(!text.contains('\n'), "embedded contract is pretty-printed");
+        // Canonical Zod constraints and per-candidate failure receipts: 2,566,564 bytes.
         assert!(
-            text.len() < 2_500_000,
+            text.len() < 2_567_000,
             "embedded contract is {} bytes",
             text.len()
         );

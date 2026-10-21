@@ -18,7 +18,7 @@ if (!result.success) {
 interface ZodIssue {
   code: string        // issue type code
   message: string     // human-readable message
-  path: (string | number)[]  // path to the field
+  path: PropertyKey[]  // path to the field
   input?: unknown     // raw input (only if reportInput: true)
   // ... additional fields depending on code
 }
@@ -28,16 +28,17 @@ interface ZodIssue {
 
 | Code | When | Extra Fields |
 |------|------|-------------|
-| `invalid_type` | Wrong type | `expected`, `received` |
-| `too_small` | Below minimum | `minimum`, `inclusive`, `type` |
-| `too_big` | Above maximum | `maximum`, `inclusive`, `type` |
-| `invalid_string` | String format failure | `validation` |
+| `invalid_type` | Wrong type | `expected` |
+| `too_small` | Below minimum | `minimum`, `inclusive`, `origin` |
+| `too_big` | Above maximum | `maximum`, `inclusive`, `origin` |
+| `invalid_format` | String format failure | `format` |
 | `custom` | Custom refinement | — |
-| `invalid_enum_value` | Not in enum | `options`, `received` |
+| `invalid_value` | Not an allowed enum/literal value | `values` |
 | `unrecognized_keys` | Unknown keys (strict) | `keys` |
-| `invalid_union` | No branch matched | `unionErrors` |
-| `invalid_arguments` | Function args invalid | `argumentsError` |
-| `invalid_return_type` | Function return invalid | `returnTypeError` |
+| `invalid_union` | No branch matched | `errors` |
+| `not_multiple_of` | Number is not a multiple | `divisor`, `origin` |
+| `invalid_key` | Invalid record/map key | `issues`, `origin` |
+| `invalid_element` | Invalid map/set element | `issues`, `origin` |
 
 ## Error Formatting Functions
 
@@ -85,9 +86,9 @@ const pretty = z.prettifyError(result.error)
 //  ✖ Required at «address.zip»"
 ```
 
-### z.formatError() — Deprecated
+### z.formatError()
 
-Do not use. Removed in v4. Use `flattenError` or `treeifyError` instead.
+Still exported; returns the older `_errors` tree shape. Prefer `flattenError` for flat forms or `treeifyError` for nested consumers. The instance method `error.format()` is deprecated; do not confuse it with the exported function.
 
 ## Error Customization
 
@@ -126,7 +127,7 @@ z.config({
   customError: (issue) => {
     // Global default error messages
     if (issue.code === "invalid_type") {
-      return `Expected ${issue.expected}, got ${issue.received}`
+      return `Expected ${issue.expected}`
     }
   },
 })
@@ -138,7 +139,7 @@ z.config({
 2. **Parse-level** `error` — middle priority
 3. **Global** `z.config({ customError })` — lowest priority
 
-If a schema has an `error` parameter, it always wins over parse-level and global settings.
+A schema-level callback can return `undefined` to defer to lower-priority customization. Locale messages provide the fallback after global custom errors.
 
 ## reportInput Option
 

@@ -202,6 +202,28 @@ describe('Activity', () => {
 });
 
 describe('registerActivity', () => {
+  it('clears activity and its clock on settlement, ignoring late streaming events', async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakePi();
+      registerActivity(fake.pi, { workingLine: true });
+      const ctx = fakeCtx({ cwd: '/x' });
+      const update = { message: { role: 'assistant' }, assistantMessageEvent: { type: 'thinking_delta', delta: 'A thought.' } };
+      await fake.emit('agent_start', {}, ctx);
+      await fake.emit('message_update', update, ctx);
+      expect((ctx.ui as { working?: string }).working).toContain('Thinking');
+      expect(vi.getTimerCount()).toBe(1);
+      await fake.emit('agent_settled', { outcome: 'aborted' }, ctx);
+      await fake.emit('message_update', update, ctx);
+      vi.advanceTimersByTime(10_000);
+      expect((ctx.ui as { working?: string }).working).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+      await fake.emit('session_shutdown', {}, ctx);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('drives the working line and the team activity from Pi events', async () => {
     vi.useFakeTimers();
     const fake = fakePi();

@@ -1,4 +1,4 @@
-pub(crate) mod apply;
+pub mod apply;
 pub(crate) mod comment_remover;
 pub(crate) mod config;
 pub(crate) mod minifier;

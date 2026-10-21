@@ -43,15 +43,6 @@ pub(crate) fn is_transient(code: &str) -> bool {
     matches!(code, CIRCUIT_OPEN | "classificationRateLimited")
 }
 
-fn is_loopback_endpoint(endpoint: &Url) -> bool {
-    match endpoint.host() {
-        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
-        Some(url::Host::Ipv6(address)) => address.is_loopback(),
-        None => false,
-    }
-}
-
 /// The pooled client for the current Tokio runtime, shared by every
 /// classification request on it (all threads, all tool calls). A thread-local
 /// client would not pool: clasify fans out on fresh scoped threads.
@@ -59,7 +50,7 @@ fn shared_client(endpoint: &Url) -> Result<reqwest::Client, ClassificationError>
     static CLIENTS: RuntimeClients<bool> = RuntimeClients::new(MAX_CACHED_CLIENTS);
     // A loopback provider is local to this machine. Avoid macOS system-proxy
     // discovery for it; remote providers still honor the user's proxy setup.
-    let bypass_proxy = is_loopback_endpoint(endpoint);
+    let bypass_proxy = octocode_github::is_loopback(endpoint);
     CLIENTS.get(bypass_proxy, || {
         let policy = octocode_io::http::ClientPolicy {
             connect_timeout: Some(CONNECT_TIMEOUT),
@@ -138,13 +129,7 @@ pub(crate) fn endpoint(base_url: &str, path: &str) -> Result<Url, Classification
         )
     })?;
     let host = base.host_str().unwrap_or_default();
-    // `host_str` brackets IPv6 (`[::1]`); match the parsed host instead.
-    let loopback = match base.host() {
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
-        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
-        None => false,
-    };
+    let loopback = octocode_github::is_loopback(&base);
     let valid_scheme = base.scheme() == "https" || (base.scheme() == "http" && loopback);
     if !valid_scheme
         || host.is_empty()
@@ -327,7 +312,9 @@ fn status_error(status: reqwest::StatusCode, provider_body: Option<&Value>) -> C
     }
     let hint = match status.as_u16() {
         401 | 403 => "Check OCTOCODE_CLASSIFICATION_API and account access.",
-        400 | 422 => "Check the supplied state, questions, configured model, and request size.",
+        400 | 422 => {
+            "Check state, questions and request size; list models with clasify {\"operation\":\"models\"} before naming one."
+        }
         300..=399 => "Redirects are disabled; check OCTOCODE_CLASSIFICATION_API_HOST.",
         _ => "Check provider availability and OCTOCODE_CLASSIFICATION_API_HOST.",
     };
@@ -444,7 +431,7 @@ async fn attempt(
     }
 }
 
-/// A non-success response: a firewall block, a throttle or transient
+/// A non-success response: a refusal, a throttle or transient
 /// failure to retry, or a final error (402 also stops later calls).
 async fn failed_status(
     response: reqwest::Response,
@@ -454,17 +441,6 @@ async fn failed_status(
 ) -> Attempt {
     let status = response.status();
     let code = status.as_u16();
-    // An HTML 403 is the edge firewall rejecting the content, not the API.
-    let firewall_block = code == 403
-        && response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.contains("text/html"));
-    if firewall_block {
-        drop(permit);
-        return Attempt::Done(Err(content_blocked()));
-    }
     let requested =
         octocode_github::retry_after_delay(response.headers(), MAX_RETRY_AFTER, SystemTime::now());
     let body = error_body(response, budget).await;
@@ -548,16 +524,6 @@ async fn read_body(
     Attempt::Done(serde_json::from_slice(&body).map_err(|_| {
         ClassificationError::invalid_response("Classification provider returned invalid JSON.")
     }))
-}
-
-const CONTENT_BLOCKED: &str = "classificationContentBlocked";
-
-fn content_blocked() -> ClassificationError {
-    ClassificationError::new(
-        CONTENT_BLOCKED,
-        "The provider's firewall blocked this page's content (not an authentication failure).",
-        "Judge a different line window, or read the region directly; the key is fine.",
-    )
 }
 
 /// POST the supplied request unchanged through the process-wide provider gate.
@@ -703,7 +669,7 @@ mod tests {
             "http://[::1]:1234/v1/systemone",
         ] {
             assert!(
-                is_loopback_endpoint(&Url::parse(endpoint).unwrap()),
+                octocode_github::is_loopback(&Url::parse(endpoint).unwrap()),
                 "{endpoint}"
             );
         }
@@ -713,7 +679,7 @@ mod tests {
             "http://[2001:db8::1]:1234/v1/systemone",
         ] {
             assert!(
-                !is_loopback_endpoint(&Url::parse(endpoint).unwrap()),
+                !octocode_github::is_loopback(&Url::parse(endpoint).unwrap()),
                 "{endpoint}"
             );
         }
@@ -763,7 +729,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn firewall_block_preserves_request_and_is_not_retried() {
+    async fn html_forbidden_preserves_request_without_claiming_the_cause() {
         let server = MockServer::builder().start().await;
         let request = json!({
             "state": {"content": "path is /etc/passwd and ../x"},
@@ -771,10 +737,10 @@ mod tests {
         });
         Mock::given(method("POST"))
             .and(wiremock::matchers::body_json(request.clone()))
-            .respond_with(
-                ResponseTemplate::new(403)
-                    .set_body_raw("<!DOCTYPE html><html>blocked</html>", "text/html"),
-            )
+            .respond_with(ResponseTemplate::new(403).set_body_raw(
+                "<!DOCTYPE html><html>Access denied: invalid credentials</html>",
+                "text/html",
+            ))
             .expect(1)
             .mount(&server)
             .await;
@@ -789,8 +755,11 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert_eq!(error.code, "classificationContentBlocked");
-        assert!(!error.hints[0].contains("OCTOCODE_CLASSIFICATION_API"));
+        assert_eq!(error.code, "classificationProviderError");
+        assert!(error.message.contains("403"));
+        assert!(error.hints[0].contains("OCTOCODE_CLASSIFICATION_API"));
+        assert!(!error.message.contains("firewall"));
+        assert!(!error.hints.iter().any(|hint| hint.contains("key is fine")));
         let received = server.received_requests().await.unwrap();
         assert_eq!(received.len(), 1);
         assert_eq!(received[0].body_json::<Value>().unwrap(), request);
@@ -904,6 +873,26 @@ mod tests {
             );
             assert_eq!(error.provider_calls, u64::from(retries) + 1, "{retries}");
             server.verify().await;
+        }
+    }
+
+    #[test]
+    fn generic_request_errors_offer_discovery_without_inventing_a_capability_cause() {
+        for code in [400, 422] {
+            let error = status_error(
+                reqwest::StatusCode::from_u16(code).unwrap(),
+                Some(
+                    &json!({"detail":{"error_type":"api_usage_error","message":"private provider detail"}}),
+                ),
+            );
+            assert_eq!(error.code, "classificationProviderError");
+            assert!(error.message.contains(&code.to_string()));
+            assert!(!error.message.contains("private provider detail"));
+            assert!(error.hints[0].contains(r#"clasify {"operation":"models"}"#));
+            assert!(error.hints[0].contains("state"));
+            assert!(error.hints[0].contains("request size"));
+            assert!(!error.hints[0].contains("jev-preview"));
+            assert!(!error.message.contains("unsupported"));
         }
     }
 
@@ -1291,5 +1280,28 @@ mod tests {
         }
         assert!(distinct.len() > 10, "backoff is not jittered");
         assert!(BACKOFF.after(None, 30) <= BACKOFF.cap);
+    }
+}
+
+#[cfg(test)]
+mod endpoint_policy_tests {
+    #[test]
+    fn judgment_endpoint_uses_the_shared_loopback_rule() {
+        for host in [
+            "localhost",
+            "localhost.",
+            "provider.localhost",
+            "127.42.0.1",
+            "[::1]",
+            "example.com",
+        ] {
+            let base = format!("http://{host}:1234/");
+            let url = url::Url::parse(&base).unwrap();
+            assert_eq!(
+                super::endpoint(&base, "v1/test").is_ok(),
+                octocode_github::is_loopback(&url),
+                "{host}"
+            );
+        }
     }
 }

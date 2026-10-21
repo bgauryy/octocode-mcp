@@ -11,7 +11,7 @@ mod tests;
 /// directory) and return where a continuation resumes, if anywhere.
 pub(super) async fn materialize_page<C: octocode_github::ConditionalCache>(
     provider: &GitHubProvider<C>,
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     scope: &Scope,
     commit_sha: &str,
     page: &ListingPage<'_>,
@@ -92,13 +92,13 @@ pub(super) fn unwritten_folders<'a>(entries: &'a [TreeEntry], scope: &Scope) -> 
 /// listing at the deepest `maxDepth`, from its first page, pinned to the
 /// commit; at that depth already, the first unwritten folder itself.
 pub(super) fn expand_depth(
-    query: &GhStructureQuery,
+    query: &GhStructureQueryTree,
     scope: &Scope,
     commit_sha: &str,
     first_unwritten: &str,
 ) -> Result<Value, ProviderError> {
     let mut next = query_row(
-        &GhStructureQuery {
+        &GhStructureQueryTree {
             ref_: Some(commit_sha.parse().map_err(
                 |error: crate::contracts::tool_types::error::ConversionError| {
                     ProviderError::new(ProviderErrorKind::Decode, error.to_string())

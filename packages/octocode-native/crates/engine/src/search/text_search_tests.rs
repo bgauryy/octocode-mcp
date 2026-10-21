@@ -428,7 +428,7 @@ fn context_lines_are_assembled_into_snippet() {
     let t = TmpDir::new();
     t.write("a.txt", "before\nmatch\nafter\n");
     let mut o = opts(t.path(), "match");
-    o.context_lines = Some(1);
+    o.context = crate::types::SearchContext::symmetric(1);
     let r = search(o).expect("ok");
     let v = &r.files[0].matches[0].value;
     assert!(
@@ -826,7 +826,7 @@ fn context_snippet_is_contiguous_and_includes_neighbouring_match_lines() {
     let t = TmpDir::new();
     t.write("a.txt", "alpha foo\nFoo bar\nfoo foo foo\nbaz\n");
     let mut o = opts(t.path(), "foo");
-    o.context_lines = Some(1);
+    o.context = crate::types::SearchContext::symmetric(1);
     o.case_sensitive = Some(false);
     let r = search(o).expect("ok");
     let m = &r.files[0].matches;
@@ -852,7 +852,7 @@ fn long_leading_context_does_not_hide_the_match() {
     let t = TmpDir::new();
     t.write("ctx.txt", format!("{}\ntarget here\n", "C".repeat(600)));
     let mut o = opts(t.path(), "target");
-    o.context_lines = Some(1);
+    o.context = crate::types::SearchContext::symmetric(1);
     let r = search(o).expect("ok");
     assert!(r.files[0].matches[0].value.contains("target"));
 }
@@ -1992,7 +1992,7 @@ fn deferred_lines_preserve_every_anchor_rank_digest_and_clip_length() {
         (0, false, false, true),
     ] {
         let mut options = opts(t.path(), "needle");
-        options.context_lines = Some(context);
+        options.context = crate::types::SearchContext::symmetric(context);
         options.only_matching = Some(only);
         options.unique = Some(unique);
         options.count_unique = Some(unique);
@@ -2040,4 +2040,40 @@ fn deferred_lines_preserve_every_anchor_rank_digest_and_clip_length() {
             }
         }
     }
+}
+
+#[test]
+fn asymmetric_context_is_assembled_without_the_other_side() {
+    let t = TmpDir::new();
+    t.write("a.txt", "first\n\nneedle\nafter\nlast\n");
+    for (before, after, expected) in [
+        (2, 0, "first\n\nneedle"),
+        (0, 2, "needle\nafter\nlast"),
+        (1, 1, "\nneedle\nafter"),
+        (100, 0, "first\n\nneedle"),
+        (0, 100, "needle\nafter\nlast"),
+    ] {
+        let mut o = opts(t.path(), "needle");
+        o.context = crate::types::SearchContext { before, after };
+        let r = search(o).expect("search");
+        assert_eq!(r.files[0].matches[0].value, expected, "{before}/{after}");
+    }
+}
+
+#[test]
+fn asymmetric_context_surrounds_the_whole_multiline_match() {
+    let t = TmpDir::new();
+    t.write("a.txt", "before\nstart\nend\nafter\nlast\n");
+    let mut o = opts(t.path(), "start\nend");
+    o.multiline = Some(true);
+    o.fixed_string = Some(false);
+    o.context = crate::types::SearchContext {
+        before: 1,
+        after: 2,
+    };
+    let r = search(o).expect("search");
+    assert_eq!(
+        r.files[0].matches[0].value,
+        "before\nstart\nend\nafter\nlast"
+    );
 }

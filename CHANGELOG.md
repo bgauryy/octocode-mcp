@@ -2,6 +2,117 @@
 
 ## [Unreleased]
 
+### Changed — CLI install, cache command, error wording (2026-10-21)
+- **`install` manages every scope a client reads.** `--scope home|workspace|local` writes the user config, the project file under the current directory (Cursor, Claude Code, Continue, Kiro, Codex) or Claude Code's per-directory section, resolved like the config view. `--remove` deletes the entry with a rolling backup (no entry is a no-op; an entry install did not write needs `--force`). `--list` and the terminal picker show each client's status (`installed`, `disabled`, `custom`, `absent`, `invalid`, `unsupported`) and config path; `--list --json` rows are objects. `--pass-env` says it stores the token in the client config in plain text.
+- **Removed the hidden `cache status|clear` command.** Delete `tmp/response/`, `tmp/artifact/` or a `tmp/clone/` checkout under `octocode config home` instead; `logs/evictions.jsonl` still records every clone eviction.
+- **One wording for an unknown field.** `Remove unknown field 'x' from queries[0] (did you mean 'y'?)` whether or not other issues come with it, and the repair-lead note names row fields the same way (`queries[0].x`).
+- **artifactSearch crates dependencies keep their target.** A crate that declares a dependency per platform lists each as `name req; cfg(...)` instead of two identical entries.
+- `octocode --help` states that a batch exits with its worst row while stdout carries every row.
+
+### Fixed — astSearch walk ceiling, astTopology partial graphs (2026-10-21)
+- **astSearch `match` and `symbols` past the 100,000-file walk ceiling name what they never read.** The terminal row keeps `terminalLimit` and adds one `narrowScope`, `narrowScope2`, … hint per unread directory (and one for a directory's own unread files), so the calls together reach every unread file; scopes past eight are counted and listed through a `structureSearch` lead. A single directory above the ceiling is a typed `flatDirectory` limit. Queries with positional globs get no scopes and a warning saying why.
+- **astTopology with `maxFiles` at its maximum is never `empty` over a truncated graph**, and `scopeTooBroad` offers one `narrowScope` hint per admissible directory it names (up to five).
+- localFetch documents its 1 GiB ceiling as terminal (`fileTooLarge`) with the alternative outside Octocode.
+### Fixed — agents-communication: Python-parity fixes from the port review (2026-10-20)
+- **A hook whose stdout reader closed early no longer loses mail.** `hook` and
+  `host-hook` post-tool delivery record the offer `uncertain` (needs an explicit
+  `retry_delivery`), not `submitted`, and exit 0 like the Python runtime did.
+- **A UTF-8 byte order mark stays content.** Re-sharing an identical document that starts with
+  U+FEFF succeeds, and paged `read_document` reassembles it byte for byte; hook stdin may
+  begin with a mark.
+- **A backslash in a lease path is a filename character on POSIX**, so `a\b` no longer
+  conflicts with a tree lease on `a`.
+- **Blank text follows Python `str.strip()` and `\s`**: U+0085 and U+001C–U+001F are blank,
+  U+FEFF is not (message text, `reasoning`, `--session`, `--vendor`, record search words).
+- **MCP:** an integer request id beyond 2^53 is refused (`-32600`) instead of being echoed as a
+  different id, and `tools/call` with `arguments: null` is a tool error. A hook
+  `context_generation` that is not a string is refused. Queued lease targets are stored
+  ASCII-escaped again, so a retry finds its wait.
+- `leave` always appends `coordinate.out`, also for an expired or repeated leave, so the owner-lock reclaim never renews a left session.
+- An unreaped (zombie) owner process counts as dead in the delivery-owner liveness probe, and `health` probes each owner once per call.
+### Fixed — tool audit: catalog notation, streamed reads, scan pacing (2026-10-20)
+- **`octocode schema` catalog fields read as the input you type.** A tool with
+  several row forms lists each as one flat row with its selector inline,
+  `[operation:"files", path*, …] | …`, instead of variant labels such as
+  `tree[…]` or `npm:exact[…]` that read as nesting. Core
+  `publishedFormFields` marks the selector fields (the discriminator, or a
+  required field whose values differ between forms, like artifactSearch
+  `ecosystem`) with their values.
+- **A streamed multi-range localFetch no longer discards the ranges that fit.**
+  On a source over 10 MiB, a read whose range needs several window pages
+  serves every range before it plus that range's first page, continues it
+  through `next.continueWindow` and reads the ranges after it through
+  `next.readOtherRanges`; every requested line is on exactly one page.
+- **Large-source memos hold a working set.** The streamed line index and
+  range-view memos are bounded by their byte weight (8 MB, 4 MB); their entry
+  caps rose from 16 to 1024 and 256, so alternating among more than 16 large
+  files no longer re-hashes each one.
+- **Timed scans pace their chunks.** astSearch and astTopology scans size each
+  chunk from measured throughput (a tenth of the 10 s budget, never past
+  what is left) instead of fixed 512-file chunks, so slow storage overshoots
+  the budget by about one short chunk.
+
+### Changed — agents-communication live harness and JSON output
+- `src/live.mjs`: the `--skill` flag is now `--package`.
+- JSON output (CLI and MCP tool results) refuses NaN and Infinity, which are not valid JSON; they fail instead of being written.
+
+### Removed — agents-communication no longer needs Python (breaking, 2026-10-20)
+- **`@octocodeai/octocode-agents-communication` runs on Node.js only.** The
+  Python runtime, its launcher scripts, the portable runtime archive
+  (`pack:runtime`) and `OCTOCODE_PYTHON` are gone, with no compatibility
+  layer. The runtime is TypeScript bundled into `dist/` and uses the built-in
+  `node:sqlite` (Node.js `^24.15.0`, SQLite with FTS5). Existing databases
+  open unchanged: application ID, schema version and fingerprint are the same.
+  The package version bump is left to the release owner.
+- **Upgrade rule:** run one runtime per database. The delivery-owner lock
+  moved from a file lock to a Unix-domain socket (Windows: named pipe,
+  untested), so an old and a new `listen`, `dispatch` or `run` do not
+  exclude each other; stop old owners first.
+- **Delivery-owner liveness is the owner process (R18).** A frozen owner no
+  longer reads dead after about 128 probes: the old probe connected to the
+  owner's socket and filled its accept backlog. The owner now records its pid,
+  start time and socket inode in a sidecar `<socket>.pid`, and a probe is
+  `kill(pid, 0)` plus those reuse guards; `health` uses the same probe.
+- **A slept or stalled worker keeps its identity (R14).** While its process holds
+  the delivery-owner lock, an expired presence row is renewed by the next
+  heartbeat with the unexpired leases no other owner took meanwhile, instead of
+  failing until `resume`; staging waits for the renewal rather than throwing.
+  Heartbeats are due when either the monotonic or the wall clock has advanced a
+  period, so a wake is noticed at once. Without the lock, expiry still means the
+  owner died. A worker killed between spawning the vendor and spawning its
+  watchdog still leaks the vendor (R15, documented in `SERVICE_PROTOCOL.md`).
+- **Behavior and limits that changed:** `activity` `pathRegex` is a JavaScript
+  `RegExp` with the `u` flag (ASCII-only `\d \w \s \b`; no `(?P<name>)`,
+  `\A`, `\Z` or inline flags); whole-number floats such as `5.0` are
+  integers; a database path over 504 bytes after resolving symlinks is refused
+  up front with its length and the limit (R17; SQLite opens 504 bytes and
+  fails at 505 on Node 24.15.0 and 26.4.0); a killed managed worker's vendor process group is stopped by a
+  detached watchdog on POSIX, while Windows has no Job Object and leaks the
+  vendor tree of a worker killed outright; lone UTF-16 surrogates in input are
+  refused.
+- **Protocol fixes:** a `checkback` must name a pending `task` you received
+  (F1); a `checkBack:true` task refuses `done`, `partial` and `failed`
+  until a check-back is sent, `refused` and `canceled` exempt (F2); RACI
+  informed peers get an answer body that leads `Re <kind> <id>: <headline>`
+  (F4); empty lists in message slots are refused (F5); a malformed
+  `document:` evidence pin is refused instead of stored as text (F6). Docs
+  now route "needs input" through `blocker`, not `delta` (F8).
+- **Catalog and signals:** slot titles render from the catalog instead of
+  hard-coded labels, so `task.checkBack`, `decision.default`, `informed` and the
+  `issue` slots read the same on every host (F3); `handoff` takes an optional
+  `constraints` list and `delta` an optional `phase`, rendered in protocol order
+  (F7); the catalog's `messageKinds` markers (request vs FYI, wake) replace the
+  hard-coded request and wake sets, checked against the `schema.sql` kind CHECK
+  (F11); SIGINT and SIGTERM end one-shot commands such as `inbox wait` with
+  130/143 because loops now register themselves (`listen`, `mcp`, `view` and
+  `run` exit 0; an interrupted `dispatch` with a delivery in flight exits 1)
+  (R19).
+- **Docs and skill:** the package docs moved from `scripts/docs/` to `docs/`;
+  the public `octocode-agents-communication` skill is a lean lobby that links the
+  operating guide returned by `skill --json` instead of restating it, and
+  fixes its `db info`, `listen`, custom-database and `fetch --incoming`
+  statements.
+
 ### Changed — localSearch `matchString` list; one hidden-folder flag (2026-10-18)
 - **`localSearch` `matchString` takes a list**, as `localFetch` does: up to 10
   texts, any of which a line may hold. Each entry is literal unless `regex` is

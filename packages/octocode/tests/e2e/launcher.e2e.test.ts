@@ -73,9 +73,22 @@ describe.skipIf(!ready)('launcher → native binary e2e', () => {
       const schema = runLauncher(['schema'], env);
       expect(main.status).toBe(0);
       expect(schema.status).toBe(0);
-      const instructions = JSON.parse(main.stdout).instructions as string;
+      expect(JSON.parse(main.stdout)).toEqual(JSON.parse(schema.stdout));
+      expect(JSON.parse(schema.stdout).instructions).toBeUndefined();
+      expect(JSON.parse(schema.stdout).commands.full).toBe(
+        'octocode schema --view full'
+      );
+      const full = runLauncher(['schema', '--view', 'full'], env);
+      expect(full.status).toBe(0);
+      const instructions = JSON.parse(full.stdout).instructions as string;
       expect(instructions.length).toBeGreaterThan(0);
-      expect(JSON.parse(schema.stdout).instructions).toBe(instructions);
+      expect(
+        JSON.parse(full.stdout).tools.map((tool: { name: string }) => tool.name)
+      ).toEqual(
+        JSON.parse(schema.stdout).tools.map(
+          (tool: { name: string }) => tool.name
+        )
+      );
       expect(instructions.includes('<clasify>')).toBe(Boolean(key));
       expect(instructions.includes('clasifyContext')).toBe(Boolean(key));
       expect(instructions).not.toContain('clasify scouts unread');

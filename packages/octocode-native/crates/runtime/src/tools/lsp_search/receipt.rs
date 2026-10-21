@@ -5,7 +5,7 @@ use super::LspSearchQuery;
 use super::anchor::is_anchored;
 use octocode_engine::digest::canonical_json_keep_nulls;
 use octocode_engine::lsp::client::NativeLspClient;
-use octocode_engine::lsp::types::JsLanguageServerConfig;
+use octocode_engine::lsp::types::LspLanguageServerConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -68,7 +68,7 @@ const RUST_ANALYZER_DEFAULT_CFGS: [&str; 2] = ["debug_assertions", "miri"];
 /// unchanged. `cfgs` adds to the effective list (`"!name"` disables one),
 /// as rust-analyzer's own list replaces its defaults.
 pub(super) fn apply_rust_context(
-    config: &mut JsLanguageServerConfig,
+    config: &mut LspLanguageServerConfig,
     query: &LspSearchQuery,
 ) -> Result<(), String> {
     let Some(value) = &query.rust_context() else {
@@ -172,7 +172,7 @@ pub(super) fn attach_provider_context(
     query: &LspSearchQuery,
     canonical_uri: &str,
     resolved_symbol: Option<Value>,
-    config: &JsLanguageServerConfig,
+    config: &LspLanguageServerConfig,
     client: &NativeLspClient,
     debug: bool,
 ) {
@@ -318,7 +318,7 @@ pub(super) fn relative_server_roots(row: &mut Value, paths: &crate::policy::path
 }
 
 pub(super) fn resolved_server_receipt(
-    config: &JsLanguageServerConfig,
+    config: &LspLanguageServerConfig,
     client: &NativeLspClient,
 ) -> Value {
     const CAPABILITIES: [&str; 10] = [

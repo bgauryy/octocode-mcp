@@ -13,14 +13,15 @@ const CI_EXCLUDE = ['--exclude', '@octocodeai/octocode-benchmark', '--exclude', 
 const script = (name, ...args) => ['node', [path.join(HERE, name), ...args]];
 const health = (...args) => script('workspace-health.mjs', ...args);
 const yarn = (...args) => ['yarn', args];
-// Skills are not workspaces: lint the collection, check the shared report viewer, and run each skill's script tests.
+// Shared assets have a private workspace; skill folders remain independently installable.
 const skill = (rel, ...args) => ['node', [path.join(ROOT, 'skills', rel), ...args]];
 const SKILL_CHECKS = [
-  skill('octocode-skills/scripts/skill-review.mjs', path.join(ROOT, 'skills')),
+  skill('octocode-skills/scripts/skill-review.mjs', ...['skills', 'skills-beta', 'skills-dev'].map(dir => path.join(ROOT, dir))),
   skill('octocode-skills/scripts/skill-review.mjs', '--self-test'),
   skill('octocode-skills/scripts/skill-sync.mjs', '--self-test'),
-  skill('octocode-skills/scripts/render-report.mjs', '--self-test'),
-  skill('octocode-skills/scripts/report-viewer-sync.mjs', '--check'),
+  skill('common/scripts/render-report.mjs', '--self-test'),
+  skill('common/build.mjs', '--check'),
+  ['node', ['--test', 'skills/common/tests/*.test.mjs']],
   ['node', ['--test', 'skills/octocode-brainstorming/scripts/tests/*.test.mjs', 'skills/octocode-scraping/scripts/tests/*.test.mjs']],
 ];
 

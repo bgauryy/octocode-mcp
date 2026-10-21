@@ -203,5 +203,5 @@ test('#1 a crawl refuses private hosts it is linked to or redirected to, and the
 test('the network guard matches the octocode-brainstorming copy when both skills are present', () => {
   const sibling = join(scripts, '..', '..', 'octocode-brainstorming', 'scripts', 'lib', 'net-guard.mjs');
   if (!existsSync(sibling)) return;
-  assert.ok(readFileSync(join(scripts, 'lib', 'net-guard.mjs')).equals(readFileSync(sibling)), 'copy scripts/lib/net-guard.mjs between the two skills');
+  assert.ok(readFileSync(join(scripts, 'lib', 'net-guard.mjs')).equals(readFileSync(sibling)), 'run node skills/common/build.mjs to refresh the network guard copies');
 });

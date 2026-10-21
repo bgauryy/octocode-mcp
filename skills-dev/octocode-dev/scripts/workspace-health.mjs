@@ -18,6 +18,7 @@ const SKILL_SCRIPT_POLICY = ['build', 'lint', 'test'];
 // - native's build.rs embeds octocode-config's config-contract.json and
 //   contract/, which config's build regenerates.
 const BUILD_INPUTS = {
+  octocode: ['@octocodeai/skills-common'],
   '@octocodeai/octocode-native': ['@octocodeai/config'],
   '@octocodeai/codex-plugin': ['octocode'],
   '@octocodeai/claude-plugin': ['octocode'],

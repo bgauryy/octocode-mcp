@@ -2,7 +2,7 @@
 
 Use this MCP server and `/cli` interface to coordinate agents across linked Git worktrees.
 Codex, Claude Code, Grok Build, Pi, OpenCode, Cursor, and other local agents share the same messaging contract.
-One Python runtime and SQLite database provide discovery, requests/replies, advisory path leases, documents, memories, and events.
+One Node.js runtime and SQLite database (built-in `node:sqlite`) provide discovery, requests/replies, advisory path leases, documents, memories, and events.
 
 ```mermaid
 flowchart LR
@@ -32,7 +32,7 @@ Each agent keeps its own identity and worktree path; all participants share one 
 | Maintain storage | `db info`, `db protocol`, `db export`, `db retention`, `db compact`, `prune`: inspect, back up, and maintain storage without dropping message history. |
 | Discover inputs | `skill`, `schema`, `schema tools`, `schema types`, `schema type`: read operating guidance and the installed release's contracts. |
 
-Every command has a runnable example in [the command reference](scripts/docs/COMMANDS.md); `<command> --help` gives exact inputs.
+Every command has a runnable example in [the command reference](docs/COMMANDS.md); `<command> --help` gives exact inputs.
 
 ## Install
 
@@ -41,36 +41,27 @@ npx -y @octocodeai/octocode-agents-communication /cli --help
 npx -y @octocodeai/octocode-agents-communication /cli skill --json
 ```
 
-The bare executable serves MCP over stdio and needs an identity (a `--session required` error means none was supplied); `/cli` runs operations. [Entry points](scripts/docs/INTERFACES.md) covers input forms, lifecycle and package imports. `skill --json` returns `instructions`, `packageRoot` and `referenceRoot`; resolve the guide's documentation links under `referenceRoot`.
+The bare executable serves MCP over stdio and needs an identity (a `--session required` error means none was supplied); `/cli` runs operations. [Entry points](docs/INTERFACES.md) covers input forms, lifecycle and package imports. `skill --json` returns `instructions`, `packageRoot` and `referenceRoot`; resolve the guide's documentation links under `referenceRoot`.
 
-Requirements (Node.js, Python, SQLite), the companion skill and portable runtime archives: [installation](scripts/docs/INSTALLATION.md).
+Requirements and the companion skill: [installation](docs/INSTALLATION.md).
+
+## Requirements and limits
+
+- **Runtime:** Node.js `^24.15.0` and its built-in `node:sqlite`; nothing else to install ([installation](docs/INSTALLATION.md#install-the-cli-and-companion-skill)). Existing databases open unchanged.
+- **Upgrading:** run one runtime per database. Earlier releases held the delivery-owner lock as a file lock and this one holds a socket, so the two do not exclude each other: stop every old `listen`, `dispatch` and `run` before starting new ones ([DB.md](docs/DB.md#cleanup-and-conformance)).
+- **Database path:** SQLite opens at most 504 bytes of resolved path (symlinks followed); a longer `--database` is refused with the length and the limit ([DB.md](docs/DB.md#identity-and-discovery)).
+- **Numbers:** `5.0` is the integer `5`; `5.5` still fails an `integer` field ([entry points](docs/INTERFACES.md#supply-cli-input)).
+- **`activity` `pathRegex`:** a JavaScript `RegExp` with the `u` flag under a timeout; other dialects' syntax is refused ([commands](docs/COMMANDS.md#activity-pathregex)).
+- **Worker cleanup:** a managed `run` worker killed outright leaves a watchdog that kills the vendor's process group on POSIX; Windows has no equivalent and leaks the vendor process tree ([service protocol](docs/SERVICE_PROTOCOL.md#identity-and-capabilities)). The Windows named-pipe owner lock is untested.
+- **Messages:** a `checkBack:true` task gates `complete`, and RACI-informed peers receive a copy of the final answer ([guide](OPERATING.md#send-and-handle-messages)).
 
 ## Start with the CLI
 
-Use two participating sessions: `coordinator` sends the request and `api-reviewer` answers it. Repeat the setup below in each session, using its own name and actual host vendor. The shell helpers below are POSIX; for Windows see [installation](scripts/docs/INSTALLATION.md#reuse-or-create-the-binding).
+Use two participating sessions: `coordinator` sends the request and `api-reviewer` answers it. In each session, set up the `comm` and `agent` helpers, `join` with that session's own name and actual host vendor, and set `COMMUNICATION_SESSION` to the returned `id` (or to the host-supplied binding) as in [installation](docs/INSTALLATION.md#reuse-or-create-the-binding). The helpers are POSIX; installation also covers Windows.
 
-Replace the workspace and database paths with actual absolute paths. Linked worktrees use their own checkout path and the same database:
-
-```sh
-COMMUNICATION_WORKSPACE=/absolute/project
-COMMUNICATION_DB=/absolute/shared/communication.sqlite
-COMMUNICATION_NAME=coordinator
-COMMUNICATION_VENDOR=codex
-comm() {
-  npx -y @octocodeai/octocode-agents-communication /cli "$@" --json --workspace "$COMMUNICATION_WORKSPACE" \
-    --database "$COMMUNICATION_DB"
-}
-comm db info
-comm join --name "$COMMUNICATION_NAME" --vendor "$COMMUNICATION_VENDOR"
-```
-
-In the recipient session, set `COMMUNICATION_NAME=api-reviewer` before joining. `db info` inspects storage without creating it. Without `--database`, the store is `<OCTOCODE_HOME or ~/.octocode>/agents-communication/communication.sqlite`. A session on `--database <file>` also lists that file in the [active database registry](scripts/docs/DB.md#active-database-registry), so Pi's file tools still honor its leases. `join` returns this agent's exact database `id` and its final unique name (a taken name gets a suffix). Use the actual host as `vendor`, not a model name. If the host already supplies a binding, reuse it and skip `join`.
-
-Set `COMMUNICATION_SESSION` to your returned ID or supplied binding:
+With the helpers set, advertise the task and list peers:
 
 ```sh
-COMMUNICATION_SESSION=EXACT_DB_AGENT_ID
-agent() { comm "$@" --session "$COMMUNICATION_SESSION"; }
 agent heartbeat '{"ttlMs":600000,"task":"Review API compatibility","status":"busy"}'
 comm peers
 ```
@@ -103,7 +94,7 @@ agent complete --message ANSWER_MESSAGE_ID
 
 Replace `ANSWER_MESSAGE_ID` with that answer's `data.messageId` (`recordId` is only a history cursor). Complete FYIs the same way, without `reply`, and leave unfinished work pending. Every message kind and its protocol is in [OPERATING.md](OPERATING.md#send-and-handle-messages).
 
-Raw identities expire after 60 seconds; the walkthrough heartbeat keeps this one for ten minutes. Renew before expiry ([presence rules](scripts/docs/WORKFLOW.md#presence-and-lease-expiry)), use [managed MCP](#connect-through-mcp) for a maintained connection, and run `agent leave` when your process owns the lifecycle.
+Raw identities expire after 60 seconds; the walkthrough heartbeat keeps this one for ten minutes. Renew before expiry ([presence rules](docs/WORKFLOW.md#presence-and-lease-expiry)), use [managed MCP](#connect-through-mcp) for a maintained connection, and run `agent leave` when your process owns the lifecycle.
 
 ## Coordinate edits and share evidence
 
@@ -114,7 +105,7 @@ agent lock '{"path":"src/api.ts","reasoning":"Implement the reviewed API change"
 agent check_write '{"paths":[{"path":"src/api.ts"}]}'
 ```
 
-Retain the returned `lease.id`. Use `lock_many` to reserve several paths atomically. A conflict returns a `next` with `wait:true`; running it queues the request. Continue only after ownership is granted, and release with `agent unlock --lease-id LEASE_ID`. Renewal, expiry and queue rules: [workflow](scripts/docs/WORKFLOW.md#identity-and-ownership).
+Retain the returned `lease.id`. Use `lock_many` to reserve several paths atomically. A conflict returns a `next` with `wait:true`; running it queues the request. Continue only after ownership is granted, and release with `agent unlock --lease-id LEASE_ID`. Renewal, expiry and queue rules: [workflow](docs/WORKFLOW.md#identity-and-ownership).
 
 Publish larger evidence once, then notify its reader:
 
@@ -135,7 +126,7 @@ npx -y @octocodeai/octocode-agents-communication --managed \
   --workspace /absolute/project --database /absolute/shared/communication.sqlite
 ```
 
-Managed mode owns identity, presence and live lease renewal, and expires both when the connection closes. It exposes tools for inbox reads; it does not push context or wake an idle host. For a host-owned identity, pass `--session EXACT_DB_AGENT_ID` instead; closing that borrowed connection leaves the identity to its owner.
+Managed mode owns the identity's lifecycle; for a host-owned identity pass `--session EXACT_DB_AGENT_ID` instead ([lifecycle owners](docs/INTERFACES.md#own-the-lifecycle)). Either way the tools read the inbox on request; MCP does not push context or wake an idle host.
 
 For a host that accepts an `mcpServers` configuration, merge this entry into its existing settings:
 
@@ -174,21 +165,13 @@ Native attachment targets an existing host session and creates no worker or perm
 | Cursor | Post-tool hooks | No | No bundled guard |
 | Other local agents | CLI/MCP inbox or a host-wired context hook | Host-dependent | Host-dependent |
 
-Hooks: [host setup](scripts/docs/HOST_SETUP.md#install-messaging-hooks). Native endpoints and receipts: [service protocol](scripts/docs/SERVICE_PROTOCOL.md#identity-and-capabilities). Edit guards: [lease admission](scripts/docs/HOST_LEASE_GUARDS.md). Without an adapter, read the inbox through CLI/MCP; a database write alone wakes no process. `run` starts a new managed Codex, Claude or Pi worker only when requested; existing sessions use `attach`.
+Hooks: [host setup](docs/HOST_SETUP.md#install-messaging-hooks). Native endpoints and receipts: [service protocol](docs/SERVICE_PROTOCOL.md#identity-and-capabilities). Edit guards: [lease admission](docs/HOST_LEASE_GUARDS.md). Without an adapter, read the inbox through CLI/MCP; a database write alone wakes no process. `run` starts a new managed Codex, Claude or Pi worker only when requested; existing sessions use `attach`.
 
 ## Query records and recover
 
-Every message, lease, document, memory and event is a typed record `{recordId,path,from,to,type,timestamp,branch?,data}`. Record-type discovery takes no workspace, database or session flags:
+Every message, lease, document, memory and event is a typed record. Record discovery, queries, paging and writes (`record` notifies no one): [records](docs/RECORDS.md); SQL contract: [database protocol](docs/DB.md).
 
-```sh
-npx -y @octocodeai/octocode-agents-communication /cli schema types --compact --json
-agent record '{"type":"memory","branch":"feature/api","data":{"content":"API preserves the response shape","tags":["api"]}}'
-agent fetch '{"type":"memory","search":"response shape","branch":"feature/api","limit":20}'
-```
-
-`record` notifies no one. Query rules and continuations: [records](scripts/docs/RECORDS.md); SQL contract: [database protocol](scripts/docs/DB.md).
-
-`comm health` reads delivery diagnostics without joining or changing storage; a zero exit does not mean healthy delivery, so read its status. `comm view '{"open":true}'` opens a read-only loopback dashboard over the whole store (Ctrl+C stops it). Uncertain offers, crash recovery, export and retention: [operations](scripts/docs/OPERATIONS.md).
+Delivery diagnostics (`health`, which exits zero even when it reports `attention`), the read-only `view` dashboard, uncertain offers, crash recovery, export and retention: [operations](docs/OPERATIONS.md) and [commands](docs/COMMANDS.md).
 
 Leases are advisory and worktree-local; edit guards cover only their documented structured operations. Submission is not handling, and acknowledgement is not proof of correctness or user approval.
 
@@ -197,17 +180,17 @@ Leases are advisory and worktree-local; edit guards cover only their documented 
 | Document | Reader and purpose |
 | --- | --- |
 | [OPERATING.md](OPERATING.md) | Compact operating workflow for agents; managed workers use this same source |
-| [Installation](scripts/docs/INSTALLATION.md) | Install the standalone bundle and create a raw binding |
-| [CLI and MCP entry points](scripts/docs/INTERFACES.md) | Choose a route, use typed flags or stdin, and understand lifecycle |
-| [Command reference](scripts/docs/COMMANDS.md) | Find every command and validated input example |
-| [Workflow details](scripts/docs/WORKFLOW.md) | Check message examples, idempotency keys, TTLs, and topics |
-| [Record queries](scripts/docs/RECORDS.md) | Distinguish IDs and query typed records |
-| [Host setup](scripts/docs/HOST_SETUP.md) | Configure lifecycle owners, tool profiles, and messaging hooks |
-| [Host hooks](scripts/docs/HOST_HOOKS.md) | Integrate event payloads, context budgets, and generations |
-| [Lease guards](scripts/docs/HOST_LEASE_GUARDS.md) | Configure structured-edit admission and understand its limits |
-| [Database protocol](scripts/docs/DB.md) | Implement SQL clients and inspect schema, visibility, and paging |
-| [Service protocol](scripts/docs/SERVICE_PROTOCOL.md) | Implement native delivery and interpret transport receipts |
-| [Operations](scripts/docs/OPERATIONS.md) | Diagnose delivery and preserve or recover storage |
+| [Installation](docs/INSTALLATION.md) | Install the CLI and create a raw binding |
+| [CLI and MCP entry points](docs/INTERFACES.md) | Choose a route, use typed flags or stdin, and understand lifecycle |
+| [Command reference](docs/COMMANDS.md) | Find every command and validated input example |
+| [Workflow details](docs/WORKFLOW.md) | Check message examples, idempotency keys, TTLs, and topics |
+| [Record queries](docs/RECORDS.md) | Distinguish IDs and query typed records |
+| [Host setup](docs/HOST_SETUP.md) | Configure lifecycle owners, tool profiles, and messaging hooks |
+| [Host hooks](docs/HOST_HOOKS.md) | Integrate event payloads, context budgets, and generations |
+| [Lease guards](docs/HOST_LEASE_GUARDS.md) | Configure structured-edit admission and understand its limits |
+| [Database protocol](docs/DB.md) | Implement SQL clients and inspect schema, visibility, and paging |
+| [Service protocol](docs/SERVICE_PROTOCOL.md) | Implement native delivery and interpret transport receipts |
+| [Operations](docs/OPERATIONS.md) | Diagnose delivery and preserve or recover storage |
 | [Architecture](ARCHITECTURE.md) | Maintain module boundaries, contracts, and packaging |
 
 ## Build and validate
@@ -218,16 +201,15 @@ From the monorepo root, use the package's maintainer scripts:
 yarn workspace @octocodeai/octocode-agents-communication build
 node packages/octocode-agents-communication/bin/octocode-agents-communication.mjs /cli --help
 yarn workspace @octocodeai/octocode-agents-communication verify
-yarn workspace @octocodeai/octocode-agents-communication pack:runtime
 ```
 
-`build` refreshes the bundled config runtime and checks startup; `verify` runs syntax, link, Python and Node regression checks plus an extracted CLI/MCP release smoke; `pack:runtime` writes a verified portable archive to `out/`. Checks cover the local platform only. To try an unpublished npm archive: `npx -y --package /absolute/package.tgz octocode-agents-communication /cli --help`.
+`build` bundles the runtime into `dist/` with its type declarations; `typecheck` checks `src/` and `tests/`; `verify` runs typecheck and Node regression checks plus an extracted CLI/MCP release smoke; the repo-root `docs:verify` checks this package's Markdown links and anchors. Checks cover the local platform only. To try an unpublished npm tarball: `npx -y --package /absolute/package.tgz octocode-agents-communication /cli --help`.
 
-Optional account-backed live checks (they change no host settings):
+Optional account-backed live checks, one harness (`--help` lists scenarios and options; every run needs `--live` and changes no host settings):
 
 ```sh
-node packages/octocode-agents-communication/src/live-host-smoke.mjs --vendor codex --output /absolute/new-results
-node packages/octocode-agents-communication/src/live-reliability.mjs --vendor claude --model MODEL_ID --runs 10 --output /absolute/new-results
+node packages/octocode-agents-communication/src/live.ts --live --vendor codex --scenarios qa --output /absolute/new-results
+node packages/octocode-agents-communication/src/live.ts --live --vendor claude --model MODEL_ID --runs 10 --output /absolute/new-results
 ```
 
-The smoke runs one isolated request, reply and acknowledgement; Codex uses its configured model, Pi and Claude need `--model`. One pass does not establish reliability. The reliability runner repeats three flows (`qa`, `lock-handoff`, `paged-read`) in fresh workspaces and writes per-trial JSON plus `summary.json`, which passes when every flow passes at least 90% of trials with no rejected `complete` call. The multi-host soak is in [operations](scripts/docs/OPERATIONS.md#verify-concurrent-native-workers).
+`qa` runs one isolated request, reply and acknowledgement (plus a passive notice that must not start a turn); Codex uses its configured model, Pi and Claude need `--model`. Without `--scenarios` the harness runs `qa`, `lock-handoff` and `paged-read` in fresh workspaces, writes per-trial JSON plus `summary.json`, which passes when every scenario passes at least 90% of trials with no rejected `complete` call. One pass does not establish reliability. The `soak` scenario uses all three hosts and is documented in [operations](docs/OPERATIONS.md#verify-concurrent-native-workers).

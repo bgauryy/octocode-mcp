@@ -58,7 +58,7 @@ pub fn resolve_date_window(value: &str) -> DateWindow {
             warning: None,
         };
     }
-    if looks_like_iso(trimmed) {
+    if crate::civil_date::has_iso_date(trimmed) {
         return DateWindow {
             value: Some(trimmed.to_owned()),
             warning: None,
@@ -76,81 +76,11 @@ fn invalid(value: &str) -> DateWindow {
     }
 }
 
-fn looks_like_iso(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.len() < 10 || bytes[4] != b'-' || bytes[7] != b'-' {
-        return false;
-    }
-    let digits = |range: std::ops::Range<usize>| -> Option<u32> {
-        let part = &bytes[range];
-        part.iter()
-            .all(u8::is_ascii_digit)
-            .then(|| part.iter().fold(0, |acc, d| acc * 10 + u32::from(d - b'0')))
-    };
-    let (Some(year), Some(month), Some(day)) = (digits(0..4), digits(5..7), digits(8..10)) else {
-        return false;
-    };
-    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
-    let max_day = match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => return false,
-    };
-    (1..=max_day).contains(&day)
-}
-
 /// A GitHub timestamp (`…Z`, `….000Z`, `…+02:00`) as UTC `YYYY-MM-DDTHH:MM:SSZ`;
 /// `None` when the value is not a full timestamp.
 pub fn utc_timestamp(value: &str) -> Option<String> {
-    unix_seconds(value).map(|secs| crate::civil_date::iso8601_secs(secs.max(0)))
-}
-
-/// Seconds since the Unix epoch for an RFC 3339 timestamp (`Z` or `±hh:mm`
-/// offset, optional fractional seconds); `None` when the value is not one.
-pub(crate) fn unix_seconds(value: &str) -> Option<i64> {
-    let bytes = value.as_bytes();
-    let number = |range: std::ops::Range<usize>| -> Option<i64> {
-        let part = bytes.get(range)?;
-        part.iter()
-            .all(u8::is_ascii_digit)
-            .then(|| part.iter().fold(0, |acc, d| acc * 10 + i64::from(d - b'0')))
-    };
-    if !looks_like_iso(value.get(..10)?)
-        || bytes.get(10) != Some(&b'T')
-        || bytes.get(13) != Some(&b':')
-        || bytes.get(16) != Some(&b':')
-    {
-        return None;
-    }
-    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
-    if hour > 23 || minute > 59 || second > 60 {
-        return None;
-    }
-    let mut rest = value.get(19..)?;
-    if let Some(fraction) = rest.strip_prefix('.') {
-        let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
-        if digits == 0 {
-            return None;
-        }
-        rest = &fraction[digits..];
-    }
-    let offset = match rest.as_bytes() {
-        [b'Z' | b'z'] => 0,
-        [sign @ (b'+' | b'-'), h1, h2, b':', m1, m2] => {
-            let digits = [*h1, *h2, *m1, *m2];
-            if !digits.iter().all(u8::is_ascii_digit) {
-                return None;
-            }
-            let [h1, h2, m1, m2] = digits.map(|d| i64::from(d - b'0'));
-            let minutes = (h1 * 10 + h2) * 60 + m1 * 10 + m2;
-            if *sign == b'-' { -minutes } else { minutes }
-        }
-        _ => return None,
-    };
-    let days = crate::civil_date::days_from_civil(number(0..4)?, number(5..7)?, number(8..10)?);
-    Some(days * 86_400 + hour * 3_600 + minute * 60 + second - offset * 60)
+    crate::civil_date::parse_rfc3339(value)
+        .map(|(secs, _)| crate::civil_date::iso8601_secs(secs.max(0)))
 }
 
 #[cfg(test)]

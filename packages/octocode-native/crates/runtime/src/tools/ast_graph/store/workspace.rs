@@ -614,7 +614,7 @@ impl Workspace {
         }
         for target in targets
             .iter()
-            .filter(|t| !t.contains('*') && !t.ends_with(".d.ts"))
+            .filter(|t| !t.contains('*') && !super::super::js_paths::is_declaration(t))
         {
             self.add_entry(&join(dir, target), "package.json", files);
         }

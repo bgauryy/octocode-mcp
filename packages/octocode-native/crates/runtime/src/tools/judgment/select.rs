@@ -229,6 +229,21 @@ impl SelectionJudge for Evaluator {
                 }
                 Ok(_) => Decision::Unknown,
                 Err(error) => {
+                    let failure = serde_json::from_value(json!({
+                        "candidate": ordinal, "errorCode": error.code,
+                        "error": error.message,
+                        "hints": (!error.hints.is_empty()).then(|| error.hints.clone()),
+                    }))
+                    .map_err(|_| {
+                        JudgeFailure::Provider(ProviderError {
+                            code: "invalidClassificationResponse".into(),
+                            message:
+                                "Provider failure violates the canonical selection error contract."
+                                    .into(),
+                            hints: vec!["Inspect the provider response and retry.".into()],
+                        })
+                    })?;
+                    call.failures.push(failure);
                     let rank = (error.paused, ordinal);
                     if !matches!(error.code.as_str(), "timeout" | "cancelled")
                         && first_failure
@@ -395,8 +410,10 @@ mod tests {
         };
         let run = |main_goal| {
             let mut usage = ClassificationUsage::default();
+            let mut failures = Vec::new();
             let decisions = evaluator
                 .select(JudgeCall {
+                    failures: &mut failures,
                     candidates: &candidates,
                     admitted: &[0, 1],
                     classifiers: &classifiers,
@@ -413,6 +430,19 @@ mod tests {
                     usage: &mut usage,
                 })
                 .expect("independent candidate outcomes");
+            assert_eq!(failures.len(), 1);
+            assert_eq!(failures[0].candidate, 0);
+            assert_eq!(
+                failures[0].error_code.to_string(),
+                "classificationProviderError"
+            );
+            assert!(!failures[0].error.is_empty());
+            assert!(
+                failures[0]
+                    .hints
+                    .as_ref()
+                    .is_some_and(|hints| !hints.is_empty())
+            );
             assert_eq!(usage.calls, 2);
             assert_eq!(usage.known_usage_calls, 1);
             assert_eq!(usage.unknown_usage_calls, 1);
@@ -505,6 +535,7 @@ mod tests {
         };
         let failure = evaluator
             .select(JudgeCall {
+                failures: &mut Vec::new(),
                 candidates: &candidates,
                 admitted: &[0, 1],
                 classifiers: &["Does this describe termination?".to_owned()],
@@ -574,6 +605,7 @@ mod tests {
         };
         let failure = evaluator
             .select(JudgeCall {
+                failures: &mut Vec::new(),
                 candidates: &candidates,
                 admitted: &admitted,
                 classifiers: &["Does this describe termination?".to_owned()],

@@ -2038,7 +2038,7 @@ fn default_pages_fill_the_window_with_enclosing_names() {
         "{} rows on page 1, flat reserve held {FLAT_RESERVE_FIRST_PAGE_ROWS}",
         rows.len()
     );
-    let chars = crate::tools::stream_page::json_chars(&result.files);
+    let chars = octocode_engine::json_size::utf16_units(&result.files).unwrap_or(0);
     assert!(chars <= budget, "page 1: {chars} chars > {budget}");
     assert!(
         rows.iter()
@@ -2091,7 +2091,7 @@ fn pages_are_identical_across_calls() {
                 .expect("direct page");
         let direct = serde_json::to_value(&direct).expect("result");
         assert_eq!(direct["files"], walked["files"], "page {}", index + 1);
-        let chars = crate::tools::stream_page::json_chars(&walked["files"]);
+        let chars = octocode_engine::json_size::utf16_units(&walked["files"]).unwrap_or(0);
         assert!(chars <= budget, "page {}: {chars} > {budget}", index + 1);
     }
 }
@@ -2320,38 +2320,52 @@ fn context_windows_show_every_line_once_across_pages() {
     }
     fs::write(root.path().join("a.rs"), &body).expect("a");
     fs::write(root.path().join("b.rs"), &body).expect("b");
-    let start = serde_json::json!({"path": root.path().to_string_lossy(),
-        "matchString": "needle", "contextLines": 3});
-    let (_, bodies) = walk_search(root.path(), start, Some(4_000));
-    assert!(bodies.len() > 2, "the chain pages: {}", bodies.len());
-    let mut seen = std::collections::BTreeMap::<(String, u32), usize>::new();
-    for page in &bodies {
-        for file in page["files"].as_array().into_iter().flatten() {
-            let path = file["path"].as_str().expect("path").to_owned();
-            for row in file["matches"].as_array().into_iter().flatten() {
-                for text in row["value"].as_str().expect("value").split('\n') {
-                    let number = text
-                        .split('\t')
-                        .next()
-                        .and_then(|n| n.parse::<u32>().ok())
-                        .unwrap_or_else(|| panic!("numbered line: {text:?}"));
-                    *seen.entry((path.clone(), number)).or_default() += 1;
+    for (before, after) in [(3, 3), (4, 0), (0, 4), (1, 5)] {
+        let start = serde_json::json!({"path": root.path().to_string_lossy(),
+        "matchString": "needle", "contextBefore": before, "contextAfter": after});
+        let (_, bodies) = walk_search(root.path(), start, Some(4_000));
+        assert!(bodies.len() > 2, "the chain pages: {}", bodies.len());
+        let mut seen = std::collections::BTreeMap::<(String, u32), usize>::new();
+        for page in &bodies {
+            for file in page["files"].as_array().into_iter().flatten() {
+                let path = file["path"].as_str().expect("path").to_owned();
+                for row in file["matches"].as_array().into_iter().flatten() {
+                    for text in row["value"].as_str().expect("value").split('\n') {
+                        let number = text
+                            .split('\t')
+                            .next()
+                            .and_then(|n| n.parse::<u32>().ok())
+                            .unwrap_or_else(|| panic!("numbered line: {text:?}"));
+                        *seen.entry((path.clone(), number)).or_default() += 1;
+                    }
                 }
             }
         }
-    }
-    let repeated = seen
-        .iter()
-        .filter(|(_, count)| **count > 1)
-        .map(|(key, _)| key.clone())
-        .collect::<Vec<_>>();
-    assert!(repeated.is_empty(), "lines shown twice: {repeated:?}");
-    for path in ["a.rs", "b.rs"] {
-        for &hit in &hits {
-            assert!(
-                seen.contains_key(&(path.to_owned(), hit)),
-                "{path}:{hit} never shown"
-            );
+        let repeated = seen
+            .iter()
+            .filter(|(_, count)| **count > 1)
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        assert!(repeated.is_empty(), "lines shown twice: {repeated:?}");
+        for path in ["a.rs", "b.rs"] {
+            for &hit in &hits {
+                assert!(
+                    seen.contains_key(&(path.to_owned(), hit)),
+                    "{path}:{hit} never shown"
+                );
+            }
+        }
+        let expected: std::collections::BTreeSet<_> = hits
+            .iter()
+            .flat_map(|&hit| hit.saturating_sub(before).max(1)..=hit.saturating_add(after).min(400))
+            .collect();
+        for path in ["a.rs", "b.rs"] {
+            let actual = seen
+                .keys()
+                .filter(|(p, _)| p == path)
+                .map(|(_, line)| *line)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(actual, expected, "{path} context {before}/{after}");
         }
     }
 }
@@ -2524,4 +2538,65 @@ fn measure_dense_search_memory() {
         "pages: {:?}; rows: {:?}",
         result.pagination, result.stats.matched_lines
     );
+}
+
+#[test]
+fn asymmetric_overrides_and_equivalent_queries_preserve_evidence() {
+    let (root, policy, security) = context_fixture();
+    let run = |extra: serde_json::Value| {
+        let base = ls_query(
+            serde_json::json!({"path": root.path(), "matchString":"needle"}),
+            None,
+        );
+        let q = ls_query(extra, Some(&base));
+        let key = super::super::cursor::query_key(&q, root.path(), 4_000);
+        let out = execute_local_search(&q, &policy, &security, &NeverCancel, None, None, None)
+            .expect("search");
+        (key, serde_json::to_value(out).expect("json"))
+    };
+    for (fields, expected) in [
+        (
+            serde_json::json!({"contextLines":3,"contextBefore":1,"contextAfter":0}),
+            vec![4, 5],
+        ),
+        (serde_json::json!({"contextAfter":2}), vec![5, 6, 7]),
+        (
+            serde_json::json!({"contextBefore":100}),
+            vec![1, 2, 3, 4, 5],
+        ),
+    ] {
+        let (_, result) = run(fields);
+        let actual = result["files"][0]["matches"][0]["value"]
+            .as_str()
+            .expect("value")
+            .lines()
+            .map(|line| {
+                line.split_once('\t')
+                    .expect("numbered")
+                    .0
+                    .parse::<u32>()
+                    .expect("number")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "{result}");
+    }
+    let symmetric = run(serde_json::json!({"contextLines":2}));
+    assert_eq!(
+        symmetric,
+        run(serde_json::json!({"contextBefore":2,"contextAfter":2}))
+    );
+    assert_eq!(
+        run(serde_json::json!({})),
+        run(serde_json::json!({"contextLines":3,"contextBefore":0,"contextAfter":0}))
+    );
+    assert_ne!(
+        run(serde_json::json!({"contextBefore":2})).0,
+        run(serde_json::json!({"contextAfter":2})).0
+    );
+    for view in ["matchOnly", "countLines", "countMatches", "files"] {
+        let plain = run(serde_json::json!({"resultView":view})).1;
+        let context =
+            run(serde_json::json!({"resultView":view,"contextBefore":2,"contextAfter":0})).1;
+        assert_eq!(plain["files"], context["files"], "{view}");
+    }
 }

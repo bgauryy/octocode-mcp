@@ -293,7 +293,7 @@ pub(super) fn read_row_cursor(pinned: &str, page: usize) -> Option<(&str, Option
 pub(super) fn plain_sizes(items: &[Value]) -> Vec<usize> {
     items
         .iter()
-        .map(|item| crate::tools::stream_page::json_chars(item) + 1)
+        .map(|item| octocode_engine::json_size::utf16_units(item).unwrap_or(0) + 1)
         .collect()
 }
 

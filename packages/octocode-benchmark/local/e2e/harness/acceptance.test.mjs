@@ -87,6 +87,13 @@ test('C3 one base: 0-based text and column 0 fail; 1-based passes', () => {
   assert.deepEqual(zeroCoordinates({ results: [{ data: { matches: [{ line: 3, column: 1 }] } }] }), []);
 });
 
+test('C3 distinguishes exact-range grammar from result coordinates', () => {
+  const published = description => ({ astSearch: { inputSchema: { properties: { rule: { description } } } } });
+  assert.deepEqual(zeroBasedTexts(published('range: exact 0-based scalar bounds; stopBy: neighbor/end/rule.')), []);
+  assert.equal(zeroBasedTexts(published('range: exact 0-based scalar bounds; results use 0-based lines.')).length, 1);
+  assert.equal(zeroBasedTexts(published('Returned matches have 0-based columns.')).length, 1);
+});
+
 test('C4 no silent omission: unlistedNested without next fails; with next or terminalLimit passes', () => {
   assert.deepEqual(silentOmissions({ results: [{ data: { stats: { unlistedNested: 53 } } }] }), ['results[0].data.stats.unlistedNested=53']);
   assert.deepEqual(silentOmissions({ results: [{ data: { stats: { unlistedNested: 53 }, next: { nested: { tool: 'lspSearch', query: { queries: [{}] } } } } }] }), []);

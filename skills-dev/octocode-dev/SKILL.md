@@ -5,7 +5,7 @@ description: "Use when doing any development work inside the octocode monorepo: 
 
 # Octocode Dev
 
-tools: `node skills-dev/octocode-dev/scripts/dev.mjs <task>` (`$DEV`) · `yarn workspace <pkg> <script>` · `node packages/octocode/out/octocode.js` (`$OCTO`) · Octocode MCP
+tools: `node skills-dev/octocode-dev/scripts/dev.mjs <task>` (`$DEV`) · `yarn workspace <pkg> <script>` · `node packages/octocode/out/octocode.js` (`$OCTO`) · [MCP/CLI tool usage](references/octocode-usage.md)
 output: working-tree edits; audit reports in `<repo>/.octocode/octocode-dev/`; none for plain task runs
 
 ```mermaid

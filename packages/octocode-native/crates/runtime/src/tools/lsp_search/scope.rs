@@ -22,7 +22,7 @@ use super::failure::LspFailure;
 use super::render::{uri_to_path, word_pattern};
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
-use octocode_engine::portable::search_text_cancellable;
+use octocode_engine::search::text_search::search_cancellable;
 use octocode_engine::search::walk::NestedRepositories;
 use octocode_engine::types::TextSearchOptions;
 use std::cell::RefCell;
@@ -663,7 +663,7 @@ struct Lifted {
     nested: Arc<NestedRepositories>,
 }
 
-impl octocode_engine::portable::TextSearchPathFilter for Lifted {
+impl octocode_engine::search::text_search::TextSearchPathFilter for Lifted {
     fn allows(&self, path: &Path, is_dir: bool) -> bool {
         self.policy.allows(path, is_dir) && !self.nested.skips(path, is_dir)
     }
@@ -715,7 +715,7 @@ async fn scan_text(
         ..TextSearchOptions::default()
     };
     let nested = Arc::new(NestedRepositories::new(Path::new(root)));
-    let filter: Arc<dyn octocode_engine::portable::TextSearchPathFilter> = if lifted {
+    let filter: Arc<dyn octocode_engine::search::text_search::TextSearchPathFilter> = if lifted {
         Arc::new(Lifted {
             policy: policy.clone(),
             nested: Arc::clone(&nested),
@@ -727,7 +727,7 @@ async fn scan_text(
     let scanned = blocking_cancellable(cancel, move |stopped| {
         let started = Instant::now();
         let bounded = || stopped() || started.elapsed() > budget;
-        search_text_cancellable(options, filter, &bounded)
+        search_cancellable(options, filter, &bounded)
             .ok()
             .map(|parsed| Scanned {
                 nested: nested.skipped(),

@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::TmpDir;
+#[cfg(any(unix, windows))]
 use std::path::PathBuf;
 
 #[test]
@@ -142,6 +143,7 @@ fn group_sweep_fires_before_the_leader_is_reaped() {
                     // process (a zombie counts); nothing is delivered.
                     let probe = unsafe { libc::kill(pid as i32, 0) };
                     reserved.set(Some(probe == 0));
+                    std::future::ready(())
                 },
             )
             .await;
@@ -269,13 +271,13 @@ fn snippet_content_cache_reuses_file_content_for_later_ranges() {
 /// Build a range covering whole lines `start_line..=end_line` *inclusive*.
 /// LSP ranges are end-exclusive, so the end is the start of the line after
 /// `end_line`.
-fn range(start_line: u32, end_line: u32) -> JsRange {
-    JsRange {
-        start: JsExactPosition {
+fn range(start_line: u32, end_line: u32) -> LspRange {
+    LspRange {
+        start: LspExactPosition {
             line: start_line,
             character: 0,
         },
-        end: JsExactPosition {
+        end: LspExactPosition {
             line: end_line + 1,
             character: 0,
         },
@@ -358,12 +360,12 @@ fn slice_range_breaks_lines_on_crlf_and_lone_cr_like_the_server() {
         );
     }
     let source = cached("x\r😀 é\ry");
-    let emoji_line = JsRange {
-        start: JsExactPosition {
+    let emoji_line = LspRange {
+        start: LspExactPosition {
             line: 1,
             character: 3,
         },
-        end: JsExactPosition {
+        end: LspExactPosition {
             line: 1,
             character: 4,
         },
@@ -375,12 +377,12 @@ fn slice_range_breaks_lines_on_crlf_and_lone_cr_like_the_server() {
 fn slice_range_excludes_end_line_when_end_character_is_zero() {
     // LSP end-exclusive: {start:{0,0}, end:{2,0}} covers lines 0–1 only.
     let content = "line0\nline1\nline2\nline3\n";
-    let r = JsRange {
-        start: JsExactPosition {
+    let r = LspRange {
+        start: LspExactPosition {
             line: 0,
             character: 0,
         },
-        end: JsExactPosition {
+        end: LspExactPosition {
             line: 2,
             character: 0,
         },
@@ -393,12 +395,12 @@ fn slice_range_includes_end_line_when_end_character_positive() {
     // A single-line range keeps the whole line (snippet context), not just
     // the [start.character, end.character) span.
     let content = "alpha\nbeta\n";
-    let r = JsRange {
-        start: JsExactPosition {
+    let r = LspRange {
+        start: LspExactPosition {
             line: 1,
             character: 2,
         },
-        end: JsExactPosition {
+        end: LspExactPosition {
             line: 1,
             character: 4,
         },
@@ -529,7 +531,7 @@ fn first_open_waits_for_the_project_load_the_open_triggers() {
             .to_string_lossy()
             .into_owned();
 
-        let client = NativeLspClient::new(JsLanguageServerConfig {
+        let client = NativeLspClient::new(LspLanguageServerConfig {
             command: script.to_string_lossy().into_owned(),
             args: Some(Vec::new()),
             workspace_root: root_path.to_string_lossy().into_owned(),
@@ -593,7 +595,7 @@ fn first_open_waits_for_the_project_load_the_open_triggers() {
 
 #[test]
 fn initialize_advertises_push_diagnostics_so_servers_publish_them() {
-    let config = JsLanguageServerConfig {
+    let config = LspLanguageServerConfig {
         command: "typescript-language-server".into(),
         args: Some(vec!["--stdio".into()]),
         workspace_root: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -611,8 +613,8 @@ fn initialize_advertises_push_diagnostics_so_servers_publish_them() {
     );
 }
 
-fn ts_config() -> JsLanguageServerConfig {
-    JsLanguageServerConfig {
+fn ts_config() -> LspLanguageServerConfig {
+    LspLanguageServerConfig {
         command: "typescript-language-server".into(),
         args: Some(vec!["--stdio".into()]),
         workspace_root: std::env::temp_dir().to_string_lossy().into_owned(),
@@ -976,7 +978,7 @@ async fn client_with_fake_server(
 }
 
 async fn client_with_fake_server_for(
-    config: JsLanguageServerConfig,
+    config: LspLanguageServerConfig,
     client_to_server: usize,
 ) -> (
     NativeLspClient,
@@ -1020,8 +1022,8 @@ async fn read_client_frame(reader: &mut BufReader<tokio::io::DuplexStream>) -> V
     serde_json::from_slice(&body).expect("json")
 }
 
-fn clangd_config(root: &Path, language_id: &str) -> JsLanguageServerConfig {
-    JsLanguageServerConfig {
+fn clangd_config(root: &Path, language_id: &str) -> LspLanguageServerConfig {
+    LspLanguageServerConfig {
         command: "clangd".into(),
         args: None,
         workspace_root: root.to_string_lossy().into_owned(),
@@ -1192,8 +1194,9 @@ fn a_blocked_sync_keeps_the_client_busy_and_cancelling_it_releases() {
 /// `initialize` reply; `FAKE_ALLOC_MB` allocates (and touches) that much
 /// memory after `initialized`; `FAKE_INDEX_MS` reports one `$/progress`
 /// indexing wave of that length after `initialized`; `FAKE_PID_FILE` records
-/// the server pid.
-#[cfg(unix)]
+/// the server pid; `FAKE_CHILD_PID_FILE` starts a child after `initialized`
+/// and records its pid.
+#[cfg(any(unix, windows))]
 const CONFIGURABLE_SERVER: &str = r#"#!/usr/bin/env node
 const fs = require('fs');
 if (process.env.FAKE_PID_FILE) fs.writeFileSync(process.env.FAKE_PID_FILE, String(process.pid));
@@ -1208,6 +1211,10 @@ function handle(msg) {
     const reply = () => send({ jsonrpc: '2.0', id: msg.id, result: { capabilities: { hoverProvider: true, textDocumentSync: 1 } } });
     setTimeout(reply, Number(process.env.FAKE_INIT_DELAY_MS || 0));
   } else if (msg.method === 'initialized') {
+    if (process.env.FAKE_CHILD_PID_FILE) {
+      const child = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+      fs.writeFileSync(process.env.FAKE_CHILD_PID_FILE, String(child.pid));
+    }
     const mb = Number(process.env.FAKE_ALLOC_MB || 0);
     for (let i = 0; i < mb; i++) hold.push(Buffer.alloc(1 << 20, 1));
     const indexMs = Number(process.env.FAKE_INDEX_MS || 0);
@@ -1236,7 +1243,7 @@ process.stdin.on('data', (d) => {
 });
 "#;
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn node_available() -> bool {
     std::process::Command::new("node")
         .arg("--version")
@@ -1245,21 +1252,25 @@ fn node_available() -> bool {
 }
 
 /// A temp dir holding [`CONFIGURABLE_SERVER`] and a client config for it.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn configurable_server(
     tag: &str,
     env: &[(&str, String)],
     max_memory_mb: Option<u32>,
-) -> (TmpDir, PathBuf, JsLanguageServerConfig) {
-    use std::os::unix::fs::PermissionsExt;
+) -> (TmpDir, PathBuf, LspLanguageServerConfig) {
     let tmp = TmpDir::new();
     let root = tmp.0.join(tag);
     std::fs::create_dir_all(&root).unwrap();
     let root = root.canonicalize().unwrap();
     let script = root.join("fake-lsp.js");
     std::fs::write(&script, CONFIGURABLE_SERVER).unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let config = JsLanguageServerConfig {
+    // Windows runs the script through node (its shebang names node) and needs no mode.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config = LspLanguageServerConfig {
         command: script.to_string_lossy().into_owned(),
         args: Some(Vec::new()),
         workspace_root: root.to_string_lossy().into_owned(),
@@ -1521,7 +1532,7 @@ fn first_page_reuses_responses_when_generation_matches() {
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        let client = NativeLspClient::new(JsLanguageServerConfig {
+        let client = NativeLspClient::new(LspLanguageServerConfig {
             command: script.to_string_lossy().into_owned(),
             args: Some(Vec::new()),
             workspace_root: root.canonicalize().unwrap().to_string_lossy().into_owned(),
@@ -1656,7 +1667,7 @@ fn open_documents_follow_their_files_and_never_replay_older_answers() {
             anchor.to_string_lossy().into_owned(),
             other.to_string_lossy().into_owned(),
         );
-        let client = NativeLspClient::new(JsLanguageServerConfig {
+        let client = NativeLspClient::new(LspLanguageServerConfig {
             command: script.to_string_lossy().into_owned(),
             args: Some(Vec::new()),
             workspace_root: root.to_string_lossy().into_owned(),
@@ -1738,7 +1749,7 @@ fn settled_requests_wait_only_when_they_reach_the_server() {
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        let client = NativeLspClient::new(JsLanguageServerConfig {
+        let client = NativeLspClient::new(LspLanguageServerConfig {
             command: script.to_string_lossy().into_owned(),
             args: Some(Vec::new()),
             workspace_root: root.canonicalize().unwrap().to_string_lossy().into_owned(),
@@ -1927,5 +1938,106 @@ fn cached_response_weight_is_the_json_length() {
     let value = json!({"uri": "file:///a.rs", "range": [1, 2, 3], "text": "q\"uote\u{e9}"});
     let entry = CachedResponse::new(Arc::new(value.clone()));
     assert_eq!(entry.json_bytes, value.to_string().len());
-    assert_eq!(json_len(&Value::Null), 4);
+    assert_eq!(CachedResponse::new(Arc::new(Value::Null)).json_bytes, 4);
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[tokio::test]
+async fn hard_kill_reaps_a_setsid_grandchild() {
+    let dir = tempfile::tempdir().expect("dir");
+    let pidfile = dir.path().join("escaped.pid");
+    let mut child = tokio::process::Command::new("python3")
+        .args(["-c", "import os,sys,time\nif os.fork()==0:\n os.setsid()\n open(sys.argv[1],'w').write(str(os.getpid()))\n time.sleep(60)\nelse:\n time.sleep(60)\n"])
+        .arg(&pidfile).process_group(0).kill_on_drop(true).spawn().expect("python3");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !pidfile.exists() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let pid: i32 = std::fs::read_to_string(pidfile)
+        .expect("escaped pid")
+        .trim()
+        .parse()
+        .unwrap();
+    cleanup_failed_start(&mut child, None).await;
+    assert!(child.id().is_none(), "the direct child must also be reaped");
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    // SAFETY: signal 0 only probes the fixture child's existence.
+    while unsafe { libc::kill(pid, 0) } == 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    // SAFETY: signal 0 only probes the fixture child's existence.
+    let survived = unsafe { libc::kill(pid, 0) } == 0;
+    if survived {
+        // SAFETY: the fixture recorded this live child's pid.
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+    assert!(!survived, "setsid grandchild {pid} survived hard kill");
+}
+
+/// On Windows the memory cap is a job's committed-memory limit and the job also
+/// contains the server's children. A server over the cap fails its allocation
+/// and dies; stopping the client then closes the job, so neither it nor the
+/// child it started is left running.
+#[cfg(windows)]
+#[test]
+fn a_server_over_its_memory_cap_and_its_child_do_not_outlive_stop() {
+    use crate::test_support::{process_alive, process_gone_within};
+    assert!(node_available(), "the fake language server needs node");
+    let tmp = TmpDir::new();
+    let server_pid = tmp.0.join("server.pid");
+    let child_pid = tmp.0.join("child.pid");
+    let (_server_tmp, root, config) = configurable_server(
+        "octocode-engine-job-cap",
+        &[
+            ("FAKE_ALLOC_MB", "2048".into()),
+            ("FAKE_PID_FILE", server_pid.to_string_lossy().into_owned()),
+            (
+                "FAKE_CHILD_PID_FILE",
+                child_pid.to_string_lossy().into_owned(),
+            ),
+        ],
+        Some(512),
+    );
+    let read_pid = |path: &PathBuf| -> u32 {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(pid) = std::fs::read_to_string(path)
+                .ok()
+                .and_then(|text| text.trim().parse().ok())
+            {
+                return pid;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{path:?} never written"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let client = NativeLspClient::new(config);
+        client
+            .start()
+            .await
+            .expect("fake server starts under the cap");
+        let server = read_pid(&server_pid);
+        let child = read_pid(&child_pid);
+        // The job refuses the allocation past the cap, which ends the server.
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while process_alive(server) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the memory cap never ended server {server}"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        client.stop().await.expect("stop");
+        assert!(
+            process_gone_within(child, Duration::from_secs(10)),
+            "the server's child {child} survived stop"
+        );
+    });
+    let _ = std::fs::remove_dir_all(root);
 }

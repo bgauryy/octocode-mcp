@@ -21,9 +21,10 @@
 pub mod digest;
 pub mod error;
 pub mod graph;
+pub mod json_size;
 pub mod lsp;
 pub mod minify;
-pub mod portable;
+pub mod process;
 pub mod process_env;
 pub mod scan_budget;
 pub mod search;

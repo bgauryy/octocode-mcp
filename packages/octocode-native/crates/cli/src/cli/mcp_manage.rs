@@ -6,14 +6,19 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-struct Target {
-    client: &'static ClientSpec,
-    scope: String,
-    path: PathBuf,
-    keys: Vec<String>,
+/// One client's config file at one scope, and the keys of the Octocode
+/// entry inside it.
+pub(super) struct Target {
+    pub(super) client: &'static ClientSpec,
+    pub(super) scope: String,
+    pub(super) path: PathBuf,
+    pub(super) keys: Vec<String>,
 }
 
-fn target(client: &str, scope: &str, cwd: &Path) -> Result<Target, String> {
+/// The config `client` reads at `scope`: `home` (user config), `workspace`
+/// (the project file under `cwd`) or `local` (Claude Code's per-project
+/// section of its user config).
+pub(super) fn target(client: &str, scope: &str, cwd: &Path) -> Result<Target, String> {
     let client = mcp_clients::client(client).ok_or("Unsupported agent client.")?;
     if scope != "workspace" && client.config_dir_overridden() {
         return Err("Claude uses a custom config directory; its user/local config path cannot be established safely. Use Claude's configuration command.".into());
@@ -109,7 +114,7 @@ fn inspect_continue_main(client: &ClientSpec, path: &Path, yaml: bool) -> Value 
         return row;
     };
     let parsed = if yaml {
-        octocode_engine::portable::yaml_to_json(&text)
+        octocode_engine::text::yaml_utils::yaml_to_json(&text)
             .map_err(|_| "Continue configuration is not valid YAML.".to_owned())
     } else {
         octocode_native::config::parse_config_json(&text)
@@ -191,7 +196,7 @@ pub(super) fn parse_document(format: ConfigFormat, text: &str) -> Result<Value, 
             .ok()
             .and_then(|value| serde_json::to_value(value).ok())
             .ok_or_else(|| "Agent config is not valid TOML.".to_owned()),
-        ConfigFormat::Yaml => octocode_engine::portable::yaml_to_json(text)
+        ConfigFormat::Yaml => octocode_engine::text::yaml_utils::yaml_to_json(text)
             .map_err(|_| "Agent config is not valid YAML.".to_owned()),
     }?;
     if !value.is_object() {
@@ -265,7 +270,7 @@ fn disabled(server: &Value) -> bool {
         || server.get("enabled").and_then(Value::as_bool) == Some(false)
 }
 
-fn inspect(target: &Target) -> Value {
+pub(super) fn inspect(target: &Target) -> Value {
     let original = match read_private_config(&target.path) {
         Ok(text) => text,
         Err(error) => {

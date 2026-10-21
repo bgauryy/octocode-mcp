@@ -409,9 +409,11 @@ async fn crate_source_ref(artifact: &mut ArtifactItem, client: &RegistryClient<'
     super::release_ref::pin_release_tag(artifact, &name, &version, client).await;
 }
 
-/// A crate version's normal dependencies as `name req`: the required ones,
-/// and the optional ones (features, like PyPI extras) apart. A failed read
-/// leaves both unknown; it never fails the lookup.
+/// A crate version's normal dependencies as `name req`, plus `; target`
+/// for a platform-specific one (a crate may declare one dependency per
+/// target, like a PEP 508 marker): the required ones, and the optional ones
+/// (features, like PyPI extras) apart. A failed read leaves both unknown;
+/// it never fails the lookup.
 async fn crate_dependencies(
     name: &str,
     version: &str,
@@ -434,10 +436,13 @@ async fn crate_dependencies(
         .filter(|dependency| dependency.get("kind").and_then(Value::as_str) == Some("normal"))
         .filter_map(|dependency| {
             let name = dependency.get("crate_id").and_then(Value::as_str)?;
-            let entry = match dependency.get("req").and_then(Value::as_str) {
+            let mut entry = match dependency.get("req").and_then(Value::as_str) {
                 Some(req) => format!("{name} {req}"),
                 None => name.to_owned(),
             };
+            if let Some(target) = dependency.get("target").and_then(Value::as_str) {
+                entry = format!("{entry}; {target}");
+            }
             Some((
                 dependency.get("optional") == Some(&Value::Bool(true)),
                 entry,
@@ -1624,7 +1629,9 @@ mod tests {
             {"crate_id": "b", "kind": "normal", "optional": true},
             {"crate_id": "c", "kind": "dev", "optional": false},
             {"crate_id": "d", "kind": "build", "optional": false},
-            {"crate_id": "e", "kind": "normal", "optional": false}
+            {"crate_id": "e", "kind": "normal", "optional": false},
+            {"crate_id": "f", "kind": "normal", "optional": false, "req": "^2", "target": "cfg(unix)"},
+            {"crate_id": "f", "kind": "normal", "optional": false, "req": "^2", "target": "cfg(windows)"}
         ]});
         let document = serde_crate_document();
         let mut metadata = json!({"crate": document["crate"].clone(), "versions": null});
@@ -1652,7 +1659,7 @@ mod tests {
         .expect("pinned")
         .artifacts
         .remove(0);
-        assert_eq!(pinned.dependencies.as_ref().map(Vec::len), Some(2));
+        assert_eq!(pinned.dependencies.as_ref().map(Vec::len), Some(4));
         let latest = crate_lookup(&whole, &b, &exact_query(ArtifactType::Crates, "serde"))
             .await
             .expect("latest")
@@ -1660,7 +1667,11 @@ mod tests {
             .remove(0);
         // The names ride the row; the list is the one dependency field.
         let row = serde_json::to_value(&latest).expect("row");
-        assert_eq!(row["dependencies"], json!(["a ^1.0", "e"]));
+        // One dependency per target stays two entries, each with its target.
+        assert_eq!(
+            row["dependencies"],
+            json!(["a ^1.0", "e", "f ^2; cfg(unix)", "f ^2; cfg(windows)"])
+        );
         assert_eq!(row["optionalDependencies"], json!(["b"]));
     }
 

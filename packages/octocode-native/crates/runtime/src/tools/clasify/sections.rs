@@ -40,12 +40,9 @@ impl Sessions {
         self.store.clear_memory();
     }
 
-    pub(crate) fn clear(&self) {
-        self.store.clear();
-    }
-
     fn process_lock(
         &self,
+        name: &str,
         context: &ExecutionContext,
     ) -> Result<Option<octocode_io::lock::LockedFile>, ClassificationError> {
         let Some(disk) = &self.disk else {
@@ -54,7 +51,6 @@ impl Sessions {
         std::fs::create_dir_all(disk)
             .map_err(|_| unavailable("The assessment storage directory is unavailable."))?;
         loop {
-            context.check().map_err(|_| unavailable("The request stopped before the assessment transaction lock was acquired; nothing was judged."))?;
             let mut options = std::fs::OpenOptions::new();
             options.create(true).truncate(false).write(true);
             #[cfg(unix)]
@@ -63,7 +59,7 @@ impl Sessions {
                 options.mode(0o600);
             }
             let file = options
-                .open(disk.join("assessment.lock"))
+                .open(disk.join(name))
                 .map_err(|_| unavailable("The assessment transaction lock is unavailable."))?;
             let wait = context
                 .deadline
@@ -71,7 +67,9 @@ impl Sessions {
                 .min(Duration::from_millis(100));
             match octocode_io::lock::lock_within(file, wait, Duration::from_millis(10)) {
                 Ok(lock) => return Ok(Some(lock)),
-                Err(octocode_io::lock::LockError::Busy) => continue,
+                Err(octocode_io::lock::LockError::Busy) => {
+                    context.check().map_err(|_| unavailable("The request stopped before the assessment transaction lock was acquired."))?;
+                }
                 Err(octocode_io::lock::LockError::Io(_)) => {
                     return Err(unavailable(
                         "The assessment transaction lock could not be acquired.",
@@ -89,8 +87,40 @@ impl Sessions {
         }
     }
 
-    fn save(&self, key: CacheKey, session: Session) -> bool {
-        let bytes = crate::cache::json_len(&session);
+    fn transaction_lock(
+        &self,
+        key: &CacheKey,
+        context: &ExecutionContext,
+    ) -> Result<Option<octocode_io::lock::LockedFile>, ClassificationError> {
+        let digest = crate::digest::json_sha256(&json!([key.namespace, key.scope, key.resource]));
+        // Stable lock files remain after expiry: unlinking one can split waiting
+        // processes across different inodes and let both mutate the same plan.
+        self.process_lock(&format!("assessment-{digest}.lock"), context)
+    }
+
+    fn current(
+        &self,
+        key: &CacheKey,
+        context: &ExecutionContext,
+    ) -> Result<Option<Session>, ClassificationError> {
+        let _storage = self.process_lock("assessment.lock", context)?;
+        Ok(self
+            .store
+            .get_current(key)
+            .map(|saved| saved.value.as_ref().clone()))
+    }
+
+    fn remove(&self, key: &CacheKey, context: &ExecutionContext) {
+        if let Ok(_storage) = self.process_lock("assessment.lock", context) {
+            self.store.remove(key);
+        }
+    }
+
+    fn save(&self, key: CacheKey, session: Session, context: &ExecutionContext) -> bool {
+        let Ok(_storage) = self.process_lock("assessment.lock", context) else {
+            return false;
+        };
+        let bytes = octocode_engine::json_size::bytes(&session).unwrap_or(usize::MAX);
         self.store
             .put_confirmed(
                 key,
@@ -141,6 +171,14 @@ impl Budget {
         *admission
             .deadline
             .get_or_insert_with(|| outer.min(Instant::now() + self.limits.timeout))
+    }
+
+    fn has_admissions(&self) -> bool {
+        self.admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .units
+            > 0
     }
 
     fn admit(&self, chars: usize) -> bool {
@@ -246,12 +284,14 @@ pub(super) fn run(
             .handle
             .block_on(wait_budget.wait(ticket.turn()))
             .map_err(|_| unavailable("The call stopped while waiting for the assessment transaction; nothing was judged."))?;
-        let _process_lock = runtime.sessions.process_lock(context)?;
-        let mut session = runtime.sessions.store.get_current(&key).ok_or_else(|| unavailable("The frozen assessment plan is missing, expired, or belongs to another access context; no source or provider was called."))?.value.as_ref().clone();
+        let _process_lock = runtime.sessions.transaction_lock(&key, context)?;
+        let mut session = runtime.sessions.current(&key, context)?.ok_or_else(|| unavailable("The frozen assessment plan is missing, expired, or belongs to another access context; no source or provider was called."))?;
+        session.query_id.clone_from(&row.id);
         dispatcher
             .validate_retained_github_identity(session.github_identity.as_deref(), context)?;
         if let Some(saved) = session.batches.get(ordinal) {
             let mut output = saved.clone();
+            output["id"] = json!(row.id);
             output["usage"] = serde_json::to_value(ClassificationUsage::default().output())
                 .unwrap_or(Value::Null);
             output["replayed"] = json!(true);
@@ -288,8 +328,8 @@ pub(super) fn run(
                 ClassificationUsage::default(),
             );
             session.batches.push(outcome.output.clone());
-            if !runtime.sessions.save(key.clone(), session) {
-                runtime.sessions.store.remove(&key);
+            if !runtime.sessions.save(key.clone(), session, context) {
+                runtime.sessions.remove(&key, context);
             }
             return Ok(outcome);
         }
@@ -327,9 +367,9 @@ pub(super) fn run(
         outcome.output["error"] = error_value(&unavailable(reason));
         return Ok(outcome);
     }
-    let _process_lock = runtime.sessions.process_lock(context)?;
     let key = runtime.sessions.key(&runtime.access, &session.id);
-    if runtime.can_resume && !runtime.sessions.save(key, session.clone()) {
+    let _process_lock = runtime.sessions.transaction_lock(&key, context)?;
+    if runtime.can_resume && !runtime.sessions.save(key, session.clone(), context) {
         return Ok(terminal(
             &mut session,
             "The complete frozen plan could not be retained within storage limits; no inference ran.",
@@ -420,6 +460,7 @@ fn assess_and_save(
     let mut usage = ClassificationUsage::default();
     let mut settled = settle_unsupported(session, shared.limits);
     let mut admitted = Vec::new();
+    let mut deferred_by_sibling = false;
     'resources: for (resource_index, resource) in session.resources.iter_mut().enumerate() {
         for (unit_index, unit) in resource.units.iter_mut().enumerate() {
             if unit.cells.iter().all(Option::is_some) {
@@ -427,6 +468,7 @@ fn assess_and_save(
             }
             let chars = unit.state.to_string().chars().count();
             if !shared.admit(chars) {
+                deferred_by_sibling = admitted.is_empty() && shared.has_admissions();
                 break 'resources;
             }
             admitted.push([resource_index, unit_index]);
@@ -438,6 +480,7 @@ fn assess_and_save(
         && !runtime.sessions.save(
             runtime.sessions.key(&runtime.access, &session.id),
             session.clone(),
+            context,
         )
     {
         session.active.clear();
@@ -446,6 +489,7 @@ fn assess_and_save(
             "The assessment transaction could not be retained before inference; no requests were submitted for this batch.",
             usage,
             runtime,
+            context,
         ));
     }
     for [resource, unit] in admitted {
@@ -507,7 +551,7 @@ fn assess_and_save(
     }
     session.active.clear();
     let remaining = pending_cost(session).0;
-    if remaining > 0 && (!runtime.can_resume || settled == 0) {
+    if remaining > 0 && (!runtime.can_resume || (settled == 0 && !deferred_by_sibling)) {
         return Ok(terminal_saved(
             session,
             if runtime.can_resume {
@@ -517,6 +561,7 @@ fn assess_and_save(
             },
             usage,
             runtime,
+            context,
         ));
     }
     let mut output = emit(session, &usage, None);
@@ -528,6 +573,7 @@ fn assess_and_save(
         && !runtime.sessions.save(
             runtime.sessions.key(&runtime.access, &session.id),
             session.clone(),
+            context,
         )
     {
         session.batches.pop();
@@ -547,6 +593,7 @@ fn assess_and_save(
             "The next assessment batch could not be retained; remaining cells were not assessed.",
             usage,
             runtime,
+            context,
         ));
     }
     Ok(Outcome { output, usage })
@@ -557,14 +604,15 @@ fn terminal_saved(
     reason: &str,
     usage: ClassificationUsage,
     runtime: Runtime<'_>,
+    context: &ExecutionContext,
 ) -> Outcome {
     session.active.clear();
     let outcome = terminal(session, reason, usage);
     if runtime.can_resume {
         session.batches.push(outcome.output.clone());
         let key = runtime.sessions.key(&runtime.access, &session.id);
-        if !runtime.sessions.save(key.clone(), session.clone()) {
-            runtime.sessions.store.remove(&key);
+        if !runtime.sessions.save(key.clone(), session.clone(), context) {
+            runtime.sessions.remove(&key, context);
         }
     }
     outcome
@@ -655,6 +703,16 @@ fn answered_cell(mut answer: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_context(timeout: Duration) -> ExecutionContext {
+        ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: Instant::now() + timeout,
+            walk_threads: None,
+            response_window: None,
+            github_credential: None,
+        }
+    }
 
     fn session() -> Session {
         Session {
@@ -758,6 +816,53 @@ mod tests {
     }
 
     #[test]
+    fn assessment_locks_exclude_the_same_plan_but_not_an_independent_plan() {
+        let directory = tempfile::tempdir().expect("lock directory");
+        let first = Sessions::new(
+            CacheConfig::default(),
+            Some(directory.path().to_owned()),
+            "policy".into(),
+        );
+        let second = Sessions::new(
+            CacheConfig::default(),
+            Some(directory.path().to_owned()),
+            "policy".into(),
+        );
+        let key = first.key(&[1; 32], &"a".repeat(64));
+        let other = first.key(&[1; 32], &"b".repeat(64));
+        let held = first
+            .transaction_lock(&key, &test_context(Duration::from_secs(1)))
+            .expect("first transaction");
+        assert!(
+            second
+                .transaction_lock(&key, &test_context(Duration::from_millis(20)))
+                .is_err()
+        );
+        assert!(
+            second
+                .transaction_lock(&other, &test_context(Duration::from_millis(20)))
+                .is_ok()
+        );
+        assert!(second.save(
+            other.clone(),
+            session(),
+            &test_context(Duration::from_secs(1))
+        ));
+        assert!(
+            second
+                .current(&other, &test_context(Duration::from_secs(1)))
+                .expect("read")
+                .is_some()
+        );
+        drop(held);
+        assert!(
+            second
+                .transaction_lock(&key, &test_context(Duration::from_millis(20)))
+                .is_ok()
+        );
+    }
+
+    #[test]
     fn work_token_is_bounded_and_does_not_accept_arbitrary_plan_keys() {
         let id = "c".repeat(64);
         let value = token(&id, usize::MAX);
@@ -820,6 +925,7 @@ mod tests {
             "terminal",
             ClassificationUsage::default(),
             runtime,
+            &test_context(Duration::from_secs(5)),
         )
         .output;
         let key = sessions.key(&runtime.access, &session.id);

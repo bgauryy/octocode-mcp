@@ -43,6 +43,8 @@ const acceptanceEnv = {
   OCTOCODE_ENABLE_LOCAL: 'true',
   OCTOCODE_BETA: 'true',
   OCTOCODE_STORAGE_MODE: 'persistent',
+  // An ambient credential must not turn the hermetic run into a provider test.
+  ...(!values.live && { OCTOCODE_CLASSIFICATION_API: '' }),
 };
 const {
   DIRECT_TOOL_DEFINITIONS,
@@ -389,7 +391,7 @@ try {
     );
   }
   await check(
-    'CLI canonical contracts and MCP published input schemas agree',
+    'CLI full contracts and compact queries agree with MCP published schemas',
     () => {
       // The CLI lists every tool it can run; MCP clasify may delegate only to the
       // tools MCP exposes, so its published schema is built for that tool set.
@@ -431,7 +433,8 @@ try {
         const cli = cliSchema(tool.name);
         assert.equal(cli.name, tool.name);
         assert.equal(cli.availability.enabled, true);
-        // The CLI contract is the query row; the request wrapper and output schema are not published.
+        // CLI discovery shows one compact query row by default; the full view
+        // retains the canonical validation contract for complete inspection.
         assert.equal(Object.hasOwn(cli, 'inputSchema'), false);
         assert.equal(Object.hasOwn(cli, 'outputSchema'), false);
         const cliDefinition = cliDefinitions.get(tool.name);
@@ -443,15 +446,21 @@ try {
         const { $schema, ...canonicalRow } = cliCatalog.get(
           tool.name
         ).querySchema;
+        const full = cliSchema(tool.name, '--view', 'full');
+        assert.deepEqual(
+          full.querySchema,
+          canonicalRow,
+          `${tool.name} CLI full schema differs from the canonical contract`
+        );
         assert.deepEqual(
           cli.querySchema,
-          canonicalRow,
-          `${tool.name} CLI query schema differs from the canonical contract`
+          publishedInputSchema(cliDefinition.inputSchema, 'row'),
+          `${tool.name} CLI default differs from the published row schema`
         );
         assert.deepEqual(
           cliSchema(tool.name, '--view', 'query').querySchema,
-          publishedInputSchema(cliDefinition.inputSchema, 'row'),
-          `${tool.name} CLI query view differs from the published row schema`
+          cli.querySchema,
+          `${tool.name} CLI explicit query view differs from the default`
         );
         assert.deepEqual(
           tool.inputSchema,
@@ -1551,6 +1560,26 @@ try {
             .filter(row => row.status === 'not-run')
             .map(row => row.name),
         };
+        const requiredLocal = [
+          'localSearch',
+          'structureSearch',
+          'astSearch',
+          'localFetch',
+          'lspSearch',
+        ];
+        assert.deepEqual(
+          expectedTools.filter(name => requiredLocal.includes(name)).sort(),
+          [...requiredLocal].sort(),
+          'hermetic acceptance must expose every local/AST/LSP tool'
+        );
+        assert.deepEqual(
+          parity
+            .filter(row => requiredLocal.includes(row.name) && row.passesContract)
+            .map(row => row.name)
+            .sort(),
+          [...requiredLocal].sort(),
+          'every available local/AST/LSP tool must complete real CLI-MCP parity'
+        );
         const failures = parity.filter(
           row =>
             !['not-run', 'not-applicable'].includes(row.status) &&

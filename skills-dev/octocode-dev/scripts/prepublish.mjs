@@ -26,8 +26,9 @@
  *   node ./skills-dev/octocode-dev/scripts/prepublish.mjs --package @octocodeai/pi-extension
  */
 
+import { isMainModule } from './lib/entrypoint.mjs';
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -199,6 +200,4 @@ function main() {
   process.exit(1);
 }
 
-// Installed skills are often symlinks: argv[1] keeps the link path while import.meta.url is the real path.
-const realOrSelf = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
-if (process.argv[1] && realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url))) main();
+if (isMainModule(import.meta.url)) main();

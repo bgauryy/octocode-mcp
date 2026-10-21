@@ -162,7 +162,7 @@ pub(super) fn metadata(text: &str) -> Result<(String, String), String> {
     if !closed {
         return Err("SKILL.md frontmatter is not closed".into());
     }
-    let value = octocode_engine::portable::yaml_to_json(&header.join("\n"))?;
+    let value = octocode_engine::text::yaml_utils::yaml_to_json(&header.join("\n"))?;
     let name = value["name"]
         .as_str()
         .filter(|name| valid_name(name))

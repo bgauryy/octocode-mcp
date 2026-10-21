@@ -486,7 +486,7 @@ fn mixed_forms(
     None
 }
 
-fn score(issues: &[ValidationIssue], depth: usize) -> [usize; 4] {
+fn score(issues: &[ValidationIssue], depth: usize) -> [usize; 5] {
     // A branch that does not declare a named discriminator (`tool`, `type`, …)
     // rejects it as strongly as a branch that pins it to other literals.
     // A branch missing a required literal (`operation:"models"`) rejects it
@@ -525,6 +525,10 @@ fn score(issues: &[ValidationIssue], depth: usize) -> [usize; 4] {
         // the closest match, however few field issues it reports.
         invalid(DISCRIMINATORS),
         invalid(&["resultView"]),
+        issues
+            .iter()
+            .filter(|issue| issue.rule_id == "schema.not" && issue.path.len() == depth + 1)
+            .count(),
         rejected,
         count,
     ]
@@ -1386,6 +1390,29 @@ mod tests {
         prepare_many_and_validate("clasify", json!({"queries":[query]}))
             .expect_err("invalid clasify query")
             .issues
+    }
+
+    #[test]
+    fn a_present_alternative_outranks_a_branch_that_forbids_it() {
+        let schema = json!({"anyOf":[
+            {"type":"object","required":["inline"],"properties":{
+                "inline":{"type":"string"},"resource":{"not":{}}
+            }},
+            {"type":"object","required":["resource"],"properties":{
+                "inline":{"not":{}},
+                "resource":{"type":"object","required":["path","line","format"],"properties":{
+                    "path":{"type":"string"},"line":{"type":"integer"},"format":{"enum":["text"]}
+                }}
+            }}
+        ]});
+        let mut value = json!({"resource":{"path":false,"line":"wrong","format":"other"}});
+        let error = super::validate_schema(&schema, &schema, &mut value, &mut Vec::new())
+            .expect_err("the selected resource is malformed");
+        assert_eq!(error.issues.len(), 3, "{error:?}");
+        assert!(
+            error.issues.iter().all(|issue| issue.path[0] == "resource"),
+            "{error:?}"
+        );
     }
 
     /// A branch missing its required `operation` literal is rejected like one

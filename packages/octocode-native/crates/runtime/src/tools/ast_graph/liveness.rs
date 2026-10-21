@@ -1,6 +1,7 @@
 //! astTopology reachability and dead-code liveness: entry points, live
 //! declarations through bindings and re-exports, and dead clusters.
 
+use super::js_paths::{probe_js, source_equivalent};
 use super::{algorithms::*, analysis::*, graph::normalize, types::*};
 use octocode_engine::graph::IMPORT_USE_MODULE;
 use serde_json::{Value, json};
@@ -11,7 +12,12 @@ pub(super) fn reachability(
     q: &AstTopologyQuery,
     read: &dyn Fn(&std::path::Path) -> Option<String>,
 ) -> (Vec<Value>, Value, Vec<String>, bool) {
-    let (roots, mut warnings, low) = entrypoints(b, q, read);
+    let Roots {
+        roots,
+        mut warnings,
+        low,
+        partial,
+    } = entrypoints(b, q, read);
     if low && !roots.is_empty() {
         warnings.push(format!(
             "only test files are roots ({}): files read as reachable from tests, not from the program's entries.",
@@ -53,7 +59,7 @@ pub(super) fn reachability(
         items,
         json!({"entrypointsResolved":roots,"entrypointsResolvedCount":roots.len(),"reachableCount":live.len(),"unreachableCount":b.nodes.len()-live.len()}),
         warnings,
-        low,
+        low || partial,
     )
 }
 
@@ -62,7 +68,12 @@ pub(super) fn dead_code(
     q: &AstTopologyQuery,
     read: &dyn Fn(&std::path::Path) -> Option<String>,
 ) -> (Vec<Value>, Value, Vec<String>, bool) {
-    let (roots, mut warnings, low_entries) = entrypoints(b, q, read);
+    let Roots {
+        roots,
+        mut warnings,
+        low: low_entries,
+        partial,
+    } = entrypoints(b, q, read);
     // Hard gate: with no resolved entrypoint, reachability is undefined and
     // every export not reached from a test file would falsely read as dead.
     // Suppress the verdict rather than report the tree as dead.
@@ -100,6 +111,7 @@ pub(super) fn dead_code(
         summary,
         warnings,
         low_entries
+            || partial
             || b.truncated
             || b.edges_capped
             || b.files_skipped > 0
@@ -503,11 +515,12 @@ pub(super) fn entrypoints(
     b: &BuiltGraph,
     q: &AstTopologyQuery,
     read: &dyn Fn(&std::path::Path) -> Option<String>,
-) -> (Vec<String>, Vec<String>, bool) {
+) -> Roots {
     let mut roots = Vec::new();
     let mut seen_roots = BTreeSet::new();
     let mut warnings = Vec::new();
     let mut low = false;
+    let mut unmapped = Vec::new();
     if let Some(explicit) = q.entrypoints().filter(|x| !x.is_empty()) {
         for raw in explicit {
             let p = node_key(raw, &b.root, &b.nodes);
@@ -535,18 +548,41 @@ pub(super) fn entrypoints(
             }
         }
     } else {
+        let known = b.nodes.keys().cloned().collect::<BTreeSet<_>>();
         for dir in package_dirs(b) {
             let Some(v) = read(&b.root.join(&dir).join("package.json"))
                 .and_then(|text| serde_json::from_str::<Value>(&text).ok())
             else {
                 continue;
             };
-            for leaf in package_leaves(&v) {
+            let (declared, scripted) = package_leaves(&v);
+            let leaves = declared
+                .into_iter()
+                .map(|leaf| (leaf, true))
+                .chain(scripted.into_iter().map(|leaf| (leaf, false)));
+            for (leaf, declared) in leaves {
                 let leaf = normalize(leaf.trim_start_matches("./"));
-                if let Some(x) = source_equivalent(&dir, &leaf, &b.nodes) {
+                if let Some(x) = super::graph::join_within_root(&dir, &leaf)
+                    .and_then(|path| probe_js(&path, &known))
+                    .or_else(|| source_equivalent(&dir, &leaf, &known))
+                {
                     push_unique(&mut roots, &mut seen_roots, x);
+                } else if declared && is_module_entry(&leaf) {
+                    unmapped.push(super::graph::join(&dir, &leaf));
                 }
             }
+        }
+        // A declared entry no scanned source maps to leaves the root set
+        // incomplete: files reached only through it would read as dead. Name
+        // each one rather than guess a source for it.
+        if !unmapped.is_empty() {
+            warnings.push(format!(
+                "{} declared package entr{} map to no scanned source ({}): files reachable only from {} read as unreachable. Pass `entrypoints` explicitly to root them.",
+                unmapped.len(),
+                if unmapped.len() == 1 { "y" } else { "ies" },
+                unmapped.join(", "),
+                if unmapped.len() == 1 { "it" } else { "them" },
+            ));
         }
         // Package.json is JS-only. Infer roots for the other ecosystems so a
         // Rust/Go tree does not read as entirely dead. Inferrers are additive: a
@@ -570,7 +606,28 @@ pub(super) fn entrypoints(
             push_unique(&mut roots, &mut seen_roots, file);
         }
     }
-    (roots, warnings, low)
+    Roots {
+        roots,
+        warnings,
+        low,
+        partial: !unmapped.is_empty(),
+    }
+}
+
+/// The roots reachability starts from, and how far to trust them.
+pub(super) struct Roots {
+    pub(super) roots: Vec<String>,
+    pub(super) warnings: Vec<String>,
+    /// No program entry resolved: any roots are test files only.
+    pub(super) low: bool,
+    /// A declared package entry mapped to no scanned source.
+    pub(super) partial: bool,
+}
+
+/// A JavaScript/TypeScript module path, not a subpath pattern (`./*`) or a
+/// non-code export such as `./package.json`.
+fn is_module_entry(leaf: &str) -> bool {
+    !leaf.contains('*') && super::linking::Linker::of(leaf) == super::linking::Linker::JsTs
 }
 /// Every scanned directory that can hold a `package.json` (`.` and each
 /// ancestor directory of a scanned file), so a multi-package root resolves
@@ -589,14 +646,15 @@ fn package_dirs(b: &BuiltGraph) -> BTreeSet<String> {
     dirs
 }
 
-/// Package-relative entry files a `package.json` publishes or runs:
-/// `main`, `module`, `types`/`typings`, `exports`, `bin`, and the source
-/// files its `scripts` invoke.
-fn package_leaves(v: &Value) -> Vec<String> {
-    let mut leaves = Vec::new();
+/// Package-relative entry files a `package.json` declares (`main`,
+/// `module`, `types`/`typings`, `exports`, `bin`), then the source files its
+/// `scripts` appear to invoke (a token guess, not a declaration).
+fn package_leaves(v: &Value) -> (Vec<String>, Vec<String>) {
+    let mut declared = Vec::new();
     for k in ["main", "module", "types", "typings", "exports", "bin"] {
-        leaves_json(&v[k], &mut leaves)
+        leaves_json(&v[k], &mut declared)
     }
+    let mut leaves = Vec::new();
     if let Some(s) = v["scripts"].as_object() {
         for value in s.values().filter_map(Value::as_str) {
             for token in value.split_whitespace() {
@@ -611,7 +669,7 @@ fn package_leaves(v: &Value) -> Vec<String> {
             }
         }
     }
-    leaves
+    (declared, leaves)
 }
 
 pub(super) fn push_unique(roots: &mut Vec<String>, seen: &mut BTreeSet<String>, file: String) {
@@ -725,40 +783,4 @@ pub(super) fn leaves_json(v: &Value, out: &mut Vec<String>) {
         }
         _ => {}
     }
-}
-/// `path` with a built JS extension swapped for the TypeScript source it is
-/// built from first (`x.js` → `x.ts`, `x.mjs` → `x.mts`), when it has one.
-fn ts_twin(path: &str) -> Option<String> {
-    let (base, extension) = path.rsplit_once('.')?;
-    let source = octocode_engine::signatures::languages::js_source_swaps(extension).first()?;
-    Some(format!("{base}.{source}"))
-}
-
-/// The scanned source file for `p`, a path relative to the package
-/// directory `dir` (`.` for the scan root): `p` itself, its TypeScript
-/// twin, or the `src/` file a `dist/`/`build/`/`out/` output is built from.
-pub(super) fn source_equivalent(
-    dir: &str,
-    p: &str,
-    nodes: &BTreeMap<String, Node>,
-) -> Option<String> {
-    let within = |relative: &str| {
-        if dir == "." {
-            relative.to_owned()
-        } else {
-            normalize(&format!("{dir}/{relative}"))
-        }
-    };
-    let mut c = vec![p.to_owned()];
-    c.extend(ts_twin(p));
-    for d in ["dist/", "build/", "out/"] {
-        if let Some(rest) = p.strip_prefix(d) {
-            c.push(format!("src/{rest}"));
-            c.extend(ts_twin(rest).map(|twin| format!("src/{twin}")));
-            c.push("src/index.ts".into());
-        }
-    }
-    c.into_iter()
-        .map(|x| within(&x))
-        .find(|x| nodes.contains_key(x))
 }

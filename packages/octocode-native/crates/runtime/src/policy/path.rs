@@ -32,7 +32,7 @@ pub struct PathPolicy {
 
 /// A search walk enters a directory the policy admits and reads a file it
 /// admits for reading.
-impl octocode_engine::portable::TextSearchPathFilter for PathPolicy {
+impl octocode_engine::search::text_search::TextSearchPathFilter for PathPolicy {
     fn allows(&self, path: &Path, is_dir: bool) -> bool {
         if is_dir {
             self.validate(path).is_ok()
@@ -515,9 +515,9 @@ fn absolutize(path: impl AsRef<Path>) -> PathBuf {
     normalize(&joined)
 }
 
-/// `path` with `\` read as `/`, then folded by [`lexical`].
+/// Fold native path components without rewriting characters in file names.
 fn normalize(path: &Path) -> PathBuf {
-    lexical(Path::new(&octocode_engine::text::slash_path(path)))
+    lexical(path)
 }
 
 /// [`PathPolicy::permits_discovery`] over one walk. An entry that is not a
@@ -580,6 +580,59 @@ impl DiscoveryWalk<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn native_windows_separators_resolve_to_the_same_file() {
+        let root = tempfile::tempdir().expect("fixture");
+        std::fs::create_dir(root.path().join("dir")).expect("directory");
+        std::fs::write(root.path().join("dir/file.txt"), "content").expect("file");
+        let policy = PathPolicy::new(PathPolicyConfig {
+            workspace_root: Some(root.path().to_path_buf()),
+            ..Default::default()
+        })
+        .expect("policy");
+        let forward = policy
+            .validate_read("dir/file.txt")
+            .expect("forward separator");
+        let backward = policy
+            .validate_read(r"dir\file.txt")
+            .expect("backward separator");
+        assert_eq!(forward.canonical, backward.canonical);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn literal_backslash_paths_do_not_resolve_to_directory_siblings() {
+        let root = tempfile::tempdir().expect("fixture");
+        let literal = root.path().join("back\\slash.txt");
+        let nested = root.path().join("back/slash.txt");
+        std::fs::create_dir(root.path().join("back")).expect("directory");
+        std::fs::write(&literal, "literal filename").expect("literal file");
+        std::fs::write(&nested, "directory sibling").expect("nested file");
+        let policy = PathPolicy::new(PathPolicyConfig {
+            workspace_root: Some(root.path().to_path_buf()),
+            ..Default::default()
+        })
+        .expect("policy");
+        for requested in [Path::new("back\\slash.txt"), literal.as_path()] {
+            let validated = policy.validate_read(requested).expect("literal read");
+            assert_eq!(
+                std::fs::read_to_string(&validated.canonical).expect("read"),
+                "literal filename"
+            );
+            assert_eq!(
+                policy.workspace_relative(&validated.canonical).as_deref(),
+                Some("back\\slash.txt")
+            );
+            assert_eq!(policy.redact(requested), "back\\slash.txt");
+        }
+        let validated = policy.validate_read("back/slash.txt").expect("nested read");
+        assert_eq!(
+            std::fs::read_to_string(validated.canonical).expect("read"),
+            "directory sibling"
+        );
+    }
 
     /// Callers own cleanup.
     fn fixture() -> PathBuf {
@@ -687,7 +740,10 @@ mod tests {
             std::fs::canonicalize(&file).expect("path policy test setup should succeed")
         );
         assert_eq!(result.display, "source.rs");
-        assert_eq!(policy.redact(root.join("src\\sub\\..\\a.ts")), "src/a.ts");
+        assert_eq!(
+            policy.redact(root.join("src/sub/../a.ts")),
+            Path::new("src").join("a.ts").to_string_lossy()
+        );
         std::fs::remove_dir_all(root).expect("path policy test setup should succeed");
     }
 

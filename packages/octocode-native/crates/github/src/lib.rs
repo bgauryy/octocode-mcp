@@ -36,7 +36,7 @@ pub use content::{
     Retention, Submodule, is_full_sha,
 };
 pub use credentials::{CredentialSource, ResolvedCredential};
-pub use endpoint::{GitHubEndpoint, credential_host, is_loopback};
+pub use endpoint::{GitHubEndpoint, credential_host, is_loopback, names_localhost};
 pub use error::{ProviderError, ProviderErrorKind, ProviderErrorReason, RateLimit};
 pub use history::{CommitListRequest, HistoryPage, HistoryRequest, PullListRequest};
 pub use partition::Partition;

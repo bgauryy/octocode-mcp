@@ -138,6 +138,45 @@ jobs:
       - name: Type-check
         run: node scripts/build-native.cjs --check --jobs 2 $(printf -- '--target %s ' ${{ steps.platforms.outputs.names }})
 
+  # The Windows job object, run for real: the containment tests re-execute their
+  # own test binary as a child with a grandchild and assert that no process
+  # survives a bounded-run timeout, a cancelled gh token lookup, a closed job
+  # and the LSP memory cap. Everything else in the Rust suite runs on the
+  # `native` job; `native-platforms` only type-checks Windows.
+  native-windows:
+    name: Native Windows containment
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/octocode-native
+    env:
+      NEXTEST_PROFILE: ci
+    steps:
+      - uses: actions/checkout@v5
+      # rustup reads rust-toolchain.toml, so the pinned toolchain is the one used here.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/octocode-native
+          key: windows-containment
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      # The LSP memory-cap test runs a node fake language server.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Job object and LSP memory cap (engine)
+        run: >-
+          cargo nextest run --locked -p octocode-engine
+          -E 'test(/process::job_tests::/) | test(a_server_over_its_memory_cap_and_its_child_do_not_outlive_stop)'
+      - name: Bounded run and token lookup containment (runtime)
+        run: >-
+          cargo nextest run --locked -p octocode-native --lib
+          -E 'test(/bounded_process::(held_pipe|gated)_tests::/) | test(/discovery::containment_tests::/)'
+
   # The native package's script tests (platform map, build/publication,
   # lint floor, audit-native): plain Node, no Rust build.
   native-scripts:
@@ -160,9 +199,13 @@ jobs:
   # and MCP server against hermetic fixtures and a loopback mock. It needs the
   # native binary and addon, so it runs after the native job passes, on its own build.
   e2e:
-    name: E2E tool health
+    name: E2E tool health (${{ matrix.runner }})
     needs: native
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -171,6 +214,7 @@ jobs:
           package-manager-cache: false
       - run: corepack enable
       - uses: rui314/setup-mold@v1
+        if: runner.os == 'Linux'
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: packages/octocode-native

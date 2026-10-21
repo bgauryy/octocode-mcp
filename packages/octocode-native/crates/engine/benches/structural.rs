@@ -13,8 +13,9 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use octocode_engine::portable::{extract_graph_facts, structural_search_detailed};
 use octocode_engine::signatures::extract_declarations_document;
+use octocode_engine::signatures::extract_graph_facts;
+use octocode_engine::structural::search_detailed;
 
 /// Build a realistic TypeScript module of roughly `blocks` service methods,
 /// each with a `console.log(...)` call site the pattern will match, plus enough
@@ -54,14 +55,13 @@ fn bench_structural_search(c: &mut Criterion) {
             &source,
             |b, source| {
                 b.iter(|| {
-                    let result = structural_search_detailed(
+                    let result = search_detailed(
                         black_box(source.as_str()),
                         black_box("service.ts"),
                         None,
                         black_box(Some(pattern)),
                         black_box(None),
-                    )
-                    .expect("structural search should not panic on valid TS");
+                    );
                     black_box(result.matches.len())
                 });
             },

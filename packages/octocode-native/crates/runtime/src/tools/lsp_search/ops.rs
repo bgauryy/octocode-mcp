@@ -62,13 +62,13 @@ const SCAN_ONLY: &str = "scanOnlyImplementations";
 enum Implemented {
     /// The server's answer, with the heritage scan when it was kept beside it.
     Server {
-        found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
+        found: Vec<octocode_engine::lsp::types::LspCodeSnippet>,
         scan: Option<heritage::HeritageScan>,
     },
     /// The heritage scan, with the note that labels it and the files it
     /// could not read.
     Scan {
-        found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
+        found: Vec<octocode_engine::lsp::types::LspCodeSnippet>,
         note: String,
         unread: Vec<String>,
     },
@@ -138,9 +138,9 @@ fn mark_scan_answer(
 /// its file spans its line (servers locate an implementation at its name or
 /// over its whole declaration).
 fn scan_only(
-    found: &[octocode_engine::lsp::types::JsCodeSnippet],
+    found: &[octocode_engine::lsp::types::LspCodeSnippet],
     scan: heritage::HeritageScan,
-) -> (Vec<octocode_engine::lsp::types::JsCodeSnippet>, String) {
+) -> (Vec<octocode_engine::lsp::types::LspCodeSnippet>, String) {
     let file = |uri: &str| super::scope::canonical(&uri_to_path(uri));
     let answered = found
         .iter()
@@ -332,7 +332,7 @@ impl Operation<'_, '_> {
             None
         } else {
             let declared = self.declarations().await?;
-            let undeclared = |snippet: &octocode_engine::lsp::types::JsCodeSnippet| {
+            let undeclared = |snippet: &octocode_engine::lsp::types::LspCodeSnippet| {
                 !declared.contains(&site_start(snippet))
             };
             found.retain(undeclared);
@@ -460,7 +460,7 @@ impl Operation<'_, '_> {
         declared: Option<&HashSet<(String, u32, u32)>>,
         seen: &mut HashSet<String>,
         failures: &mut RequestFailures,
-    ) -> Result<Vec<octocode_engine::lsp::types::JsCodeSnippet>, LspFailure> {
+    ) -> Result<Vec<octocode_engine::lsp::types::LspCodeSnippet>, LspFailure> {
         let mut found = Vec::new();
         for anchor in importers.per_file() {
             let extra = match get_locations(
@@ -901,7 +901,7 @@ impl Operation<'_, '_> {
     async fn location_request(
         &self,
         request: LocationRequest,
-    ) -> Result<Vec<octocode_engine::lsp::types::JsCodeSnippet>, LspFailure> {
+    ) -> Result<Vec<octocode_engine::lsp::types::LspCodeSnippet>, LspFailure> {
         get_locations(
             self.client,
             self.snippet_policy,
@@ -1217,8 +1217,8 @@ fn binding_rank(kind: &str) -> u8 {
 
 /// The canonical files a references answer already names.
 fn known_files(
-    found: &[octocode_engine::lsp::types::JsCodeSnippet],
-    recovered: &[octocode_engine::lsp::types::JsCodeSnippet],
+    found: &[octocode_engine::lsp::types::LspCodeSnippet],
+    recovered: &[octocode_engine::lsp::types::LspCodeSnippet],
 ) -> HashSet<String> {
     found
         .iter()
@@ -1228,7 +1228,7 @@ fn known_files(
 }
 
 /// A location's canonical file and start position.
-fn site_start(snippet: &octocode_engine::lsp::types::JsCodeSnippet) -> (String, u32, u32) {
+fn site_start(snippet: &octocode_engine::lsp::types::LspCodeSnippet) -> (String, u32, u32) {
     (
         super::scope::canonical(&uri_to_path(&snippet.uri)),
         snippet.range.start.line,
@@ -1240,12 +1240,12 @@ fn site_start(snippet: &octocode_engine::lsp::types::JsCodeSnippet) -> (String, 
 mod tests {
     use super::{binding_rank, language_name, match_tier, rank_workspace_symbols};
 
-    fn snippet(path: &str, start: u32, end: u32) -> octocode_engine::lsp::types::JsCodeSnippet {
-        use octocode_engine::lsp::types::{JsExactPosition, JsRange};
-        let at = |line| JsExactPosition { line, character: 0 };
-        octocode_engine::lsp::types::JsCodeSnippet {
+    fn snippet(path: &str, start: u32, end: u32) -> octocode_engine::lsp::types::LspCodeSnippet {
+        use octocode_engine::lsp::types::{LspExactPosition, LspRange};
+        let at = |line| LspExactPosition { line, character: 0 };
+        octocode_engine::lsp::types::LspCodeSnippet {
             uri: format!("file://{path}"),
-            range: JsRange {
+            range: LspRange {
                 start: at(start),
                 end: at(end),
             },

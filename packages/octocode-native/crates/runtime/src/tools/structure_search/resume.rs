@@ -86,7 +86,7 @@ mod tests {
 
     /// The cursor of a walk of `root` cut by time just after its first entry.
     fn cut_after_first_entry(root: &std::path::Path) -> WalkCursor {
-        let result = octocode_engine::portable::query_file_system(
+        let result = octocode_engine::search::fs_query::query_file_system(
             FileSystemQueryOptions {
                 path: root.to_string_lossy().into_owned(),
                 recursive: Some(true),

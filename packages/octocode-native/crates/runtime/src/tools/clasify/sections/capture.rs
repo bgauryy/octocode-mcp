@@ -76,7 +76,8 @@ pub(super) fn create(
                 });
             let (metadata, units, local_check) = match acquired {
                 Ok(capture) => {
-                    let bytes = crate::cache::json_len(&capture.0)
+                    let bytes = octocode_engine::json_size::bytes(&capture.0)
+                        .unwrap_or(usize::MAX)
                         .saturating_add(capture.1.iter().map(unit_weight).sum::<usize>());
                     if retained.saturating_add(bytes) > max_bytes {
                         let mut metadata = capture.0;
@@ -152,7 +153,7 @@ fn prepare(
         captured.metadata["snapshot"].as_str().unwrap_or_default(),
     )?;
     let mut units = Vec::new();
-    let mut retained_bytes = crate::cache::json_len(&metadata);
+    let mut retained_bytes = octocode_engine::json_size::bytes(&metadata).unwrap_or(usize::MAX);
     let mut line_starts = vec![0];
     line_starts.extend(
         captured
@@ -242,7 +243,8 @@ fn prepare(
 }
 
 fn unit_weight(unit: &Unit) -> usize {
-    crate::cache::json_len(unit)
+    octocode_engine::json_size::bytes(unit)
+        .unwrap_or(usize::MAX)
         .saturating_add(std::mem::size_of::<Unit>())
         .saturating_add(
             unit.cells

@@ -22,11 +22,11 @@ metadata:
 
 # Zod
 
-**IMPORTANT:** Your training data about `zod` may be outdated or incorrect — Zod v4 introduces breaking changes to string formats, enums, error handling, and recursive types. Always rely on this skill's rule files and the project's actual source code as the source of truth. Do not fall back on memorized v3 patterns when they conflict with the retrieved reference.
+Zod v4 changes string formats, enums, errors, and recursive types. Use this skill's rules and the project's source as truth; never substitute conflicting memorized v3 patterns.
 
 ## When to Use Zod
 
-Zod is for **runtime type validation** — parsing untrusted data at system boundaries (API input, form data, env vars, external services). For compile-time-only types, plain TypeScript is sufficient.
+Use Zod to validate untrusted data at runtime boundaries, including external services:
 
 | Need | Recommended Tool |
 |------|-----------------|
@@ -37,21 +37,9 @@ Zod is for **runtime type validation** — parsing untrusted data at system boun
 | Smaller bundle (~1kb) | Valibot |
 | Maximum type inference | ArkType |
 
-## Rule Categories by Priority
-
-| Priority | Category | Impact | Prefix |
-|----------|----------|--------|--------|
-| 1 | Parsing & Type Safety | CRITICAL | `parse-` |
-| 2 | Schema Design | CRITICAL | `schema-` |
-| 3 | Refinements & Transforms | HIGH | `refine-` |
-| 4 | Error Handling | HIGH | `error-` |
-| 5 | Performance & Composition | MEDIUM | `perf-` |
-| 6 | v4 Migration | MEDIUM | `migrate-` |
-| 7 | Advanced Patterns | MEDIUM | `pattern-` |
-| 8 | Architecture & Boundaries | CRITICAL/HIGH | `arch-` |
-| 9 | Observability | HIGH/MEDIUM | `observe-` |
-
 ## Quick Reference
+
+Categories below are in priority order. Each identifier names `rules/<identifier>.md`; read the relevant rule for rationale, incorrect/correct examples, and decision tables.
 
 ### 1. Parsing & Type Safety (CRITICAL)
 
@@ -75,7 +63,7 @@ Zod is for **runtime type validation** — parsing untrusted data at system boun
 ### 4. Error Handling (HIGH)
 
 - `error-custom-messages` — Use v4 `error` parameter; `required_error`/`invalid_type_error` are removed
-- `error-formatting` — `z.flattenError()` for forms, `z.treeifyError()` for nested; `formatError` deprecated
+- `error-formatting` — `z.flattenError()` for forms, `z.treeifyError()` for nested; choose the matching output shape
 - `error-input-security` — Never use `reportInput: true` in production; leaks sensitive data
 
 ### 5. Performance & Composition (MEDIUM)
@@ -88,7 +76,7 @@ Zod is for **runtime type validation** — parsing untrusted data at system boun
 
 - `migrate-string-formats` — Use `z.email()`, `z.uuid()`, `z.url()` not `z.string().email()`
 - `migrate-native-enum` — Use unified `z.enum()` for TS enums; `z.nativeEnum()` is deprecated
-- `migrate-error-api` — Use `error` parameter everywhere; `message`, `errorMap` are removed
+- `migrate-error-api` — Use `error` parameter everywhere; `message` is deprecated; `errorMap` is renamed
 
 ### 7. Advanced Patterns (MEDIUM)
 
@@ -109,55 +97,7 @@ Zod is for **runtime type validation** — parsing untrusted data at system boun
 
 ## Schema Types Quick Reference
 
-| Type | Syntax |
-|------|--------|
-| String | `z.string()` |
-| Number | `z.number()`, `z.int()`, `z.float()` |
-| Boolean | `z.boolean()` |
-| BigInt | `z.bigint()` |
-| Date | `z.date()` |
-| Undefined | `z.undefined()` |
-| Null | `z.null()` |
-| Void | `z.void()` |
-| Any | `z.any()` |
-| Unknown | `z.unknown()` |
-| Never | `z.never()` |
-| Literal | `z.literal("foo")`, `z.literal(42)` |
-| Enum | `z.enum(["a", "b"])`, `z.enum(TSEnum)` |
-| Email | `z.email()` |
-| URL | `z.url()` |
-| UUID | `z.uuid()` |
-| String→Bool | `z.stringbool()` |
-| ISO DateTime | `z.iso.datetime()` |
-| File | `z.file()` |
-| JSON | `z.json()` |
-| Array | `z.array(schema)` |
-| Tuple | `z.tuple([a, b])` |
-| Object | `z.object({})` |
-| Strict Object | `z.strictObject({})` |
-| Loose Object | `z.looseObject({})` |
-| Record | `z.record(keySchema, valueSchema)` |
-| Map | `z.map(keySchema, valueSchema)` |
-| Set | `z.set(schema)` |
-| Union | `z.union([a, b])` |
-| Disc. Union | `z.discriminatedUnion("key", [...])` |
-| Intersection | `z.intersection(a, b)` |
-
-## How to Use
-
-Read individual rule files for detailed explanations and code examples:
-
-```
-rules/parse-use-safeParse.md
-rules/schema-object-unknowns.md
-```
-
-Each rule file contains:
-
-- Brief explanation of why it matters
-- Incorrect code example with explanation
-- Correct code example with explanation
-- Additional context and decision tables
+Read [schema types](references/schema-types.md) for primitive/format syntax and [objects and composition](references/objects-and-composition.md) for containers, unions, and intersections.
 
 ## References
 
@@ -176,6 +116,6 @@ Each rule file contains:
 | 11 | `references/testing-api.md` | Jest and Vitest API reference for schema tests |
 | 12 | `references/testing-anti-patterns.md` | Testing mistakes with BAD/GOOD examples |
 
-## Full Compiled Document
+## Output
 
-For the complete guide with all rules expanded: `AGENTS.md`
+Follow [output.md](output.md).

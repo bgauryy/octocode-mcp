@@ -5,7 +5,7 @@ use crate::policy::prune::DefaultsFlag;
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::result::ToolError;
-use octocode_engine::{portable::search_text_cancellable, types::TextSearchOptions};
+use octocode_engine::{search::text_search::search_cancellable, types::TextSearchOptions};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -700,7 +700,7 @@ pub(super) fn search_options(
         files_without_match: Some(view == LocalSearchQueryResultView::FilesWithout),
         count_lines_per_file: Some(view == LocalSearchQueryResultView::CountLines),
         count_matches_per_file: Some(view == LocalSearchQueryResultView::CountMatches),
-        context_lines: Some(query.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)),
+        context: query.context(),
         lang_type: query.language.clone(),
         file_contains_all: Some(query.file_has.iter().map(|t| t.to_string()).collect())
             .filter(|terms: &Vec<String>| !terms.is_empty()),
@@ -822,17 +822,16 @@ pub(super) fn scan(
             query.include_ignored != Some(true),
             super::manifest::MAX_BYTES,
         ));
-        let parsed =
-            search_text_cancellable(options, recorder.clone(), &|| cancel.check().is_err())
-                .map_err(|error| {
-                    // A malformed glob or file type is caller input.
-                    let code = match error.kind() {
-                        octocode_engine::error::ErrorKind::InvalidInput => "invalidInput",
-                        octocode_engine::error::ErrorKind::InvalidGlob => "invalidGlob",
-                        _ => "executionFailed",
-                    };
-                    ToolError::new(code, error.to_string())
-                })?;
+        let parsed = search_cancellable(options, recorder.clone(), &|| cancel.check().is_err())
+            .map_err(|error| {
+                // A malformed glob or file type is caller input.
+                let code = match error.kind() {
+                    octocode_engine::error::ErrorKind::InvalidInput => "invalidInput",
+                    octocode_engine::error::ErrorKind::InvalidGlob => "invalidGlob",
+                    _ => "executionFailed",
+                };
+                ToolError::new(code, error.to_string())
+            })?;
         (
             parsed,
             None,
@@ -1062,8 +1061,6 @@ pub(super) fn unreadable_scope(stats: &octocode_engine::types::TextSearchStats) 
     }
 }
 
-/// Default ±context window per match row: the hit line alone, except the
-/// `detailed` view, which exists to show surrounding code.
 /// Per-hit character budget. An omitted matchContentLength scales with the
 /// effective context window so requested context is not silently clipped;
 /// continuations and snapshot identity must use this same value.
@@ -1071,18 +1068,15 @@ pub(super) fn effective_match_content_length(q: &LocalSearchQuery) -> u32 {
     q.match_content_length().unwrap_or_else(|| {
         let view = q.result_view;
         let context = if uses_context(view) {
-            q.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)
+            q.context().before.saturating_add(q.context().after)
         } else {
             0
         };
         DEFAULT_MATCH_CONTENT_LENGTH
-            .saturating_mul(context.saturating_mul(2).saturating_add(1))
+            .saturating_mul(context.saturating_add(1))
             .min(MAX_DEFAULT_MATCH_CONTENT_LENGTH)
     })
 }
-
-/// Context lines around a hit when a query sets none.
-pub(super) const DEFAULT_CONTEXT_LINES: u32 = 0;
 
 /// Default files per page: snippet views stay lean; path-only views are cheap.
 pub(super) fn default_page_size(view: LocalSearchQueryResultView) -> u32 {

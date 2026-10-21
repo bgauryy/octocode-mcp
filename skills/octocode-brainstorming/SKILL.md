@@ -96,6 +96,8 @@ Think together ([how](references/critical-thinking.md#thinking-with-the-user)): 
 
 Scripts accept `--help`; run as `node <skill-folder>/scripts/<name>.mjs`; tests: `node --test '<skill-folder>/scripts/tests/*.test.mjs'`.
 
+Script support comes from `skills/common`: [network guard](scripts/lib/net-guard.mjs) for outbound requests and [JSON errors](scripts/lib/fail.mjs) for failures.
+
 ## Related skills
 
 - `octocode-research`: code or repository facts decide a direction.

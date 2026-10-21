@@ -70,7 +70,12 @@ pub use crate::contracts::tool_types::LspSearchQuery;
 macro_rules! each_shape {
     ($query:expr, $field:ident => $value:expr) => {
         match $query {
-            LspSearchQuery::Anchored(wire::Anchored { $field, .. }) => $value,
+            LspSearchQuery::AnchoredLocations(wire::AnchoredLocations { $field, .. }) => $value,
+            LspSearchQuery::AnchoredReferences(wire::AnchoredReferences { $field, .. }) => $value,
+            LspSearchQuery::AnchoredCallers(wire::AnchoredCallers { $field, .. }) => $value,
+            LspSearchQuery::AnchoredHierarchy(wire::AnchoredHierarchy { $field, .. }) => $value,
+            LspSearchQuery::AnchoredSubtypes(wire::AnchoredSubtypes { $field, .. }) => $value,
+            LspSearchQuery::AnchoredHover(wire::AnchoredHover { $field, .. }) => $value,
             LspSearchQuery::Document(wire::Document { $field, .. }) => $value,
             LspSearchQuery::WorkspacePath(wire::WorkspacePath { $field, .. }) => $value,
             LspSearchQuery::WorkspaceRoot(wire::WorkspaceRoot { $field, .. }) => $value,
@@ -121,18 +126,31 @@ impl Op {
 /// coordinates.
 impl LspSearchQuery {
     pub(crate) fn op(&self) -> Op {
-        use wire::{AnchoredOperation as A, DocumentOperation as D};
+        use wire::{
+            AnchoredHierarchyOperation as H, AnchoredLocationsOperation as L,
+            DocumentOperation as D,
+        };
         match self {
-            Self::Anchored(query) => match query.operation {
-                A::Definition => Op::Definition,
-                A::References => Op::References,
-                A::Callers => Op::Callers,
-                A::Callees => Op::Callees,
-                A::Hover => Op::Hover,
-                A::TypeDefinition => Op::TypeDefinition,
-                A::Implementation => Op::Implementation,
-                A::Supertypes => Op::Supertypes,
-                A::Subtypes => Op::Subtypes,
+            Self::AnchoredLocations(query) => match query.operation {
+                L::Definition => Op::Definition,
+                L::TypeDefinition => Op::TypeDefinition,
+                L::Implementation => Op::Implementation,
+            },
+            Self::AnchoredReferences(query) => match query.operation {
+                wire::AnchoredReferencesOperation::References => Op::References,
+            },
+            Self::AnchoredCallers(query) => match query.operation {
+                wire::AnchoredCallersOperation::Callers => Op::Callers,
+            },
+            Self::AnchoredHierarchy(query) => match query.operation {
+                H::Callees => Op::Callees,
+                H::Supertypes => Op::Supertypes,
+            },
+            Self::AnchoredSubtypes(query) => match query.operation {
+                wire::AnchoredSubtypesOperation::Subtypes => Op::Subtypes,
+            },
+            Self::AnchoredHover(query) => match query.operation {
+                wire::AnchoredHoverOperation::Hover => Op::Hover,
             },
             Self::Document(query) => match query.operation {
                 D::DocumentSymbols => Op::DocumentSymbols,
@@ -148,7 +166,12 @@ impl LspSearchQuery {
     /// The file the query names (a path or `file://` URI).
     pub(crate) fn path(&self) -> Option<&str> {
         match self {
-            Self::Anchored(query) => Some(query.path.as_str()),
+            Self::AnchoredLocations(query) => Some(query.path.as_str()),
+            Self::AnchoredReferences(query) => Some(query.path.as_str()),
+            Self::AnchoredCallers(query) => Some(query.path.as_str()),
+            Self::AnchoredHierarchy(query) => Some(query.path.as_str()),
+            Self::AnchoredSubtypes(query) => Some(query.path.as_str()),
+            Self::AnchoredHover(query) => Some(query.path.as_str()),
             Self::Document(query) => Some(query.path.as_str()),
             Self::WorkspacePath(query) => Some(query.path.as_str()),
             Self::WorkspaceRoot(query) => query.path.as_deref(),
@@ -157,14 +180,24 @@ impl LspSearchQuery {
     pub(crate) fn workspace_root(&self) -> Option<&str> {
         match self {
             Self::WorkspaceRoot(query) => Some(query.workspace_root.as_str()),
-            Self::Anchored(query) => query.workspace_root.as_deref(),
+            Self::AnchoredLocations(query) => query.workspace_root.as_deref(),
+            Self::AnchoredReferences(query) => query.workspace_root.as_deref(),
+            Self::AnchoredCallers(query) => query.workspace_root.as_deref(),
+            Self::AnchoredHierarchy(query) => query.workspace_root.as_deref(),
+            Self::AnchoredSubtypes(query) => query.workspace_root.as_deref(),
+            Self::AnchoredHover(query) => query.workspace_root.as_deref(),
             Self::Document(query) => query.workspace_root.as_deref(),
             Self::WorkspacePath(query) => query.workspace_root.as_deref(),
         }
     }
     pub(crate) fn symbol_name(&self) -> Option<&str> {
         match self {
-            Self::Anchored(query) => Some(query.symbol_name.as_str()),
+            Self::AnchoredLocations(query) => Some(query.symbol_name.as_str()),
+            Self::AnchoredReferences(query) => Some(query.symbol_name.as_str()),
+            Self::AnchoredCallers(query) => Some(query.symbol_name.as_str()),
+            Self::AnchoredHierarchy(query) => Some(query.symbol_name.as_str()),
+            Self::AnchoredSubtypes(query) => Some(query.symbol_name.as_str()),
+            Self::AnchoredHover(query) => Some(query.symbol_name.as_str()),
             Self::WorkspacePath(query) => Some(query.symbol_name.as_str()),
             Self::WorkspaceRoot(query) => Some(query.symbol_name.as_str()),
             Self::Document(_) => None,
@@ -172,14 +205,34 @@ impl LspSearchQuery {
     }
     pub(crate) fn anchor_line(&self) -> Option<u32> {
         match self {
-            Self::Anchored(query) => Some(u32_of(query.line.get())),
+            Self::AnchoredLocations(query) => Some(u32_of(query.line.get())),
+            Self::AnchoredReferences(query) => Some(u32_of(query.line.get())),
+            Self::AnchoredCallers(query) => Some(u32_of(query.line.get())),
+            Self::AnchoredHierarchy(query) => Some(u32_of(query.line.get())),
+            Self::AnchoredSubtypes(query) => Some(u32_of(query.line.get())),
+            Self::AnchoredHover(query) => Some(u32_of(query.line.get())),
             _ => None,
         }
     }
     /// The occurrence index; the default (first occurrence) reads as unset.
     pub(crate) fn order_hint(&self) -> Option<u32> {
         match self {
-            Self::Anchored(query) => {
+            Self::AnchoredLocations(query) => {
+                (query.order_hint != 0).then(|| u32_of_signed(query.order_hint))
+            }
+            Self::AnchoredReferences(query) => {
+                (query.order_hint != 0).then(|| u32_of_signed(query.order_hint))
+            }
+            Self::AnchoredCallers(query) => {
+                (query.order_hint != 0).then(|| u32_of_signed(query.order_hint))
+            }
+            Self::AnchoredHierarchy(query) => {
+                (query.order_hint != 0).then(|| u32_of_signed(query.order_hint))
+            }
+            Self::AnchoredSubtypes(query) => {
+                (query.order_hint != 0).then(|| u32_of_signed(query.order_hint))
+            }
+            Self::AnchoredHover(query) => {
                 (query.order_hint != 0).then(|| u32_of_signed(query.order_hint))
             }
             _ => None,
@@ -187,19 +240,22 @@ impl LspSearchQuery {
     }
     pub(crate) fn include_declaration(&self) -> Option<bool> {
         match self {
-            Self::Anchored(query) => query.include_declaration,
+            Self::AnchoredReferences(query) => query.include_declaration,
             _ => None,
         }
     }
     pub(crate) fn group_by_file(&self) -> Option<bool> {
         match self {
-            Self::Anchored(query) => query.group_by_file,
+            Self::AnchoredLocations(query) => query.group_by_file,
+            Self::AnchoredReferences(query) => query.group_by_file,
             _ => None,
         }
     }
     pub(crate) fn graph_depth(&self) -> Option<u32> {
         match self {
-            Self::Anchored(query) => query.graph_depth.map(u32_of),
+            Self::AnchoredCallers(query) => query.graph_depth.map(|depth| u32_of(depth.get())),
+            Self::AnchoredHierarchy(query) => query.graph_depth.map(|depth| u32_of(depth.get())),
+            Self::AnchoredSubtypes(query) => query.graph_depth.map(|depth| u32_of(depth.get())),
             _ => None,
         }
     }
@@ -214,7 +270,12 @@ impl LspSearchQuery {
     /// The importer window (`importerPage`, one-based) of an anchored query.
     pub(crate) fn importer_page(&self) -> u32 {
         match self {
-            Self::Anchored(query) => query.importer_page.map_or(1, |page| u32_of(page.get())),
+            Self::AnchoredReferences(query) => {
+                query.importer_page.map_or(1, |page| u32_of(page.get()))
+            }
+            Self::AnchoredCallers(query) => {
+                query.importer_page.map_or(1, |page| u32_of(page.get()))
+            }
             _ => 1,
         }
     }
@@ -222,7 +283,9 @@ impl LspSearchQuery {
     /// (`candidatePage`, one-based) a fallback `subtypes` walk checks.
     pub(crate) fn candidate_page(&self) -> u32 {
         match self {
-            Self::Anchored(query) => query.candidate_page.map_or(1, |page| u32_of(page.get())),
+            Self::AnchoredSubtypes(query) => {
+                query.candidate_page.map_or(1, |page| u32_of(page.get()))
+            }
             _ => 1,
         }
     }
@@ -231,7 +294,8 @@ impl LspSearchQuery {
     }
     pub(crate) fn context_lines(&self) -> Option<u32> {
         match self {
-            Self::Anchored(query) => query.context_lines.map(u32_of_signed),
+            Self::AnchoredLocations(query) => query.context_lines.map(u32_of_signed),
+            Self::AnchoredReferences(query) => query.context_lines.map(u32_of_signed),
             _ => None,
         }
     }
@@ -354,7 +418,32 @@ impl LspSearchQuery {
 
     fn set_path(&mut self, path: String) {
         match self {
-            Self::Anchored(query) => {
+            Self::AnchoredLocations(query) => {
+                if let Ok(path) = path.try_into() {
+                    query.path = path;
+                }
+            }
+            Self::AnchoredReferences(query) => {
+                if let Ok(path) = path.try_into() {
+                    query.path = path;
+                }
+            }
+            Self::AnchoredCallers(query) => {
+                if let Ok(path) = path.try_into() {
+                    query.path = path;
+                }
+            }
+            Self::AnchoredHierarchy(query) => {
+                if let Ok(path) = path.try_into() {
+                    query.path = path;
+                }
+            }
+            Self::AnchoredSubtypes(query) => {
+                if let Ok(path) = path.try_into() {
+                    query.path = path;
+                }
+            }
+            Self::AnchoredHover(query) => {
                 if let Ok(path) = path.try_into() {
                     query.path = path;
                 }
@@ -380,7 +469,12 @@ impl LspSearchQuery {
                     query.workspace_root = root;
                 }
             }
-            Self::Anchored(query) => query.workspace_root = Some(root),
+            Self::AnchoredLocations(query) => query.workspace_root = Some(root),
+            Self::AnchoredReferences(query) => query.workspace_root = Some(root),
+            Self::AnchoredCallers(query) => query.workspace_root = Some(root),
+            Self::AnchoredHierarchy(query) => query.workspace_root = Some(root),
+            Self::AnchoredSubtypes(query) => query.workspace_root = Some(root),
+            Self::AnchoredHover(query) => query.workspace_root = Some(root),
             Self::Document(query) => query.workspace_root = Some(root),
             Self::WorkspacePath(query) => query.workspace_root = Some(root),
         }
@@ -590,10 +684,10 @@ struct Target {
     path: String,
     uri: String,
     root_only: bool,
-    config: octocode_engine::lsp::types::JsLanguageServerConfig,
+    config: octocode_engine::lsp::types::LspLanguageServerConfig,
     /// The server to use when `config` (octocode's native tsgo) fails to
     /// start; `None` where there is no substitute.
-    fallback: Option<octocode_engine::lsp::types::JsLanguageServerConfig>,
+    fallback: Option<octocode_engine::lsp::types::LspLanguageServerConfig>,
     /// Why the server runs at another root than the one inferred for the
     /// file: a warning every row of the request carries.
     root_note: Option<String>,
@@ -949,7 +1043,7 @@ struct Session {
     client: octocode_engine::lsp::client::NativeLspClient,
     _lease: octocode_engine::lsp::client::LspLease,
     /// The server that answers: the target's, or its fallback.
-    config: octocode_engine::lsp::types::JsLanguageServerConfig,
+    config: octocode_engine::lsp::types::LspLanguageServerConfig,
     /// Why the target's own server did not start, when `config` replaced it.
     fell_back_from: Option<String>,
     /// The post-didOpen readiness (timeout when the project load was
@@ -1017,7 +1111,7 @@ struct Leased {
     lease: octocode_engine::lsp::client::LspLease,
     /// The configuration that actually started: `target.config`, or its
     /// fallback.
-    config: octocode_engine::lsp::types::JsLanguageServerConfig,
+    config: octocode_engine::lsp::types::LspLanguageServerConfig,
     /// Why `target.config` did not start, when `config` is the fallback.
     fell_back_from: Option<String>,
 }

@@ -12,7 +12,7 @@ use crate::runtime::ExecutionError;
 use crate::runtime::dispatch::DomainResult;
 use crate::tools::id::ToolId;
 use crate::tools::id::continuation_channels::PAGES_KEY;
-use crate::tools::stream_page::{json_chars, json_text_chars};
+use crate::tools::stream_page::json_text_chars;
 
 /// Room for the envelope around the rows: `base`, `shared`, and the
 /// response-level warning that names the partial rows.
@@ -74,7 +74,7 @@ fn row_chars(row: &DomainResult) -> usize {
         .map_or(0, |(text, gutter)| {
             text.split_inclusive('\n').count() * gutter
         });
-    json_chars(&row.data) + gutter
+    octocode_engine::json_size::utf16_units(&row.data).unwrap_or(0) + gutter
 }
 
 /// Line windows keep their coordinate; a full read can become a line
@@ -145,8 +145,9 @@ fn plan(
             .split_inclusive('\n')
             .map(|line| line_chars(line, gutter))
             .sum();
-        let around =
-            sizes[index].saturating_sub(text_chars) + json_chars(query) + CONTINUATION_EXTRA_CHARS;
+        let around = sizes[index].saturating_sub(text_chars)
+            + octocode_engine::json_size::utf16_units(query).unwrap_or(0)
+            + CONTINUATION_EXTRA_CHARS;
         let keep = lines_within(text, gutter, shares[index].saturating_sub(around));
         if keep < text.split_inclusive('\n').count() {
             cuts.push((index, keep));
@@ -376,9 +377,9 @@ mod tests {
             crate::tools::test_support::checks::assert_output_contract("localFetch", &wire);
             if shared {
                 assert!(
-                    json_chars(&wire) <= window,
+                    octocode_engine::json_size::utf16_units(&wire).unwrap_or(0) <= window,
                     "{} > {window}",
-                    json_chars(&wire)
+                    octocode_engine::json_size::utf16_units(&wire).unwrap_or(0)
                 );
             }
             let data = &wire["results"][0]["data"];

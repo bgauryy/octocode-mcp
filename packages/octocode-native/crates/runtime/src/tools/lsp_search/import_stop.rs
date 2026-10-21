@@ -84,7 +84,7 @@ pub(super) fn stays_on_import(
 /// Zero-based start of every import's local binding in `content`, with its
 /// module specifier; `None` when the file's imports cannot be read.
 fn import_bindings(content: &str, file: &str) -> Option<HashMap<Spot, String>> {
-    let facts = octocode_engine::portable::extract_graph_facts(content, file)?;
+    let facts = octocode_engine::signatures::extract_graph_facts(content, file)?;
     let parsed = serde_json::from_str::<Value>(&facts).ok()?;
     Some(
         parsed

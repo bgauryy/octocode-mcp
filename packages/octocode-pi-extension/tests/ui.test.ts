@@ -1,3 +1,5 @@
+import { AssistantMessageComponent, initTheme } from '@earendil-works/pi-coding-agent';
+import { Container } from '@earendil-works/pi-tui';
 import { describe, expect, it, vi } from 'vitest';
 import { rgbColor, styleText, visibleWidth } from '@earendil-works/pi-tui';
 import { bannerHeader, packageVersion, registerUi, spinnerFrames, themeRamp, tokensPerSecond } from '../src/ui/chrome.js';
@@ -14,6 +16,24 @@ const colorTheme = {
 } as never;
 
 describe('chrome', () => {
+  it('expands the real transcript before its message rows render', async () => {
+    initTheme('dark', false);
+    const fake = fakePi();
+    registerUi(fake.pi, false);
+    const ctx = fakeCtx({ cwd: '/work/app' });
+    await fake.emit('session_start', { reason: 'resume' }, ctx);
+    const chat = new Container();
+    const message = new AssistantMessageComponent({ role: 'assistant', content: [{ type: 'thinking', thinking: 'Visible reasoning.' }] } as never, true);
+    chat.addChild(message);
+    const setHidden = vi.spyOn(message, 'setHideThinkingBlock');
+    const root = { children: [chat], requestRender: vi.fn() };
+    const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { render(width: number): string[]; dispose(): void })(root, theme);
+    header.render(80);
+    expect(setHidden).toHaveBeenCalledExactlyOnceWith(false);
+    expect(message.render(80).join('\n')).toContain('Visible reasoning.');
+    header.dispose();
+  });
+
   it('computes output tokens per second of streaming time', () => {
     expect(tokensPerSecond(400, 4_000)).toBe(100);
     expect(tokensPerSecond(0, 1_000)).toBeUndefined();
@@ -33,7 +53,7 @@ describe('chrome', () => {
     expect((ctx.ui as never as { indicator: { frames: string[] } }).indicator.frames).toHaveLength(10);
     expect((ctx.ui as never as { thinkingLabel: string }).thinkingLabel).toContain('Thinking');
     const requestRender = vi.fn();
-    const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { render(width: number): string[]; dispose(): void })({ requestRender }, theme);
+    const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { render(width: number): string[]; dispose(): void })({ requestRender, children: [] }, theme);
     const lines = header.render(120);
     expect(lines).toHaveLength(BANNER_HEIGHT);
     expect(lines[0]).toContain('██');
@@ -73,7 +93,7 @@ describe('chrome', () => {
     await fake.emit('session_start', { reason: 'resume' }, ctx);
     const ui = ctx.ui as never as { thinkingLabel: string; theme: unknown };
     ui.theme = { ...(theme as object), fg: (color: string, text: string) => `<${color}>${text}` };
-    const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { invalidate(): void; dispose(): void })({ requestRender: vi.fn() }, theme);
+    const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { invalidate(): void; dispose(): void })({ requestRender: vi.fn(), children: [] }, theme);
     expect(ui.thinkingLabel).not.toContain('<thinkingText>');
     header.invalidate();
     expect(ui.thinkingLabel).toContain('<thinkingText>');
@@ -104,7 +124,7 @@ describe('chrome', () => {
       ctx.sessionManager.getBranch = () => branch as never;
       await fake.emit('session_start', { reason }, ctx);
       const requestRender = vi.fn();
-      const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { dispose(): void })({ requestRender }, colorTheme);
+      const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { dispose(): void })({ requestRender, children: [] }, colorTheme);
       await new Promise((resolve) => setTimeout(resolve, 120));
       header.dispose();
       return requestRender.mock.calls.length;

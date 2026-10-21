@@ -7,7 +7,7 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 #[tokio::test]
-async fn github_cache_survives_runtime_close_until_explicitly_cleared() {
+async fn github_cache_survives_runtime_close() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b/contents/source.rs"))
@@ -23,7 +23,7 @@ async fn github_cache_survives_runtime_close_until_explicitly_cleared() {
                     }))
             }
         })
-        .expect(2)
+        .expect(1)
         .mount(&server)
         .await;
     let workspace = Workspace::new();
@@ -37,9 +37,7 @@ async fn github_cache_survives_runtime_close_until_explicitly_cleared() {
     first.close().await;
 
     let second = workspace.runtime(&settings);
-    let outcome = call(&second, "ghGetFileContent", query.clone())
-        .await
-        .unwrap();
+    let outcome = call(&second, "ghGetFileContent", query).await.unwrap();
     assert_eq!(row_status(&outcome), "success");
     assert_eq!(row_data(&outcome)["content"], "1\tsource body\n");
     let requests = server.received_requests().await.unwrap();
@@ -51,17 +49,6 @@ async fn github_cache_survives_runtime_close_until_explicitly_cleared() {
     // served as is: no conditional (304) round trip after a restart.
     assert_eq!(contents.len(), 1);
     assert!(contents[0].headers.get("if-none-match").is_none());
-
-    second.clear_response_caches();
-    let outcome = call(&second, "ghGetFileContent", query).await.unwrap();
-    assert_eq!(row_status(&outcome), "success");
-    let requests = server.received_requests().await.unwrap();
-    let last_content = requests
-        .iter()
-        .rev()
-        .find(|request| request.url.path().contains("/contents/"))
-        .unwrap();
-    assert!(last_content.headers.get("if-none-match").is_none());
     second.close().await;
 }
 

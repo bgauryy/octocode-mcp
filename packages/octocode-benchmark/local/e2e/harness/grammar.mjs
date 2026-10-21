@@ -24,6 +24,8 @@ const L = {
     src: '#define LIMIT 3\nstruct Widget { int n; };\nint helper(int n) { return n * 2; }\nint run(void) {\n  const char *s = "😀"; return helper((int)s[0]);\n}\n' },
   'C++': { ext: 'cpp', rg: 'cpp', kind: 'function_definition', call: 'helper', names: ['LIMIT', 'helper', 'Widget', 'area', 'run'], alt: ['hpp', 'cc', 'cxx', 'hh', 'hxx'], cppHeader: true,
     src: 'const int LIMIT = 3;\nint helper(int n) { return n * 2; }\nclass Widget {\n public:\n  int area() { return helper(LIMIT); }\n};\nint run() {\n  const char *s = "😀"; return helper(s[0]);\n}\n' },
+  CUDA: { ext: 'cu', rg: 'cuda', kind: 'function_definition', call: 'helper', names: ['LIMIT', 'helper', 'run'], alt: ['cuh'],
+    src: 'const int LIMIT = 3;\n__device__ int helper(int n) { return n * 2; }\n__global__ void run() {\n  const char *s = "😀"; int value = helper((int)s[0] + LIMIT);\n}\n' },
   'C#': { ext: 'cs', rg: 'csharp', kind: 'method_declaration', call: 'Helper', names: ['Widget', 'LIMIT', 'Area', 'Helper', 'Run'], alt: [],
     src: 'public class Widget {\n  const int LIMIT = 3;\n  int Area() { return Helper(LIMIT); }\n  static int Helper(int n) { return n * 2; }\n  static int Run() {\n    var s = "😀"; return Helper(s.Length);\n  }\n}\n' },
   Scala: { ext: 'scala', rg: 'scala', kind: 'function_definition', call: 'helper', names: ['Widget', 'LIMIT', 'helper', 'run'], alt: ['sc', 'sbt'],

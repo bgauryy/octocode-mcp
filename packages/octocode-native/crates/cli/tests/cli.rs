@@ -369,22 +369,6 @@ fn removed_alias_commands_are_rejected() {
 }
 
 #[test]
-fn hidden_maintenance_commands_still_work() {
-    let workspace = Workspace::new();
-    let output = workspace
-        .cli()
-        .args(["cache", "status"])
-        .output()
-        .expect("cache status");
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert!(
-        stdout(&output).contains("cache home:"),
-        "{}",
-        stdout(&output)
-    );
-}
-
-#[test]
 fn auth_login_requires_supported_credentials_and_a_terminal() {
     let workspace = Workspace::new();
     let login = workspace
@@ -503,6 +487,65 @@ fn config_check_reports_set_state_without_the_value() {
         .expect("config check unset");
     assert_eq!(exit_code(&unset), Some(1));
     assert!(stdout(&unset).contains("unset"), "{}", stdout(&unset));
+}
+
+/// `--scope workspace` writes the project file under the working directory,
+/// `--list` reports it per client, and `--remove` takes it out again.
+#[test]
+fn install_scopes_list_status_and_remove_round_trip() {
+    let workspace = Workspace::new();
+    let run = |args: &[&str]| workspace.cli().args(args).output().expect("install");
+    let listed = |scope: &str| -> serde_json::Value {
+        let output = run(&["install", "--list", "--scope", scope, "--json"]);
+        assert!(output.status.success(), "{}", stderr(&output));
+        let list: serde_json::Value = serde_json::from_str(stdout(&output)).expect("list json");
+        assert_eq!(list["scope"], scope, "{list}");
+        list["ides"]
+            .as_array()
+            .expect("ides")
+            .iter()
+            .find(|row| row["id"] == "cursor")
+            .cloned()
+            .expect("cursor row")
+    };
+    assert_eq!(listed("workspace")["status"], "absent");
+    let written = run(&["install", "--ide", "cursor", "--scope", "workspace"]);
+    assert!(written.status.success(), "{}", stderr(&written));
+    let config = workspace.workspace.join(".cursor").join("mcp.json");
+    assert!(config.exists(), "workspace scope writes the project file");
+    assert!(!workspace.home.join(".cursor").join("mcp.json").exists());
+    let row = listed("workspace");
+    assert_eq!(row["status"], "installed", "{row}");
+    assert_eq!(
+        row["scopes"],
+        serde_json::json!(["home", "workspace"]),
+        "{row}"
+    );
+    assert_eq!(listed("home")["status"], "absent");
+
+    let unsupported = run(&["install", "--ide", "windsurf", "--scope", "workspace"]);
+    assert_eq!(unsupported.status.code(), Some(2));
+    assert!(
+        stderr(&unsupported).contains("supports --scope home"),
+        "{}",
+        stderr(&unsupported)
+    );
+
+    let removed = run(&[
+        "install",
+        "--ide",
+        "cursor",
+        "--scope",
+        "workspace",
+        "--remove",
+    ]);
+    assert!(removed.status.success(), "{}", stderr(&removed));
+    assert!(
+        stdout(&removed).contains("Undo: octocode install --rollback "),
+        "{}",
+        stdout(&removed)
+    );
+    assert_eq!(listed("workspace")["status"], "absent");
 }
 
 #[test]
@@ -742,7 +785,7 @@ fn tool_reads_query_from_input_file() {
     );
 }
 
-/// `schema` lists every enabled tool with its compact field list, one line
+/// `schema --view full` lists every enabled tool with its field list, one line
 /// on a pipe, small enough to read whole.
 #[test]
 fn schema_lists_compact_field_lists_for_every_enabled_tool() {
@@ -751,7 +794,7 @@ fn schema_lists_compact_field_lists_for_every_enabled_tool() {
     let output = workspace
         .cli()
         .env("OCTOCODE_STORAGE_MODE", "persistent")
-        .arg("schema")
+        .args(["schema", "--view", "full"])
         .output()
         .expect("schema");
     assert!(output.status.success(), "{}", stderr(&output));
@@ -772,10 +815,12 @@ fn schema_lists_compact_field_lists_for_every_enabled_tool() {
     };
     assert!(fields_of("ghStructure").contains("owner*"));
     assert!(fields_of("ghSearchCode").contains("owner*"));
-    // Several row forms list each by its variant name (the embedded CLI
-    // presentation precomputes the lists from the core Zod rows).
-    assert!(fields_of("astSearch").contains("match:rule[path*, rule*"));
-    assert!(fields_of("lspSearch").starts_with("anchored["));
+    // Several row forms list each as a flat row with its selector value
+    // inline (the embedded CLI presentation precomputes the lists from the
+    // core Zod rows).
+    assert!(fields_of("astSearch").contains("[operation:\"match\", path*, rule*"));
+    assert!(fields_of("structureSearch").starts_with("[operation?:\"tree\", path*"));
+    assert!(!fields_of("lspSearch").contains("anchored["));
     let clone = workspace
         .cli()
         .env("OCTOCODE_STORAGE_MODE", "persistent")
@@ -798,7 +843,11 @@ fn schema_and_tool_help_are_served_by_the_binary() {
         serde_json::from_str(stdout(&output)).expect("schema JSON")
     };
 
-    let catalog = json(&["schema"]);
+    let compact = json(&["schema"]);
+    let catalog = json(&["schema", "--view", "full"]);
+    assert!(compact.to_string().len() < catalog.to_string().len());
+    assert_eq!(compact["toolCount"], catalog["toolCount"]);
+    assert_eq!(compact["commands"]["full"], "octocode schema --view full");
     assert_eq!(catalog["kind"], "octocode.toolCatalog");
     for setup in ["auth", "mcp", "skills", "graph"] {
         assert!(catalog["commands"]["setup"][setup].is_string(), "{setup}");
@@ -819,7 +868,19 @@ fn schema_and_tool_help_are_served_by_the_binary() {
     assert_eq!(catalog["toolCount"], listed.len());
 
     let query = json(&["schema", "localSearch", "--view", "query"]);
+    assert_eq!(query, json(&["schema", "localSearch"]));
     assert_eq!(query["name"], "localSearch");
+    assert_eq!(
+        json(&["schema", "astSearch", "--select", "operation=symbols"]),
+        json(&[
+            "schema",
+            "astSearch",
+            "--view",
+            "query",
+            "--select",
+            "operation=symbols"
+        ])
+    );
     assert!(query["querySchema"]["required"].is_array(), "{query}");
     assert_eq!(query["availability"]["enabled"], true);
     assert_eq!(query["run"], "octocode localSearch '<json>'");
@@ -849,8 +910,15 @@ fn schema_and_tool_help_are_served_by_the_binary() {
     for (args, message) in [
         (vec!["schema", "localSerch"], "Unknown tool: localSerch"),
         (
-            vec!["schema", "lspSearch", "--select", "operation=callers"],
-            "--select requires --view query",
+            vec![
+                "schema",
+                "lspSearch",
+                "--view",
+                "full",
+                "--select",
+                "operation=callers",
+            ],
+            "--select requires the query view",
         ),
         (
             vec!["schema", "lspSearch", "--view", "query", "--select", "nope"],
@@ -908,7 +976,7 @@ fn schema_and_tool_help_are_served_by_the_binary() {
     );
     assert!(
         help.trim_end()
-            .ends_with("All fields: octocode schema localSearch"),
+            .ends_with("Fields: octocode schema localSearch (complete: --view full)"),
         "{help}"
     );
 

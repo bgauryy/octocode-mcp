@@ -729,7 +729,7 @@ fn import_of(policy: &PathPolicy, file: &str, symbol: &str) -> Option<bool> {
 /// Whether `content` imports `symbol` (see [`check_imports`]); `None` when
 /// the file cannot be parsed.
 fn imports_name(content: &str, file: &str, symbol: &str) -> Option<bool> {
-    let parsed = octocode_engine::portable::extract_graph_facts(content, file)
+    let parsed = octocode_engine::signatures::extract_graph_facts(content, file)
         .and_then(|facts| serde_json::from_str::<Value>(&facts).ok())?;
     let member = format!(".{symbol}");
     let spells_member = || {

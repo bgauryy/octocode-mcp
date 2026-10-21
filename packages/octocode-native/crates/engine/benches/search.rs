@@ -10,7 +10,8 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use octocode_engine::portable::{TextSearchPathFilter, search_text_cancellable};
+use octocode_engine::search::text_search::TextSearchPathFilter;
+use octocode_engine::search::text_search::search_cancellable;
 use octocode_engine::types::TextSearchOptions;
 
 struct AllowAll;
@@ -57,7 +58,7 @@ fn high_hit_search(criterion: &mut Criterion) {
     ] {
         criterion.bench_function(name, |bencher| {
             bencher.iter(|| {
-                let result = search_text_cancellable(
+                let result = search_cancellable(
                     TextSearchOptions {
                         path: path.clone(),
                         pattern: "needle".to_owned(),

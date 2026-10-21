@@ -1007,7 +1007,6 @@ pub(super) fn call_items_payload(
 /// elsewhere; and the largest file entry. Items that are not all call
 /// edges print as themselves.
 fn compact_call_sizes(items: &[Value], paths: &PathPolicy) -> (Vec<usize>, usize) {
-    use crate::tools::stream_page::json_chars;
     if items.iter().any(|item| call_node(item).is_none()) {
         return (super::render::plain_sizes(items), 0);
     }
@@ -1018,13 +1017,18 @@ fn compact_call_sizes(items: &[Value], paths: &PathPolicy) -> (Vec<usize>, usize
         .iter()
         .map(|item| {
             let Some((group, call)) = filed_call(item, &declared, paths) else {
-                return json_chars(item) + 1;
+                return octocode_engine::json_size::utf16_units(item).unwrap_or(0) + 1;
             };
-            let entry = json_chars(&json!({"path": group.1, "matches": []})) + 1;
+            let entry =
+                octocode_engine::json_size::utf16_units(&json!({"path": group.1, "matches": []}))
+                    .unwrap_or(0)
+                    + 1;
             largest = largest.max(entry);
             let opens = previous.as_ref() != Some(&group);
             previous = Some(group);
-            json_chars(&call) + 1 + if opens { entry } else { 0 }
+            octocode_engine::json_size::utf16_units(&call).unwrap_or(0)
+                + 1
+                + if opens { entry } else { 0 }
         })
         .collect();
     (sizes, largest)

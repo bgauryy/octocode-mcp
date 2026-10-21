@@ -14,10 +14,10 @@ const parsed = DateCodec.parse("2024-01-01T00:00:00Z") // Date
 const serialized = DateCodec.encode(parsed)              // "2024-01-01T00:00:00.000Z"
 ```
 
-### Built-in Codecs
+### Compose a Datetime Codec
 
 ```typescript
-// ISO datetime codec (string ↔ Date)
+// ISO datetime string schema: validation only, no Date conversion
 z.iso.datetime()
 
 // Use with codec for custom decode/encode
@@ -43,8 +43,8 @@ Nominal typing — prevents mixing structurally identical types.
 const USD = z.number().brand<"USD">()
 const EUR = z.number().brand<"EUR">()
 
-type USD = z.infer<typeof USD> // number & { __brand: "USD" }
-type EUR = z.infer<typeof EUR> // number & { __brand: "EUR" }
+type USD = z.infer<typeof USD> // number & z.$brand<"USD">
+type EUR = z.infer<typeof EUR> // number & z.$brand<"EUR">
 
 // TypeScript prevents mixing
 function pay(amount: USD) { /* ... */ }
@@ -99,14 +99,14 @@ const UserSchema = z.object({
 
 ```typescript
 // Global registry
-z.globalRegistry.register(UserSchema, {
+z.globalRegistry.add(UserSchema, {
   id: "User",
   description: "User account schema",
 })
 
 // Custom typed registry
 const uiRegistry = z.registry<{ label: string; widget: string }>()
-uiRegistry.register(UserSchema.shape.name, {
+uiRegistry.add(UserSchema.shape.name, {
   label: "Name",
   widget: "text-input",
 })
@@ -150,12 +150,13 @@ const zodSchema = z.fromJSONSchema({
 Validate function arguments and return type.
 
 ```typescript
-const MyFunc = z.function(
-  z.tuple([z.string(), z.number()]), // args
-  z.boolean()                         // return type
-)
+const MyFunc = z.function({
+  input: [z.string(), z.number()],
+  output: z.boolean(),
+})
+const checked = MyFunc.implement((text, count) => text.length > count)
 
-type MyFunc = z.infer<typeof MyFunc>
+type MyFunc = typeof checked
 // (arg0: string, arg1: number) => boolean
 ```
 
@@ -190,9 +191,9 @@ const Route = z.templateLiteral([
 Zod schemas implement the Standard Schema interface, making them compatible with any library that supports it.
 
 ```typescript
-import type { StandardSchema } from "@standard-schema/spec"
+import type { StandardSchemaV1 } from "@standard-schema/spec"
 
-function validate(schema: StandardSchema, data: unknown) {
+function validate(schema: StandardSchemaV1, data: unknown) {
   return schema["~standard"].validate(data)
 }
 

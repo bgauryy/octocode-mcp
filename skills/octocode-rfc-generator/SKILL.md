@@ -46,6 +46,7 @@ flowchart LR
 
 | When | Read | Why |
 |---|---|---|
+| Repository evidence needs Octocode | [MCP/CLI guide](references/octocode-usage.md) | Discovery, invocation, complete reads, recovery |
 | Planning evidence, auditing an RFC, or a disagreement survives source review | [workflow](references/workflow.md) | Evidence per question, audit, optional `clasify` |
 | Finding or closing blocking questions; a section needs a diagram | [checklist](references/checklist.md) | Question areas, closure rules, readiness, diagram types |
 | Saving, rendering, or listing RFCs | [render-report.mjs](scripts/render-report.mjs) per [output](output.md#saved-report) | HTML page, JSON catalog |

@@ -1,7 +1,6 @@
 /**
  * The Octocode home directory on every platform: `OCTOCODE_HOME` when set,
  * else `<os.homedir()>/.octocode`.
- * python/octocode_config.py implements the same rule for Python skills.
  */
 import { homedir } from 'node:os';
 import path from 'node:path';

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { isMain } from './is-main.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-export const SOURCE = path.join(root, '..', 'octocode-agents-communication', 'scripts', 'communication', 'unicode16.json');
+export const SOURCE = path.join(root, '..', 'octocode-agents-communication', 'assets', 'unicode16.json');
 export const TARGET = path.join(root, 'src', 'team', 'casefold-table.ts');
 
 /** The text of `casefold-table.ts` for a parsed `unicode16.json`. */

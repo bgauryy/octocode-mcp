@@ -112,9 +112,9 @@ pub(super) async fn issue(
             if let Some(body_view) = body_view {
                 first["body"] = json!(paginate_text(body_view, None, query.char_length()).0);
             }
-            crate::tools::stream_page::json_chars(&first)
+            octocode_engine::json_size::utf16_units(&first).unwrap_or(0)
         } else {
-            crate::tools::stream_page::json_chars(&row)
+            octocode_engine::json_size::utf16_units(&row).unwrap_or(0)
         };
         let at = CommentRead {
             issue_path: &issue_path,
@@ -292,7 +292,7 @@ async fn issue_comments(
     let (mut consumed, mut used) = (0, 0usize);
     for comment in &fetched {
         let (first, _) = shape_comment(comment, None, query, &mut BodyWindows::default());
-        let chars = crate::tools::stream_page::json_chars(&first) + 1;
+        let chars = octocode_engine::json_size::utf16_units(&first).unwrap_or(0) + 1;
         if consumed > 0 && (used + chars > budget || consumed >= cap) {
             break;
         }
